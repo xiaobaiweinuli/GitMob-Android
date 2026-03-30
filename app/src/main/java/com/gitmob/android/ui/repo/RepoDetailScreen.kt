@@ -1138,7 +1138,9 @@ private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy
 
 internal fun repoFormatDate(iso: String): String = try {
     val odt = OffsetDateTime.parse(iso)
-    odt.toLocalDateTime().format(dateFormatter)
+    // 转换为北京时间（UTC+8），GitHub API 返回 UTC/带偏移时间
+    val beijing = odt.atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai"))
+    beijing.format(dateFormatter)
 } catch (_: Exception) {
     iso
 }

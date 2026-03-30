@@ -34,19 +34,22 @@ class CreateRepoViewModel(app: Application) : AndroidViewModel(app) {
     private val _loading = MutableStateFlow(false)
     val loading = _loading.asStateFlow()
 
-    fun create(name: String, desc: String, private: Boolean, autoInit: Boolean) {
+    fun create(name: String, desc: String, private: Boolean, autoInit: Boolean, orgLogin: String? = null) {
         viewModelScope.launch {
             _loading.value = true
             _error.value = null
             try {
-                val r = repo.createRepo(
-                    GHCreateRepoRequest(
-                        name = name.trim(),
-                        description = desc.trim().ifEmpty { null },
-                        private = private,
-                        autoInit = autoInit,
-                    )
+                val req = GHCreateRepoRequest(
+                    name = name.trim(),
+                    description = desc.trim().ifEmpty { null },
+                    private = private,
+                    autoInit = autoInit,
                 )
+                val r = if (orgLogin != null) {
+                    repo.createOrgRepo(orgLogin, req)
+                } else {
+                    repo.createRepo(req)
+                }
                 _done.value = r.fullName
             } catch (e: Exception) {
                 _error.value = e.message ?: "创建失败"
@@ -62,6 +65,7 @@ class CreateRepoViewModel(app: Application) : AndroidViewModel(app) {
 fun CreateRepoScreen(
     onBack: () -> Unit,
     onCreated: (String, String) -> Unit,
+    orgLogin: String? = null,           // null = 当前用户，否则 = 组织名
     vm: CreateRepoViewModel = viewModel(),
 ) {
     val c = LocalGmColors.current
@@ -86,7 +90,16 @@ fun CreateRepoScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text("新建仓库", fontWeight = FontWeight.SemiBold, color = c.textPrimary)
+                    androidx.compose.foundation.layout.Column {
+                        Text("新建仓库", fontWeight = FontWeight.SemiBold, color = c.textPrimary)
+                        if (orgLogin != null) {
+                            Text(
+                                "创建到：$orgLogin",
+                                fontSize = 11.sp,
+                                color = com.gitmob.android.ui.theme.Coral,
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -207,7 +220,7 @@ fun CreateRepoScreen(
             }
 
             Button(
-                onClick = { if (name.isNotBlank()) vm.create(name, desc, isPrivate, autoInit) },
+                onClick = { if (name.isNotBlank()) vm.create(name, desc, isPrivate, autoInit, orgLogin) },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Coral),

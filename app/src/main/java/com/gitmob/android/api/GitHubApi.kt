@@ -30,6 +30,12 @@ interface GitHubApi {
     @POST("user/repos")
     suspend fun createRepo(@Body body: GHCreateRepoRequest): GHRepo
 
+    @POST("orgs/{org}/repos")
+    suspend fun createOrgRepo(
+        @Path("org") org: String,
+        @Body body: GHCreateRepoRequest,
+    ): GHRepo
+
     @DELETE("repos/{owner}/{repo}")
     suspend fun deleteRepo(
         @Path("owner") owner: String,

@@ -930,6 +930,12 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                 branch = _state.value.currentBranch,
             )
             loadContents(_state.value.currentPath, forceRefresh = true)
+            // 若创建/更新的是 README 文件，立即重新加载 README 内容
+            val isReadme = listOf("README.md", "README.MD", "Readme.md", "readme.md", "README")
+                .any { path.equals(it, ignoreCase = true) || path.endsWith("/$it", ignoreCase = true) }
+            if (isReadme) {
+                loadReadme(owner, repoName, _state.value.currentBranch)
+            }
             _state.update { it.copy(toast = "操作成功") }
             onSuccess()
         } catch (e: Exception) {

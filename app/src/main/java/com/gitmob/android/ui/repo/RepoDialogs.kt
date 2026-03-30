@@ -376,11 +376,12 @@ fun RepoTransferDialog(
 ) {
     // 默认选中第一个可用目标（自己或组织）；如果只有当前 owner，就保持 owner，但 UI 不再单独列出“owner 本人”条目
     val selfLogin = userLogin.ifBlank { owner }
-    val transferTargets = remember(selfLogin, orgs) {
+    val transferTargets = remember(selfLogin, orgs, owner) {
         buildList {
-            // 只在用户登录与当前 owner 不同的时候，才把“你自己”作为一个显式候选
+            // 只在用户登录与当前 owner 不同时，才把"你自己"作为候选（不能转给当前 owner）
             if (selfLogin != owner) add(selfLogin)
-            addAll(orgs.map { it.login })
+            // 过滤掉与当前 owner 同名的组织（转给自己会返回 422）
+            addAll(orgs.map { it.login }.filter { it != owner })
         }
     }
 

@@ -94,6 +94,11 @@ class RepoRepository {
         api.createRepo(body)
     }
 
+    suspend fun createOrgRepo(org: String, body: GHCreateRepoRequest): GHRepo = withContext(Dispatchers.IO) {
+        invalidateReposCache()
+        api.createOrgRepo(org, body)
+    }
+
     suspend fun updateRepo(owner: String, repo: String, body: GHUpdateRepoRequest): GHRepo =
         withContext(Dispatchers.IO) {
             invalidateReposCache()

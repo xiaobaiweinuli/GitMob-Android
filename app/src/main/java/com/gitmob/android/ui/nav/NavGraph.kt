@@ -64,7 +64,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 sealed class Route(val path: String) {
     object Login      : Route("login")
     object Main       : Route("main")
-    object CreateRepo : Route("create_repo")
+    object CreateRepo : Route("create_repo?org={org}") {
+        fun go(org: String? = null) = if (org != null) "create_repo?org=$org" else "create_repo"
+    }
     object Settings   : Route("settings")
     object RepoDetail : Route("repo/{owner}/{repo}") {
         fun go(owner: String, repo: String) = "repo/$owner/$repo"
@@ -203,7 +205,7 @@ fun AppNavGraph(
                 onLocalRepoClick     = { repoId ->
                     navController.navigate(Route.LocalRepoDetail.go(repoId))
                 },
-                onCreateRepo = { navController.navigate(Route.CreateRepo.path) },
+                onCreateRepo = { org -> navController.navigate(Route.CreateRepo.go(org)) },
                 localVm      = localVm,
                 onLogout     = { forceReauth ->
                     // forceReauth=true: 取消授权(deleteGrant)后需重新完整授权
@@ -224,12 +226,23 @@ fun AppNavGraph(
             )
         }
 
-        composable(Route.CreateRepo.path) {
+        composable(
+            route = Route.CreateRepo.path,
+            arguments = listOf(
+                androidx.navigation.navArgument("org") {
+                    type = androidx.navigation.NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStack ->
+            val orgLogin = backStack.arguments?.getString("org")
             CreateRepoScreen(
                 onBack    = { navController.popBackStack() },
+                orgLogin  = orgLogin,
                 onCreated = { owner, repo ->
                     navController.navigate(Route.RepoDetail.go(owner, repo)) {
-                        popUpTo(Route.CreateRepo.path) { inclusive = true }
+                        popUpTo(Route.CreateRepo.go(orgLogin)) { inclusive = true }
                     }
                 },
             )
@@ -320,7 +333,7 @@ private fun MainScreen(
     onNavigateToSettings: () -> Unit,
     onRepoClick: (String, String) -> Unit,
     onLocalRepoClick: (String) -> Unit,
-    onCreateRepo: () -> Unit,
+    onCreateRepo: (org: String?) -> Unit,
     localVm: LocalRepoViewModel,
     onLogout: (forceReauth: Boolean) -> Unit,
     onSwitchAccount: (com.gitmob.android.auth.AccountInfo) -> Unit = {},
@@ -360,10 +373,16 @@ private fun MainScreen(
                 startDestination = BottomTab.Remote.route,
             ) {
                 composable(BottomTab.Remote.route) {
+                    val repoListVm: com.gitmob.android.ui.repos.RepoListViewModel = viewModel()
+                    val repoListState by repoListVm.state.collectAsState()
                     RepoListScreen(
                         onRepoClick    = onRepoClick,
-                        onCreateRepo   = onCreateRepo,
+                        onCreateRepo   = {
+                            val org = repoListState.currentContext?.login
+                            onCreateRepo(org)
+                        },
                         onCloneRepo    = { url -> localVm.startClone(url) },
+                        vm             = repoListVm,
                     )
                 }
                 composable(BottomTab.Local.route) {
