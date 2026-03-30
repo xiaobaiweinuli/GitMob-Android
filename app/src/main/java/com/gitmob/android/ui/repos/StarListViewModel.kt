@@ -27,6 +27,7 @@ private data class RepoCacheEntry(
 
 data class StarListState(
     val starModeActive: Boolean = false,
+    val starSearchQuery: String = "",   // 星标模式独立搜索，与远程仓库搜索隔离
     val userLists: List<UserList> = emptyList(),
     val listsLoading: Boolean = false,
     val listsExpanded: Boolean = false,
@@ -72,8 +73,49 @@ class StarListViewModel(app: Application) : AndroidViewModel(app) {
         val entering = !_state.value.starModeActive
         if (entering) {
             _state.update { it.copy(starModeActive = true, selectedListId = null) }
-            loadUserLists(force = false)
-            loadStarredRepos(force = false)
+            viewModelScope.launch {
+                // 先加载 UserList
+                loadUserLists(force = false).join()
+                // 加载全部星标（建立 repoToListIds 的基础数据）
+                loadStarredRepos(force = false)
+                // 后台静默预加载各列表，建立 repoToListIds 反向映射
+                val lists = _state.value.userLists
+                lists.forEach { list ->
+                    // 只有缓存未命中时才请求
+                    if (reposCache[list.id] == null || reposCache[list.id]!!.isExpired()) {
+                        val t = token() ?: return@forEach
+                        try {
+                            val data = GraphQLClient.queryListRepos(t, list.id) ?: return@forEach
+                            val nodes = data.optJSONArray("nodes") ?: return@forEach
+                            val repos = (0 until nodes.length()).mapNotNull { nodes.getJSONObject(it).toStarredRepo() }
+                            // 建立反向映射
+                            repos.forEach { repo ->
+                                repoToListIds.getOrPut(repo.nodeId) { mutableSetOf() }.add(list.id)
+                            }
+                            reposCache[list.id] = RepoCacheEntry(
+                                repos = repos.map { repo ->
+                                    val known = repoToListIds[repo.nodeId]?.toList() ?: emptyList()
+                                    repo.copy(listIds = known)
+                                },
+                                hasNextPage = repos.size >= 50,
+                                endCursor = data.optJSONObject("pageInfo")?.optString("endCursor")?.takeIf { it.isNotBlank() },
+                            )
+                        } catch (_: Exception) {}
+                    }
+                }
+                // 映射建立后，刷新当前显示的全部星标列表的 listIds
+                val current = _state.value.starredRepos
+                val enriched = current.map { repo ->
+                    val known = repoToListIds[repo.nodeId]?.toList() ?: repo.listIds
+                    if (known != repo.listIds) repo.copy(listIds = known) else repo
+                }
+                if (enriched != current) {
+                    _state.update { it.copy(starredRepos = enriched) }
+                    reposCache[null]?.let { entry ->
+                        reposCache[null] = entry.copy(repos = enriched)
+                    }
+                }
+            }
         } else {
             _state.update { StarListState() }
         }
@@ -301,6 +343,18 @@ class StarListViewModel(app: Application) : AndroidViewModel(app) {
         loadUserLists(force = true)
         loadStarredRepos(force = true)
     }
+
+    fun setStarSearch(q: String) = _state.update { it.copy(starSearchQuery = q) }
+
+    /** 按当前搜索词过滤后的星标仓库列表 */
+    val filteredStarredRepos = _state.map { s ->
+        if (s.starSearchQuery.isBlank()) s.starredRepos
+        else s.starredRepos.filter { repo ->
+            repo.name.contains(s.starSearchQuery, ignoreCase = true) ||
+            repo.nameWithOwner.contains(s.starSearchQuery, ignoreCase = true) ||
+            (repo.description?.contains(s.starSearchQuery, ignoreCase = true) == true)
+        }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Lazily, emptyList())
 
     fun clearToast() = _state.update { it.copy(toast = null) }
 }

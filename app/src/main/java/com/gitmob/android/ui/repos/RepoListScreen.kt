@@ -153,15 +153,17 @@ fun RepoListScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            // 搜索框
+            // 搜索框（星标模式和普通模式各自独立）
+            val searchValue = if (starState.starModeActive) starState.starSearchQuery else state.searchQuery
+            val onSearchChange: (String) -> Unit = if (starState.starModeActive) starVm::setStarSearch else vm::setSearch
             OutlinedTextField(
-                value = state.searchQuery,
-                onValueChange = vm::setSearch,
-                placeholder = { Text("搜索仓库…", color = c.textTertiary, fontSize = 14.sp) },
+                value = searchValue,
+                onValueChange = onSearchChange,
+                placeholder = { Text(if (starState.starModeActive) "搜索星标仓库…" else "搜索仓库…", color = c.textTertiary, fontSize = 14.sp) },
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = c.textTertiary, modifier = Modifier.size(18.dp)) },
                 trailingIcon = {
-                    if (state.searchQuery.isNotEmpty())
-                        IconButton(onClick = { vm.setSearch("") }, modifier = Modifier.size(32.dp)) {
+                    if (searchValue.isNotEmpty())
+                        IconButton(onClick = { onSearchChange("") }, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.Close, null, tint = c.textTertiary, modifier = Modifier.size(16.dp))
                         }
                 },
@@ -209,16 +211,19 @@ fun RepoListScreen(
 
             if (starState.starModeActive) {
                 // ── 星标模式：显示星标仓库 ────────────────────────────────────
+                val displayedRepos by starVm.filteredStarredRepos.collectAsState()
                 when {
                     starState.reposLoading && starState.starredRepos.isEmpty() -> LoadingBox()
+                    displayedRepos.isEmpty() && starState.starSearchQuery.isNotBlank() -> EmptyBox("无匹配的星标仓库")
                     starState.starredRepos.isEmpty() -> EmptyBox("该列表暂无仓库")
                     else -> {
                         val listState = rememberLazyListState()
                         val scope = rememberCoroutineScope()
-                        // 滚到底部时自动加载更多
-                        val lastIndex = starState.starredRepos.lastIndex
+                        // 滚到底部时自动加载更多（只在无搜索词时触发分页）
+                        val lastIndex = displayedRepos.lastIndex
                         LaunchedEffect(listState.firstVisibleItemIndex) {
                             if (starState.hasNextPage && !starState.reposLoading &&
+                                starState.starSearchQuery.isBlank() &&
                                 listState.firstVisibleItemIndex >= lastIndex - 5) {
                                 starVm.loadStarredRepos(loadMore = true)
                             }
@@ -228,7 +233,7 @@ fun RepoListScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            items(starState.starredRepos, key = { it.nodeId }) { starred ->
+                            items(displayedRepos, key = { it.nodeId }) { starred ->
                                 SwipeableStarredRepoCard(
                                     repo = starred,
                                     onClick = {
@@ -464,6 +469,13 @@ private fun StarredRepoCard(
                 Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(12.dp))
                 Text(repo.stars.toString(), fontSize = 11.sp, color = c.textTertiary)
             }
+            // forks数
+            if (repo.forks > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
+                    Text(repo.forks.toString(), fontSize = 11.sp, color = c.textTertiary)
+                }
+            }
             // 所属列表数量提示
             if (repo.listIds.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -698,6 +710,12 @@ private fun RepoCardContent(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
                 Text("${repo.forks}", fontSize = 11.sp, color = c.textTertiary)
+            }
+            if (repo.openIssues > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(Icons.Default.ErrorOutline, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
+                    Text("${repo.openIssues}", fontSize = 11.sp, color = c.textTertiary)
+                }
             }
             Spacer(Modifier.weight(1f))
             Text(
