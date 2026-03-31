@@ -980,11 +980,7 @@ fun FileViewerScreen(
                                 Spacer(Modifier.height(6.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     if (commit.author != null) {
-                                        androidx.compose.foundation.Image(
-                                            painter = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp).clip(CircleShape)
-                                        )
+                                        com.gitmob.android.ui.common.AvatarImage(commit.author.avatarUrl, 20)
                                     }
                                     Text(commit.commit.author.name, fontSize = 11.sp, color = c.textSecondary)
                                     Spacer(Modifier.weight(1f))
@@ -1052,11 +1048,7 @@ fun FileViewerScreen(
                 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (commit.author != null) {
-                        androidx.compose.foundation.Image(
-                            painter = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
-                            contentDescription = null,
-                            modifier = Modifier.size(32.dp).clip(CircleShape)
-                        )
+                        com.gitmob.android.ui.common.AvatarImage(commit.author.avatarUrl, 32)
                     }
                     Column {
                         Text(commit.commit.author.name, fontSize = 13.sp, color = c.textPrimary, fontWeight = FontWeight.Medium)

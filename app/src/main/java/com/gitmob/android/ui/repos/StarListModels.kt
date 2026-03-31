@@ -29,6 +29,11 @@ data class StarredRepo(
     val ownerLogin: String,
     val ownerAvatarUrl: String?,
     val pushedAt: String?,
+    val createdAt: String? = null,
+    val fork: Boolean = false,
+    val archived: Boolean = false,
+    val isTemplate: Boolean = false,
+    val mirrorUrl: String? = null,
     val listIds: List<String> = emptyList(),   // 所属 UserList ID 列表
     val openIssues: Int = 0,
 ) {
@@ -52,11 +57,15 @@ data class StarredRepo(
             stars         = stars,
             forks         = forks,
             openIssues    = openIssues,
+            createdAt     = createdAt,
             updatedAt     = pushedAt,
             pushedAt      = pushedAt,
             language      = language,
             owner         = com.gitmob.android.api.GHOwner(login = owner, avatarUrl = ownerAvatarUrl ?: ""),
-            fork          = false,
+            fork          = fork,
+            archived      = archived,
+            isTemplate    = isTemplate,
+            mirrorUrl     = mirrorUrl,
         )
     }
 }
@@ -91,6 +100,11 @@ fun JSONObject.toStarredRepo(): StarredRepo? {
         ownerLogin     = optJSONObject("owner")?.optString("login") ?: "",
         ownerAvatarUrl = optJSONObject("owner")?.optString("avatarUrl"),
         pushedAt       = optString("pushedAt").takeIf { it.isNotBlank() },
+        createdAt      = optString("createdAt").takeIf { it.isNotBlank() },
+        fork           = optBoolean("isFork"),
+        archived       = optBoolean("isArchived"),
+        isTemplate     = optBoolean("isTemplate"),
+        mirrorUrl      = optString("mirrorUrl").takeIf { it.isNotBlank() },
         listIds        = listIds,
         openIssues     = optJSONObject("openIssues")?.optInt("totalCount") ?: 0,
     )

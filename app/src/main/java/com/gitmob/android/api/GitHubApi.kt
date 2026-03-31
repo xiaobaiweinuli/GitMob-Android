@@ -522,4 +522,23 @@ interface GitHubApi {
         @Path("repo") repo: String,
         @Path("assetId") assetId: Long,
     ): GHAsset
+
+    // ── Stargazers ──
+    @GET("repos/{owner}/{repo}/stargazers")
+    suspend fun getStargazers(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Query("per_page") perPage: Int = 50,
+        @Query("page") page: Int = 1,
+    ): List<GHStargazer>
+
+    // ── Forks ──
+    @GET("repos/{owner}/{repo}/forks")
+    suspend fun getForks(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Query("sort") sort: String = "newest", // newest, oldest, stargazers
+        @Query("per_page") perPage: Int = 50,
+        @Query("page") page: Int = 1,
+    ): List<GHRepo>
 }

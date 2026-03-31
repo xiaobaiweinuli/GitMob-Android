@@ -67,7 +67,7 @@ android {
         // R8 metadata 警告：Kotlin 版本 > R8 内置版本，属于已知警告，不影响运行时正确性
         abortOnError = false
     }
-    // JGit 带有 META-INF 签名文件，需要排除以避免打包冲突
+    // JGit 和 Flexmark 带有 META-INF 签名文件，需要排除以避免打包冲突
     packaging {
         resources {
             excludes += setOf(
@@ -82,6 +82,9 @@ android {
                 "META-INF/*.RSA",
                 "META-INF/*.DSA",
                 "META-INF/services/org.eclipse.jgit.*",
+                "META-INF/LICENSE-LGPL-2.1.txt",
+                "META-INF/LICENSE-LGPL-3.txt",
+                "META-INF/LICENSE-W3C-TEST",
                 "mozilla/public-suffix-list.txt",
                 "OSGI-INF/l10n/plugin.properties",
             )
@@ -120,9 +123,7 @@ dependencies {
     // Jackson YAML：用于解析 GitHub Actions workflow YAML 文件
     implementation(libs.jackson.dataformat.yaml)
     implementation(libs.jackson.module.kotlin)
-    // Markdown 渲染：mikepenz multiplatform-markdown-renderer + Coil3 图片加载 + SVG 支持
-    implementation(libs.markdown.renderer)
-    implementation(libs.markdown.renderer.m3)
-    implementation(libs.markdown.renderer.coil3)
+    // Markdown 渲染：Flexmark + WebView + github-markdown-css
+    implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
     debugImplementation(libs.androidx.ui.tooling)
 }

@@ -17,6 +17,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
 
+import kotlinx.coroutines.Job
+
 class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
 
     val owner: String = savedStateHandle["owner"] ?: ""
@@ -27,8 +29,15 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     private val _state = MutableStateFlow(RepoDetailState())
     val state = _state.asStateFlow()
 
+    // ── Job 去重：同类请求只保留最新一个，取消旧 Job 前先等其自然结束 ──────
+    // 注意：不主动 cancel 旧 Job，让其继续执行直到 OkHttp 完成；
+    // 通过 isActive 检查避免重复写入 State，而非通过 cancel 中断 OkHttp。
+    private var loadAllJob: Job? = null
+    private var contentsJob: Job? = null
+    private var commitsJob: Job? = null
+
     init {
-        // 当前登录用户与组织（用于仓库转移等）
+        // 当前登录用户名与组织（用于仓库转移等）
         viewModelScope.launch {
             tokenStorage.userProfile.collect { profile ->
                 if (profile != null) {
@@ -52,7 +61,10 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         } catch (_: Exception) {}
     }
 
-    fun loadAll(forceRefresh: Boolean = false) = viewModelScope.launch {
+    fun loadAll(forceRefresh: Boolean = false) {
+        // 若前一个 loadAll 仍在运行，不重复启动（避免 OkHttp 连接竞争触发 Canceled）
+        if (loadAllJob?.isActive == true && !forceRefresh) return
+        loadAllJob = viewModelScope.launch {
         _state.update { it.copy(loading = true, error = null) }
         try {
             val r = repository.getRepo(owner, repoName, forceRefresh)
@@ -69,9 +81,13 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         } catch (e: Exception) {
             _state.update { it.copy(loading = false, error = e.message ?: "加载失败") }
         }
+        } // loadAllJob
     }
 
-    fun loadContents(path: String, ref: String? = null, forceRefresh: Boolean = false) = viewModelScope.launch {
+    fun loadContents(path: String, ref: String? = null, forceRefresh: Boolean = false) {
+        // 同路径非强制刷新时去重
+        if (!forceRefresh && contentsJob?.isActive == true && _state.value.currentPath == path) return
+        contentsJob = viewModelScope.launch {
         _state.update { it.copy(contentsLoading = true, filesRefreshing = forceRefresh) }
         try {
             val branch = ref ?: _state.value.currentBranch
@@ -81,6 +97,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         } catch (e: Exception) {
             _state.update { it.copy(contentsLoading = false, filesRefreshing = false) }
         }
+     } // contentsJob
     }
 
     fun navigateUp() {
@@ -490,6 +507,38 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun closeFilePatch() = _state.update { it.copy(selectedFilePatch = null) }
     fun clearToast() = _state.update { it.copy(toast = null) }
     fun clearGitOpResult() = _state.update { it.copy(gitOpResult = null) }
+    
+    // 文件历史相关方法
+    fun showFileHistory(content: GHContent) = viewModelScope.launch {
+        _state.update { it.copy(showFileHistorySheet = true, selectedFileForHistory = content, fileHistoryLoading = true) }
+        try {
+            val commits = repository.getCommits(owner, repoName, _state.value.currentBranch, content.path)
+            _state.update { it.copy(fileHistoryCommits = commits, fileHistoryLoading = false) }
+        } catch (e: Exception) {
+            _state.update { it.copy(fileHistoryCommits = emptyList(), fileHistoryLoading = false) }
+        }
+    }
+    
+    fun hideFileHistory() = _state.update { 
+        it.copy(
+            showFileHistorySheet = false, 
+            fileHistoryCommits = emptyList(), 
+            selectedFileForHistory = null, 
+            selectedCommitForFileHistory = null
+        ) 
+    }
+    
+    fun loadFileHistoryCommitDetail(sha: String) = viewModelScope.launch {
+        _state.update { it.copy(fileHistoryCommitDetailLoading = true) }
+        try {
+            val detail = repository.getCommitDetail(owner, repoName, sha)
+            _state.update { it.copy(selectedCommitForFileHistory = detail, fileHistoryCommitDetailLoading = false) }
+        } catch (e: Exception) {
+            _state.update { it.copy(fileHistoryCommitDetailLoading = false, toast = "加载详情失败") }
+        }
+    }
+    
+    fun clearFileHistoryCommitDetail() = _state.update { it.copy(selectedCommitForFileHistory = null) }
 
     /**
      * 回滚：强制将当前分支的 HEAD 指向目标 SHA（服务端操作，重写历史）
@@ -1065,6 +1114,173 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         _state.update { it.copy(issueTemplates = templates, issueTemplatesLoading = false) }
         onDone()
     }
+
+    // ── 星标用户列表 ────────────────────────────────────────────────────────
+
+    /**
+     * 加载星标用户列表
+     */
+    fun loadStargazers() = viewModelScope.launch {
+        _state.update { it.copy(stargazersLoading = true) }
+        try {
+            val stargazers = repository.getStargazers(owner, repoName)
+            _state.update { it.copy(stargazers = stargazers, stargazersLoading = false) }
+        } catch (e: Exception) {
+            _state.update { it.copy(stargazersLoading = false, toast = "加载星标用户失败: ${e.message}") }
+        }
+    }
+
+    /**
+     * 显示星标用户列表弹窗
+     */
+    fun showStargazersSheet() {
+        _state.update { it.copy(showStargazersSheet = true) }
+        if (_state.value.stargazers.isEmpty()) {
+            loadStargazers()
+        }
+    }
+
+    /**
+     * 隐藏星标用户列表弹窗
+     */
+    fun hideStargazersSheet() = _state.update { it.copy(showStargazersSheet = false) }
+
+    // ── 复刻仓库列表 ────────────────────────────────────────────────────────
+
+    /**
+     * 加载复刻仓库列表
+     */
+    fun loadForks() = viewModelScope.launch {
+        _state.update { it.copy(forksLoading = true) }
+        try {
+            val forks = repository.getForks(owner, repoName, sort = _state.value.forkSortBy.apiValue)
+            _state.update { it.copy(originalForks = forks, forks = applyForkFilters(forks), forksLoading = false) }
+        } catch (e: Exception) {
+            _state.update { it.copy(forksLoading = false, toast = "加载复刻仓库失败: ${e.message}") }
+        }
+    }
+
+    /**
+     * 设置复刻列表排序方式并重新加载
+     */
+    fun setForkSortBy(sortBy: ForkSortBy) {
+        _state.update { it.copy(forkSortBy = sortBy) }
+        loadForks()
+    }
+
+    /**
+     * 设置复刻仓库期限筛选
+     */
+    fun setForkTimeFilter(filter: ForkTimeFilter) {
+        _state.update { it.copy(forkTimeFilter = filter) }
+        applyFilters()
+    }
+
+    /**
+     * 设置复刻仓库类型筛选
+     */
+    fun toggleForkTypeFilter(filter: ForkTypeFilter) {
+        val currentFilters = _state.value.forkTypeFilters
+        val newFilters = if (currentFilters.contains(filter)) {
+            currentFilters - filter
+        } else {
+            currentFilters + filter
+        }
+        _state.update { it.copy(forkTypeFilters = newFilters) }
+        applyFilters()
+    }
+
+    /**
+     * 设置复刻仓库排序方式
+     */
+    fun setForkOrderBy(orderBy: ForkOrderBy) {
+        _state.update { it.copy(forkOrderBy = orderBy) }
+        applyFilters()
+    }
+
+    /**
+     * 清除所有筛选
+     */
+    fun clearForkFilters() {
+        _state.update { 
+            it.copy(
+                forkTimeFilter = ForkTimeFilter.ALL,
+                forkTypeFilters = emptySet(),
+                forkOrderBy = ForkOrderBy.RECENTLY_UPDATED,
+                forks = it.originalForks
+            )
+        }
+    }
+
+    /**
+     * 应用筛选和排序
+     */
+    private fun applyFilters() {
+        val filtered = applyForkFilters(_state.value.originalForks)
+        _state.update { it.copy(forks = filtered) }
+    }
+
+    /**
+     * 应用筛选逻辑
+     */
+    private fun applyForkFilters(forks: List<GHRepo>): List<GHRepo> {
+        var result = forks
+
+        // 期限筛选
+        if (_state.value.forkTimeFilter != ForkTimeFilter.ALL) {
+            val cutoffTime = System.currentTimeMillis() - (_state.value.forkTimeFilter.months * 30L * 24L * 60L * 60L * 1000L)
+            result = result.filter { fork ->
+                fork.updatedAt?.let { updatedAt ->
+                    try {
+                        val date = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).parse(updatedAt)
+                        date?.time ?: 0 >= cutoffTime
+                    } catch (e: Exception) {
+                        true
+                    }
+                } ?: true
+            }
+        }
+
+        // 类型筛选
+        if (_state.value.forkTypeFilters.isNotEmpty()) {
+            result = result.filter { fork ->
+                _state.value.forkTypeFilters.any { type ->
+                    when (type) {
+                        ForkTypeFilter.ACTIVE -> !fork.archived && fork.updatedAt != null
+                        ForkTypeFilter.INACTIVE -> fork.archived || fork.updatedAt == null
+                        ForkTypeFilter.NETWORK -> true
+                        ForkTypeFilter.ARCHIVED -> fork.archived
+                        ForkTypeFilter.STARRED -> fork.stars > 0
+                    }
+                }
+            }
+        }
+
+        // 排序
+        result = when (_state.value.forkOrderBy) {
+            ForkOrderBy.RECENTLY_UPDATED -> result.sortedByDescending { it.updatedAt }
+            ForkOrderBy.MOST_STARS -> result.sortedByDescending { it.stars }
+            ForkOrderBy.OPEN_ISSUES -> result.sortedByDescending { it.openIssues }
+            ForkOrderBy.OPEN_PULL_REQUESTS -> result.sortedByDescending { it.openIssues }
+        }
+
+        return result
+    }
+
+    /**
+     * 显示复刻仓库列表弹窗
+     */
+    fun showForksSheet() {
+        _state.update { it.copy(showForksSheet = true) }
+        if (_state.value.forks.isEmpty()) {
+            loadForks()
+        }
+    }
+
+    /**
+     * 隐藏复刻仓库列表弹窗
+     */
+    fun hideForksSheet() = _state.update { it.copy(showForksSheet = false) }
 
     companion object {
         fun factory(owner: String, repo: String): androidx.lifecycle.ViewModelProvider.Factory =

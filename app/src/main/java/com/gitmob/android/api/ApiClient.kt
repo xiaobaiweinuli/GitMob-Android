@@ -38,72 +38,76 @@ object ApiClient {
         rebuild()
     }
 
-    /**
-     * 清理连接池，在网络切换时调用
-     */
     fun clearConnectionPool() {
         _okHttpClient?.connectionPool?.evictAll()
         LogManager.i(TAG, "连接池已清理")
     }
 
     /**
-     * 自定义重试拦截器
-     * 自动重试网络连接失败的请求（最多3次）
+     * 重试拦截器（网络层）
+     *
+     * 处理策略：
+     * - SocketTimeoutException / SSLException / 连接重置：最多重试3次，指数退避
+     * - "Canceled"：OkHttp 内部取消（连接池回收/Call.cancel），不重试（避免无意义重试）
+     * - 5xx 服务器错误：最多重试2次
+     * - 其他 IOException：不重试，直接抛出
+     *
+     * 注意：此拦截器必须放在 authInterceptor 外层（addInterceptor 最后），
+     *       使重试时也能经过 auth 拦截器重新附加 token。
      */
     private class RetryInterceptor : Interceptor {
         companion object {
-            private const val MAX_RETRIES = 3
+            private const val MAX_NET_RETRIES = 3
+            private const val MAX_SERVER_RETRIES = 2
         }
 
         override fun intercept(chain: Interceptor.Chain): Response {
-            var request = chain.request()
-            var response: Response? = null
-            var exception: IOException? = null
-            var retryCount = 0
+            val request = chain.request()
+            var lastException: IOException? = null
 
-            while (retryCount < MAX_RETRIES) {
+            // ── 网络层重试 ────────────────────────────────────────────────
+            repeat(MAX_NET_RETRIES) { attempt ->
                 try {
-                    response = chain.proceed(request)
-                    if (response.isSuccessful) {
-                        return response
-                    }
-                    // 如果是服务器错误（5xx），可以重试
-                    if (response.code >= 500) {
+                    val response = chain.proceed(request)
+
+                    // 5xx 服务器错误重试
+                    if (response.code >= 500 && attempt < MAX_SERVER_RETRIES) {
                         response.close()
-                        retryCount++
-                        LogManager.w(TAG, "服务器错误 ${response.code}，正在重试 ($retryCount/$MAX_RETRIES)")
-                        Thread.sleep(1000L * retryCount) // 指数退避
-                        continue
+                        LogManager.w(TAG, "服务器错误 ${response.code}，重试 ${attempt + 1}/$MAX_SERVER_RETRIES")
+                        Thread.sleep(800L * (attempt + 1))
+                        return@repeat
                     }
                     return response
                 } catch (e: IOException) {
-                    exception = e
-                    // 只重试网络相关的异常
-                    if (e is SocketTimeoutException || 
-                        e is SSLException || 
+                    // "Canceled" = OkHttp Call 被主动取消（协程取消 / 连接池回收），
+                    // 不应重试——协程已取消时重试毫无意义且可能造成资源泄漏
+                    if (e.message == "Canceled") throw e
+
+                    val retryable = e is SocketTimeoutException ||
+                        e is SSLException ||
                         e.message?.contains("Connection reset") == true ||
                         e.message?.contains("Connection closed") == true ||
-                        e.message?.contains("Required SETTINGS preface not received") == true) {
-                        retryCount++
-                        LogManager.w(TAG, "网络异常：${e.message}，正在重试 ($retryCount/$MAX_RETRIES)")
-                        if (retryCount < MAX_RETRIES) {
-                            Thread.sleep(1000L * retryCount) // 指数退避
-                            continue
-                        }
+                        e.message?.contains("SETTINGS preface") == true ||
+                        e.message?.contains("stream was reset") == true
+
+                    if (retryable && attempt < MAX_NET_RETRIES - 1) {
+                        lastException = e
+                        LogManager.w(TAG, "网络异常 [${e.javaClass.simpleName}] ${e.message}，重试 ${attempt + 1}/$MAX_NET_RETRIES")
+                        Thread.sleep(600L * (attempt + 1))
+                    } else {
+                        throw e
                     }
-                    break
                 }
             }
-
-            // 如果重试完还是失败，抛出最后一个异常
-            if (exception != null) {
-                throw exception
-            }
-            return response!!
+            throw lastException ?: IOException("请求失败，已超出最大重试次数")
         }
     }
 
     fun rebuild() {
+        val logging = HttpLoggingInterceptor { msg -> LogManager.v(TAG, msg) }.apply {
+            level = HttpLoggingInterceptor.Level.BASIC
+        }
+
         val authInterceptor = Interceptor { chain ->
             val token = runBlocking { tokenStorage.accessToken.first() }
             val request = chain.request().newBuilder()
@@ -112,8 +116,6 @@ object ApiClient {
                 .addHeader("X-GitHub-Api-Version", "2022-11-28")
                 .build()
             val response = chain.proceed(request)
-
-            // 401 = Token 失效（OAuth App 管理员撤销 / token 过期）
             if (response.code == 401) {
                 LogManager.w(TAG, "收到 401，token 已失效，清除本地授权并触发重新登录")
                 runBlocking { tokenStorage.clear() }
@@ -122,19 +124,17 @@ object ApiClient {
             response
         }
 
-        val logging = HttpLoggingInterceptor { msg -> LogManager.v(TAG, msg) }.apply {
-            level = HttpLoggingInterceptor.Level.BASIC
-        }
-
         _okHttpClient = OkHttpClient.Builder()
+            // 顺序重要：RetryInterceptor 在最外层，每次重试都会经过内层的 authInterceptor
             .addInterceptor(RetryInterceptor())
             .addInterceptor(authInterceptor)
             .addInterceptor(logging)
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)   // 增大读超时，减少因慢速响应触发 Canceled
             .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(90, TimeUnit.SECONDS)   // 整体请求超时兜底
             .retryOnConnectionFailure(true)
-            .connectionPool(ConnectionPool(10, 2, TimeUnit.MINUTES))
+            .connectionPool(ConnectionPool(5, 3, TimeUnit.MINUTES))  // 缩小连接池，减少空闲连接被回收触发 Canceled
             .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .build()
 
@@ -146,14 +146,12 @@ object ApiClient {
             .create(GitHubApi::class.java)
     }
 
-    /** 获取当前 token（供下载管理器使用） */
     fun currentToken(): String? = runBlocking { tokenStorage.accessToken.first() }
 
-    /** 不带 GitHub token 拦截器的裸客户端（下载/Worker 请求使用） */
-    fun rawHttpClient(): okhttp3.OkHttpClient =
-        okhttp3.OkHttpClient.Builder()
+    fun rawHttpClient(): OkHttpClient =
+        OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)  // 下载文件需更长读超时
+            .readTimeout(120, TimeUnit.SECONDS)
             .followRedirects(true)
             .build()
 }

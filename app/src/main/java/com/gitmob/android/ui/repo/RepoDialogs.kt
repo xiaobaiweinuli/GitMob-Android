@@ -374,18 +374,23 @@ fun RepoTransferDialog(
     onConfirm: (String, String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // 默认选中第一个可用目标（自己或组织）；如果只有当前 owner，就保持 owner，但 UI 不再单独列出“owner 本人”条目
-    val selfLogin = userLogin.ifBlank { owner }
-    val transferTargets = remember(selfLogin, orgs, owner) {
+    // ── 构建统一候选列表：正确算法 ──────────────────────────────────────────
+    // 全部潜在目标 = [当前用户] + [所有组织]
+    // 排除当前仓库 owner（不论是用户名还是组织名）
+    data class TransferTarget(val login: String, val avatarUrl: String?, val label: String)
+
+    val transferTargets = remember(userLogin, orgs, owner) {
         buildList {
-            // 只在用户登录与当前 owner 不同时，才把"你自己"作为候选（不能转给当前 owner）
-            if (selfLogin != owner) add(selfLogin)
-            // 过滤掉与当前 owner 同名的组织（转给自己会返回 422）
-            addAll(orgs.map { it.login }.filter { it != owner })
+            if (userLogin.isNotBlank() && userLogin != owner) {
+                add(TransferTarget(userLogin, userAvatar, "（你）"))
+            }
+            orgs.filter { it.login != owner }.forEach { org ->
+                add(TransferTarget(org.login, org.avatarUrl, ""))
+            }
         }
     }
 
-    var selectedOwner by remember { mutableStateOf(transferTargets.firstOrNull().orEmpty()) }
+    var selectedLogin by remember { mutableStateOf(transferTargets.firstOrNull()?.login.orEmpty()) }
     var keepName by remember { mutableStateOf(true) }
     var newName by remember { mutableStateOf(repoName) }
     var nameAvailable by remember { mutableStateOf<Boolean?>(null) }
@@ -400,131 +405,70 @@ fun RepoTransferDialog(
         title = { Text("转移仓库", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "选择新的所有者（用户或组织）。GitHub 可能会发送确认邮件，请在网页端完成最终确认。",
-                    fontSize = 12.sp,
-                    color = c.textSecondary,
-                )
-                Spacer(Modifier.height(6.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // 自己（前提：与当前 owner 不同）
-                    if (selfLogin != owner) {
-                        RepoTransferTargetRow(
-                            login = selfLogin,
-                            avatarUrl = userAvatar,
-                            selected = selectedOwner == selfLogin,
-                            c = c,
-                            onClick = { selectedOwner = selfLogin },
-                            labelSuffix = "（你）",
-                        )
-                    }
-                    // 所有组织
-                    orgs.forEach { org ->
-                        RepoTransferTargetRow(
-                            login = org.login,
-                            avatarUrl = org.avatarUrl,
-                            selected = selectedOwner == org.login,
-                            c = c,
-                            onClick = { selectedOwner = org.login },
-                            labelSuffix = "",
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                Text("仓库名称", fontSize = 12.sp, color = c.textSecondary)
                 Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(c.bgItem, RoundedCornerShape(8.dp))
+                        .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    RadioButton(
-                        selected = keepName,
-                        onClick = { keepName = true },
-                        colors = RadioButtonDefaults.colors(selectedColor = BlueColor),
-                    )
-                    Text("保留原名称（$repoName）", fontSize = 12.sp, color = c.textPrimary)
+                    Icon(Icons.Default.Info, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
+                    Text("当前归属：$owner / $repoName", fontSize = 12.sp, color = c.textSecondary)
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    RadioButton(
-                        selected = !keepName,
-                        onClick = { keepName = false },
-                        colors = RadioButtonDefaults.colors(selectedColor = Coral),
+
+                if (transferTargets.isEmpty()) {
+                    Text(
+                        "没有可用的转移目标（当前仓库已在你的唯一命名空间下）",
+                        fontSize = 12.sp, color = c.textTertiary,
                     )
-                    Text("在目标下重命名", fontSize = 12.sp, color = c.textPrimary)
-                }
-                if (!keepName) {
-                    val context = LocalContext.current
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = {
-                            newName = it
-                            nameAvailable = null
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("输入新的仓库名", color = c.textTertiary) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Coral,
-                            unfocusedBorderColor = c.border,
-                            focusedTextColor = c.textPrimary,
-                            unfocusedTextColor = c.textPrimary,
-                            focusedContainerColor = c.bgItem,
-                            unfocusedContainerColor = c.bgItem,
-                        ),
-                        trailingIcon = {
-                            when {
-                                checking -> {
-                                    CircularProgressIndicator(
-                                        color = Coral,
-                                        modifier = Modifier.size(16.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                }
-                                nameAvailable == true -> {
-                                    Icon(
-                                        Icons.Default.CheckCircle,
-                                        null,
-                                        tint = Green,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                }
-                                nameAvailable == false -> {
-                                    Icon(
-                                        Icons.Default.Error,
-                                        null,
-                                        tint = RedColor,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                }
-                            }
-                        },
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("目标：$selectedOwner / ${newName.ifBlank { repoName }}",
-                            fontSize = 11.sp,
-                            color = c.textTertiary,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (nameAvailable == false) {
-                            Text(
-                                "该名称在目标下已存在",
-                                fontSize = 11.sp,
-                                color = RedColor,
-                            )
-                        } else if (nameAvailable == true) {
-                            Text(
-                                "名称可用",
-                                fontSize = 11.sp,
-                                color = Green,
+                } else {
+                    Text("选择新的所有者", fontSize = 12.sp, color = c.textSecondary)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        transferTargets.forEach { target ->
+                            RepoTransferTargetRow(
+                                login = target.login,
+                                avatarUrl = target.avatarUrl,
+                                selected = selectedLogin == target.login,
+                                c = c,
+                                onClick = { selectedLogin = target.login },
+                                labelSuffix = target.label,
                             )
                         }
+                    }
+                }
+
+                if (transferTargets.isNotEmpty()) {
+                    Text("仓库名称", fontSize = 12.sp, color = c.textSecondary)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RadioButton(selected = keepName, onClick = { keepName = true }, colors = RadioButtonDefaults.colors(selectedColor = BlueColor))
+                        Text("保留原名称（$repoName）", fontSize = 12.sp, color = c.textPrimary)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RadioButton(selected = !keepName, onClick = { keepName = false }, colors = RadioButtonDefaults.colors(selectedColor = Coral))
+                        Text("在目标下重命名", fontSize = 12.sp, color = c.textPrimary)
+                    }
+                    if (!keepName) {
+                        OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it; nameAvailable = null },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("输入新的仓库名", color = c.textTertiary) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Coral, unfocusedBorderColor = c.border,
+                                focusedTextColor = c.textPrimary, unfocusedTextColor = c.textPrimary,
+                                focusedContainerColor = c.bgItem, unfocusedContainerColor = c.bgItem,
+                            ),
+                            trailingIcon = {
+                                when {
+                                    checking -> CircularProgressIndicator(color = Coral, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    nameAvailable == true -> Icon(Icons.Default.CheckCircle, null, tint = Green, modifier = Modifier.size(16.dp))
+                                    nameAvailable == false -> Icon(Icons.Default.Error, null, tint = RedColor, modifier = Modifier.size(16.dp))
+                                }
+                            },
+                        )
+                        Text("目标：$selectedLogin / ${newName.ifBlank { repoName }}", fontSize = 11.sp, color = c.textTertiary)
                     }
                 }
             }
@@ -533,12 +477,11 @@ fun RepoTransferDialog(
             Button(
                 onClick = {
                     val finalName = if (keepName) null else newName.trim().ifBlank { null }
-                    onConfirm(selectedOwner, finalName)
+                    onConfirm(selectedLogin, finalName)
                 },
-                enabled = selectedOwner.isNotBlank() &&
-                    (keepName || newName.isNotBlank() && nameAvailable != false),
+                enabled = selectedLogin.isNotBlank() && (keepName || newName.isNotBlank() && nameAvailable != false),
                 colors = ButtonDefaults.buttonColors(containerColor = BlueColor),
-            ) { Text("确认转移到 $selectedOwner") }
+            ) { Text(if (selectedLogin.isNotBlank()) "确认转移到 $selectedLogin" else "确认转移") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消", color = c.textSecondary) }

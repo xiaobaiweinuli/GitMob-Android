@@ -16,6 +16,7 @@ data class GmColors(
     val textPrimary: Color,
     val textSecondary: Color,
     val textTertiary: Color,
+    val isDark: Boolean,
 )
 
 val darkGmColors = GmColors(
@@ -28,6 +29,7 @@ val darkGmColors = GmColors(
     textPrimary   = Color(0xFFE8EAF0),
     textSecondary = Color(0xFF9BA3BA),
     textTertiary  = Color(0xFF5C6580),
+    isDark        = true,
 )
 
 val lightGmColors = GmColors(
@@ -40,6 +42,7 @@ val lightGmColors = GmColors(
     textPrimary   = Color(0xFF0F1117),
     textSecondary = Color(0xFF5C6475),
     textTertiary  = Color(0xFF9BA3BA),
+    isDark        = false,
 )
 
 val LocalGmColors = compositionLocalOf { darkGmColors }
