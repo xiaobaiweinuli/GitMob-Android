@@ -53,6 +53,9 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import com.gitmob.android.ui.repo.FilePatchInfo
 import com.gitmob.android.ui.repo.FileDiffSheet
+import android.net.Uri
+import com.gitmob.android.util.GitHubDestination
+import com.gitmob.android.util.GitHubUrlParser
 import com.gitmob.android.ui.common.GmDivider
 import androidx.compose.foundation.background
 import com.gitmob.android.ui.theme.Green
@@ -107,6 +110,8 @@ fun AppNavGraph(
     initialToken: String?,
     onThemeChange: (ThemeMode) -> Unit,
     onTokenConsumed: () -> Unit = {},
+    initialGitHubUrl: String? = null,
+    onGitHubUrlConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     var isReauth   by remember { mutableStateOf(false) }
@@ -166,6 +171,21 @@ fun AppNavGraph(
         ApiClient.tokenExpired.collect {
             navController.navigate(Route.Login.path) { popUpTo(0) { inclusive = true } }
         }
+    }
+
+    // 处理从其他 App 传入的 github.com 链接
+    LaunchedEffect(initialGitHubUrl, initState) {
+        val url = initialGitHubUrl ?: return@LaunchedEffect
+        if (initState !is AppInitState.Ready) return@LaunchedEffect
+        when (val dest = GitHubUrlParser.parse(Uri.parse(url))) {
+            is GitHubDestination.Repo -> navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
+            is GitHubDestination.Issue -> navController.navigate(Route.IssueDetail.go(dest.owner, dest.repo, dest.number))
+            is GitHubDestination.FileView -> navController.navigate(
+                Route.FileViewer.go(dest.owner, dest.repo, dest.path, dest.branch)
+            )
+            is GitHubDestination.Home -> { /* 不跳转，保持主页 */ }
+        }
+        onGitHubUrlConsumed()
     }
 
     NavHost(navController = navController, startDestination = startDest) {

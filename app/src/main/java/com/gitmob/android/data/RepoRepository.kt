@@ -76,15 +76,8 @@ class RepoRepository {
         val key = "$owner/$repo"
         if (!forceRefresh) repoDetailCache[key]?.takeIf { it.valid(DETAIL_TTL) }?.data?.let { return@withContext it }
 
-        // 优先用 GraphQL（一次请求获取全量概况）
-        val token = ApiClient.currentToken()
-        val graphResult = if (token != null) GraphQLClient.queryRepoOverview(token, owner, repo) else null
-        val result: GHRepo = if (graphResult != null) {
-            try { mapGraphQLToGHRepo(graphResult) }
-            catch (_: Exception) { api.getRepo(owner, repo) }
-        } else {
-            api.getRepo(owner, repo)
-        }
+        // 直接使用 REST API，确保能获取到 parent 字段
+        val result = api.getRepo(owner, repo)
         repoDetailCache[key] = Entry(result)
         result
     }
@@ -257,6 +250,10 @@ class RepoRepository {
             result
         }
 
+    suspend fun getBranch(owner: String, repo: String, branch: String): GHBranch = withContext(Dispatchers.IO) {
+        api.getBranch(owner, repo, branch)
+    }
+
     suspend fun createBranch(owner: String, repo: String, name: String, fromSha: String): GHRef =
         withContext(Dispatchers.IO) {
             api.createBranch(owner, repo, GHCreateBranchRequest("refs/heads/$name", fromSha))
@@ -290,12 +287,64 @@ class RepoRepository {
         api.getForks(owner, repo, sort = sort, page = page)
     }
 
+    /**
+     * 比较两个分支/提交的差异
+     * @param owner 上游仓库所有者
+     * @param repo 上游仓库名称
+     * @param base 上游分支
+     * @param head 复刻分支（格式：fork_owner:fork_branch）
+     */
+    suspend fun compareCommits(
+        owner: String, repo: String, base: String, head: String,
+    ): GHCompareResult = withContext(Dispatchers.IO) {
+        api.compareCommits(owner, repo, base, head)
+    }
+
+    /**
+     * 同步复刻分支与上游仓库
+     */
+    suspend fun syncForkBranch(
+        owner: String, repo: String, branch: String,
+    ): GHSyncForkResponse = withContext(Dispatchers.IO) {
+        api.syncForkBranch(owner, repo, GHSyncForkRequest(branch = branch))
+    }
+
+    suspend fun createPullRequest(
+        upstreamOwner: String, upstreamRepo: String,
+        title: String, body: String? = null,
+        head: String, base: String,
+    ): GHPullRequest = withContext(Dispatchers.IO) {
+        api.createPullRequest(
+            upstreamOwner, upstreamRepo,
+            GHCreatePullRequestRequest(title, body, head, base)
+        )
+    }
+
     suspend fun starRepo(owner: String, repo: String) = withContext(Dispatchers.IO) {
         api.starRepo(owner, repo)
     }
 
     suspend fun unstarRepo(owner: String, repo: String) = withContext(Dispatchers.IO) {
         api.unstarRepo(owner, repo)
+    }
+
+    /**
+     * 创建仓库的复刻
+     */
+    suspend fun createFork(
+        owner: String, repo: String,
+        name: String? = null,
+        organization: String? = null,
+        defaultBranchOnly: Boolean = false,
+    ): GHRepo = withContext(Dispatchers.IO) {
+        api.createFork(
+            owner, repo,
+            GHCreateForkRequest(
+                name = name,
+                organization = organization,
+                defaultBranchOnly = defaultBranchOnly
+            )
+        )
     }
 
     // ─── 服务端 Reset / Revert（通过 GitHub Git Data API，无需本地 git）──────

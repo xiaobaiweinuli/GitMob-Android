@@ -117,6 +117,10 @@ fun RepoDetailScreen(
     
     var showDeleteFileDialog by remember { mutableStateOf(false) }
     var renameFileNewName by remember { mutableStateOf("") }
+    
+    // 复刻仓库同步状态弹窗
+    var showForkSyncDialog by remember { mutableStateOf(false) }
+    
     val context = LocalContext.current
 
     // ── 上传功能状态 ──────────────────────────────────────────────────────────
@@ -203,10 +207,21 @@ fun RepoDetailScreen(
                     IconButton(onClick = handleTopBarBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = c.textSecondary) }
                 },
                 actions = {
+                    val isOwnRepo = state.repo?.owner?.login == state.userLogin
                     IconButton(onClick = vm::toggleStar) {
                         Icon(
                             if (state.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
                             null, tint = if (state.isStarred) Yellow else c.textSecondary,
+                        )
+                    }
+                    IconButton(
+                        onClick = { if (!isOwnRepo) vm.showCreateForkDialog() },
+                        enabled = !isOwnRepo
+                    ) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = "复刻仓库",
+                            tint = if (isOwnRepo) c.textTertiary else c.textSecondary,
                         )
                     }
                     IconButton(onClick = { vm.loadAll(forceRefresh = true) }) {
@@ -401,6 +416,21 @@ fun RepoDetailScreen(
                 Text(state.currentBranch, fontSize = 13.sp, color = BlueColor,
                     fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f))
+                // 如果是复刻仓库且有落后的提交，显示同步按钮
+                if (state.repo?.fork == true && state.forkBehindBy > 0) {
+                    IconButton(
+                        onClick = { showForkSyncDialog = true },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Sync,
+                            contentDescription = "同步上游仓库",
+                            tint = Coral,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
                 Text("${state.branches.size} 个分支", fontSize = 11.sp, color = c.textTertiary)
                 Icon(Icons.Default.ExpandMore, null, tint = c.textTertiary, modifier = Modifier.size(16.dp))
             }
@@ -533,6 +563,463 @@ fun RepoDetailScreen(
             onDismiss = { showDeleteDialog = false },
         )
     }
+    
+    // 复刻仓库同步状态弹窗
+    if (showForkSyncDialog) {
+        val hasConflict = state.forkAheadBy > 0 && state.forkBehindBy > 0
+        val isAnyOperationInProgress = state.forkSyncing || state.forkDiscardingCommits || state.forkCreatingPR
+        val isAnySuccess = state.forkSyncSuccess || state.forkDiscardSuccess || state.forkCreatePRSuccess
+        
+        AlertDialog(
+            onDismissRequest = { showForkSyncDialog = false },
+            containerColor = c.bgCard,
+            title = { Text("同步上游仓库", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // 状态信息
+                    if (state.forkAheadBy == 0 && state.forkBehindBy == 0) {
+                        Text(
+                            "此分支已同步",
+                            color = Green,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                "此分支",
+                                color = c.textPrimary,
+                                fontSize = 14.sp
+                            )
+                            if (state.forkAheadBy > 0) {
+                                Text(
+                                    "领先",
+                                    color = c.textPrimary,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    "${state.forkAheadBy} 个提交",
+                                    color = BlueColor,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier
+                                        .background(BlueColor.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                        .clickable { vm.showForkSyncCommits(ForkSyncCommitsType.AHEAD) }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            if (state.forkBehindBy > 0) {
+                                Text(
+                                    "落后",
+                                    color = c.textPrimary,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    "${state.forkBehindBy} 个提交",
+                                    color = Coral,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier
+                                        .background(CoralDim, RoundedCornerShape(4.dp))
+                                        .clickable { vm.showForkSyncCommits(ForkSyncCommitsType.BEHIND) }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(4.dp))
+                    
+                    // 操作状态显示
+                    if (state.forkSyncing) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                color = Coral,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("正在同步...", color = c.textSecondary, fontSize = 14.sp)
+                        }
+                    }
+                    
+                    if (state.forkDiscardingCommits) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                color = Yellow,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("正在丢弃提交并同步...", color = c.textSecondary, fontSize = 14.sp)
+                        }
+                    }
+                    
+                    if (state.forkCreatingPR) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                color = BlueColor,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("正在创建拉取请求...", color = c.textSecondary, fontSize = 14.sp)
+                        }
+                    }
+                    
+                    // 成功状态
+                    if (state.forkSyncSuccess) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Green,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("同步成功！", color = Green, fontSize = 14.sp)
+                        }
+                        state.forkSyncResponse?.let { resp ->
+                            resp.message?.let { 
+                                Text(it, color = c.textSecondary, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                    
+                    if (state.forkDiscardSuccess) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Green,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("已丢弃提交并同步成功！", color = Green, fontSize = 14.sp)
+                        }
+                    }
+                    
+                    if (state.forkCreatePRSuccess && state.forkCreatedPR != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Green,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("拉取请求创建成功！", color = Green, fontSize = 14.sp)
+                        }
+                        Text(
+                            "#${state.forkCreatedPR!!.number} ${state.forkCreatedPR!!.title}",
+                            color = c.textSecondary,
+                            fontSize = 13.sp
+                        )
+                    }
+                    
+                    // 错误状态
+                    state.forkSyncError?.let { error ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Error,
+                                contentDescription = null,
+                                tint = RedColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(error, color = RedColor, fontSize = 14.sp)
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(4.dp))
+                    
+                    // 如果有分歧，显示警告和两个选项
+                    if (hasConflict && !isAnyOperationInProgress && !isAnySuccess) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = YellowDim),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Icon(
+                                        Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = Yellow,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        "检测到代码分歧。您的仓库既有自己的提交，又落后于上游。",
+                                        color = c.textSecondary,
+                                        fontSize = 13.sp,
+                                        lineHeight = 16.sp
+                                    )
+                                }
+                            }
+                            
+                            // 选项1：丢弃自己提交
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = c.bgItem),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = null,
+                                            tint = Yellow,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            "选项一：丢弃自己提交后同步",
+                                            color = c.textPrimary,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                    Text(
+                                        "⚠ 此操作会永久丢弃您的 ${state.forkAheadBy} 个提交，然后同步上游的 ${state.forkBehindBy} 个提交。",
+                                        color = c.textSecondary,
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp
+                                    )
+                                    Button(
+                                        onClick = { vm.discardCommitsAndSync() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Yellow),
+                                        modifier = Modifier.align(Alignment.End)
+                                    ) {
+                                        Text("丢弃并同步", color = Color.Black)
+                                    }
+                                }
+                            }
+                            
+                            // 选项2：创建拉取请求
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = c.bgItem),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Outbound,
+                                            contentDescription = null,
+                                            tint = BlueColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            "选项二：创建拉取请求",
+                                            color = c.textPrimary,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                    Text(
+                                        "向上游仓库创建拉取请求，保留您的 ${state.forkAheadBy} 个提交。上游仓库维护者可以选择是否合并您的变更。",
+                                        color = c.textSecondary,
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp
+                                    )
+                                    Button(
+                                        onClick = { vm.createPullRequest() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BlueColor),
+                                        modifier = Modifier.align(Alignment.End)
+                                    ) {
+                                        Text("创建 PR", color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                    } else if (!isAnyOperationInProgress && !isAnySuccess && state.forkBehindBy > 0) {
+                        // 只是落后，显示普通同步
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = c.bgItem),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "您可以直接同步上游的 ${state.forkBehindBy} 个提交。",
+                                    color = c.textSecondary,
+                                    fontSize = 13.sp
+                                )
+                                Button(
+                                    onClick = { vm.syncForkBranch() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text("同步", color = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showForkSyncDialog = false }
+                ) {
+                    Text("关闭", color = c.textSecondary)
+                }
+            }
+        )
+    }
+
+    // 显示同步提交列表的Sheet
+    if (state.showForkSyncCommits) {
+        val repo = state.repo
+        val parent = repo?.parent
+        val compareResult = when (state.forkSyncCommitsType) {
+            ForkSyncCommitsType.AHEAD -> state.forkSyncCompareResult
+            ForkSyncCommitsType.BEHIND -> state.forkSyncReverseCompareResult
+        }
+        if (compareResult != null) {
+            val title = when (state.forkSyncCommitsType) {
+                ForkSyncCommitsType.AHEAD -> "您的提交 (${state.forkAheadBy} 个)"
+                ForkSyncCommitsType.BEHIND -> "上游提交 (${state.forkBehindBy} 个)"
+            }
+            val commits = compareResult.commits
+            val detailOwner = when (state.forkSyncCommitsType) {
+                ForkSyncCommitsType.AHEAD -> owner
+                ForkSyncCommitsType.BEHIND -> parent?.owner?.login ?: owner
+            }
+            val detailRepo = when (state.forkSyncCommitsType) {
+                ForkSyncCommitsType.AHEAD -> repoName
+                ForkSyncCommitsType.BEHIND -> parent?.name ?: repoName
+            }
+
+        ModalBottomSheet(
+            onDismissRequest = { vm.hideForkSyncCommits() },
+            containerColor = c.bgCard,
+            dragHandle = { BottomSheetDefaults.DragHandle(color = c.border) },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 标题
+                Text(
+                    title,
+                    color = c.textPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+
+                GmDivider()
+
+                if (commits.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "暂无提交记录",
+                            color = c.textTertiary,
+                            fontSize = 13.sp
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.heightIn(max = 500.dp)
+                    ) {
+                        items(commits, key = { it.sha }) { commit ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(c.bgCard, RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        vm.hideForkSyncCommits()
+                                        vm.loadForkSyncCommitDetail(
+                                            detailOwner,
+                                            detailRepo,
+                                            commit.sha
+                                        )
+                                    }
+                                    .padding(12.dp),
+                            ) {
+                                Text(
+                                    commit.commit.message.lines().first(),
+                                    fontSize = 13.sp,
+                                    color = c.textPrimary,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 2
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (commit.author != null) {
+                                        AvatarImage(commit.author.avatarUrl, 20)
+                                    }
+                                    Text(
+                                        commit.commit.author.name,
+                                        fontSize = 11.sp,
+                                        color = c.textSecondary
+                                    )
+                                    Spacer(Modifier.weight(1f))
+                                    Text(
+                                        commit.shortSha,
+                                        fontSize = 10.sp,
+                                        color = Coral,
+                                        fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier
+                                            .background(CoralDim, RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                    Text(
+                                        repoFormatDate(commit.commit.author.date),
+                                        fontSize = 11.sp,
+                                        color = c.textTertiary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // 关闭按钮
+                Button(
+                    onClick = { vm.hideForkSyncCommits() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = c.bgItem)
+                ) {
+                    Text("关闭", color = c.textSecondary)
+                }
+            }
+        }
+        }
+    }
+
     if (showVisibilityDialog && repoForDialogs != null) {
         RepoVisibilityDialog(
             repo = repoForDialogs,
@@ -558,6 +1045,154 @@ fun RepoDetailScreen(
             },
             onDismiss = { showTransferDialog = false },
         )
+    }
+
+    if (state.showCreateForkDialog) {
+        data class ForkTarget(val login: String, val avatarUrl: String?, val label: String)
+        
+        val forkTargets = remember(state.userLogin, state.userAvatar, state.userOrgs) {
+            buildList {
+                if (state.userLogin.isNotBlank()) {
+                    add(ForkTarget(state.userLogin, state.userAvatar, "（你）"))
+                }
+                state.userOrgs.forEach { org ->
+                    add(ForkTarget(org.login, org.avatarUrl, ""))
+                }
+            }
+        }
+        
+        var selectedTarget by remember { mutableStateOf(forkTargets.firstOrNull()?.login.orEmpty()) }
+        var forkName by remember { mutableStateOf(vm.repoName) }
+        var forkDefaultBranchOnly by remember { mutableStateOf(false) }
+        
+        AlertDialog(
+            onDismissRequest = { vm.hideCreateForkDialog() },
+            containerColor = c.bgCard,
+            title = { Text("复刻仓库", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        "将 ${vm.owner}/${vm.repoName} 复刻到",
+                        color = c.textSecondary,
+                        fontSize = 14.sp
+                    )
+                    
+                    Text("选择所有者", fontSize = 12.sp, color = c.textSecondary)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        forkTargets.forEach { target ->
+                            val isSelected = selectedTarget == target.login
+                            val bg = if (isSelected) CoralDim else Color.Transparent
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(bg, RoundedCornerShape(8.dp))
+                                    .clickable { selectedTarget = target.login }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                coil3.compose.AsyncImage(
+                                    model = target.avatarUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(c.bgItem),
+                                )
+                                Text(
+                                    "${target.login}${target.label}",
+                                    color = if (isSelected) Coral else c.textPrimary,
+                                    fontSize = 13.sp,
+                                )
+                                if (isSelected) {
+                                    Spacer(Modifier.weight(1f))
+                                    Icon(Icons.Default.Check, null, tint = Coral, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                    
+                    OutlinedTextField(
+                        value = forkName,
+                        onValueChange = { forkName = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("仓库名称") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Coral,
+                            unfocusedBorderColor = c.border,
+                            focusedTextColor = c.textPrimary,
+                            unfocusedTextColor = c.textPrimary,
+                            focusedContainerColor = c.bgItem,
+                            unfocusedContainerColor = c.bgItem,
+                            focusedLabelColor = Coral,
+                            unfocusedLabelColor = c.textTertiary,
+                        ),
+                    )
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Checkbox(
+                            checked = forkDefaultBranchOnly,
+                            onCheckedChange = { forkDefaultBranchOnly = it },
+                            colors = CheckboxDefaults.colors(checkedColor = Coral)
+                        )
+                        Text(
+                            "仅复制 ${state.repo?.defaultBranch ?: "main"} 分支",
+                            color = c.textPrimary,
+                            fontSize = 14.sp
+                        )
+                    }
+                    
+                    if (state.createForkError != null) {
+                        Text(
+                            state.createForkError!!,
+                            color = RedColor,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val organization = if (selectedTarget == state.userLogin) null else selectedTarget
+                        vm.createFork(
+                            name = forkName,
+                            organization = organization,
+                            defaultBranchOnly = forkDefaultBranchOnly
+                        )
+                    },
+                    enabled = selectedTarget.isNotBlank() && forkName.isNotBlank() && !state.creatingFork,
+                    colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                ) {
+                    if (state.creatingFork) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("复刻到 $selectedTarget", color = Color.White)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { vm.hideCreateForkDialog() }) {
+                    Text("取消", color = c.textSecondary)
+                }
+            },
+        )
+        
+        LaunchedEffect(state.createForkSuccess) {
+            if (state.createForkSuccess) {
+                vm.hideCreateForkDialog()
+            }
+        }
     }
 
     if (showCreateFileDialog) {

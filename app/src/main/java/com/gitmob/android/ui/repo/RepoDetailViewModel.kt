@@ -78,10 +78,213 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             loadReleases()
             loadWorkflows()
             loadWorkflowRuns(null)
+            // 如果是复刻仓库，检查同步状态
+            if (r.fork) {
+                checkForkSyncStatus()
+            }
         } catch (e: Exception) {
             _state.update { it.copy(loading = false, error = e.message ?: "加载失败") }
         }
         } // loadAllJob
+    }
+    
+    /**
+     * 检查复刻仓库与上游仓库的同步状态
+     */
+    fun checkForkSyncStatus() = viewModelScope.launch {
+        val repo = _state.value.repo ?: return@launch
+        if (!repo.fork) return@launch
+        val parent = repo.parent ?: return@launch
+        
+        _state.update { it.copy(forkSyncLoading = true) }
+        
+        try {
+            val upstreamOwner = parent.owner.login
+            val upstreamRepo = parent.name
+            val upstreamBranch = parent.defaultBranch
+            val forkBranch = _state.value.currentBranch
+            
+            // 正向比较：upstream...fork，获取fork领先的提交
+            val compareResult = repository.compareCommits(
+                upstreamOwner, upstreamRepo,
+                upstreamBranch,
+                "$owner:$forkBranch"
+            )
+            
+            // 反向比较：fork...upstream，获取fork落后的提交（即upstream领先的提交）
+            val reverseCompareResult = repository.compareCommits(
+                owner, repoName,
+                forkBranch,
+                "$upstreamOwner:$upstreamBranch"
+            )
+            
+            _state.update { 
+                it.copy(
+                    forkSyncLoading = false,
+                    forkSyncStatus = compareResult.status,
+                    forkAheadBy = compareResult.aheadBy,
+                    forkBehindBy = compareResult.behindBy,
+                    forkSyncCompareResult = compareResult,
+                    forkSyncReverseCompareResult = reverseCompareResult
+                ) 
+            }
+        } catch (e: Exception) {
+            _state.update { 
+                it.copy(
+                    forkSyncLoading = false,
+                    forkSyncStatus = null,
+                    forkAheadBy = 0,
+                    forkBehindBy = 0,
+                    forkSyncCompareResult = null,
+                    forkSyncReverseCompareResult = null
+                ) 
+            }
+        }
+    }
+    
+    /**
+     * 使用API同步复刻分支与上游仓库
+     */
+    fun syncForkBranch() = viewModelScope.launch {
+        val repo = _state.value.repo ?: return@launch
+        if (!repo.fork) return@launch
+        
+        _state.update { 
+            it.copy(
+                forkSyncing = true,
+                forkSyncError = null,
+                forkSyncSuccess = false,
+                forkSyncResponse = null
+            ) 
+        }
+        
+        try {
+            val response = repository.syncForkBranch(owner, repoName, _state.value.currentBranch)
+            
+            _state.update { 
+                it.copy(
+                    forkSyncing = false,
+                    forkSyncSuccess = true,
+                    forkSyncResponse = response
+                ) 
+            }
+            
+            // 同步成功后，重新检查同步状态并刷新仓库信息
+            checkForkSyncStatus()
+            loadAll(forceRefresh = true)
+            
+        } catch (e: Exception) {
+            _state.update { 
+                it.copy(
+                    forkSyncing = false,
+                    forkSyncError = e.message ?: "同步失败"
+                ) 
+            }
+        }
+    }
+    
+    /**
+     * 丢弃自己的提交后同步
+     */
+    fun discardCommitsAndSync() = viewModelScope.launch {
+        val repo = _state.value.repo ?: return@launch
+        val parent = repo.parent ?: return@launch
+        if (!repo.fork) return@launch
+        
+        _state.update { 
+            it.copy(
+                forkDiscardingCommits = true,
+                forkDiscardSuccess = false,
+                forkSyncError = null
+            ) 
+        }
+        
+        try {
+            val upstreamOwner = parent.owner.login
+            val upstreamRepo = parent.name
+            val upstreamBranch = parent.defaultBranch
+            val currentBranch = _state.value.currentBranch
+            
+            // 1. 先获取上游分支的最新 commit
+            val upstreamBranchData = repository.getBranch(upstreamOwner, upstreamRepo, upstreamBranch)
+            
+            // 2. 强制重置当前分支到上游的 commit
+            repository.resetBranchToCommit(
+                owner, repoName, currentBranch,
+                upstreamBranchData.commit.sha
+            )
+            
+            _state.update { 
+                it.copy(
+                    forkDiscardingCommits = false,
+                    forkDiscardSuccess = true
+                ) 
+            }
+            
+            // 3. 重新检查同步状态并刷新仓库信息
+            checkForkSyncStatus()
+            loadAll(forceRefresh = true)
+            
+        } catch (e: Exception) {
+            _state.update { 
+                it.copy(
+                    forkDiscardingCommits = false,
+                    forkDiscardSuccess = false,
+                    forkSyncError = e.message ?: "操作失败"
+                ) 
+            }
+        }
+    }
+    
+    /**
+     * 创建拉取请求
+     */
+    fun createPullRequest() = viewModelScope.launch {
+        val repo = _state.value.repo ?: return@launch
+        val parent = repo.parent ?: return@launch
+        if (!repo.fork) return@launch
+        
+        _state.update { 
+            it.copy(
+                forkCreatingPR = true,
+                forkCreatePRSuccess = false,
+                forkCreatedPR = null,
+                forkSyncError = null
+            ) 
+        }
+        
+        try {
+            val upstreamOwner = parent.owner.login
+            val upstreamRepo = parent.name
+            val upstreamBranch = parent.defaultBranch
+            val currentBranch = _state.value.currentBranch
+            
+            val pr = repository.createPullRequest(
+                upstreamOwner, upstreamRepo,
+                "同步 ${repo.owner.login}/${currentBranch} 到上游",
+                "此 PR 用于同步 ${repo.owner.login}/${repoName} 的 ${currentBranch} 分支到 ${upstreamOwner}/${upstreamRepo} 的 ${upstreamBranch} 分支。\n\n自动创建",
+                "${repo.owner.login}:${currentBranch}",
+                upstreamBranch
+            )
+            
+            _state.update { 
+                it.copy(
+                    forkCreatingPR = false,
+                    forkCreatePRSuccess = true,
+                    forkCreatedPR = pr
+                ) 
+            }
+            
+        } catch (e: Exception) {
+            _state.update { 
+                it.copy(
+                    forkCreatingPR = false,
+                    forkCreatePRSuccess = false,
+                    forkCreatedPR = null,
+                    forkSyncError = e.message ?: "创建 PR 失败"
+                ) 
+            }
+        }
     }
 
     fun loadContents(path: String, ref: String? = null, forceRefresh: Boolean = false) {
@@ -501,12 +704,83 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun clearCommitDetail() = _state.update { it.copy(selectedCommit = null, selectedFilePatch = null) }
 
+    /**
+     * 加载同步提交列表中提交的详情（支持加载上游仓库的提交）
+     */
+    fun loadForkSyncCommitDetail(commitOwner: String, commitRepo: String, sha: String) = viewModelScope.launch {
+        _state.update { it.copy(commitDetailLoading = true) }
+        try {
+            val detail = repository.getCommitDetail(commitOwner, commitRepo, sha)
+            _state.update { it.copy(selectedCommit = detail, commitDetailLoading = false) }
+        } catch (e: Exception) {
+            _state.update { it.copy(commitDetailLoading = false, toast = "加载详情失败") }
+        }
+    }
+
     fun openFilePatch(info: FilePatchInfo) =
         _state.update { it.copy(selectedFilePatch = info) }
 
     fun closeFilePatch() = _state.update { it.copy(selectedFilePatch = null) }
     fun clearToast() = _state.update { it.copy(toast = null) }
     fun clearGitOpResult() = _state.update { it.copy(gitOpResult = null) }
+
+    // 复刻仓库相关方法
+    fun showCreateForkDialog() = _state.update {
+        it.copy(
+            showCreateForkDialog = true,
+            createForkError = null,
+            createForkSuccess = false
+        )
+    }
+
+    fun hideCreateForkDialog() = _state.update {
+        it.copy(
+            showCreateForkDialog = false,
+            createForkError = null,
+            createForkSuccess = false
+        )
+    }
+
+    /**
+     * 创建复刻仓库
+     */
+    fun createFork(
+        name: String? = null,
+        organization: String? = null,
+        defaultBranchOnly: Boolean = false,
+    ) = viewModelScope.launch {
+        _state.update {
+            it.copy(
+                creatingFork = true,
+                createForkError = null,
+                createForkSuccess = false
+            )
+        }
+
+        try {
+            val result = repository.createFork(
+                owner = owner,
+                repo = repoName,
+                name = name?.ifBlank { null },
+                organization = organization?.ifBlank { null },
+                defaultBranchOnly = defaultBranchOnly
+            )
+            _state.update {
+                it.copy(
+                    creatingFork = false,
+                    createForkSuccess = true,
+                    toast = "正在创建复刻，您稍后可以在您的仓库中查看"
+                )
+            }
+        } catch (e: Exception) {
+            _state.update {
+                it.copy(
+                    creatingFork = false,
+                    createForkError = e.message ?: "创建复刻失败"
+                )
+            }
+        }
+    }
     
     // 文件历史相关方法
     fun showFileHistory(content: GHContent) = viewModelScope.launch {
@@ -1281,6 +1555,18 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
      * 隐藏复刻仓库列表弹窗
      */
     fun hideForksSheet() = _state.update { it.copy(showForksSheet = false) }
+
+    /**
+     * 显示同步提交列表
+     */
+    fun showForkSyncCommits(type: ForkSyncCommitsType) {
+        _state.update { it.copy(showForkSyncCommits = true, forkSyncCommitsType = type) }
+    }
+
+    /**
+     * 隐藏同步提交列表
+     */
+    fun hideForkSyncCommits() = _state.update { it.copy(showForkSyncCommits = false) }
 
     companion object {
         fun factory(owner: String, repo: String): androidx.lifecycle.ViewModelProvider.Factory =

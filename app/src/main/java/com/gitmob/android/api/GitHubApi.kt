@@ -42,6 +42,13 @@ interface GitHubApi {
         @Path("repo") repo: String,
     ): Response<Unit>
 
+    @POST("repos/{owner}/{repo}/forks")
+    suspend fun createFork(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Body body: GHCreateForkRequest,
+    ): GHRepo
+
     // ── Contents ──
     @GET("repos/{owner}/{repo}/contents/{path}")
     suspend fun getContents(
@@ -101,6 +108,13 @@ interface GitHubApi {
         @Query("per_page") perPage: Int = 100,
     ): List<GHBranch>
 
+    @GET("repos/{owner}/{repo}/branches/{branch}")
+    suspend fun getBranch(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Path("branch") branch: String,
+    ): GHBranch
+
     @POST("repos/{owner}/{repo}/git/refs")
     suspend fun createBranch(
         @Path("owner") owner: String,
@@ -115,6 +129,16 @@ interface GitHubApi {
         @Path("branch") branch: String,
     ): Response<Unit>
 
+    /**
+     * 同步复刻分支与上游仓库
+     */
+    @POST("repos/{owner}/{repo}/merge-upstream")
+    suspend fun syncForkBranch(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Body body: GHSyncForkRequest,
+    ): GHSyncForkResponse
+
     // ── Pull Requests ──
     @GET("repos/{owner}/{repo}/pulls")
     suspend fun getPullRequests(
@@ -123,6 +147,13 @@ interface GitHubApi {
         @Query("state") state: String = "open",
         @Query("per_page") perPage: Int = 30,
     ): List<GHPullRequest>
+
+    @POST("repos/{owner}/{repo}/pulls")
+    suspend fun createPullRequest(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Body body: GHCreatePullRequestRequest,
+    ): GHPullRequest
 
     // ── Issues ──
     @GET("repos/{owner}/{repo}/issues")
@@ -541,4 +572,13 @@ interface GitHubApi {
         @Query("per_page") perPage: Int = 50,
         @Query("page") page: Int = 1,
     ): List<GHRepo>
+    
+    // ── Compare ──
+    @GET("repos/{owner}/{repo}/compare/{base}...{head}")
+    suspend fun compareCommits(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Path("base") base: String,
+        @Path("head") head: String,
+    ): GHCompareResult
 }

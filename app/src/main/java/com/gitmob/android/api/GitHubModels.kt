@@ -37,6 +37,7 @@ data class GHRepo(
     val archived: Boolean = false,
     @SerializedName("is_template") val isTemplate: Boolean = false,
     @SerializedName("mirror_url") val mirrorUrl: String? = null,
+    val parent: GHRepo? = null,
 )
 
 data class GHOwner(
@@ -134,6 +135,13 @@ data class GHPullRequest(
     val user: GHOwner,
     val head: GHPRBranch,
     val base: GHPRBranch,
+)
+
+data class GHCreatePullRequestRequest(
+    val title: String,
+    val body: String? = null,
+    val head: String,
+    val base: String,
 )
 
 data class GHPRBranch(val label: String, val ref: String, val sha: String)
@@ -283,6 +291,24 @@ data class GHTopics(
 // ── Branch rename ──
 data class GHRenameBranchRequest(
     @SerializedName("new_name") val newName: String,
+)
+
+// ── Sync a fork branch ──
+data class GHSyncForkRequest(
+    val branch: String,
+)
+
+data class GHSyncForkResponse(
+    val message: String? = null,
+    val merge_type: String? = null,
+    val base_branch: String? = null,
+)
+
+// ── Create Fork ──
+data class GHCreateForkRequest(
+    @SerializedName("organization") val organization: String? = null,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("default_branch_only") val defaultBranchOnly: Boolean? = null,
 )
 
 // ── Commit detail (files) ──
@@ -644,3 +670,20 @@ enum class ForkSortBy(val displayName: String, val apiValue: String) {
     OLDEST("最早", "oldest"),
     STARGAZERS("最多星标", "stargazers");
 }
+
+/**
+ * GitHub Compare API 响应数据模型
+ * 用于比较两个分支/提交的差异
+ */
+data class GHCompareResult(
+    val url: String,
+    @SerializedName("html_url") val htmlUrl: String,
+    @SerializedName("base_commit") val baseCommit: GHCommit,
+    @SerializedName("merge_base_commit") val mergeBaseCommit: GHCommit,
+    val status: String,
+    @SerializedName("ahead_by") val aheadBy: Int,
+    @SerializedName("behind_by") val behindBy: Int,
+    @SerializedName("total_commits") val totalCommits: Int,
+    val commits: List<GHCommit>,
+    val files: List<GHCommitFile>?,
+)

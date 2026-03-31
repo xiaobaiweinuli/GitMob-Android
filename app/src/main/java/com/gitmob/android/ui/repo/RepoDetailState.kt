@@ -115,7 +115,37 @@ data class RepoDetailState(
     val selectedFileForHistory: GHContent? = null,
     val selectedCommitForFileHistory: GHCommitFull? = null,
     val fileHistoryCommitDetailLoading: Boolean = false,
+    // 复刻仓库同步状态
+    val forkSyncLoading: Boolean = false,
+    val forkSyncStatus: String? = null,
+    val forkAheadBy: Int = 0,
+    val forkBehindBy: Int = 0,
+    val forkSyncCompareResult: GHCompareResult? = null,
+    val forkSyncReverseCompareResult: GHCompareResult? = null,
+    // 同步操作状态
+    val forkSyncing: Boolean = false,
+    val forkSyncError: String? = null,
+    val forkSyncSuccess: Boolean = false,
+    val forkSyncResponse: GHSyncForkResponse? = null,
+    val forkDiscardingCommits: Boolean = false,
+    val forkDiscardSuccess: Boolean = false,
+    val forkCreatingPR: Boolean = false,
+    val forkCreatePRSuccess: Boolean = false,
+    val forkCreatedPR: GHPullRequest? = null,
+    // 同步提交列表显示
+    val showForkSyncCommits: Boolean = false,
+    val forkSyncCommitsType: ForkSyncCommitsType = ForkSyncCommitsType.AHEAD,
+    // 复刻仓库
+    val showCreateForkDialog: Boolean = false,
+    val creatingFork: Boolean = false,
+    val createForkError: String? = null,
+    val createForkSuccess: Boolean = false,
 )
+
+enum class ForkSyncCommitsType {
+    AHEAD,
+    BEHIND,
+}
 
 /**
  * 复刻列表排序方式

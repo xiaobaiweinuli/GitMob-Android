@@ -12,6 +12,7 @@ import com.gitmob.android.auth.ThemeMode
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.ui.nav.AppNavGraph
 import com.gitmob.android.ui.theme.GitMobTheme
+import com.gitmob.android.util.GitHubUrlParser
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -23,6 +24,9 @@ class MainActivity : ComponentActivity() {
      * onNewIntent 设置新值 → Compose 自动重组 → LoginScreen.LaunchedEffect 触发。
      */
     private var pendingToken by mutableStateOf<String?>(null)
+
+    /** 从其他 App 传入的 github.com 链接，由 NavGraph 解析跳转 */
+    private var pendingGitHubUrl by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -48,6 +52,8 @@ class MainActivity : ComponentActivity() {
                         lifecycleScope.launch { tokenStorage.setThemeMode(mode) }
                     },
                     onTokenConsumed = { pendingToken = null },
+                    initialGitHubUrl = pendingGitHubUrl,
+                    onGitHubUrlConsumed = { pendingGitHubUrl = null },
                 )
             }
         }
@@ -61,12 +67,17 @@ class MainActivity : ComponentActivity() {
 
     private fun handleDeepLink(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (uri.scheme == "gitmob" && uri.host == "oauth") {
-            val token = uri.getQueryParameter("token")
-            val error = uri.getQueryParameter("error")
-            when {
-                !token.isNullOrBlank() -> pendingToken = token   // 触发 Compose 重组
-                !error.isNullOrBlank() -> pendingToken = "ERROR:$error"
+        when {
+            uri.scheme == "gitmob" && uri.host == "oauth" -> {
+                val token = uri.getQueryParameter("token")
+                val error = uri.getQueryParameter("error")
+                when {
+                    !token.isNullOrBlank() -> pendingToken = token   // 触发 Compose 重组
+                    !error.isNullOrBlank() -> pendingToken = "ERROR:$error"
+                }
+            }
+            uri.scheme == "https" && uri.host == "github.com" -> {
+                pendingGitHubUrl = uri.toString()
             }
         }
     }

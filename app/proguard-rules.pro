@@ -61,7 +61,3 @@
 -keep class coil3.** { *; }
 -keep class coil3.svg.** { *; }
 -keep class coil3.network.** { *; }
-
-# mikepenz multiplatform-markdown-renderer
--keep class com.mikepenz.markdown.** { *; }
--dontwarn com.mikepenz.markdown.**
