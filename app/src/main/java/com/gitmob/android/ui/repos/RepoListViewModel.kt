@@ -26,7 +26,7 @@ data class RepoListState(
     val userOrgs: List<GHOrg> = emptyList(),
     val currentContext: OrgContext? = null,   // null = 用户自己
     val searchQuery: String = "",
-    val filterPrivate: Boolean? = null,
+    val filterState: RepoFilterState = RepoFilterState(),
     val toast: String? = null,
 )
 
@@ -37,11 +37,7 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
     val state = _state.asStateFlow()
 
     val filteredRepos = _state.map { s ->
-        s.repos.filter { r ->
-            (s.searchQuery.isEmpty() || r.name.contains(s.searchQuery, ignoreCase = true) ||
-                (r.description?.contains(s.searchQuery, ignoreCase = true) == true)) &&
-            (s.filterPrivate == null || r.private == s.filterPrivate)
-        }
+        filterAndSortRepos(s.repos, s.searchQuery, s.filterState)
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     init {
@@ -127,7 +123,26 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearToast() = _state.update { it.copy(toast = null) }
     fun setSearch(q: String) = _state.update { it.copy(searchQuery = q) }
-    fun setFilter(private: Boolean?) = _state.update { it.copy(filterPrivate = private) }
+    
+    /** 设置仓库类型筛选 */
+    fun setTypeFilter(filter: RepoTypeFilter) = _state.update { 
+        it.copy(filterState = it.filterState.copy(typeFilter = filter)) 
+    }
+    
+    /** 设置排序方式 */
+    fun setSortBy(sortBy: RepoSortBy) = _state.update { 
+        it.copy(filterState = it.filterState.copy(sortBy = sortBy)) 
+    }
+    
+    /** 设置语言筛选 */
+    fun setLanguageFilter(language: String?) = _state.update { 
+        it.copy(filterState = it.filterState.copy(languageFilter = language)) 
+    }
+    
+    /** 清除所有筛选 */
+    fun clearFilters() = _state.update { 
+        it.copy(filterState = RepoFilterState()) 
+    }
 }
 
 private fun thumbUrl(url: String?): String? {

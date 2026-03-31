@@ -59,9 +59,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import androidx.compose.ui.draw.clip
-import com.mikepenz.markdown.m3.Markdown
-import com.mikepenz.markdown.m3.markdownColor
-import com.mikepenz.markdown.m3.markdownTypography
+
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Article
@@ -116,6 +114,7 @@ fun RepoDetailScreen(
     var selectedFileForMenu by remember { mutableStateOf<GHContent?>(null) }
     
     var showRenameFileDialog by remember { mutableStateOf(false) }
+    
     var showDeleteFileDialog by remember { mutableStateOf(false) }
     var renameFileNewName by remember { mutableStateOf("") }
     val context = LocalContext.current
@@ -377,8 +376,8 @@ fun RepoDetailScreen(
                     Spacer(Modifier.height(8.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    StatItem(Icons.Default.Star, "${repo.stars}", Yellow)
-                    StatItem(Icons.Default.Share, "${repo.forks}", c.textSecondary)
+                    StatItem(Icons.Default.Star, "${repo.stars}", Yellow, onClick = { vm.showStargazersSheet() })
+                    StatItem(Icons.Default.Share, "${repo.forks}", c.textSecondary, onClick = { vm.showForksSheet() })
                     StatItem(Icons.Default.Warning, "${repo.openIssues}", RedColor)
                     Spacer(Modifier.weight(1f))
                     if (!repo.language.isNullOrBlank()) {
@@ -462,12 +461,7 @@ fun RepoDetailScreen(
                         context.startActivity(Intent.createChooser(intent, "分享"))
                     },
                     onFileHistory = { content ->
-                        val url = "https://github.com/$owner/$repoName/commits/${state.currentBranch}/${content.path}"
-                        val intent = Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse(url)
-                        )
-                        context.startActivity(intent)
+                        vm.showFileHistory(content)
                     },
                 )
                 1 -> CommitsTab(state, c, onCommitClick = { vm.loadCommitDetail(it.sha) },
@@ -788,13 +782,235 @@ fun RepoDetailScreen(
     state.selectedCommit?.let { commit ->
         CommitDetailSheet(commit = commit, c = c, vm = vm, onDismiss = vm::clearCommitDetail)
     }
+    // 星标用户列表 Modal
+    if (state.showStargazersSheet) {
+        StargazersSheet(c = c, vm = vm, onDismiss = vm::hideStargazersSheet)
+    }
+    // 复刻仓库列表 Modal
+    if (state.showForksSheet) {
+        ForksSheet(c = c, vm = vm, onDismiss = vm::hideForksSheet)
+    }
+    
+    // 文件历史弹窗
+    if (state.showFileHistorySheet && state.selectedFileForHistory != null) {
+        val selectedFilePatchForFileHistory = remember { mutableStateOf<FilePatchInfo?>(null) }
+        
+        selectedFilePatchForFileHistory.value?.let { info ->
+            FileDiffSheet(info = info, c = c, vm = vm, onDismiss = { selectedFilePatchForFileHistory.value = null })
+        }
+        
+        ModalBottomSheet(
+            onDismissRequest = { vm.hideFileHistory() },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = c.bgCard,
+            dragHandle = { BottomSheetDefaults.DragHandle(color = c.border) },
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("文件历史", color = c.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                        Text(state.selectedFileForHistory!!.name, color = c.textTertiary, fontSize = 12.sp)
+                    }
+                    IconButton(onClick = { vm.hideFileHistory() }) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭", tint = c.textSecondary)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                GmDivider()
+                Spacer(Modifier.height(8.dp))
+                
+                if (state.fileHistoryLoading) {
+                    Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Coral, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                } else if (state.fileHistoryCommits.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("暂无历史记录", fontSize = 13.sp, color = c.textTertiary)
+                    }
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(state.fileHistoryCommits, key = { it.sha }) { commit ->
+                            Column(
+                                modifier = Modifier.fillMaxWidth().background(c.bgCard, RoundedCornerShape(12.dp))
+                                    .clickable { vm.loadFileHistoryCommitDetail(commit.sha) }
+                                    .padding(12.dp),
+                            ) {
+                                Text(commit.commit.message.lines().first(), fontSize = 13.sp,
+                                    color = c.textPrimary, fontWeight = FontWeight.Medium, maxLines = 2)
+                                Spacer(Modifier.height(6.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    if (commit.author != null) AvatarImage(commit.author.avatarUrl, 20)
+                                    Text(commit.commit.author.name, fontSize = 11.sp, color = c.textSecondary)
+                                    Spacer(Modifier.weight(1f))
+                                    Text(commit.shortSha, fontSize = 10.sp, color = Coral,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.background(CoralDim, RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 5.dp, vertical = 1.dp))
+                                    Text(repoFormatDate(commit.commit.author.date), fontSize = 11.sp, color = c.textTertiary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 文件历史中的提交详情弹窗
+    state.selectedCommitForFileHistory?.let { commit ->
+        val selectedFilePatchForFileHistory = remember { mutableStateOf<FilePatchInfo?>(null) }
+
+        selectedFilePatchForFileHistory.value?.let { info ->
+            FileDiffSheet(info = info, c = c, vm = vm, onDismiss = { selectedFilePatchForFileHistory.value = null })
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { vm.clearFileHistoryCommitDetail() },
+            containerColor = c.bgCard,
+            dragHandle = { BottomSheetDefaults.DragHandle(color = c.border) },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        commit.shortSha,
+                        fontSize = 12.sp, color = Coral, fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .background(CoralDim, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (commit.stats != null) {
+                        Text("+${commit.stats.additions}", fontSize = 12.sp, color = Green)
+                        Text("-${commit.stats.deletions}", fontSize = 12.sp, color = RedColor)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(commit.commit.message, fontSize = 14.sp, color = c.textPrimary,
+                    lineHeight = 22.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(12.dp))
+                GmDivider()
+                Spacer(Modifier.height(12.dp))
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (commit.author != null) AvatarImage(commit.author.avatarUrl, 32)
+                    Column {
+                        Text(commit.commit.author.name, fontSize = 13.sp, color = c.textPrimary, fontWeight = FontWeight.Medium)
+                        Text(
+                            repoFormatDate(commit.commit.author.date),
+                            fontSize = 11.sp, color = c.textTertiary
+                        )
+                    }
+                }
+                
+                if (commit.files?.isNotEmpty() == true) {
+                    Spacer(Modifier.height(16.dp))
+                    GmDivider()
+                    Spacer(Modifier.height(12.dp))
+                    Text("变更文件", fontSize = 14.sp, color = c.textPrimary, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(8.dp))
+                    
+                    commit.files?.forEach { file ->
+                        val status = when (file.status) {
+                            "added" -> "新增"
+                            "removed" -> "删除"
+                            "modified" -> "修改"
+                            "renamed" -> "重命名"
+                            else -> file.status
+                        }
+                        val statusColor = when (file.status) {
+                            "added" -> Green
+                            "removed" -> RedColor
+                            else -> c.textSecondary
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(c.bgItem, RoundedCornerShape(8.dp))
+                                .clickable {
+                                    if (file.patch != null) {
+                                        selectedFilePatchForFileHistory.value = FilePatchInfo(
+                                            filename         = file.filename,
+                                            patch            = file.patch!!,
+                                            additions        = file.additions,
+                                            deletions        = file.deletions,
+                                            status           = file.status,
+                                            parentSha        = commit.parentSha,
+                                            previousFilename = file.previousFilename,
+                                            owner            = owner,
+                                            repoName         = repoName,
+                                            currentSha       = commit.sha,
+                                        )
+                                    }
+                                }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (file.status == "added") Icons.Default.Add else if (file.status == "removed") Icons.Default.Remove else Icons.Default.Edit,
+                                null,
+                                tint = statusColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(file.filename, fontSize = 12.sp, color = c.textPrimary, maxLines = 1)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(status, fontSize = 11.sp, color = statusColor)
+                                    if (file.additions > 0) Text("+${file.additions}", fontSize = 11.sp, color = Green)
+                                    if (file.deletions > 0) Text("-${file.deletions}", fontSize = 11.sp, color = RedColor)
+                                }
+                            }
+                            if (file.patch != null) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
-private fun StatItem(icon: ImageVector, text: String, tint: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp))
-        Text(text, fontSize = 12.sp, color = LocalGmColors.current.textTertiary)
+private fun StatItem(
+    icon: ImageVector, 
+    text: String, 
+    tint: Color,
+    onClick: (() -> Unit)? = null
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically, 
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = if (onClick != null) {
+            Modifier
+                .clickable(onClick = onClick)
+                .padding(vertical = 4.dp, horizontal = 8.dp)
+        } else {
+            Modifier
+        }
+    ) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(16.dp))
+        Text(text, fontSize = 13.sp, color = LocalGmColors.current.textSecondary)
     }
 }
 
@@ -1052,14 +1268,11 @@ fun FilesTab(
                                 }
                             }
                             state.readmeContent != null -> {
-                                Markdown(
-                                    content = state.readmeContent!!,
-                                    colors = markdownColor(text = c.textPrimary),
-                                    typography = markdownTypography(),
-                                    imageTransformer = com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
+                GmMarkdownWebView(
+                    markdown = state.readmeContent!!,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
                             else -> {
                                 Text("暂无 README 文件", fontSize = 13.sp, color = c.textTertiary)
                             }
@@ -1148,6 +1361,378 @@ internal fun repoFormatDate(iso: String): String = try {
 internal fun isColorLight(color: Color): Boolean {
     val luminance = 0.299 * color.red + 0.587 * color.green + 0.114 * color.blue
     return luminance > 0.5
+}
+
+// ─── 星标用户列表弹窗 ────────────────────────────────────────────────────────
+
+/**
+ * 星标用户列表弹窗
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StargazersSheet(
+    c: GmColors,
+    vm: RepoDetailViewModel,
+    onDismiss: () -> Unit,
+) {
+    val state by vm.state.collectAsState()
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = c.bgCard,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = c.border) },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+        ) {
+            // 标题
+            Text(
+                "星标用户",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = c.textPrimary
+            )
+            Spacer(Modifier.height(8.dp))
+            GmDivider()
+            Spacer(Modifier.height(8.dp))
+
+            if (state.stargazersLoading) {
+                Box(
+                    Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Coral)
+                }
+            } else if (state.stargazers.isEmpty()) {
+                EmptyBox("暂无星标用户")
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(state.stargazers, key = { it.id }) { stargazer ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(c.bgItem, RoundedCornerShape(12.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            AvatarImage(stargazer.avatarUrl, 40)
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    stargazer.login,
+                                    fontSize = 14.sp,
+                                    color = c.textPrimary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                if (stargazer.starredAt != null) {
+                                    Text(
+                                        repoFormatDate(stargazer.starredAt!!),
+                                        fontSize = 11.sp,
+                                        color = c.textTertiary
+                                    )
+                                }
+                            }
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                null,
+                                tint = c.textTertiary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── 复刻仓库列表弹窗 ────────────────────────────────────────────────────────
+
+/**
+ * 复刻仓库列表弹窗
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ForksSheet(
+    c: GmColors,
+    vm: RepoDetailViewModel,
+    onDismiss: () -> Unit,
+) {
+    val state by vm.state.collectAsState()
+    val context = LocalContext.current
+    var showTimeFilterDropdown by remember { mutableStateOf(false) }
+    var showTypeFilterDropdown by remember { mutableStateOf(false) }
+    var showOrderDropdown by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = c.bgCard,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = c.border) },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+        ) {
+            // 标题和筛选区域
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 清除按钮
+                val hasFilters = state.forkTimeFilter != ForkTimeFilter.ALL || 
+                                 state.forkTypeFilters.isNotEmpty() || 
+                                 state.forkOrderBy != ForkOrderBy.RECENTLY_UPDATED
+                if (hasFilters) {
+                    FilterButton(
+                        text = "清除",
+                        isActive = true,
+                        c = c,
+                        onClick = { vm.clearForkFilters() }
+                    )
+                }
+                
+                Text(
+                    "复刻仓库",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = c.textPrimary,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // 期限筛选
+                Box {
+                    FilterButton(
+                        text = state.forkTimeFilter.displayName,
+                        isActive = state.forkTimeFilter != ForkTimeFilter.ALL,
+                        c = c,
+                        onClick = { showTimeFilterDropdown = true }
+                    )
+                    DropdownMenu(
+                        expanded = showTimeFilterDropdown,
+                        onDismissRequest = { showTimeFilterDropdown = false },
+                        modifier = Modifier.background(c.bgCard)
+                    ) {
+                        ForkTimeFilter.values().forEach { filter ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        RadioButton(
+                                            selected = state.forkTimeFilter == filter,
+                                            onClick = null,
+                                            colors = RadioButtonDefaults.colors(selectedColor = Coral)
+                                        )
+                                        Text(filter.displayName, fontSize = 13.sp, color = c.textPrimary)
+                                    }
+                                },
+                                onClick = {
+                                    vm.setForkTimeFilter(filter)
+                                    showTimeFilterDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+                
+                // 类型筛选
+                Box {
+                    val typeFilterText = if (state.forkTypeFilters.isEmpty()) {
+                        "类型"
+                    } else if (state.forkTypeFilters.size == 1) {
+                        state.forkTypeFilters.first().displayName
+                    } else {
+                        "${state.forkTypeFilters.size}个"
+                    }
+                    FilterButton(
+                        text = typeFilterText,
+                        isActive = state.forkTypeFilters.isNotEmpty(),
+                        c = c,
+                        onClick = { showTypeFilterDropdown = true }
+                    )
+                    DropdownMenu(
+                        expanded = showTypeFilterDropdown,
+                        onDismissRequest = { showTypeFilterDropdown = false },
+                        modifier = Modifier.background(c.bgCard)
+                    ) {
+                        ForkTypeFilter.values().forEach { type ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Checkbox(
+                                            checked = state.forkTypeFilters.contains(type),
+                                            onCheckedChange = null,
+                                            colors = CheckboxDefaults.colors(checkedColor = Coral)
+                                        )
+                                        Text(type.displayName, fontSize = 13.sp, color = c.textPrimary)
+                                    }
+                                },
+                                onClick = {
+                                    vm.toggleForkTypeFilter(type)
+                                }
+                            )
+                        }
+                    }
+                }
+                
+                // 排序
+                Box {
+                    FilterButton(
+                        text = state.forkOrderBy.displayName,
+                        isActive = state.forkOrderBy != ForkOrderBy.RECENTLY_UPDATED,
+                        c = c,
+                        onClick = { showOrderDropdown = true }
+                    )
+                    DropdownMenu(
+                        expanded = showOrderDropdown,
+                        onDismissRequest = { showOrderDropdown = false },
+                        modifier = Modifier.background(c.bgCard)
+                    ) {
+                        ForkOrderBy.values().forEach { order ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        RadioButton(
+                                            selected = state.forkOrderBy == order,
+                                            onClick = null,
+                                            colors = RadioButtonDefaults.colors(selectedColor = Coral)
+                                        )
+                                        Text(order.displayName, fontSize = 13.sp, color = c.textPrimary)
+                                    }
+                                },
+                                onClick = {
+                                    vm.setForkOrderBy(order)
+                                    showOrderDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            GmDivider()
+            Spacer(Modifier.height(8.dp))
+
+            if (state.forksLoading) {
+                Box(
+                    Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Coral)
+                }
+            } else if (state.forks.isEmpty()) {
+                EmptyBox("暂无复刻仓库")
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(state.forks, key = { it.id }) { fork ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(c.bgItem, RoundedCornerShape(12.dp))
+                                .clickable {
+                                    val intent = Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse(fork.htmlUrl)
+                                    )
+                                    context.startActivity(intent)
+                                }
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                AvatarImage(fork.owner?.avatarUrl, 36)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        fork.fullName,
+                                        fontSize = 14.sp,
+                                        color = c.textPrimary,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    if (!fork.description.isNullOrBlank()) {
+                                        Text(
+                                            fork.description!!,
+                                            fontSize = 12.sp,
+                                            color = c.textSecondary,
+                                            maxLines = 2
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    Icons.Default.ChevronRight,
+                                    null,
+                                    tint = c.textTertiary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(14.dp))
+                                    Text("${fork.stars}", fontSize = 11.sp, color = c.textTertiary)
+                                }
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
+                                    Text("${fork.forks}", fontSize = 11.sp, color = c.textTertiary)
+                                }
+                                if (!fork.language.isNullOrBlank()) {
+                                    Text(
+                                        fork.language!!,
+                                        fontSize = 11.sp,
+                                        color = c.textTertiary,
+                                        modifier = Modifier
+                                            .background(c.bgCard, RoundedCornerShape(12.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                if (fork.updatedAt != null) {
+                                    Text(
+                                        repoFormatDate(fork.updatedAt!!),
+                                        fontSize = 11.sp,
+                                        color = c.textTertiary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ─── 分支相关弹窗 ─────────────────────────────────────────────────────────────

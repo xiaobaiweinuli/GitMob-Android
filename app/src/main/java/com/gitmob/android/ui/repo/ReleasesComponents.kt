@@ -468,11 +468,8 @@ fun ReleaseCard(
                 Text(release.name ?: release.tagName, fontSize = 17.sp, color = c.textPrimary, fontWeight = FontWeight.SemiBold)
                 // 完整 body Markdown 渲染
                 release.body?.takeIf { it.isNotBlank() }?.let { bodyText ->
-                    com.mikepenz.markdown.m3.Markdown(
-                        content = bodyText,
-                        colors = com.mikepenz.markdown.m3.markdownColor(text = c.textPrimary),
-                        typography = com.mikepenz.markdown.m3.markdownTypography(),
-                        imageTransformer = com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl,
+                    GmMarkdownWebView(
+                        markdown = bodyText,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

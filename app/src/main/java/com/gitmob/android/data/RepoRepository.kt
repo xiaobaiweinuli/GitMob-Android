@@ -276,6 +276,20 @@ class RepoRepository {
         api.checkStarred(owner, repo).isSuccessful
     }
 
+    /**
+     * 获取仓库的星标用户列表
+     */
+    suspend fun getStargazers(owner: String, repo: String, page: Int = 1): List<GHStargazer> = withContext(Dispatchers.IO) {
+        api.getStargazers(owner, repo, page = page)
+    }
+
+    /**
+     * 获取仓库的复刻列表
+     */
+    suspend fun getForks(owner: String, repo: String, sort: String = "newest", page: Int = 1): List<GHRepo> = withContext(Dispatchers.IO) {
+        api.getForks(owner, repo, sort = sort, page = page)
+    }
+
     suspend fun starRepo(owner: String, repo: String) = withContext(Dispatchers.IO) {
         api.starRepo(owner, repo)
     }

@@ -42,7 +42,7 @@ class TokenStorage(private val context: Context) {
         val login = prefs[Keys.USER_LOGIN] ?: return@map null
         val name = prefs[Keys.USER_NAME] ?: login
         val email = prefs[Keys.USER_EMAIL] ?: "$login@users.noreply.github.com"
-        Triple(name, email, prefs[Keys.AVATAR_URL] ?: "")
+        Triple(login, email, prefs[Keys.AVATAR_URL] ?: "")
     }
 
     /** 默认跟随系统（SYSTEM=2） */

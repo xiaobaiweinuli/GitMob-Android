@@ -52,6 +52,11 @@ object GraphQLClient {
                 forkCount
                 pushedAt
                 updatedAt
+                createdAt
+                isFork
+                isArchived
+                isTemplate
+                mirrorUrl
                 primaryLanguage { name }
                 owner { login avatarUrl }
                 openIssues: issues(states: OPEN) { totalCount }
@@ -100,6 +105,11 @@ object GraphQLClient {
                     forkCount
                     pushedAt
                     updatedAt
+                    createdAt
+                    isFork
+                    isArchived
+                    isTemplate
+                    mirrorUrl
                     primaryLanguage { name }
                     owner { login avatarUrl }
                     openIssues: issues(states: OPEN) { totalCount }

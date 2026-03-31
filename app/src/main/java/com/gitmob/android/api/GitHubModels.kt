@@ -28,11 +28,15 @@ data class GHRepo(
     @SerializedName("stargazers_count") val stars: Int = 0,
     @SerializedName("forks_count") val forks: Int = 0,
     @SerializedName("open_issues_count") val openIssues: Int = 0,
+    @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("updated_at") val updatedAt: String?,
     @SerializedName("pushed_at") val pushedAt: String?,
     val language: String?,
     val owner: GHOwner,
     val fork: Boolean = false,
+    val archived: Boolean = false,
+    @SerializedName("is_template") val isTemplate: Boolean = false,
+    @SerializedName("mirror_url") val mirrorUrl: String? = null,
 )
 
 data class GHOwner(
@@ -605,3 +609,38 @@ data class GHCreateTreeRequest(
     @SerializedName("base_tree") val baseTree: String? = null,
 )
 data class GHTreeResponse(val sha: String, val url: String)
+
+/**
+ * GitHub Stargazer - 星标用户信息
+ * 包含用户信息和星标时间
+ */
+data class GHStargazer(
+    val login: String,
+    val id: Long,
+    @SerializedName("node_id") val nodeId: String,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("gravatar_id") val gravatarId: String?,
+    val url: String,
+    @SerializedName("html_url") val htmlUrl: String,
+    @SerializedName("followers_url") val followersUrl: String,
+    @SerializedName("following_url") val followingUrl: String,
+    @SerializedName("gists_url") val gistsUrl: String,
+    @SerializedName("starred_url") val starredUrl: String,
+    @SerializedName("subscriptions_url") val subscriptionsUrl: String,
+    @SerializedName("organizations_url") val organizationsUrl: String,
+    @SerializedName("repos_url") val reposUrl: String,
+    @SerializedName("events_url") val eventsUrl: String,
+    @SerializedName("received_events_url") val receivedEventsUrl: String,
+    val type: String,
+    @SerializedName("site_admin") val siteAdmin: Boolean,
+    @SerializedName("starred_at") val starredAt: String? = null,
+)
+
+/**
+ * 复刻列表排序方式
+ */
+enum class ForkSortBy(val displayName: String, val apiValue: String) {
+    NEWEST("最新", "newest"),
+    OLDEST("最早", "oldest"),
+    STARGAZERS("最多星标", "stargazers");
+}

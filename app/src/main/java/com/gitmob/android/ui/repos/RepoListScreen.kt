@@ -178,6 +178,11 @@ fun RepoListScreen(
             )
             // 过滤 / 星标模式 Header
             if (starState.starModeActive) {
+                StarFilterToolbar(
+                    state = starState,
+                    c = c,
+                    vm = starVm,
+                )
                 UserListsHeader(
                     lists = starState.userLists,
                     loading = starState.listsLoading,
@@ -194,19 +199,11 @@ fun RepoListScreen(
                     c = c,
                 )
             } else {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(null to "全部", false to "公开", true to "私有").forEach { (value, label) ->
-                        FilterChip(
-                            selected = state.filterPrivate == value,
-                            onClick = { vm.setFilter(value) },
-                            label = { Text(label, fontSize = 12.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = CoralDim, selectedLabelColor = Coral,
-                                containerColor = c.bgCard, labelColor = c.textSecondary,
-                            ),
-                        )
-                    }
-                }
+                RepoFilterToolbar(
+                    state = state,
+                    c = c,
+                    vm = vm,
+                )
             }
 
             if (starState.starModeActive) {

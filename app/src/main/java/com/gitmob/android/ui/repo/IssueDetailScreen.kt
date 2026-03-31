@@ -28,14 +28,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mikepenz.markdown.m3.Markdown
-import com.mikepenz.markdown.m3.markdownColor
-import com.mikepenz.markdown.m3.markdownTypography
+
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.gitmob.android.api.*
-import com.gitmob.android.ui.common.GmDivider
+import com.gitmob.android.ui.common.*
 import com.gitmob.android.ui.theme.*
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -528,13 +526,8 @@ private fun IssueBodyCard(
                     lineHeight = 20.sp,
                 )
             } else {
-                Markdown(
-                    content = issue.body!!,
-                    colors = markdownColor(text = c.textPrimary),
-                    typography = markdownTypography(
-                        paragraph = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-                    ),
-                    imageTransformer = com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl,
+                GmMarkdownWebView(
+                    markdown = issue.body!!,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -671,13 +664,8 @@ private fun CommentCard(
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Markdown(
-                content = comment.body,
-                colors = markdownColor(text = c.textPrimary),
-                typography = markdownTypography(
-                    paragraph = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-                ),
-                imageTransformer = com.mikepenz.markdown.coil3.Coil3ImageTransformerImpl,
+            GmMarkdownWebView(
+                markdown = comment.body,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

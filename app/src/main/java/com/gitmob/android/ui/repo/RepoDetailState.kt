@@ -94,7 +94,70 @@ data class RepoDetailState(
     val uploadBlobTotal: Int = 0,       // 总 blob 数
     val uploadCurrentFile: String = "", // 正在处理的文件名
     val uploadError: String? = null,
+    // 星标用户列表
+    val stargazers: List<GHStargazer> = emptyList(),
+    val stargazersLoading: Boolean = false,
+    val showStargazersSheet: Boolean = false,
+    // 复刻仓库列表
+    val forks: List<GHRepo> = emptyList(),
+    val forksLoading: Boolean = false,
+    val showForksSheet: Boolean = false,
+    val forkSortBy: ForkSortBy = ForkSortBy.NEWEST,
+    // 复刻仓库筛选
+    val originalForks: List<GHRepo> = emptyList(),
+    val forkTimeFilter: ForkTimeFilter = ForkTimeFilter.ALL,
+    val forkTypeFilters: Set<ForkTypeFilter> = emptySet(),
+    val forkOrderBy: ForkOrderBy = ForkOrderBy.RECENTLY_UPDATED,
+    // 文件历史
+    val showFileHistorySheet: Boolean = false,
+    val fileHistoryCommits: List<GHCommit> = emptyList(),
+    val fileHistoryLoading: Boolean = false,
+    val selectedFileForHistory: GHContent? = null,
+    val selectedCommitForFileHistory: GHCommitFull? = null,
+    val fileHistoryCommitDetailLoading: Boolean = false,
 )
+
+/**
+ * 复刻列表排序方式
+ */
+enum class ForkSortBy(val displayName: String, val apiValue: String) {
+    NEWEST("最新", "newest"),
+    OLDEST("最早", "oldest"),
+    STARGAZERS("最多星标", "stargazers");
+}
+
+/**
+ * 复刻仓库期限筛选
+ */
+enum class ForkTimeFilter(val displayName: String, val months: Int) {
+    ONE_MONTH("一个月", 1),
+    SIX_MONTHS("六个月", 6),
+    ONE_YEAR("一年", 12),
+    TWO_YEARS("两年", 24),
+    FIVE_YEARS("五年", 60),
+    ALL("历史", 0);
+}
+
+/**
+ * 复刻仓库类型筛选
+ */
+enum class ForkTypeFilter(val displayName: String) {
+    ACTIVE("活跃"),
+    INACTIVE("已停用"),
+    NETWORK("网络"),
+    ARCHIVED("存档"),
+    STARRED("主演");
+}
+
+/**
+ * 复刻仓库排序方式
+ */
+enum class ForkOrderBy(val displayName: String) {
+    RECENTLY_UPDATED("最近更新"),
+    MOST_STARS("最多星级"),
+    OPEN_ISSUES("未解决的问题"),
+    OPEN_PULL_REQUESTS("开放拉取请求");
+}
 
 /**
  * Issue筛选状态

@@ -36,6 +36,7 @@ data class StarListState(
     val reposLoading: Boolean = false,
     val hasNextPage: Boolean = false,
     val endCursor: String? = null,
+    val filterState: StarFilterState = StarFilterState(),
     val toast: String? = null,
 )
 
@@ -346,14 +347,29 @@ class StarListViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setStarSearch(q: String) = _state.update { it.copy(starSearchQuery = q) }
 
-    /** 按当前搜索词过滤后的星标仓库列表 */
+    /** 设置仓库类型筛选 */
+    fun setStarTypeFilter(filter: RepoTypeFilter) = _state.update { 
+        it.copy(filterState = it.filterState.copy(typeFilter = filter)) 
+    }
+
+    /** 设置排序方式 */
+    fun setStarSortBy(sortBy: StarSortBy) = _state.update { 
+        it.copy(filterState = it.filterState.copy(sortBy = sortBy)) 
+    }
+    
+    /** 设置语言筛选 */
+    fun setStarLanguageFilter(language: String?) = _state.update { 
+        it.copy(filterState = it.filterState.copy(languageFilter = language)) 
+    }
+    
+    /** 清除所有筛选 */
+    fun clearStarFilters() = _state.update { 
+        it.copy(filterState = StarFilterState()) 
+    }
+
+    /** 按当前搜索词和筛选条件过滤排序后的星标仓库列表 */
     val filteredStarredRepos = _state.map { s ->
-        if (s.starSearchQuery.isBlank()) s.starredRepos
-        else s.starredRepos.filter { repo ->
-            repo.name.contains(s.starSearchQuery, ignoreCase = true) ||
-            repo.nameWithOwner.contains(s.starSearchQuery, ignoreCase = true) ||
-            (repo.description?.contains(s.starSearchQuery, ignoreCase = true) == true)
-        }
+        filterAndSortStarredRepos(s.starredRepos, s.starSearchQuery, s.filterState)
     }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Lazily, emptyList())
 
     fun clearToast() = _state.update { it.copy(toast = null) }
