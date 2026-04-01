@@ -53,6 +53,29 @@ fun IssueDetailScreen(
     val state by vm.state.collectAsState()
     val context = LocalContext.current
 
+    val repoForPermission = remember(owner) {
+        GHRepo(
+            id = 0,
+            name = repoName,
+            fullName = "$owner/$repoName",
+            description = null,
+            homepage = null,
+            private = false,
+            htmlUrl = "",
+            sshUrl = "",
+            cloneUrl = "",
+            defaultBranch = "",
+            updatedAt = null,
+            owner = GHOwner(
+                login = owner,
+                avatarUrl = null
+            ),
+            pushedAt = null,
+            language = null
+        )
+    }
+    val permission = rememberRepoPermission(repoForPermission, state.userLogin)
+    
     var showMenu by remember { mutableStateOf(false) }
     var showEditTitleDialog by remember { mutableStateOf(false) }
     var showEditBodyDialog by remember { mutableStateOf(false) }
@@ -108,37 +131,42 @@ fun IssueDetailScreen(
                                 onDismissRequest = { showMenu = false },
                                 modifier = Modifier.background(c.bgCard),
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text("编辑标题", fontSize = 14.sp, color = c.textPrimary) },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.Edit,
-                                            null,
-                                            tint = c.textSecondary,
-                                            modifier = Modifier.size(16.dp),
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        showEditTitleDialog = true
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("关闭议题", fontSize = 14.sp, color = c.textPrimary) },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            null,
-                                            tint = c.textSecondary,
-                                            modifier = Modifier.size(16.dp),
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        showCloseSubMenu = true
-                                    },
-                                )
-                                if (state.isRepoOwner) {
+                                val isIssueAuthor = state.issue?.user?.login == state.userLogin
+                                val canEditOrClose = permission.isOwner || isIssueAuthor
+                                
+                                if (canEditOrClose) {
+                                    DropdownMenuItem(
+                                        text = { Text("编辑标题", fontSize = 14.sp, color = c.textPrimary) },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.Edit,
+                                                null,
+                                                tint = c.textSecondary,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            showEditTitleDialog = true
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("关闭议题", fontSize = 14.sp, color = c.textPrimary) },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                null,
+                                                tint = c.textSecondary,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            showCloseSubMenu = true
+                                        },
+                                    )
+                                }
+                                PermissionRequired(permission = permission, requireOwner = true) {
                                     DropdownMenuItem(
                                         text = { Text("置顶", fontSize = 14.sp, color = c.textPrimary) },
                                         leadingIcon = {
@@ -204,6 +232,7 @@ fun IssueDetailScreen(
                             issue = state.issue!!,
                             c = c,
                             userLogin = state.userLogin,
+                            permission = permission,
                             onReply = { 
                                 replyingToIssue = true
                                 showCommentInputDialog = true
@@ -218,7 +247,7 @@ fun IssueDetailScreen(
                             comment = comment,
                             c = c,
                             userLogin = state.userLogin,
-                            isRepoOwner = state.isRepoOwner,
+                            permission = permission,
                             onReply = { 
                                 replyingToComment = it
                                 showCommentInputDialog = true
@@ -412,11 +441,13 @@ private fun IssueBodyCard(
     issue: GHIssue,
     c: GmColors,
     userLogin: String,
+    permission: RepoPermission,
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onShare: () -> Unit,
 ) {
     val isOwnIssue = issue.user.login == userLogin
+    val canEdit = isOwnIssue || permission.isOwner
     var showMenu by remember { mutableStateOf(false) }
     
     Surface(
@@ -483,26 +514,10 @@ private fun IssueBodyCard(
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("引用回复", fontSize = 14.sp, color = c.textPrimary) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.Reply,
-                                    null,
-                                    tint = c.textSecondary,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            },
-                            onClick = {
-                                showMenu = false
-                                onReply()
-                            },
-                        )
-                        if (isOwnIssue) {
-                            DropdownMenuItem(
-                                text = { Text("编辑描述", fontSize = 14.sp, color = c.textPrimary) },
+                                text = { Text("引用回复", fontSize = 14.sp, color = c.textPrimary) },
                                 leadingIcon = {
                                     Icon(
-                                        Icons.Default.Edit,
+                                        Icons.AutoMirrored.Filled.Reply,
                                         null,
                                         tint = c.textSecondary,
                                         modifier = Modifier.size(16.dp),
@@ -510,10 +525,26 @@ private fun IssueBodyCard(
                                 },
                                 onClick = {
                                     showMenu = false
-                                    onEdit()
+                                    onReply()
                                 },
                             )
-                        }
+                            if (canEdit) {
+                                DropdownMenuItem(
+                                    text = { Text("编辑描述", fontSize = 14.sp, color = c.textPrimary) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Edit,
+                                            null,
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onEdit()
+                                    },
+                                )
+                            }
                     }
                 }
             }
@@ -527,7 +558,7 @@ private fun IssueBodyCard(
                 )
             } else {
                 GmMarkdownWebView(
-                    markdown = issue.body!!,
+                    markdown = issue.body,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -540,14 +571,14 @@ private fun CommentCard(
     comment: GHComment,
     c: GmColors,
     userLogin: String,
-    isRepoOwner: Boolean,
+    permission: RepoPermission,
     onReply: (GHComment) -> Unit,
     onEdit: (GHComment) -> Unit,
     onDelete: (GHComment) -> Unit,
     onShare: (GHComment) -> Unit,
 ) {
     val isOwnComment = comment.user.login == userLogin
-    val canEditOrDelete = isOwnComment || isRepoOwner
+    val canEditOrDelete = isOwnComment || permission.isOwner
     var showMenu by remember { mutableStateOf(false) }
 
     Surface(

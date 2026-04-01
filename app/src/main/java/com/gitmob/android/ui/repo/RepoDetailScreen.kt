@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Outbound
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -92,11 +93,13 @@ fun RepoDetailScreen(
     onBack: () -> Unit,
     onFileClick: (String, String, String, String) -> Unit,
     onIssueClick: (Int) -> Unit = {},
+    onForkedRepoClick: ((String, String) -> Unit)? = null,
     vm: RepoDetailViewModel = viewModel(factory = RepoDetailViewModel.factory(owner, repoName)),
 ) {
     val c = LocalGmColors.current
     val state by vm.state.collectAsState()
     val tabs = listOf("文件", "提交", "分支", "操作", "发行版", "PR", "Issues")
+    val permission = rememberRepoPermission(state.repo, state.userLogin)
     var showBranchDialog by remember { mutableStateOf(false) }
     var showNewBranchDialog by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
@@ -200,14 +203,32 @@ fun RepoDetailScreen(
                 title = {
                     Column {
                         Text(vm.repoName, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = c.textPrimary)
-                        Text(vm.owner, fontSize = 12.sp, color = c.textTertiary)
+                        state.repo?.let { repo ->
+                            val isOwnRepo = repo.owner.login == state.userLogin
+                            if (repo.fork && repo.parent != null) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.clickable {
+                                        onForkedRepoClick?.invoke(repo.parent.owner.login, repo.parent.name)
+                                    }
+                                ) {
+                                    Text(
+                                        text = repo.parent.fullName,
+                                        fontSize = 12.sp,
+                                        color = BlueColor,
+                                    )
+                                }
+                            } else if (!isOwnRepo) {
+                                Text(vm.owner, fontSize = 12.sp, color = c.textTertiary)
+                            }
+                        }
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = handleTopBarBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = c.textSecondary) }
                 },
                 actions = {
-                    val isOwnRepo = state.repo?.owner?.login == state.userLogin
                     IconButton(onClick = vm::toggleStar) {
                         Icon(
                             if (state.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
@@ -215,21 +236,25 @@ fun RepoDetailScreen(
                         )
                     }
                     IconButton(
-                        onClick = { if (!isOwnRepo) vm.showCreateForkDialog() },
-                        enabled = !isOwnRepo
+                        onClick = { if (!permission.isOwner) vm.showCreateForkDialog() },
+                        enabled = !permission.isOwner
                     ) {
                         Icon(
                             Icons.Default.Share,
                             contentDescription = "复刻仓库",
-                            tint = if (isOwnRepo) c.textTertiary else c.textSecondary,
+                            tint = if (permission.isOwner) c.textTertiary else c.textSecondary,
                         )
                     }
-                    IconButton(onClick = { vm.loadAll(forceRefresh = true) }) {
-                        Icon(Icons.Default.Refresh, null, tint = c.textSecondary)
+                    PermissionRequired(permission = permission, requireOwner = true) {
+                        IconButton(onClick = { vm.checkForkSyncStatus(); showForkSyncDialog = true }) {
+                            Icon(Icons.Default.Sync, null, tint = c.textSecondary)
+                        }
                     }
                     Box {
-                        IconButton(onClick = { showSettingsMenu = true }) {
-                            Icon(Icons.Default.Settings, null, tint = c.textSecondary)
+                        PermissionRequired(permission = permission, requireOwner = true) {
+                            IconButton(onClick = { showSettingsMenu = true }) {
+                                Icon(Icons.Default.Settings, null, tint = c.textSecondary)
+                            }
                         }
                         DropdownMenu(
                             expanded = showSettingsMenu,
@@ -436,7 +461,7 @@ fun RepoDetailScreen(
             }
 
             // Tabs
-            ScrollableTabRow(
+            PrimaryScrollableTabRow(
                 selectedTabIndex = state.tab, containerColor = c.bgDeep,
                 contentColor = Coral, edgePadding = 16.dp,
                 divider = { GmDivider() },
@@ -451,7 +476,7 @@ fun RepoDetailScreen(
             }
 
             when (state.tab) {
-                0 -> FilesTab(state, c,
+                0 -> FilesTab(state, c, permission,
                     onDirClick = { vm.loadContents(it) },
                     onFileClick = { path -> onFileClick(owner, repoName, path, state.currentBranch) },
                     onNavigateUp = vm::navigateUp,
@@ -496,18 +521,18 @@ fun RepoDetailScreen(
                 )
                 1 -> CommitsTab(state, c, onCommitClick = { vm.loadCommitDetail(it.sha) },
                     onRefresh = { vm.loadCommits(forceRefresh = true) })
-                2 -> BranchesTab(state, c, onSwitch = vm::switchBranch,
+                2 -> BranchesTab(state, c, permission = permission, onSwitch = vm::switchBranch,
                     onNewBranch = { showNewBranchDialog = true },
                     onDelete = vm::deleteBranch, onRename = vm::renameBranch,
                     onSetDefault = vm::setDefaultBranch,
                     onRefresh = vm::refreshBranches)
-                3 -> ActionsTab(state, c, vm, owner, repoName,
+                3 -> ActionsTab(state, c, vm, owner, repoName, permission = permission,
                     onRefresh = vm::refreshActions)
-                4 -> ReleasesTab(state, vm = vm, c = c,
+                4 -> ReleasesTab(state, vm = vm, c = c, permission = permission,
                     onRefresh = vm::refreshReleases)
                 5 -> PRTab(state, c,
                     onRefresh = vm::refreshPRs)
-                6 -> IssuesTab(state, c, vm,
+                6 -> IssuesTab(state, c, vm, permission = permission,
                     onRefresh = vm::refreshIssues,
                     onIssueClick = onIssueClick)
             }
@@ -821,7 +846,7 @@ fun RepoDetailScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Icon(
-                                            Icons.Default.Outbound,
+                                            Icons.AutoMirrored.Filled.Outbound,
                                             contentDescription = null,
                                             tint = BlueColor,
                                             modifier = Modifier.size(18.dp)
@@ -1415,7 +1440,7 @@ fun RepoDetailScreen(
 
     // Commit 详情 Modal
     state.selectedCommit?.let { commit ->
-        CommitDetailSheet(commit = commit, c = c, vm = vm, onDismiss = vm::clearCommitDetail)
+        CommitDetailSheet(commit = commit, c = c, permission = permission, vm = vm, onDismiss = vm::clearCommitDetail)
     }
     // 星标用户列表 Modal
     if (state.showStargazersSheet) {
@@ -1563,7 +1588,7 @@ fun RepoDetailScreen(
                     Text("变更文件", fontSize = 14.sp, color = c.textPrimary, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(8.dp))
                     
-                    commit.files?.forEach { file ->
+                    commit.files.forEach { file ->
                         val status = when (file.status) {
                             "added" -> "新增"
                             "removed" -> "删除"
@@ -1584,7 +1609,7 @@ fun RepoDetailScreen(
                                     if (file.patch != null) {
                                         selectedFilePatchForFileHistory.value = FilePatchInfo(
                                             filename         = file.filename,
-                                            patch            = file.patch!!,
+                                            patch            = file.patch,
                                             additions        = file.additions,
                                             deletions        = file.deletions,
                                             status           = file.status,
@@ -1666,6 +1691,7 @@ private fun StatItem(
 fun FilesTab(
     state: RepoDetailState,
     c: GmColors,
+    permission: RepoPermission,
     onDirClick: (String) -> Unit,
     onFileClick: (String) -> Unit,
     onNavigateUp: () -> Unit,
@@ -1712,16 +1738,18 @@ fun FilesTab(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(
-                            onClick = onUpload,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Upload,
-                                contentDescription = "上传文件",
-                                tint = Coral,
-                                modifier = Modifier.size(18.dp)
-                            )
+                        PermissionRequired(permission = permission, requireOwner = true) {
+                            IconButton(
+                                onClick = onUpload,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Upload,
+                                    contentDescription = "上传文件",
+                                    tint = Coral,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                         IconButton(
                             onClick = onShare,
@@ -1734,16 +1762,18 @@ fun FilesTab(
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-                        IconButton(
-                            onClick = onAddFile,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = "添加文件",
-                                tint = c.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
+                        PermissionRequired(permission = permission, requireOwner = true) {
+                            IconButton(
+                                onClick = onAddFile,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = "添加文件",
+                                    tint = c.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                         IconButton(
                             onClick = onHistory,
@@ -1806,36 +1836,40 @@ fun FilesTab(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text("重命名", fontSize = 13.sp, color = c.textPrimary) },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.DriveFileRenameOutline,
-                                            null,
-                                            tint = c.textSecondary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        onFileRename(content)
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("删除", fontSize = 13.sp, color = RedColor) },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            null,
-                                            tint = RedColor,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        onFileDelete(content)
-                                    },
-                                )
+                                PermissionRequired(permission = permission, requireOwner = true) {
+                                    DropdownMenuItem(
+                                        text = { Text("重命名", fontSize = 13.sp, color = c.textPrimary) },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.DriveFileRenameOutline,
+                                                null,
+                                                tint = c.textSecondary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            onFileRename(content)
+                                        },
+                                    )
+                                }
+                                PermissionRequired(permission = permission, requireOwner = true) {
+                                    DropdownMenuItem(
+                                        text = { Text("删除", fontSize = 13.sp, color = RedColor) },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                null,
+                                                tint = RedColor,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            onFileDelete(content)
+                                        },
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text("分享", fontSize = 13.sp, color = c.textPrimary) },
                                     leadingIcon = {
@@ -1904,7 +1938,7 @@ fun FilesTab(
                             }
                             state.readmeContent != null -> {
                 GmMarkdownWebView(
-                    markdown = state.readmeContent!!,
+                    markdown = state.readmeContent,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -2071,7 +2105,7 @@ fun StargazersSheet(
                                 )
                                 if (stargazer.starredAt != null) {
                                     Text(
-                                        repoFormatDate(stargazer.starredAt!!),
+                                        repoFormatDate(stargazer.starredAt),
                                         fontSize = 11.sp,
                                         color = c.textTertiary
                                     )
@@ -2302,7 +2336,7 @@ fun ForksSheet(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                AvatarImage(fork.owner?.avatarUrl, 36)
+                                AvatarImage(fork.owner.avatarUrl, 36)
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         fork.fullName,
@@ -2312,7 +2346,7 @@ fun ForksSheet(
                                     )
                                     if (!fork.description.isNullOrBlank()) {
                                         Text(
-                                            fork.description!!,
+                                            fork.description,
                                             fontSize = 12.sp,
                                             color = c.textSecondary,
                                             maxLines = 2
@@ -2346,7 +2380,7 @@ fun ForksSheet(
                                 }
                                 if (!fork.language.isNullOrBlank()) {
                                     Text(
-                                        fork.language!!,
+                                        fork.language,
                                         fontSize = 11.sp,
                                         color = c.textTertiary,
                                         modifier = Modifier
@@ -2356,7 +2390,7 @@ fun ForksSheet(
                                 }
                                 if (fork.updatedAt != null) {
                                     Text(
-                                        repoFormatDate(fork.updatedAt!!),
+                                        repoFormatDate(fork.updatedAt),
                                         fontSize = 11.sp,
                                         color = c.textTertiary
                                     )

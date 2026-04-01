@@ -80,6 +80,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.layout.defaultMinSize
+import kotlinx.coroutines.launch
 import okhttp3.Request
 
 /**
@@ -138,6 +139,7 @@ fun IssueFilterToolbar(
     state: RepoDetailState,
     c: GmColors,
     vm: RepoDetailViewModel,
+    permission: RepoPermission,
     onAddIssueClick: () -> Unit = {},
 ) {
     var showStatusDropdown by remember { mutableStateOf(false) }
@@ -452,6 +454,7 @@ fun IssuesTab(
     state: RepoDetailState, 
     c: GmColors, 
     vm: RepoDetailViewModel,
+    permission: RepoPermission,
     onRefresh: () -> Unit = {},
     onIssueClick: (Int) -> Unit = {},
 ) {
@@ -484,6 +487,7 @@ fun IssuesTab(
                 state = state,
                 c = c,
                 vm = vm,
+                permission = permission,
                 onAddIssueClick = {
                     // 先加载模板，加载完成/失败后再打开弹窗
                     templatesLoading = true
@@ -506,6 +510,7 @@ fun IssuesTab(
                         SwipeableIssueCard(
                             issue = issue,
                             c = c,
+                            permission = permission,
                             onDelete = { vm.deleteIssue(issue.number) },
                             onClick = { onIssueClick(issue.number) }
                         )
@@ -928,42 +933,48 @@ fun FieldLabel(label: String, required: Boolean, c: GmColors) {
 fun SwipeableIssueCard(
     issue: GHIssue,
     c: GmColors,
+    permission: RepoPermission,
     onDelete: () -> Unit,
     onClick: () -> Unit = {},
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
-
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                showDeleteDialog = true
-            }
-            false
-        }
-    )
-
-    SwipeToDismissBox(
-        state = dismissState,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
-            val color by animateColorAsState(
-                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) RedColor else c.border,
-                label = "swipe_bg",
-            )
-            Box(
-                modifier = Modifier.fillMaxSize().background(color, RoundedCornerShape(14.dp)),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(end = 20.dp),
-                ) {
-                    Icon(Icons.Default.Delete, null, tint = Color.White, modifier = Modifier.size(22.dp))
-                    Text("删除", fontSize = 11.sp, color = Color.White, modifier = Modifier.padding(top = 3.dp))
+    val dismissState = rememberSwipeToDismissBoxState()
+    val scope = rememberCoroutineScope()
+    
+    if (permission.isOwner) {
+        SwipeToDismissBox(
+            state = dismissState,
+            enableDismissFromStartToEnd = false,
+            onDismiss = { value ->
+                if (value == SwipeToDismissBoxValue.EndToStart) {
+                    showDeleteDialog = true
                 }
-            }
-        },
-    ) {
+                scope.launch {
+                    dismissState.reset()
+                }
+            },
+            backgroundContent = {
+                val color by animateColorAsState(
+                    if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) RedColor else c.border,
+                    label = "swipe_bg",
+                )
+                Box(
+                    modifier = Modifier.fillMaxSize().background(color, RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(end = 20.dp),
+                    ) {
+                        Icon(Icons.Default.Delete, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                        Text("删除", fontSize = 11.sp, color = Color.White, modifier = Modifier.padding(top = 3.dp))
+                    }
+                }
+            },
+        ) {
+            IssueCardContent(issue = issue, c = c, onClick = onClick)
+        }
+    } else {
         IssueCardContent(issue = issue, c = c, onClick = onClick)
     }
 

@@ -3,6 +3,7 @@ package com.gitmob.android.ui.common
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
@@ -41,15 +42,14 @@ fun GmMarkdownWebView(
                 
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(
-                        view: WebView?,
-                        url: String?
+                        view: WebView,
+                        request: WebResourceRequest
                     ): Boolean {
-                        url?.let {
-                            if (onLinkClick != null) {
-                                onLinkClick(it)
-                            } else {
-                                openUrl(context, it)
-                            }
+                        val url = request.url.toString()
+                        if (onLinkClick != null) {
+                            onLinkClick(url)
+                        } else {
+                            openUrl(context, url)
                         }
                         return true
                     }

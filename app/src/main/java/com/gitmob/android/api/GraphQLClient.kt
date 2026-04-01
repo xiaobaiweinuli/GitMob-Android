@@ -31,6 +31,98 @@ object GraphQLClient {
             .build()
     }
 
+    // ── 用户仓库列表 ─────────────────────────────────────────────────────
+    private val USER_REPOS_QUERY = """
+        query UserRepos(${'$'}cursor: String) {
+          viewer {
+            repositories(first: 50, after: ${'$'}cursor, ownerAffiliations: [OWNER], orderBy: {field: UPDATED_AT, direction: DESC}) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                id
+                databaseId
+                name
+                nameWithOwner
+                description
+                isPrivate
+                url
+                sshUrl
+                defaultBranchRef { name }
+                stargazerCount
+                forkCount
+                pushedAt
+                updatedAt
+                createdAt
+                isFork
+                isArchived
+                isTemplate
+                mirrorUrl
+                primaryLanguage { name }
+                owner { login avatarUrl }
+                openIssues: issues(states: OPEN) { totalCount }
+                parent {
+                  id
+                  databaseId
+                  name
+                  nameWithOwner
+                  description
+                  isPrivate
+                  url
+                  sshUrl
+                  owner { login avatarUrl }
+                  isFork
+                }
+              }
+            }
+          }
+        }
+    """.trimIndent()
+
+    // ── 组织仓库列表 ─────────────────────────────────────────────────────
+    private val ORG_REPOS_QUERY = """
+        query OrgRepos(${'$'}org: String!, ${'$'}cursor: String) {
+          organization(login: ${'$'}org) {
+            repositories(first: 50, after: ${'$'}cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                id
+                databaseId
+                name
+                nameWithOwner
+                description
+                isPrivate
+                url
+                sshUrl
+                defaultBranchRef { name }
+                stargazerCount
+                forkCount
+                pushedAt
+                updatedAt
+                createdAt
+                isFork
+                isArchived
+                isTemplate
+                mirrorUrl
+                primaryLanguage { name }
+                owner { login avatarUrl }
+                openIssues: issues(states: OPEN) { totalCount }
+                parent {
+                  id
+                  databaseId
+                  name
+                  nameWithOwner
+                  description
+                  isPrivate
+                  url
+                  sshUrl
+                  owner { login avatarUrl }
+                  isFork
+                }
+              }
+            }
+          }
+        }
+    """.trimIndent()
+
     // ── 星标仓库列表 ──────────────────────────────────────────────────────
     // 注意：Repository 不暴露 lists 字段，listIds 在应用层通过 updateUserListsForItem 维护
     private val STARRED_REPOS_QUERY = """
@@ -177,6 +269,30 @@ object GraphQLClient {
     """.trimIndent()
 
     // ── 公开方法 ─────────────────────────────────────────────────────────────
+
+    /** 查询用户仓库（支持分页），返回 repositories 节点 */
+    suspend fun queryUserRepos(token: String, cursor: String? = null): org.json.JSONObject? =
+        withContext(Dispatchers.IO) {
+            try {
+                val vars = JSONObject().apply { if (cursor != null) put("cursor", cursor) }
+                val resp = post(token, JSONObject().put("query", USER_REPOS_QUERY).put("variables", vars).toString())
+                resp?.optJSONObject("data")?.optJSONObject("viewer")?.optJSONObject("repositories")
+            } catch (e: Exception) {
+                LogManager.w(TAG, "queryUserRepos 失败: ${e.message}"); null
+            }
+        }
+
+    /** 查询组织仓库（支持分页），返回 repositories 节点 */
+    suspend fun queryOrgRepos(token: String, org: String, cursor: String? = null): org.json.JSONObject? =
+        withContext(Dispatchers.IO) {
+            try {
+                val vars = JSONObject().put("org", org).apply { if (cursor != null) put("cursor", cursor) }
+                val resp = post(token, JSONObject().put("query", ORG_REPOS_QUERY).put("variables", vars).toString())
+                resp?.optJSONObject("data")?.optJSONObject("organization")?.optJSONObject("repositories")
+            } catch (e: Exception) {
+                LogManager.w(TAG, "queryOrgRepos 失败: ${e.message}"); null
+            }
+        }
 
     /** 查询星标仓库（支持分页），返回 nodes 数组 */
     suspend fun queryStarredRepos(token: String, cursor: String? = null): org.json.JSONObject? =

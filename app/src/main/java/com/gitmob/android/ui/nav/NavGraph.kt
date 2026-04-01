@@ -287,6 +287,9 @@ fun AppNavGraph(
                 onIssueClick = { issueNumber ->
                     navController.navigate(Route.IssueDetail.go(owner, repo, issueNumber))
                 },
+                onForkedRepoClick = { o, r ->
+                    navController.navigate(Route.RepoDetail.go(o, r))
+                },
                 vm = viewModel(factory = RepoDetailViewModel.factory(owner, repo)),
             )
         }

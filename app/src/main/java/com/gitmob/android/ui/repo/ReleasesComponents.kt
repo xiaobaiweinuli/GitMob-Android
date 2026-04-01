@@ -48,6 +48,7 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
+import kotlinx.coroutines.launch
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.RestartAlt
@@ -90,6 +91,7 @@ fun ReleasesTab(
     state: RepoDetailState,
     vm: RepoDetailViewModel? = null,
     c: GmColors,
+    permission: RepoPermission,
     onRefresh: () -> Unit = {},
 ) {
     val releases = state.releases
@@ -105,7 +107,7 @@ fun ReleasesTab(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(releases, key = { it.id }) { release ->
-                    SwipeableReleaseCard(release = release, c = c, vm = vm)
+                    SwipeableReleaseCard(release = release, c = c, vm = vm, permission = permission)
                 }
             }
         }
@@ -115,50 +117,62 @@ fun ReleasesTab(
 // ── 左滑删除包装 ──────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeableReleaseCard(release: GHRelease, c: GmColors, vm: RepoDetailViewModel?) {
+private fun SwipeableReleaseCard(release: GHRelease, c: GmColors, vm: RepoDetailViewModel?, permission: RepoPermission) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showEditDialog   by remember { mutableStateOf(false) }
     var errorMsg         by remember { mutableStateOf<String?>(null) }
-
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                showDeleteDialog = true
-            }
-            false   // 不真实 dismiss，仅触发对话框
-        }
-    )
-
-    SwipeToDismissBox(
-        state = dismissState,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
-            val color by animateColorAsState(
-                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart)
-                    Color(0xFFD32F2F) else c.border,
-                label = "swipe_bg",
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(color, RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(end = 20.dp),
-                ) {
-                    Icon(Icons.Default.Delete, null, tint = Color.White, modifier = Modifier.size(22.dp))
-                    Text("删除", fontSize = 11.sp, color = Color.White, modifier = Modifier.padding(top = 3.dp))
+    val dismissState = rememberSwipeToDismissBoxState()
+    val scope = rememberCoroutineScope()
+    
+    if (permission.isOwner) {
+        SwipeToDismissBox(
+            state = dismissState,
+            enableDismissFromStartToEnd = false,
+            onDismiss = { value ->
+                if (value == SwipeToDismissBoxValue.EndToStart) {
+                    showDeleteDialog = true
                 }
-            }
-        },
-    ) {
+                scope.launch {
+                    dismissState.reset()
+                }
+            },
+            backgroundContent = {
+                val color by animateColorAsState(
+                    if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart)
+                        Color(0xFFD32F2F) else c.border,
+                    label = "swipe_bg",
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(color, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(end = 20.dp),
+                    ) {
+                        Icon(Icons.Default.Delete, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                        Text("删除", fontSize = 11.sp, color = Color.White, modifier = Modifier.padding(top = 3.dp))
+                    }
+                }
+            },
+        ) {
+            ReleaseCard(
+                release   = release,
+                c         = c,
+                vm        = vm,
+                permission = permission,
+                onEditClick = { showEditDialog = true },
+            )
+        }
+    } else {
         ReleaseCard(
             release   = release,
             c         = c,
             vm        = vm,
-            onEditClick = { showEditDialog = true },
+            permission = permission,
+            onEditClick = null,
         )
     }
 
@@ -343,6 +357,7 @@ fun ReleaseCard(
     release: GHRelease,
     c: GmColors,
     vm: RepoDetailViewModel? = null,
+    permission: RepoPermission,
     onEditClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -361,15 +376,17 @@ fun ReleaseCard(
             if (release.draft) GmBadge("草稿", c.textTertiary, c.textSecondary)
             Spacer(Modifier.weight(1f))
             Text(release.tagName, fontSize = 12.sp, color = Coral, fontFamily = FontFamily.Monospace)
-            if (vm != null && onEditClick != null) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .background(c.bgItem, RoundedCornerShape(6.dp))
-                        .clickable { onEditClick() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Default.Edit, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
+            PermissionRequired(permission = permission, requireOwner = true) {
+                if (vm != null && onEditClick != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .background(c.bgItem, RoundedCornerShape(6.dp))
+                            .clickable { onEditClick() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Default.Edit, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
+                    }
                 }
             }
         }

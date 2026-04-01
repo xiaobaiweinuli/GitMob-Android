@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.gitmob.android"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.gitmob.android"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         // versionName 由 CI 通过 VERSION_NAME 环境变量注入（tag 触发时 = tag，如 1.2.3）
         // versionCode 由 CI 通过 VERSION_CODE 环境变量注入（= github.run_number，自动递增）
         // 本地开发回退默认值

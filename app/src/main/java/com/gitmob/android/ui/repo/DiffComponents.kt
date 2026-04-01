@@ -93,34 +93,43 @@ fun parsePatch(patch: String): List<DiffLine> {
     val result = mutableListOf<DiffLine>()
     var oldLine = 0
     var newLine = 0
-    for (raw in patch.lines()) {
-        when {
-            raw.startsWith("@@") -> {
-                // @@ -a,b +c,d @@ 提取起始行号
-                val m = Regex("""-(\d+)(?:,\d+)?\s+\+(\d+)""").find(raw)
-                if (m != null) {
-                    oldLine = m.groupValues[1].toIntOrNull()?.minus(1) ?: 0
-                    newLine = m.groupValues[2].toIntOrNull()?.minus(1) ?: 0
+    
+    if (patch.isBlank()) {
+        return result
+    }
+    
+    try {
+        for (raw in patch.lines()) {
+            when {
+                raw.startsWith("@@") -> {
+                    // @@ -a,b +c,d @@ 提取起始行号
+                    val m = Regex("""-(\d+)(?:,\d+)?\s+\+(\d+)""").find(raw)
+                    if (m != null) {
+                        oldLine = m.groupValues[1].toIntOrNull()?.minus(1) ?: 0
+                        newLine = m.groupValues[2].toIntOrNull()?.minus(1) ?: 0
+                    }
+                    result += DiffLine(DiffLineType.HUNK, raw, null, null)
                 }
-                result += DiffLine(DiffLineType.HUNK, raw, null, null)
-            }
-            raw.startsWith("+") && !raw.startsWith("+++") -> {
-                newLine++
-                result += DiffLine(DiffLineType.ADD, raw.drop(1), null, newLine)
-            }
-            raw.startsWith("-") && !raw.startsWith("---") -> {
-                oldLine++
-                result += DiffLine(DiffLineType.DEL, raw.drop(1), oldLine, null)
-            }
-            raw.startsWith("---") || raw.startsWith("+++") -> {
-                result += DiffLine(DiffLineType.META, raw, null, null)
-            }
-            else -> {
-                oldLine++; newLine++
-                result += DiffLine(DiffLineType.CONTEXT, raw.drop(1).ifEmpty { raw }, oldLine, newLine)
+                raw.startsWith("+") && !raw.startsWith("+++") -> {
+                    newLine++
+                    result += DiffLine(DiffLineType.ADD, raw.drop(1), null, newLine)
+                }
+                raw.startsWith("-") && !raw.startsWith("---") -> {
+                    oldLine++
+                    result += DiffLine(DiffLineType.DEL, raw.drop(1), oldLine, null)
+                }
+                raw.startsWith("---") || raw.startsWith("+++") -> {
+                    result += DiffLine(DiffLineType.META, raw, null, null)
+                }
+                else -> {
+                    oldLine++; newLine++
+                    result += DiffLine(DiffLineType.CONTEXT, raw.drop(1).ifEmpty { raw }, oldLine, newLine)
+                }
             }
         }
+    } catch (e: Exception) {
     }
+    
     return result
 }
 
@@ -240,17 +249,32 @@ fun FileDiffSheet(
             HorizontalDivider(color = ghBorder, thickness = 0.5.dp)
 
             // ── Diff 主体 ──────────────────────────────────────────────────
-            Row(modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .horizontalScroll(rememberScrollState())
-                .verticalScroll(rememberScrollState())) {
-                Column(modifier = Modifier.width(IntrinsicSize.Min)) {
-                    lines.filter { it.type != DiffLineType.META }.forEach { dl ->
+            if (lines.isEmpty()) {
+                // 没有变更内容时显示提示
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "无变更内容",
+                        color = ghMuted,
+                        fontSize = 14.sp,
+                    )
+                }
+            } else {
+                // 使用 LazyColumn 替代 Column，防止渲染大文件时卡顿
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    items(lines.filter { it.type != DiffLineType.META }) { dl ->
                         when (dl.type) {
                             DiffLineType.HUNK -> {
                                 Row(modifier = Modifier
-                                    .defaultMinSize(minWidth = 700.dp)
+                                    .fillMaxWidth()
                                     .background(hunkBg)
                                     .padding(vertical = 1.dp)) {
                                     Text(dl.content, fontSize = 10.sp, color = hunkFg,
@@ -275,7 +299,7 @@ fun FileDiffSheet(
                                     else              -> " "
                                 }
                                 Row(modifier = Modifier
-                                    .defaultMinSize(minWidth = 700.dp)
+                                    .fillMaxWidth()
                                     .background(bg)
                                     .height(IntrinsicSize.Min)) {
                                     Text(
@@ -285,7 +309,7 @@ fun FileDiffSheet(
                                         lineHeight = 16.sp,
                                         softWrap = false,
                                         modifier = Modifier
-                                            .defaultMinSize(minWidth = 600.dp)
+                                            .fillMaxWidth()
                                             .padding(horizontal = 4.dp, vertical = 1.dp),
                                     )
                                 }

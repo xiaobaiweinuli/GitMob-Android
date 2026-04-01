@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,6 +103,7 @@ fun ActionsTab(
     vm: RepoDetailViewModel,
     owner: String,
     repoName: String,
+    permission: RepoPermission,
     onRefresh: () -> Unit = {},
 ) {
     var showDispatchDialog by remember { mutableStateOf<GHWorkflow?>(null) }
@@ -147,19 +147,19 @@ fun ActionsTab(
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(
-                            state.selectedWorkflow!!.name,
+                            state.selectedWorkflow.name,
                             fontSize = 16.sp,
                             color = c.textPrimary,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            state.selectedWorkflow!!.path,
+                            state.selectedWorkflow.path,
                             fontSize = 11.sp,
                             color = c.textTertiary
                         )
                     }
                     Spacer(Modifier.weight(1f))
-                    if (state.selectedWorkflow!!.state == "active") {
+                    if (state.selectedWorkflow.state == "active") {
                         Button(
                             onClick = { showDispatchDialog = state.selectedWorkflow },
                             colors = ButtonDefaults.buttonColors(containerColor = Coral)
@@ -515,7 +515,7 @@ fun DispatchWorkflowDialog(
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                     )
                     ExposedDropdownMenu(
                         expanded = branchExpanded,
@@ -556,7 +556,7 @@ fun DispatchWorkflowDialog(
                             }
 
                             when {
-                                input.options != null && input.options!!.isNotEmpty() || input.type == "choice" -> {
+                                input.options != null && input.options.isNotEmpty() || input.type == "choice" -> {
                                     var expanded by remember { mutableStateOf(false) }
                                     val selectedValue = inputValues[input.name]?.toString() ?: input.default?.toString() ?: ""
                                     ExposedDropdownMenuBox(
@@ -585,7 +585,7 @@ fun DispatchWorkflowDialog(
                                             ),
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                         )
                                         ExposedDropdownMenu(
                                             expanded = expanded,

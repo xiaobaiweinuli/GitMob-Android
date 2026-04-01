@@ -49,7 +49,11 @@ class RepoRepository {
         if (!forceRefresh && reposCache != null && (now - reposCacheTime) < CACHE_TTL) {
             return@withContext reposCache!!
         }
-        val repos = api.getMyRepos()
+        // 完全使用 GraphQL API 获取仓库列表
+        val token = ApiClient.currentToken() ?: return@withContext emptyList()
+        val data = GraphQLClient.queryUserRepos(token) ?: return@withContext emptyList()
+        val nodes = data.optJSONArray("nodes") ?: return@withContext emptyList()
+        val repos = (0 until nodes.length()).mapNotNull { mapGraphQLToGHRepo(nodes.getJSONObject(it)) }
         reposCache = repos
         reposCacheTime = now
         repos
@@ -65,7 +69,11 @@ class RepoRepository {
     }
 
     suspend fun getOrgRepos(org: String): List<GHRepo> = withContext(Dispatchers.IO) {
-        api.getOrgRepos(org)
+        // 完全使用 GraphQL API 获取组织仓库列表
+        val token = ApiClient.currentToken() ?: return@withContext emptyList()
+        val data = GraphQLClient.queryOrgRepos(token, org) ?: return@withContext emptyList()
+        val nodes = data.optJSONArray("nodes") ?: return@withContext emptyList()
+        (0 until nodes.length()).mapNotNull { mapGraphQLToGHRepo(nodes.getJSONObject(it)) }
     }
 
     suspend fun getUserOrgs(): List<GHOrg> = withContext(Dispatchers.IO) {
@@ -614,6 +622,9 @@ class RepoRepository {
         val ownerAvatarUrl = node.optString("openGraphImageUrl").ifBlank { null }
         val owner = GHOwner(login = ownerLogin, avatarUrl = ownerAvatarUrl)
 
+        // 解析 parent 字段（如果存在）
+        val parent = node.optJSONObject("parent")?.let { mapGraphQLToGHRepo(it) }
+
         return GHRepo(
             id            = idLong,
             name          = repoName,
@@ -633,6 +644,7 @@ class RepoRepository {
             language      = language,
             owner         = owner,
             fork          = node.optBoolean("isFork", false),
+            parent        = parent,
         )
     }
 

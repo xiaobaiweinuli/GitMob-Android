@@ -31,7 +31,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
             val msg = buildString {
                 append("==================== CRASH ====================\n")
                 append("时间: ${timeFmt.format(now)}\n")
-                append("线程: ${thread.name} (id=${thread.id})\n")
+                append("线程: ${thread.name} (id=${thread.threadId()})\n")
                 append("异常: ${ex::class.java.name}: ${ex.message}\n\n")
                 append("堆栈跟踪:\n")
                 append(ex.stackTraceToString())

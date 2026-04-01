@@ -88,6 +88,7 @@ import okhttp3.Request
 @Composable
 fun BranchesTab(
     state: RepoDetailState, c: GmColors,
+    permission: RepoPermission,
     onSwitch: (String) -> Unit, onNewBranch: () -> Unit,
     onDelete: (String) -> Unit, onRename: (String, String) -> Unit,
     onSetDefault: (String) -> Unit,
@@ -103,12 +104,14 @@ fun BranchesTab(
     ) {
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             item {
-                Button(onClick = onNewBranch, modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = CoralDim, contentColor = Coral),
-                    shape = RoundedCornerShape(12.dp)) {
-                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("新建分支", fontSize = 13.sp)
+                PermissionRequired(permission = permission, requireOwner = true) {
+                    Button(onClick = onNewBranch, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = CoralDim, contentColor = Coral),
+                        shape = RoundedCornerShape(12.dp)) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("新建分支", fontSize = 13.sp)
+                    }
                 }
             }
             items(state.branches, key = { "${it.name}_${it.commit.sha}" }) { branch ->
@@ -148,24 +151,26 @@ fun BranchesTab(
                                     onClick = { onSwitch(branch.name); showMenu = false },
                                 )
                             }
-                            if (!isDefault) {
+                            PermissionRequired(permission = permission, requireOwner = true) {
+                                if (!isDefault) {
+                                    DropdownMenuItem(
+                                        text = { Text("设为默认分支", fontSize = 13.sp, color = c.textPrimary) },
+                                        leadingIcon = { Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(15.dp)) },
+                                        onClick = { onSetDefault(branch.name); showMenu = false },
+                                    )
+                                }
                                 DropdownMenuItem(
-                                    text = { Text("设为默认分支", fontSize = 13.sp, color = c.textPrimary) },
-                                    leadingIcon = { Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(15.dp)) },
-                                    onClick = { onSetDefault(branch.name); showMenu = false },
+                                    text = { Text("重命名", fontSize = 13.sp, color = c.textPrimary) },
+                                    leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null, tint = c.textSecondary, modifier = Modifier.size(15.dp)) },
+                                    onClick = { showRenameDialog = branch; showMenu = false },
                                 )
-                            }
-                            DropdownMenuItem(
-                                text = { Text("重命名", fontSize = 13.sp, color = c.textPrimary) },
-                                leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null, tint = c.textSecondary, modifier = Modifier.size(15.dp)) },
-                                onClick = { showRenameDialog = branch; showMenu = false },
-                            )
-                            if (!isDefault && !isCurrent) {
-                                DropdownMenuItem(
-                                    text = { Text("删除分支", fontSize = 13.sp, color = RedColor) },
-                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = RedColor, modifier = Modifier.size(15.dp)) },
-                                    onClick = { showDeleteDialog = branch; showMenu = false },
-                                )
+                                if (!isDefault && !isCurrent) {
+                                    DropdownMenuItem(
+                                        text = { Text("删除分支", fontSize = 13.sp, color = RedColor) },
+                                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = RedColor, modifier = Modifier.size(15.dp)) },
+                                        onClick = { showDeleteDialog = branch; showMenu = false },
+                                    )
+                                }
                             }
                         }
                     }

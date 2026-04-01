@@ -271,6 +271,7 @@ fun RepoListScreen(
                                 onEdit = { desc, site, topics -> vm.editRepo(repo.owner.login, repo.name, desc, site, topics) },
                                 onClone = { url -> onCloneRepo(url) },
                                 c = c,
+                                onForkedRepoClick = { owner, name -> onRepoClick(owner, name) },
                             )
                         }
                     }
@@ -337,18 +338,20 @@ private fun SwipeableStarredRepoCard(
     c: GmColors,
 ) {
     var showRemoveConfirm by remember { mutableStateOf(false) }
+    val dismissState = rememberSwipeToDismissBoxState()
+    val scope = rememberCoroutineScope()
 
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                showRemoveConfirm = true
-            }
-            false  // 永不真实 dismiss，由弹窗确认后操作
-        }
-    )
     SwipeToDismissBox(
         state = dismissState,
         enableDismissFromStartToEnd = false,
+        onDismiss = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                showRemoveConfirm = true
+            }
+            scope.launch {
+                dismissState.reset()
+            }
+        },
         backgroundContent = {
             val triggered = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
             val color by animateColorAsState(
@@ -530,23 +533,25 @@ fun SwipeableRepoCard(
     onEdit: (String, String, List<String>) -> Unit,
     onClone: (String) -> Unit,
     c: GmColors,
+    onForkedRepoClick: ((String, String) -> Unit)? = null,
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
-
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                showDeleteDialog = true
-            }
-            false  // 不真的 dismiss，仅触发对话框
-        }
-    )
+    val dismissState = rememberSwipeToDismissBoxState()
+    val scope = rememberCoroutineScope()
 
     SwipeToDismissBox(
         state = dismissState,
         enableDismissFromStartToEnd = false,
+        onDismiss = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                showDeleteDialog = true
+            }
+            scope.launch {
+                dismissState.reset()
+            }
+        },
         backgroundContent = {
             val color by animateColorAsState(
                 if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) RedColor else c.border,
@@ -570,7 +575,8 @@ fun SwipeableRepoCard(
             onRename = { showRenameDialog = true },
             onEdit = { showEditDialog = true },
             onClone = { onClone(repo.cloneUrl) },
-            c = c)
+            c = c,
+            onForkedRepoClick = onForkedRepoClick)
     }
 
     if (showDeleteDialog) {
@@ -610,6 +616,7 @@ private fun RepoCardContent(
     onClone: () -> Unit,
     c: GmColors,
     extraActions: @Composable (() -> Unit)? = null,
+    onForkedRepoClick: ((String, String) -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -621,6 +628,22 @@ private fun RepoCardContent(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(repo.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.textPrimary)
+                if (repo.fork && repo.parent != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 2.dp).clickable {
+                            onForkedRepoClick?.invoke(repo.parent.owner.login, repo.parent.name)
+                        }
+                    ) {
+                        Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
+                        Text(
+                            text = "复刻自: ${repo.parent.fullName}",
+                            fontSize = 11.sp,
+                            color = BlueColor,
+                        )
+                    }
+                }
                 if (!repo.description.isNullOrBlank()) {
                     Text(repo.description, fontSize = 12.sp, color = c.textSecondary, maxLines = 2,
                         modifier = Modifier.padding(top = 3.dp))
@@ -632,7 +655,7 @@ private fun RepoCardContent(
                             .padding(top = 4.dp)
                             .clickable {
                                 // 打开website链接
-                                val url = if (repo.homepage!!.startsWith("http")) repo.homepage else "https://${repo.homepage}"
+                                val url = if (repo.homepage.startsWith("http")) repo.homepage else "https://${repo.homepage}"
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                 context.startActivity(intent)

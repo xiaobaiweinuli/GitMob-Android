@@ -32,6 +32,24 @@
 -keep class com.gitmob.android.ui.repo.RepoDetailState { *; }
 -keep class com.gitmob.android.ui.repo.UploadPhase { *; }
 
+# 保留所有枚举类，防止反序列化时找不到枚举常量
+-keep class * extends java.lang.Enum { *; }
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+    *;
+}
+
+# 保留 Markdown 相关组件
+-keep class com.gitmob.android.util.MarkdownUtils { *; }
+-keep class com.gitmob.android.ui.common.GmMarkdownWebView { *; }
+-keep class com.gitmob.android.ui.common.GmWebViewKt { *; }
+
+# 完整保留 Flexmark 库的所有类和成员，防止枚举类被混淆
+-keep class com.vladsch.flexmark.** { *; }
+-keepclassmembers class com.vladsch.flexmark.** { *; }
+-dontwarn com.vladsch.flexmark.**
+
 # ViewModel — R8 不得裁剪 ViewModel 构造函数（SavedStateHandle 注入）
 -keep class * extends androidx.lifecycle.ViewModel { *; }
 -keep class * extends androidx.lifecycle.AndroidViewModel { *; }
@@ -40,8 +58,8 @@
 -dontwarn coil.**
 
 # Kotlin Coroutines
--keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
--keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory { void <init>(); }
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler { void <init>(); }
 -keepclassmembernames class kotlinx.** {
     volatile <fields>;
 }
@@ -61,3 +79,13 @@
 -keep class coil3.** { *; }
 -keep class coil3.svg.** { *; }
 -keep class coil3.network.** { *; }
+
+# PDF 相关库 - 只忽略警告，不强制keep所有类
+-dontwarn org.apache.pdfbox.**
+-dontwarn com.openhtmltopdf.**
+-dontwarn org.apache.fontbox.**
+-dontwarn org.apache.xmpbox.**
+-dontwarn java.awt.**
+-dontwarn javax.imageio.**
+-dontwarn sun.misc.**
+-dontwarn sun.nio.ch.**

@@ -143,6 +143,7 @@ fun CommitsTab(
 fun CommitDetailSheet(
     commit: GHCommitFull,
     c: GmColors,
+    permission: RepoPermission,
     vm: RepoDetailViewModel,
     onDismiss: () -> Unit,
 ) {
@@ -281,7 +282,7 @@ fun CommitDetailSheet(
                                 if (hasPatch) Modifier.clickable {
                                     vm.openFilePatch(FilePatchInfo(
                                         filename        = file.filename,
-                                        patch           = file.patch!!,
+                                        patch           = file.patch,
                                         additions       = file.additions,
                                         deletions       = file.deletions,
                                         status          = file.status,
@@ -325,50 +326,52 @@ fun CommitDetailSheet(
             Spacer(Modifier.height(12.dp))
 
             // ── 操作区 ─────────────────────────────────────────────────
-            Text("操作", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(10.dp))
+            PermissionRequired(permission = permission, requireOwner = true) {
+                Text("操作", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(10.dp))
 
-            // 撤销（Revert）：创建新 commit，保留历史 ─────────────────────
-            Button(
-                onClick = { showRevertConfirm = true },
-                modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape  = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BlueColor),
-            ) {
-                Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text("撤销此提交", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                // 撤销（Revert）：创建新 commit，保留历史 ─────────────────────
+                Button(
+                    onClick = { showRevertConfirm = true },
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape  = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlueColor),
+                ) {
+                    Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("撤销此提交", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "· 创建新 commit，内容回退到此提交之前，不重写历史",
+                    fontSize = 11.sp, color = c.textTertiary,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // 回滚（Reset）：强制移动分支指针 ────────────────────────────
+                OutlinedButton(
+                    onClick = { showResetConfirm = true },
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape  = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, RedColor.copy(alpha = 0.7f)),
+                ) {
+                    Icon(Icons.Default.RestartAlt, null, tint = RedColor, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("回滚到此提交", fontSize = 13.sp, color = RedColor, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "· 强制将分支 HEAD 指向此 SHA，之后的提交将消失（危险）",
+                    fontSize = 11.sp, color = c.textTertiary,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+
+                Spacer(Modifier.height(16.dp))
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "· 创建新 commit，内容回退到此提交之前，不重写历史",
-                fontSize = 11.sp, color = c.textTertiary,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // 回滚（Reset）：强制移动分支指针 ────────────────────────────
-            OutlinedButton(
-                onClick = { showResetConfirm = true },
-                modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape  = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, RedColor.copy(alpha = 0.7f)),
-            ) {
-                Icon(Icons.Default.RestartAlt, null, tint = RedColor, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("回滚到此提交", fontSize = 13.sp, color = RedColor, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "· 强制将分支 HEAD 指向此 SHA，之后的提交将消失（危险）",
-                fontSize = 11.sp, color = c.textTertiary,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
-
-            Spacer(Modifier.height(16.dp))
 
             // 在 GitHub 查看 ──────────────────────────────────────────────
             OutlinedButton(
