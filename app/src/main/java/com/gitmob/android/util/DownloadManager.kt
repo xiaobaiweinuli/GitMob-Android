@@ -78,51 +78,52 @@ object GmDownloadManager {
     private val bareClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
             .build()
     }
 
-    fun ensureChannels(ctx: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = ctx.getSystemService(NotificationManager::class.java)
-            // 进度：静默
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_PROGRESS, "GitMob 下载进度",
-                    NotificationManager.IMPORTANCE_LOW).apply {
-                    setSound(null, null)
-                }
-            )
-            // 结果：有提示音
-            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_RESULT, "GitMob 下载结果",
-                    NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    if (soundUri != null) {
-                        setSound(soundUri, AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build())
-                    }
-                }
-            )
+    private fun initChannels(ctx: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+
+        // 进度：静默
+        val ch1 = NotificationChannel(CHANNEL_PROGRESS, "下载进度", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "显示下载中的进度"
+            setSound(null, null)
+            enableVibration(false)
         }
+
+        // 结果：有提示音
+        val ch2 = NotificationChannel(CHANNEL_RESULT, "下载完成", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "下载成功或失败时的提示"
+            setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build())
+            enableVibration(true)
+        }
+
+        nm.createNotificationChannels(listOf(ch1, ch2))
     }
 
-    fun download(ctx: Context, apiUrl: String, filename: String): Int {
-        ensureChannels(ctx)
+    /** 开始下载（返回任务 id） */
+    fun download(ctx: Context, url: String, filename: String): Int {
+        initChannels(ctx)
         val id = notifId.getAndIncrement()
-        val task = DownloadTask(id = id, filename = filename, url = apiUrl)
+        val task = DownloadTask(id, filename, url)
         tasks[id] = task
-        task.job = scope.launch { doDownload(ctx, task) }
+
+        task.job = scope.launch {
+            doDownload(ctx, task)
+            tasks.remove(id)
+        }
         return id
     }
 
-    fun cancel(ctx: Context, taskId: Int) {
-        val task = tasks[taskId] ?: return
-        task.job?.cancel()
-        task.statusFlow.value = DownloadStatus.Cancelled
-        NotificationManagerCompat.from(ctx).cancel(taskId)
-        tasks.remove(taskId)
+    fun cancel(ctx: Context, id: Int) {
+        tasks[id]?.job?.cancel()
+        tasks.remove(id)
+        NotificationManagerCompat.from(ctx).cancel(id)
     }
 
     fun getTask(id: Int): DownloadTask? = tasks[id]
@@ -135,43 +136,65 @@ object GmDownloadManager {
         postNotifProgress(ctx, task, 0)
 
         try {
+            // 判断是否是 GitHub API URL 还是直接的下载 URL
+            val isGithubApiUrl = task.url.contains("api.github.com/repos/")
+            
+            if (!isGithubApiUrl) {
+                // 直接下载，不需要 GitHub API 认证
+                val req = Request.Builder().url(task.url).get().build()
+                val resp = bareClient.newCall(req).execute()
+                if (!resp.isSuccessful) {
+                    resp.close()
+                    error("HTTP ${resp.code}: ${resp.message}")
+                }
+                streamToFile(ctx, task, resp)
+                return
+            }
+
             val token = ApiClient.currentToken() ?: error("未登录")
 
-            // 第一跳：带 Auth 头请求 GitHub API，获取重定向 URL
-            // Accept 必须用 application/vnd.github+json（官方文档要求）
-            // 用 application/octet-stream 会导致 GitHub 返回 415
+            // 判断是 release asset 还是 artifact
+            val isReleaseAsset = task.url.contains("/releases/assets/")
+            val isArtifact = task.url.contains("/actions/artifacts/")
+
+            // 对于 GitHub API URL，根据类型使用不同的 Accept 头
+            // - release asset: application/octet-stream
+            // - artifact: application/vnd.github+json
+            val acceptHeader = if (isArtifact) "application/vnd.github+json" else "application/octet-stream"
+            
             val firstReq = Request.Builder()
                 .url(task.url)
                 .header("Authorization", "Bearer $token")
-                .header("Accept", "application/vnd.github+json")
+                .header("Accept", acceptHeader)
                 .header("X-GitHub-Api-Version", "2022-11-28")
                 .build()
 
-            val firstResp = noRedirectClient.newCall(firstReq).execute()
-            val downloadUrl: String = when (firstResp.code) {
+            var firstResp = noRedirectClient.newCall(firstReq).execute()
+            
+            when (firstResp.code) {
                 302, 301, 307, 308 -> {
+                    val location = firstResp.header("Location") ?: error("重定向但无 Location 头")
                     firstResp.close()
-                    firstResp.header("Location") ?: error("重定向但无 Location 头")
+                    
+                    // 第二跳：不带 Authorization，直接请求 S3/Azure 预签名 URL
+                    val secondReq = Request.Builder().url(location).get().build()
+                    val secondResp = bareClient.newCall(secondReq).execute()
+                    
+                    if (!secondResp.isSuccessful) {
+                        secondResp.close()
+                        error("HTTP ${secondResp.code}: ${secondResp.message}")
+                    }
+                    streamToFile(ctx, task, secondResp)
                 }
                 200 -> {
-                    // 少数情况直接返回 200（小文件）
+                    // API 直接返回文件内容
                     streamToFile(ctx, task, firstResp)
-                    return
                 }
                 else -> {
                     firstResp.close()
                     error("HTTP ${firstResp.code}: ${firstResp.message}")
                 }
             }
-
-            // 第二跳：不带 Authorization，直接请求 S3/Azure 预签名 URL
-            val secondReq = Request.Builder().url(downloadUrl).get().build()
-            val secondResp = bareClient.newCall(secondReq).execute()
-            if (!secondResp.isSuccessful) {
-                secondResp.close()
-                error("HTTP ${secondResp.code}: ${secondResp.message}")
-            }
-            streamToFile(ctx, task, secondResp)
 
         } catch (e: CancellationException) {
             NotificationManagerCompat.from(ctx).cancel(task.id)
@@ -209,68 +232,51 @@ object GmDownloadManager {
         postNotifSuccess(ctx, task, dest)
     }
 
-    // ── 通知 ─────────────────────────────────────────────────────────
-
-    private fun cancelIntent(ctx: Context, taskId: Int): PendingIntent {
-        val i = Intent("com.gitmob.DOWNLOAD_CANCEL").putExtra("taskId", taskId)
-        return PendingIntent.getBroadcast(ctx, taskId, i,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-    }
+    // ── 通知────────────────────────────────────────────────────────
 
     private fun postNotifProgress(ctx: Context, task: DownloadTask, pct: Int) {
-        val nm = NotificationManagerCompat.from(ctx)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !nm.areNotificationsEnabled()) return
-        val n = NotificationCompat.Builder(ctx, CHANNEL_PROGRESS)
+        val notif = NotificationCompat.Builder(ctx, CHANNEL_PROGRESS)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("正在下载")
             .setContentText(task.filename)
             .setOngoing(true)
+            .setSilent(true)
             .setOnlyAlertOnce(true)
-            .setProgress(100, pct.coerceAtLeast(0), pct < 0)
-            .addAction(android.R.drawable.ic_delete, "取消", cancelIntent(ctx, task.id))
+            .setProgress(100, pct, pct < 0)
             .build()
-        try { nm.notify(task.id, n) } catch (_: SecurityException) {}
+
+        NotificationManagerCompat.from(ctx).notify(task.id, notif)
     }
 
     private fun postNotifSuccess(ctx: Context, task: DownloadTask, file: File) {
-        val nm = NotificationManagerCompat.from(ctx)
-        val n = NotificationCompat.Builder(ctx, CHANNEL_RESULT)
+        val openIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(
+                androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file),
+                "*/*"
+            )
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val pi = PendingIntent.getActivity(ctx, task.id, openIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+        val notif = NotificationCompat.Builder(ctx, CHANNEL_RESULT)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("下载完成")
             .setContentText(task.filename)
+            .setContentIntent(pi)
             .setAutoCancel(true)
-            .setContentIntent(openFileIntent(ctx, file))
             .build()
-        try { nm.notify(task.id, n) } catch (_: SecurityException) {}
+
+        NotificationManagerCompat.from(ctx).notify(task.id, notif)
     }
 
-    private fun postNotifFailed(ctx: Context, task: DownloadTask, error: String) {
-        val nm = NotificationManagerCompat.from(ctx)
-        val n = NotificationCompat.Builder(ctx, CHANNEL_RESULT)
+    private fun postNotifFailed(ctx: Context, task: DownloadTask, msg: String) {
+        val notif = NotificationCompat.Builder(ctx, CHANNEL_RESULT)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentTitle("下载失败")
-            .setContentText("${task.filename}：$error")
+            .setContentText(msg)
             .setAutoCancel(true)
             .build()
-        try { nm.notify(task.id, n) } catch (_: SecurityException) {}
-    }
 
-    private fun openFileIntent(ctx: Context, file: File): PendingIntent {
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            ctx, "${ctx.packageName}.fileprovider", file)
-        val i = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mimeType(file.name))
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        return PendingIntent.getActivity(ctx, file.hashCode(), i,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-    }
-
-    private fun mimeType(name: String): String = when {
-        name.endsWith(".zip")  -> "application/zip"
-        name.endsWith(".apk")  -> "application/vnd.android.package-archive"
-        name.endsWith(".pdf")  -> "application/pdf"
-        name.endsWith(".txt")  -> "text/plain"
-        else                   -> "application/octet-stream"
+        NotificationManagerCompat.from(ctx).notify(task.id, notif)
     }
 }

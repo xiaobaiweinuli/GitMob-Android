@@ -924,6 +924,7 @@ fun ArtifactCard(
     c: GmColors,
     vm: RepoDetailViewModel
 ) {
+    val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val sizeText = formatFileSize(artifact.sizeInBytes)
@@ -976,67 +977,90 @@ fun ArtifactCard(
             Column {
                 GmDivider()
                 Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // ── 下载按钮（带进度背景）──
-                    val taskKey    = "artifact_${artifact.id}"
-                    val taskId     = vm.state.collectAsState().value.downloadTaskIds[taskKey]
-                    val dlStatus   = taskId?.let {
-                        com.gitmob.android.util.GmDownloadManager.statusOf(it)
-                    }?.collectAsState()?.value
-                    val dlPct      = (dlStatus as? com.gitmob.android.util.DownloadStatus.Progress)?.percent ?: 0
-                    val isDownload = dlStatus is com.gitmob.android.util.DownloadStatus.Progress
-                    val isDone     = dlStatus is com.gitmob.android.util.DownloadStatus.Success
-
-                    Box(modifier = Modifier.weight(1f)) {
-                        // 进度背景层
-                        if (isDownload && dlPct > 0)
-                            Box(modifier = Modifier
-                                .fillMaxWidth(dlPct / 100f)
-                                .matchParentSize()
-                                .background(BlueColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp)))
-                        Button(
-                            onClick = { vm.downloadArtifact(artifact) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = when {
-                                    isDone     -> Green
-                                    isDownload -> BlueColor.copy(alpha = 0.7f)
-                                    else       -> BlueColor
-                                }
-                            ),
-                        ) {
-                            Icon(
-                                when {
-                                    isDone     -> Icons.Default.CheckCircle
-                                    isDownload -> Icons.Default.Close
-                                    else       -> Icons.Default.Download
-                                },
-                                null, modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                when {
-                                    isDone     -> "已完成"
-                                    isDownload -> "$dlPct%"
-                                    else       -> "下载"
-                                },
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = { showDeleteConfirm = true },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = RedColor)
+                if (artifact.expired) {
+                    Text(
+                        "此产物已过期",
+                        fontSize = 12.sp,
+                        color = c.textTertiary,
+                        modifier = Modifier.padding(horizontal = 10.dp)
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Delete, null, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("删除", fontSize = 12.sp)
+                        // ── 下载按钮（带进度背景）──
+                        val taskKey    = "artifact_${artifact.id}"
+                        val taskId     = vm.state.collectAsState().value.downloadTaskIds[taskKey]
+                        val dlStatus   = taskId?.let {
+                            com.gitmob.android.util.GmDownloadManager.statusOf(it)
+                        }?.collectAsState()?.value
+                        val dlPct      = (dlStatus as? com.gitmob.android.util.DownloadStatus.Progress)?.percent ?: 0
+                        val isDownload = dlStatus is com.gitmob.android.util.DownloadStatus.Progress
+                        val isDone     = dlStatus is com.gitmob.android.util.DownloadStatus.Success
+                        val downloadedFile = (dlStatus as? com.gitmob.android.util.DownloadStatus.Success)?.file
+
+                        Box(modifier = Modifier.weight(1f)) {
+                            // 进度背景层
+                            if (isDownload && dlPct > 0)
+                                Box(modifier = Modifier
+                                    .fillMaxWidth(dlPct / 100f)
+                                    .matchParentSize()
+                                    .background(BlueColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp)))
+                            Button(
+                                onClick = {
+                                    if (isDone && downloadedFile != null) {
+                                        val openIntent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(
+                                                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", downloadedFile),
+                                                "*/*"
+                                            )
+                                            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        context.startActivity(openIntent)
+                                    } else {
+                                        vm.downloadArtifact(artifact)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = when {
+                                        isDone     -> Green
+                                        isDownload -> BlueColor.copy(alpha = 0.7f)
+                                        else       -> BlueColor
+                                    }
+                                ),
+                            ) {
+                                Icon(
+                                    when {
+                                        isDone     -> Icons.Default.CheckCircle
+                                        isDownload -> Icons.Default.Close
+                                        else       -> Icons.Default.Download
+                                    },
+                                    null, modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    when {
+                                        isDone     -> "点击打开"
+                                        isDownload -> "$dlPct%"
+                                        else       -> "下载"
+                                    },
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = { showDeleteConfirm = true },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = RedColor)
+                        ) {
+                            Icon(Icons.Default.Delete, null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("删除", fontSize = 12.sp)
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))

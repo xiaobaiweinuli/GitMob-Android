@@ -420,36 +420,59 @@ fun ReleaseCard(
             release.assets.forEach { asset ->
                 val taskKey = "asset_${asset.id}"
                 val taskId  = vm?.state?.collectAsState()?.value?.downloadTaskIds?.get(taskKey)
-                val status  = taskId?.let { com.gitmob.android.util.GmDownloadManager.statusOf(it) }
+                val dlStatus  = taskId?.let { com.gitmob.android.util.GmDownloadManager.statusOf(it) }
                     ?.collectAsState()?.value
-                val pct = (status as? com.gitmob.android.util.DownloadStatus.Progress)?.percent ?: 0
-                val isDownloading = status is com.gitmob.android.util.DownloadStatus.Progress
+                val dlPct = (dlStatus as? com.gitmob.android.util.DownloadStatus.Progress)?.percent ?: 0
+                val isDownload = dlStatus is com.gitmob.android.util.DownloadStatus.Progress
+                val isDone = dlStatus is com.gitmob.android.util.DownloadStatus.Success
+                val downloadedFile = (dlStatus as? com.gitmob.android.util.DownloadStatus.Success)?.file
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 3.dp)
                         .background(c.bgItem, RoundedCornerShape(8.dp))
-                        .clickable { vm?.downloadAsset(asset) },
                 ) {
-                    if (isDownloading && pct > 0) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(pct / 100f)
-                                .matchParentSize()
-                                .background(Coral.copy(alpha = 0.18f), RoundedCornerShape(8.dp))
-                        )
-                    }
+                    // 进度背景层
+                    if (isDownload && dlPct > 0)
+                        Box(modifier = Modifier
+                            .fillMaxWidth(dlPct / 100f)
+                            .matchParentSize()
+                            .background(Coral.copy(alpha = 0.18f), RoundedCornerShape(8.dp)))
+                    
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                            .clickable {
+                                if (isDone && downloadedFile != null) {
+                                    val openIntent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(
+                                            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", downloadedFile),
+                                            "*/*"
+                                        )
+                                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+                                    }
+                                    context.startActivity(openIntent)
+                                } else {
+                                    vm?.downloadAsset(asset)
+                                }
+                            },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Icon(Icons.Default.Attachment, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
-                        Text(asset.name, fontSize = 12.sp, color = c.textPrimary, modifier = Modifier.weight(1f), maxLines = 1)
-                        Text(formatSize(asset.size), fontSize = 10.sp, color = c.textTertiary)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(asset.name, fontSize = 12.sp, color = c.textPrimary, maxLines = 1)
+                            if (isDownload) {
+                                Text("${dlPct}%", fontSize = 10.sp, color = Coral)
+                            } else if (isDone) {
+                                Text("点击打开", fontSize = 10.sp, color = Green)
+                            }
+                        }
                         when {
-                            isDownloading -> CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = Coral)
+                            isDone -> Icon(Icons.Default.CheckCircle, null, tint = Green, modifier = Modifier.size(14.dp))
+                            isDownload -> Icon(Icons.Default.Close, null, tint = Coral, modifier = Modifier.size(14.dp))
                             else -> Icon(Icons.Default.Download, null, tint = Coral, modifier = Modifier.size(14.dp))
                         }
                     }
@@ -469,7 +492,6 @@ fun ReleaseCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 32.dp),
@@ -487,7 +509,9 @@ fun ReleaseCard(
                 release.body?.takeIf { it.isNotBlank() }?.let { bodyText ->
                     GmMarkdownWebView(
                         markdown = bodyText,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 100.dp),
                     )
                 }
                 // 资产
@@ -495,14 +519,32 @@ fun ReleaseCard(
                     HorizontalDivider(color = c.border)
                     Text("附件 (${release.assets.size})", fontSize = 12.sp, color = c.textTertiary, fontWeight = FontWeight.Medium)
                     release.assets.forEach { asset ->
+                        val taskKey = "asset_${asset.id}"
+                        val taskId  = vm?.state?.collectAsState()?.value?.downloadTaskIds?.get(taskKey)
+                        val dlStatus  = taskId?.let { com.gitmob.android.util.GmDownloadManager.statusOf(it) }
+                            ?.collectAsState()?.value
+                        val dlPct = (dlStatus as? com.gitmob.android.util.DownloadStatus.Progress)?.percent ?: 0
+                        val isDownload = dlStatus is com.gitmob.android.util.DownloadStatus.Progress
+                        val isDone = dlStatus is com.gitmob.android.util.DownloadStatus.Success
+                        val downloadedFile = (dlStatus as? com.gitmob.android.util.DownloadStatus.Success)?.file
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(c.bgItem, RoundedCornerShape(8.dp))
                                 .clickable {
-                                    vm?.downloadAsset(asset)
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(asset.downloadUrl))
-                                    context.startActivity(intent)
+                                    if (isDone && downloadedFile != null) {
+                                        val openIntent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(
+                                                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", downloadedFile),
+                                                "*/*"
+                                            )
+                                            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        context.startActivity(openIntent)
+                                    } else {
+                                        vm?.downloadAsset(asset)
+                                    }
                                 }
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -511,9 +553,19 @@ fun ReleaseCard(
                             Icon(Icons.Default.Attachment, null, tint = c.textTertiary, modifier = Modifier.size(15.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(asset.name, fontSize = 13.sp, color = c.textPrimary)
-                                Text(formatSize(asset.size), fontSize = 10.sp, color = c.textTertiary)
+                                if (isDownload) {
+                                    Text("${dlPct}%", fontSize = 10.sp, color = Coral)
+                                } else if (isDone) {
+                                    Text("点击打开", fontSize = 10.sp, color = Green)
+                                } else {
+                                    Text(formatSize(asset.size), fontSize = 10.sp, color = c.textTertiary)
+                                }
                             }
-                            Icon(Icons.Default.Download, null, tint = Coral, modifier = Modifier.size(16.dp))
+                            when {
+                                isDone -> Icon(Icons.Default.CheckCircle, null, tint = Green, modifier = Modifier.size(16.dp))
+                                isDownload -> Icon(Icons.Default.Close, null, tint = Coral, modifier = Modifier.size(16.dp))
+                                else -> Icon(Icons.Default.Download, null, tint = Coral, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
                 }

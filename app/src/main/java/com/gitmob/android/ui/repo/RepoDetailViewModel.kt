@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.gitmob.android.api.*
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.data.RepoRepository
+import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
@@ -1120,13 +1121,12 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun downloadArtifact(artifact: GHWorkflowArtifact) {
         val ctx = getApplication<Application>()
-        // 直接使用 API 返回的 archive_download_url，避免手动拼接出错
-        val apiUrl = artifact.archiveDownloadUrl
+        // 直接在 url 后面添加 /zip 构造下载链接
+        val apiUrl = "${artifact.url}/zip"
         val key = "artifact_${artifact.id}"
         val existing = _state.value.downloadTaskIds[key]
         val taskStatus = existing?.let { com.gitmob.android.util.GmDownloadManager.statusOf(it)?.value }
         if (taskStatus is com.gitmob.android.util.DownloadStatus.Progress) {
-            // 点击取消
             com.gitmob.android.util.GmDownloadManager.cancel(ctx, existing)
             _state.update { it.copy(downloadTaskIds = it.downloadTaskIds - key) }
         } else {
@@ -1138,14 +1138,11 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     /** Release Asset API 下载（流式，带通知进度） */
     fun downloadAsset(asset: GHAsset) {
         val ctx = getApplication<Application>()
-        val apiUrl = asset.url.ifBlank {
-            "https://api.github.com/repos/$owner/$repoName/releases/assets/${asset.id}"
-        }
+        val apiUrl = asset.url
         val key = "asset_${asset.id}"
         val existing = _state.value.downloadTaskIds[key]
         val taskStatus = existing?.let { com.gitmob.android.util.GmDownloadManager.statusOf(it)?.value }
         if (taskStatus is com.gitmob.android.util.DownloadStatus.Progress) {
-            // 点击取消
             com.gitmob.android.util.GmDownloadManager.cancel(ctx, existing)
             _state.update { it.copy(downloadTaskIds = it.downloadTaskIds - key) }
         } else {
