@@ -16,8 +16,15 @@ class RepoRepository {
     private val api get() = ApiClient.api
 
     // ─── 内存缓存 ─────────────────────────────────────────────────────────────
-    private var reposCache: List<GHRepo>? = null
-    private var reposCacheTime: Long = 0
+    private data class ReposCacheEntry(
+        val repos: List<GHRepo>,
+        val hasNextPage: Boolean,
+        val endCursor: String?,
+        val ts: Long = System.currentTimeMillis()
+    ) {
+        fun valid(ttl: Long = 60_000L) = System.currentTimeMillis() - ts < ttl
+    }
+    private val reposCache = java.util.concurrent.ConcurrentHashMap<String, ReposCacheEntry>()
     private val CACHE_TTL = 5 * 60 * 1000L           // 5 分钟（列表）
     private val DETAIL_TTL = 60 * 1000L               // 60 秒（详情）
 
@@ -44,19 +51,35 @@ class RepoRepository {
 
     // ─── 用户 / 仓库 ───
 
-    suspend fun getMyRepos(forceRefresh: Boolean = false): List<GHRepo> = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        if (!forceRefresh && reposCache != null && (now - reposCacheTime) < CACHE_TTL) {
-            return@withContext reposCache!!
+    data class ReposPageResult(
+        val repos: List<GHRepo>,
+        val hasNextPage: Boolean,
+        val endCursor: String?
+    )
+
+    suspend fun getMyRepos(forceRefresh: Boolean = false, cursor: String? = null): ReposPageResult = withContext(Dispatchers.IO) {
+        val cacheKey = "user"
+        
+        if (cursor == null && !forceRefresh) {
+            reposCache[cacheKey]?.takeIf { it.valid(CACHE_TTL) }?.let { 
+                return@withContext ReposPageResult(it.repos, it.hasNextPage, it.endCursor) 
+            }
         }
-        // 完全使用 GraphQL API 获取仓库列表
-        val token = ApiClient.currentToken() ?: return@withContext emptyList()
-        val data = GraphQLClient.queryUserRepos(token) ?: return@withContext emptyList()
-        val nodes = data.optJSONArray("nodes") ?: return@withContext emptyList()
+        
+        val token = ApiClient.currentToken() ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val data = GraphQLClient.queryUserRepos(token, cursor) ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val nodes = data.optJSONArray("nodes") ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val pageInfo = data.optJSONObject("pageInfo")
+        val hasNextPage = pageInfo?.optBoolean("hasNextPage") ?: false
+        val endCursor = pageInfo?.optString("endCursor")?.takeIf { it.isNotEmpty() }
+        
         val repos = (0 until nodes.length()).mapNotNull { mapGraphQLToGHRepo(nodes.getJSONObject(it)) }
-        reposCache = repos
-        reposCacheTime = now
-        repos
+        
+        if (cursor == null) {
+            reposCache[cacheKey] = ReposCacheEntry(repos, hasNextPage, endCursor)
+        }
+        
+        ReposPageResult(repos, hasNextPage, endCursor)
     }
 
     fun invalidateCommitCache(owner: String, repo: String, sha: String) {
@@ -64,16 +87,31 @@ class RepoRepository {
     }
 
     fun invalidateReposCache() {
-        reposCache = null
-        reposCacheTime = 0
+        reposCache.clear()
     }
 
-    suspend fun getOrgRepos(org: String): List<GHRepo> = withContext(Dispatchers.IO) {
-        // 完全使用 GraphQL API 获取组织仓库列表
-        val token = ApiClient.currentToken() ?: return@withContext emptyList()
-        val data = GraphQLClient.queryOrgRepos(token, org) ?: return@withContext emptyList()
-        val nodes = data.optJSONArray("nodes") ?: return@withContext emptyList()
-        (0 until nodes.length()).mapNotNull { mapGraphQLToGHRepo(nodes.getJSONObject(it)) }
+    suspend fun getOrgRepos(org: String, cursor: String? = null): ReposPageResult = withContext(Dispatchers.IO) {
+        val cacheKey = "org:$org"
+        
+        if (cursor == null) {
+            reposCache[cacheKey]?.takeIf { it.valid(CACHE_TTL) }?.let { 
+                return@withContext ReposPageResult(it.repos, it.hasNextPage, it.endCursor) 
+            }
+        }
+        
+        val token = ApiClient.currentToken() ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val data = GraphQLClient.queryOrgRepos(token, org, cursor) ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val nodes = data.optJSONArray("nodes") ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val pageInfo = data.optJSONObject("pageInfo")
+        val hasNextPage = pageInfo?.optBoolean("hasNextPage") ?: false
+        val endCursor = pageInfo?.optString("endCursor")?.takeIf { it.isNotEmpty() }
+        val repos = (0 until nodes.length()).mapNotNull { mapGraphQLToGHRepo(nodes.getJSONObject(it)) }
+        
+        if (cursor == null) {
+            reposCache[cacheKey] = ReposCacheEntry(repos, hasNextPage, endCursor)
+        }
+        
+        ReposPageResult(repos, hasNextPage, endCursor)
     }
 
     suspend fun getUserOrgs(): List<GHOrg> = withContext(Dispatchers.IO) {
@@ -411,13 +449,27 @@ class RepoRepository {
     suspend fun getIssues(
         owner: String, repo: String,
         state: String = "open",
+        labels: String? = null,
+        creator: String? = null,
+        sort: String = "created",
+        direction: String = "desc",
         page: Int = 1,
         forceRefresh: Boolean = false,
     ): List<GHIssue> = withContext(Dispatchers.IO) {
-        val key = "$owner/$repo/$state/$page"
+        val key = "$owner/$repo/$state/$labels/$creator/$sort/$direction/$page"
         if (!forceRefresh && page == 1)
             issueCache[key]?.takeIf { it.valid(LIST_TTL) }?.data?.let { return@withContext it }
-        val result = api.getIssues(owner, repo, state = state, perPage = 30, page = page)
+        val result = api.getIssues(
+            owner = owner,
+            repo = repo,
+            state = state,
+            labels = labels,
+            creator = creator,
+            sort = sort,
+            direction = direction,
+            perPage = 30,
+            page = page
+        )
         if (page == 1) issueCache[key] = Entry(result)
         result
     }
@@ -500,12 +552,17 @@ class RepoRepository {
     suspend fun getWorkflows(owner: String, repo: String): List<GHWorkflow> =
         withContext(Dispatchers.IO) { api.getWorkflows(owner, repo).workflows }
 
-    suspend fun getWorkflowRuns(owner: String, repo: String, workflowId: Long? = null): List<GHWorkflowRun> =
+    suspend fun getWorkflowRuns(
+        owner: String,
+        repo: String,
+        workflowId: Long? = null,
+        page: Int = 1
+    ): List<GHWorkflowRun> =
         withContext(Dispatchers.IO) {
             if (workflowId != null) {
-                api.getWorkflowRunsForWorkflow(owner, repo, workflowId).workflowRuns
+                api.getWorkflowRunsForWorkflow(owner, repo, workflowId, page = page).workflowRuns
             } else {
-                api.getWorkflowRuns(owner, repo).workflowRuns
+                api.getWorkflowRuns(owner, repo, page = page).workflowRuns
             }
         }
 

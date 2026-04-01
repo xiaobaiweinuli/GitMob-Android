@@ -94,6 +94,7 @@ fun RepoDetailScreen(
     onFileClick: (String, String, String, String) -> Unit,
     onIssueClick: (Int) -> Unit = {},
     onForkedRepoClick: ((String, String) -> Unit)? = null,
+    onEditFile: (path: String, mode: String, branch: String) -> Unit = { _, _, _ -> },
     vm: RepoDetailViewModel = viewModel(factory = RepoDetailViewModel.factory(owner, repoName)),
 ) {
     val c = LocalGmColors.current
@@ -386,8 +387,8 @@ fun RepoDetailScreen(
         },
         snackbarHost = {
             state.toast?.let {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                    Snackbar(modifier = Modifier.padding(16.dp), containerColor = c.bgCard, contentColor = c.textPrimary) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    Snackbar(modifier = Modifier.padding(top = 80.dp, start = 16.dp, end = 16.dp), containerColor = c.bgCard, contentColor = c.textPrimary) {
                         Text(it)
                     }
                 }
@@ -405,7 +406,13 @@ fun RepoDetailScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
                 if (!repo.description.isNullOrBlank()) {
-                    Text(repo.description, fontSize = 13.sp, color = c.textSecondary, lineHeight = 20.sp)
+                    CollapsibleText(
+                        text = repo.description,
+                        maxLines = 2,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = c.textSecondary,
+                    )
                     Spacer(Modifier.height(10.dp))
                 }
                 if (!repo.homepage.isNullOrBlank()) {
@@ -491,9 +498,12 @@ fun RepoDetailScreen(
                         context.startActivity(Intent.createChooser(intent, "分享"))
                     },
                     onAddFile = {
-                        newFileName = ""
-                        newFileContent = ""
-                        showCreateFileDialog = true
+                        val fullPath = if (state.currentPath.isNotEmpty()) {
+                            "${state.currentPath}/"
+                        } else {
+                            ""
+                        }
+                        onEditFile(fullPath, "NEW", state.currentBranch)
                     },
                     onHistory = {
                         vm.setTab(1)
@@ -2045,6 +2055,21 @@ fun StargazersSheet(
     onDismiss: () -> Unit,
 ) {
     val state by vm.state.collectAsState()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo }
+            .collect { layoutInfo ->
+                val visibleItems = layoutInfo.visibleItemsInfo
+                val lastVisibleItem = visibleItems.lastOrNull()
+                if (lastVisibleItem != null) {
+                    val totalItems = layoutInfo.totalItemsCount
+                    if (lastVisibleItem.index >= totalItems - 3 && !state.stargazersLoadingMore && state.stargazersHasMore) {
+                        vm.loadMoreStargazers()
+                    }
+                }
+            }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2080,6 +2105,7 @@ fun StargazersSheet(
                 EmptyBox("暂无星标用户")
             } else {
                 LazyColumn(
+                    state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
@@ -2119,6 +2145,21 @@ fun StargazersSheet(
                             )
                         }
                     }
+                    item {
+                        if (state.stargazersLoadingMore) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = Coral,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2139,9 +2180,22 @@ fun ForksSheet(
 ) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
-    var showTimeFilterDropdown by remember { mutableStateOf(false) }
-    var showTypeFilterDropdown by remember { mutableStateOf(false) }
-    var showOrderDropdown by remember { mutableStateOf(false) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var showSortDropdown by remember { mutableStateOf(false) }
+
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo }
+            .collect { layoutInfo ->
+                val visibleItems = layoutInfo.visibleItemsInfo
+                val lastVisibleItem = visibleItems.lastOrNull()
+                if (lastVisibleItem != null) {
+                    val totalItems = layoutInfo.totalItemsCount
+                    if (lastVisibleItem.index >= totalItems - 3 && !state.forksLoadingMore && state.forksHasMore) {
+                        vm.loadMoreForks()
+                    }
+                }
+            }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2161,11 +2215,8 @@ fun ForksSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 清除按钮
-                val hasFilters = state.forkTimeFilter != ForkTimeFilter.ALL || 
-                                 state.forkTypeFilters.isNotEmpty() || 
-                                 state.forkOrderBy != ForkOrderBy.RECENTLY_UPDATED
-                if (hasFilters) {
+                // 清除按钮（仅在非默认排序时显示）
+                if (state.forkSortBy != ForkSortBy.NEWEST) {
                     FilterButton(
                         text = "清除",
                         isActive = true,
@@ -2182,20 +2233,20 @@ fun ForksSheet(
                     modifier = Modifier.weight(1f)
                 )
                 
-                // 期限筛选
+                // 排序（仅保留 API 支持的选项）
                 Box {
                     FilterButton(
-                        text = state.forkTimeFilter.displayName,
-                        isActive = state.forkTimeFilter != ForkTimeFilter.ALL,
+                        text = state.forkSortBy.displayName,
+                        isActive = state.forkSortBy != ForkSortBy.NEWEST,
                         c = c,
-                        onClick = { showTimeFilterDropdown = true }
+                        onClick = { showSortDropdown = true }
                     )
                     DropdownMenu(
-                        expanded = showTimeFilterDropdown,
-                        onDismissRequest = { showTimeFilterDropdown = false },
+                        expanded = showSortDropdown,
+                        onDismissRequest = { showSortDropdown = false },
                         modifier = Modifier.background(c.bgCard)
                     ) {
-                        ForkTimeFilter.values().forEach { filter ->
+                        ForkSortBy.values().forEach { sortBy ->
                             DropdownMenuItem(
                                 text = {
                                     Row(
@@ -2203,96 +2254,16 @@ fun ForksSheet(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         RadioButton(
-                                            selected = state.forkTimeFilter == filter,
+                                            selected = state.forkSortBy == sortBy,
                                             onClick = null,
                                             colors = RadioButtonDefaults.colors(selectedColor = Coral)
                                         )
-                                        Text(filter.displayName, fontSize = 13.sp, color = c.textPrimary)
+                                        Text(sortBy.displayName, fontSize = 13.sp, color = c.textPrimary)
                                     }
                                 },
                                 onClick = {
-                                    vm.setForkTimeFilter(filter)
-                                    showTimeFilterDropdown = false
-                                }
-                            )
-                        }
-                    }
-                }
-                
-                // 类型筛选
-                Box {
-                    val typeFilterText = if (state.forkTypeFilters.isEmpty()) {
-                        "类型"
-                    } else if (state.forkTypeFilters.size == 1) {
-                        state.forkTypeFilters.first().displayName
-                    } else {
-                        "${state.forkTypeFilters.size}个"
-                    }
-                    FilterButton(
-                        text = typeFilterText,
-                        isActive = state.forkTypeFilters.isNotEmpty(),
-                        c = c,
-                        onClick = { showTypeFilterDropdown = true }
-                    )
-                    DropdownMenu(
-                        expanded = showTypeFilterDropdown,
-                        onDismissRequest = { showTypeFilterDropdown = false },
-                        modifier = Modifier.background(c.bgCard)
-                    ) {
-                        ForkTypeFilter.values().forEach { type ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Checkbox(
-                                            checked = state.forkTypeFilters.contains(type),
-                                            onCheckedChange = null,
-                                            colors = CheckboxDefaults.colors(checkedColor = Coral)
-                                        )
-                                        Text(type.displayName, fontSize = 13.sp, color = c.textPrimary)
-                                    }
-                                },
-                                onClick = {
-                                    vm.toggleForkTypeFilter(type)
-                                }
-                            )
-                        }
-                    }
-                }
-                
-                // 排序
-                Box {
-                    FilterButton(
-                        text = state.forkOrderBy.displayName,
-                        isActive = state.forkOrderBy != ForkOrderBy.RECENTLY_UPDATED,
-                        c = c,
-                        onClick = { showOrderDropdown = true }
-                    )
-                    DropdownMenu(
-                        expanded = showOrderDropdown,
-                        onDismissRequest = { showOrderDropdown = false },
-                        modifier = Modifier.background(c.bgCard)
-                    ) {
-                        ForkOrderBy.values().forEach { order ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        RadioButton(
-                                            selected = state.forkOrderBy == order,
-                                            onClick = null,
-                                            colors = RadioButtonDefaults.colors(selectedColor = Coral)
-                                        )
-                                        Text(order.displayName, fontSize = 13.sp, color = c.textPrimary)
-                                    }
-                                },
-                                onClick = {
-                                    vm.setForkOrderBy(order)
-                                    showOrderDropdown = false
+                                    vm.setForkSortBy(sortBy)
+                                    showSortDropdown = false
                                 }
                             )
                         }
@@ -2314,6 +2285,7 @@ fun ForksSheet(
                 EmptyBox("暂无复刻仓库")
             } else {
                 LazyColumn(
+                    state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
@@ -2395,6 +2367,21 @@ fun ForksSheet(
                                         color = c.textTertiary
                                     )
                                 }
+                            }
+                        }
+                    }
+                    item {
+                        if (state.forksLoadingMore) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = Coral,
+                                    modifier = Modifier.size(24.dp)
+                                )
                             }
                         }
                     }

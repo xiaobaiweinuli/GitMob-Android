@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.FolderDelete
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Surface
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 
@@ -131,11 +132,29 @@ fun RepoListScreen(
                         active = starState.starModeActive,
                         onClick = { starVm.toggleStarMode() },
                     )
-                    IconButton(onClick = onCreateRepo) {
-                        Icon(Icons.Default.Add, null, tint = Coral)
+                    if (!starState.starModeActive) {
+                        IconButton(onClick = onCreateRepo) {
+                            Icon(Icons.Default.Add, null, tint = Coral)
+                        }
                     }
-                    IconButton(onClick = { vm.loadRepos(forceRefresh = true) }) {
-                        Icon(Icons.Default.Refresh, null, tint = c.textSecondary)
+                    if (state.loading || starState.reposLoading) {
+                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                                color = Coral
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = { 
+                            if (starState.starModeActive) {
+                                starVm.loadStarredRepos(force = true)
+                            } else {
+                                vm.loadRepos(forceRefresh = true)
+                            }
+                        }) {
+                            Icon(Icons.Default.Refresh, null, tint = c.textSecondary)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = c.bgDeep),
@@ -143,8 +162,8 @@ fun RepoListScreen(
         },
         snackbarHost = {
             state.toast?.let {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                    Snackbar(modifier = Modifier.padding(16.dp),
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    Snackbar(modifier = Modifier.padding(top = 80.dp, start = 16.dp, end = 16.dp),
                         containerColor = c.bgCard, contentColor = c.textPrimary) {
                         Text(it)
                     }
@@ -209,43 +228,48 @@ fun RepoListScreen(
             if (starState.starModeActive) {
                 // ── 星标模式：显示星标仓库 ────────────────────────────────────
                 val displayedRepos by starVm.filteredStarredRepos.collectAsState()
-                when {
-                    starState.reposLoading && starState.starredRepos.isEmpty() -> LoadingBox()
-                    displayedRepos.isEmpty() && starState.starSearchQuery.isNotBlank() -> EmptyBox("无匹配的星标仓库")
-                    starState.starredRepos.isEmpty() -> EmptyBox("该列表暂无仓库")
-                    else -> {
-                        val listState = rememberLazyListState()
-                        val scope = rememberCoroutineScope()
-                        // 滚到底部时自动加载更多（只在无搜索词时触发分页）
-                        val lastIndex = displayedRepos.lastIndex
-                        LaunchedEffect(listState.firstVisibleItemIndex) {
-                            if (starState.hasNextPage && !starState.reposLoading &&
-                                starState.starSearchQuery.isBlank() &&
-                                listState.firstVisibleItemIndex >= lastIndex - 5) {
-                                starVm.loadStarredRepos(loadMore = true)
+                PullToRefreshBox(
+                    isRefreshing = false,
+                    onRefresh = { starVm.loadStarredRepos(force = true) },
+                ) {
+                    when {
+                        starState.reposLoading && starState.starredRepos.isEmpty() -> LoadingBox()
+                        displayedRepos.isEmpty() && starState.starSearchQuery.isNotBlank() -> EmptyBox("无匹配的星标仓库")
+                        starState.starredRepos.isEmpty() -> EmptyBox("该列表暂无仓库")
+                        else -> {
+                            val listState = rememberLazyListState()
+                            val scope = rememberCoroutineScope()
+                            // 滚到底部时自动加载更多（只在无搜索词时触发分页）
+                            val lastIndex = displayedRepos.lastIndex
+                            LaunchedEffect(listState.firstVisibleItemIndex) {
+                                if (starState.hasNextPage && !starState.reposLoading &&
+                                    starState.starSearchQuery.isBlank() &&
+                                    listState.firstVisibleItemIndex >= lastIndex - 5) {
+                                    starVm.loadStarredRepos(loadMore = true)
+                                }
                             }
-                        }
-                        LazyColumn(
-                            state = listState,
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            items(displayedRepos, key = { it.nodeId }) { starred ->
-                                SwipeableStarredRepoCard(
-                                    repo = starred,
-                                    onClick = {
-                                        val parts = starred.nameWithOwner.split("/")
-                                        onRepoClick(parts[0], parts[1])
-                                    },
-                                    onRemoveStar = { starVm.removeStar(starred) },
-                                    onClassify = { classifyRepo = starred },
-                                    c = c,
-                                )
-                            }
-                            if (starState.hasNextPage) {
-                                item {
-                                    Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
-                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Coral)
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                items(displayedRepos, key = { it.nodeId }) { starred ->
+                                    SwipeableStarredRepoCard(
+                                        repo = starred,
+                                        onClick = {
+                                            val parts = starred.nameWithOwner.split("/")
+                                            onRepoClick(parts[0], parts[1])
+                                        },
+                                        onRemoveStar = { starVm.removeStar(starred) },
+                                        onClassify = { classifyRepo = starred },
+                                        c = c,
+                                    )
+                                }
+                                if (starState.hasNextPage) {
+                                    item {
+                                        Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Coral)
+                                        }
                                     }
                                 }
                             }
@@ -254,25 +278,57 @@ fun RepoListScreen(
                 }
             } else {
                 // ── 普通模式：显示我的仓库 ────────────────────────────────────
-                when {
-                    state.loading && repos.isEmpty() -> LoadingBox()
-                    state.error != null && repos.isEmpty() -> ErrorBox(state.error!!) { vm.loadRepos(true) }
-                    repos.isEmpty() -> EmptyBox("暂无仓库，点击右上角 + 创建")
-                    else -> LazyColumn(
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(repos, key = { it.id }) { repo ->
-                            SwipeableRepoCard(
-                                repo = repo,
-                                onClick = { onRepoClick(repo.owner.login, repo.name) },
-                                onDelete = { vm.deleteRepo(repo.owner.login, repo.name) },
-                                onRename = { newName -> vm.renameRepo(repo.owner.login, repo.name, newName) },
-                                onEdit = { desc, site, topics -> vm.editRepo(repo.owner.login, repo.name, desc, site, topics) },
-                                onClone = { url -> onCloneRepo(url) },
-                                c = c,
-                                onForkedRepoClick = { owner, name -> onRepoClick(owner, name) },
-                            )
+                PullToRefreshBox(
+                    isRefreshing = false,
+                    onRefresh = { vm.loadRepos(forceRefresh = true) },
+                ) {
+                    when {
+                        state.loading && repos.isEmpty() -> LoadingBox()
+                        state.error != null && repos.isEmpty() -> ErrorBox(state.error!!) { vm.loadRepos(true) }
+                        repos.isEmpty() -> EmptyBox("暂无仓库，点击右上角 + 创建")
+                        else -> {
+                            val listState = rememberLazyListState()
+                            val isAtBottom = remember {
+                                derivedStateOf {
+                                    val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+                                    last != null && last.index >= listState.layoutInfo.totalItemsCount - 3
+                                }
+                            }
+                            LaunchedEffect(isAtBottom.value) {
+                                if (isAtBottom.value && state.hasNextPage && !state.loadingMore) {
+                                    vm.loadMoreRepos()
+                                }
+                            }
+                            
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                items(repos, key = { it.id }) { repo ->
+                                    SwipeableRepoCard(
+                                        repo = repo,
+                                        onClick = { onRepoClick(repo.owner.login, repo.name) },
+                                        onDelete = { vm.deleteRepo(repo.owner.login, repo.name) },
+                                        onRename = { newName -> vm.renameRepo(repo.owner.login, repo.name, newName) },
+                                        onEdit = { desc, site, topics -> vm.editRepo(repo.owner.login, repo.name, desc, site, topics) },
+                                        onClone = { url -> onCloneRepo(url) },
+                                        c = c,
+                                        onForkedRepoClick = { owner, name -> onRepoClick(owner, name) },
+                                    )
+                                }
+                                if (state.loadingMore) {
+                                    item {
+                                        Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                                            androidx.compose.material3.CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                strokeWidth = 2.dp,
+                                                color = com.gitmob.android.ui.theme.Coral
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -487,7 +543,7 @@ private fun StarredRepoCard(
             // 打开的 Issues 数（> 0 才显示，与远程仓库卡片一致）
             if (repo.openIssues > 0) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.ErrorOutline, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
+                    Icon(Icons.Default.Warning, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
                     Text("${repo.openIssues}", fontSize = 11.sp, color = c.textTertiary)
                 }
             }

@@ -173,7 +173,21 @@ fun ActionsTab(
                 GmDivider()
 
                 // 运行记录列表
+                val listState1 = androidx.compose.foundation.lazy.rememberLazyListState()
+                val isAtBottom1 = remember {
+                    derivedStateOf {
+                        val last = listState1.layoutInfo.visibleItemsInfo.lastOrNull()
+                        last != null && last.index >= listState1.layoutInfo.totalItemsCount - 3
+                    }
+                }
+                LaunchedEffect(isAtBottom1.value) {
+                    if (isAtBottom1.value && state.workflowRunsHasMore && !state.workflowRunsLoadingMore) {
+                        vm.loadMoreWorkflowRuns()
+                    }
+                }
+                
                 LazyColumn(
+                    state = listState1,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f)
@@ -194,6 +208,13 @@ fun ActionsTab(
                                 onCancel = { vm.cancelWorkflow(run.id) },
                                 onDelete = { showDeleteDialog = run }
                             )
+                        }
+                        if (state.workflowRunsLoadingMore) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Coral)
+                                }
+                            }
                         }
                     }
                 }
@@ -236,7 +257,21 @@ fun ActionsTab(
                 }
 
                 // 运行记录列表
+                val listState2 = androidx.compose.foundation.lazy.rememberLazyListState()
+                val isAtBottom2 = remember {
+                    derivedStateOf {
+                        val last = listState2.layoutInfo.visibleItemsInfo.lastOrNull()
+                        last != null && last.index >= listState2.layoutInfo.totalItemsCount - 3
+                    }
+                }
+                LaunchedEffect(isAtBottom2.value) {
+                    if (isAtBottom2.value && state.workflowRunsHasMore && !state.workflowRunsLoadingMore) {
+                        vm.loadMoreWorkflowRuns()
+                    }
+                }
+                
                 LazyColumn(
+                    state = listState2,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f)
@@ -261,6 +296,13 @@ fun ActionsTab(
                                 onCancel = { vm.cancelWorkflow(run.id) },
                                 onDelete = { showDeleteDialog = run }
                             )
+                        }
+                        if (state.workflowRunsLoadingMore) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Coral)
+                                }
+                            }
                         }
                     }
                 }

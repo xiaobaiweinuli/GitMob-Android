@@ -161,6 +161,10 @@ interface GitHubApi {
         @Path("owner") owner: String,
         @Path("repo") repo: String,
         @Query("state") state: String = "open",
+        @Query("labels") labels: String? = null,
+        @Query("creator") creator: String? = null,
+        @Query("sort") sort: String = "created",
+        @Query("direction") direction: String = "desc",
         @Query("per_page") perPage: Int = 30,
         @Query("page") page: Int = 1,
     ): List<GHIssue>
@@ -459,6 +463,7 @@ interface GitHubApi {
         @Path("owner") owner: String,
         @Path("repo") repo: String,
         @Query("per_page") perPage: Int = 30,
+        @Query("page") page: Int = 1,
     ): GHWorkflowRunsResponse
 
     @GET("repos/{owner}/{repo}/actions/workflows/{workflowId}/runs")
@@ -467,6 +472,7 @@ interface GitHubApi {
         @Path("repo") repo: String,
         @Path("workflowId") workflowId: Long,
         @Query("per_page") perPage: Int = 30,
+        @Query("page") page: Int = 1,
     ): GHWorkflowRunsResponse
 
     @GET("repos/{owner}/{repo}/actions/runs/{runId}/jobs")

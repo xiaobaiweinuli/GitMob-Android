@@ -1,18 +1,23 @@
 package com.gitmob.android.ui.common
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -125,4 +130,44 @@ fun EmptyBox(msg: String) {
 fun GmDivider() {
     val c = LocalGmColors.current
     HorizontalDivider(color = c.border, thickness = 0.5.dp)
+}
+
+/**
+ * 可折叠文本组件
+ * 超过指定行数时自动折叠，点击切换展开/折叠
+ */
+@Composable
+fun CollapsibleText(
+    text: String,
+    maxLines: Int = 2,
+    fontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
+    lineHeight: androidx.compose.ui.unit.TextUnit = 20.sp,
+    color: androidx.compose.ui.graphics.Color = LocalGmColors.current.textSecondary,
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+    var needCollapse by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    
+    Box(
+        modifier = Modifier
+            .animateContentSize()
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) { if (needCollapse) isExpanded = !isExpanded }
+    ) {
+        Text(
+            text = text,
+            fontSize = fontSize,
+            lineHeight = lineHeight,
+            color = color,
+            maxLines = if (isExpanded) Int.MAX_VALUE else maxLines,
+            overflow = if (isExpanded) TextOverflow.Visible else TextOverflow.Ellipsis,
+            onTextLayout = { textLayoutResult ->
+                if (textLayoutResult.didOverflowHeight && !isExpanded) {
+                    needCollapse = true
+                }
+            }
+        )
+    }
 }

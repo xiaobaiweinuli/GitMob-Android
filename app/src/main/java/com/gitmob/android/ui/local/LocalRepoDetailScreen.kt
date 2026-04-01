@@ -383,9 +383,9 @@ fun LocalRepoDetailScreen(
         },
         snackbarHost = {
             toastMessage?.let {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                     Snackbar(
-                        modifier = Modifier.padding(bottom = 80.dp, start = 16.dp, end = 16.dp),
+                        modifier = Modifier.padding(top = 80.dp, start = 16.dp, end = 16.dp),
                     ) { 
                         Text(it) 
                     }

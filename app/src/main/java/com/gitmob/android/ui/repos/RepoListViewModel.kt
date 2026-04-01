@@ -20,7 +20,10 @@ data class OrgContext(
 data class RepoListState(
     val repos: List<GHRepo> = emptyList(),
     val loading: Boolean = false,
+    val loadingMore: Boolean = false,
     val error: String? = null,
+    val hasNextPage: Boolean = false,
+    val endCursor: String? = null,
     val userLogin: String = "",
     val userAvatar: String = "",
     val userOrgs: List<GHOrg> = emptyList(),
@@ -62,22 +65,50 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
 
     fun switchContext(ctx: OrgContext?) {
         _state.update { it.copy(currentContext = ctx) }
-        loadRepos(forceRefresh = true)
+        loadRepos(forceRefresh = false)
     }
 
     fun loadRepos(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+            _state.update { it.copy(loading = true, error = null, repos = emptyList(), hasNextPage = false, endCursor = null) }
             try {
                 val ctx = _state.value.currentContext
-                val repos = if (ctx == null || ctx.isUser) {
-                    repo.getMyRepos(forceRefresh)
+                val result = if (ctx == null || ctx.isUser) {
+                    repo.getMyRepos(forceRefresh, cursor = null)
                 } else {
-                    repo.getOrgRepos(ctx.login)
+                    repo.getOrgRepos(ctx.login, cursor = null)
                 }
-                _state.update { it.copy(repos = repos, loading = false) }
+                _state.update { it.copy(
+                    repos = result.repos,
+                    hasNextPage = result.hasNextPage,
+                    endCursor = result.endCursor,
+                    loading = false
+                ) }
             } catch (e: Exception) {
                 _state.update { it.copy(loading = false, error = e.message ?: "加载失败") }
+            }
+        }
+    }
+
+    fun loadMoreRepos() {
+        viewModelScope.launch {
+            if (_state.value.loadingMore || !_state.value.hasNextPage) return@launch
+            _state.update { it.copy(loadingMore = true) }
+            try {
+                val ctx = _state.value.currentContext
+                val result = if (ctx == null || ctx.isUser) {
+                    repo.getMyRepos(forceRefresh = false, cursor = _state.value.endCursor)
+                } else {
+                    repo.getOrgRepos(ctx.login, cursor = _state.value.endCursor)
+                }
+                _state.update { it.copy(
+                    repos = it.repos + result.repos,
+                    hasNextPage = result.hasNextPage,
+                    endCursor = result.endCursor,
+                    loadingMore = false
+                ) }
+            } catch (e: Exception) {
+                _state.update { it.copy(loadingMore = false) }
             }
         }
     }

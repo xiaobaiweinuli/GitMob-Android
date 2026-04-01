@@ -84,50 +84,13 @@ import kotlinx.coroutines.launch
 import okhttp3.Request
 
 /**
- * 对Issues列表进行筛选和排序
- */
-
-fun filterAndSortIssues(issues: List<GHIssue>, filterState: IssueFilterState): List<GHIssue> {
-    var result = issues.filter { !it.isPR }
-
-    result = when (filterState.status) {
-        IssueStatusFilter.OPEN -> result.filter { it.state == "open" }
-        IssueStatusFilter.CLOSED -> result.filter { it.state == "closed" }
-        IssueStatusFilter.ALL -> result
-    }
-
-    if (filterState.selectedLabels.isNotEmpty()) {
-        result = result.filter { issue ->
-            filterState.selectedLabels.all { label ->
-                issue.labels.any { it.name == label }
-            }
-        }
-    }
-
-    if (filterState.selectedAuthors.isNotEmpty()) {
-        result = result.filter { filterState.selectedAuthors.contains(it.user.login) }
-    }
-
-    result = when (filterState.sortBy) {
-        IssueSortBy.NEWEST -> result.sortedByDescending { it.createdAt }
-        IssueSortBy.OLDEST -> result.sortedBy { it.createdAt }
-        IssueSortBy.MOST_COMMENTS -> result.sortedByDescending { it.comments ?: 0 }
-        IssueSortBy.LEAST_COMMENTS -> result.sortedBy { it.comments ?: 0 }
-    }
-
-    return result
-}
-
-/**
  * 判断是否有任何筛选条件被应用
  */
 fun hasAnyFiltersApplied(filterState: IssueFilterState): Boolean {
     return filterState.status != IssueStatusFilter.OPEN ||
-           filterState.sortBy != IssueSortBy.NEWEST ||
+           filterState.sortBy != IssueSortBy.CREATED_DESC ||
            filterState.selectedLabels.isNotEmpty() ||
-           filterState.selectedAuthors.isNotEmpty() ||
-           filterState.selectedAssignees.isNotEmpty() ||
-           filterState.selectedMilestones.isNotEmpty()
+           filterState.selectedCreator != null
 }
 
 /**
@@ -146,14 +109,10 @@ fun IssueFilterToolbar(
     var showSortSheet by remember { mutableStateOf(false) }
     var showLabelsSheet by remember { mutableStateOf(false) }
     var showAuthorsSheet by remember { mutableStateOf(false) }
-    var showAssigneesSheet by remember { mutableStateOf(false) }
-    var showMilestonesSheet by remember { mutableStateOf(false) }
 
     val hasFilters = hasAnyFiltersApplied(state.issueFilterState)
     val allLabels = vm.getAllLabels().sorted()
     val allAuthors = vm.getAllAuthors().sorted()
-    val allAssignees = vm.getAllAssignees().sorted()
-    val allMilestones = vm.getAllMilestones().sorted()
 
     Column(
         modifier = Modifier
@@ -168,7 +127,10 @@ fun IssueFilterToolbar(
         ) {
             if (hasFilters) {
                 TextButton(
-                    onClick = { vm.clearIssueFilters() },
+                    onClick = { 
+                        vm.clearIssueFilters()
+                        vm.loadIssuesByState(forceRefresh = true)
+                    },
                     colors = ButtonDefaults.textButtonColors(contentColor = RedColor)
                 ) {
                     Text("清除", fontSize = 13.sp)
@@ -218,7 +180,7 @@ fun IssueFilterToolbar(
 
                 FilterButton(
                     text = state.issueFilterState.sortBy.displayName,
-                    isActive = state.issueFilterState.sortBy != IssueSortBy.NEWEST,
+                    isActive = state.issueFilterState.sortBy != IssueSortBy.CREATED_DESC,
                     c = c,
                     onClick = { showSortSheet = true }
                 )
@@ -233,8 +195,7 @@ fun IssueFilterToolbar(
 
                 FilterButton(
                     text = "作者",
-                    isActive = state.issueFilterState.selectedAuthors.isNotEmpty(),
-                    count = state.issueFilterState.selectedAuthors.size,
+                    isActive = state.issueFilterState.selectedCreator != null,
                     c = c,
                     onClick = { showAuthorsSheet = true }
                 )
@@ -310,22 +271,29 @@ fun IssueFilterToolbar(
             c = c,
             onDismiss = { showAuthorsSheet = false }
         ) {
-            if (allAuthors.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("暂无作者", fontSize = 13.sp, color = c.textTertiary)
+            val currentCreator = state.issueFilterState.selectedCreator
+            FilterOptionItem(
+                text = "全部",
+                isSelected = currentCreator == null,
+                isRadio = true,
+                c = c,
+                onClick = {
+                    vm.setIssueCreator(null)
+                    showAuthorsSheet = false
                 }
-            } else {
+            )
+            if (allAuthors.isNotEmpty()) {
                 allAuthors.forEach { author ->
-                    val isSelected = state.issueFilterState.selectedAuthors.contains(author)
+                    val isSelected = currentCreator == author
                     FilterOptionItem(
                         text = author,
                         isSelected = isSelected,
-                        isRadio = false,
+                        isRadio = true,
                         c = c,
-                        onClick = { vm.toggleIssueAuthor(author) }
+                        onClick = {
+                            vm.setIssueCreator(author)
+                            showAuthorsSheet = false
+                        }
                     )
                 }
             }
@@ -458,8 +426,8 @@ fun IssuesTab(
     onRefresh: () -> Unit = {},
     onIssueClick: (Int) -> Unit = {},
 ) {
-    val filteredAndSorted = remember(state.issues, state.issueFilterState) {
-        filterAndSortIssues(state.issues, state.issueFilterState)
+    val issuesList = remember(state.issues) {
+        state.issues.filter { !it.isPR }
     }
     var showCreateIssueDialog by remember { mutableStateOf(false) }
     var templatesLoading by remember { mutableStateOf(false) }
@@ -498,7 +466,7 @@ fun IssuesTab(
                 }
             )
 
-            if (filteredAndSorted.isEmpty() && !state.issuesRefreshing) {
+            if (issuesList.isEmpty() && !state.issuesRefreshing) {
                 EmptyBox("暂无 Issues")
             } else {
                 LazyColumn(
@@ -506,7 +474,7 @@ fun IssuesTab(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    items(filteredAndSorted, key = { it.number }) { issue ->
+                    items(issuesList, key = { it.number }) { issue ->
                         SwipeableIssueCard(
                             issue = issue,
                             c = c,

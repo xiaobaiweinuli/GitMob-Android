@@ -330,14 +330,21 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     /** 按当前筛选状态加载 Issues（第1页） */
     fun loadIssuesByState(forceRefresh: Boolean = false) = viewModelScope.launch {
-        val stateStr = when (_state.value.issueFilterState.status) {
-            IssueStatusFilter.OPEN   -> "open"
-            IssueStatusFilter.CLOSED -> "closed"
-            IssueStatusFilter.ALL    -> "all"
-        }
+        val filter = _state.value.issueFilterState
+        val labelsStr = if (filter.selectedLabels.isNotEmpty()) filter.selectedLabels.joinToString(",") else null
         try {
             _state.update { it.copy(issuesPage = 1, issuesHasMore = false) }
-            val issues = repository.getIssues(owner, repoName, state = stateStr, page = 1, forceRefresh = forceRefresh)
+            val issues = repository.getIssues(
+                owner = owner,
+                repo = repoName,
+                state = filter.status.apiValue,
+                labels = labelsStr,
+                creator = filter.selectedCreator,
+                sort = filter.sortBy.sort,
+                direction = filter.sortBy.direction,
+                page = 1,
+                forceRefresh = forceRefresh
+            )
             _state.update { it.copy(
                 issues = issues,
                 issuesPage = 1,
@@ -350,14 +357,20 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun loadMoreIssues() = viewModelScope.launch {
         if (_state.value.issuesLoadingMore || !_state.value.issuesHasMore) return@launch
         val nextPage = _state.value.issuesPage + 1
-        val stateStr = when (_state.value.issueFilterState.status) {
-            IssueStatusFilter.OPEN   -> "open"
-            IssueStatusFilter.CLOSED -> "closed"
-            IssueStatusFilter.ALL    -> "all"
-        }
+        val filter = _state.value.issueFilterState
+        val labelsStr = if (filter.selectedLabels.isNotEmpty()) filter.selectedLabels.joinToString(",") else null
         _state.update { it.copy(issuesLoadingMore = true) }
         try {
-            val more = repository.getIssues(owner, repoName, state = stateStr, page = nextPage)
+            val more = repository.getIssues(
+                owner = owner,
+                repo = repoName,
+                state = filter.status.apiValue,
+                labels = labelsStr,
+                creator = filter.selectedCreator,
+                sort = filter.sortBy.sort,
+                direction = filter.sortBy.direction,
+                page = nextPage
+            )
             _state.update { s -> s.copy(
                 issues = s.issues + more,
                 issuesPage = nextPage,
@@ -454,6 +467,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
      */
     fun setIssueSortBy(sortBy: IssueSortBy) {
         _state.update { it.copy(issueFilterState = it.issueFilterState.copy(sortBy = sortBy)) }
+        loadIssuesByState(forceRefresh = true)
     }
 
     /**
@@ -465,39 +479,15 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             val newSet = if (current.contains(label)) current - label else current + label
             it.copy(issueFilterState = it.issueFilterState.copy(selectedLabels = newSet))
         }
+        loadIssuesByState(forceRefresh = true)
     }
 
     /**
-     * 切换作者选择
+     * 设置作者筛选
      */
-    fun toggleIssueAuthor(author: String) {
-        _state.update {
-            val current = it.issueFilterState.selectedAuthors
-            val newSet = if (current.contains(author)) current - author else current + author
-            it.copy(issueFilterState = it.issueFilterState.copy(selectedAuthors = newSet))
-        }
-    }
-
-    /**
-     * 切换受理人选择
-     */
-    fun toggleIssueAssignee(assignee: String) {
-        _state.update {
-            val current = it.issueFilterState.selectedAssignees
-            val newSet = if (current.contains(assignee)) current - assignee else current + assignee
-            it.copy(issueFilterState = it.issueFilterState.copy(selectedAssignees = newSet))
-        }
-    }
-
-    /**
-     * 切换里程碑选择
-     */
-    fun toggleIssueMilestone(milestone: String) {
-        _state.update {
-            val current = it.issueFilterState.selectedMilestones
-            val newSet = if (current.contains(milestone)) current - milestone else current + milestone
-            it.copy(issueFilterState = it.issueFilterState.copy(selectedMilestones = newSet))
-        }
+    fun setIssueCreator(creator: String?) {
+        _state.update { it.copy(issueFilterState = it.issueFilterState.copy(selectedCreator = creator)) }
+        loadIssuesByState(forceRefresh = true)
     }
 
     /**
@@ -1047,11 +1037,13 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         _state.update { it.copy(actionsRefreshing = true) }
         try {
             val workflows = repository.getWorkflows(owner, repoName)
-            val runs = repository.getWorkflowRuns(owner, repoName, null)
+            val runs = repository.getWorkflowRuns(owner, repoName, _state.value.selectedWorkflow?.id, page = 1)
             _state.update { it.copy(
                 workflows = workflows,
-                allWorkflowRuns = runs,
+                allWorkflowRuns = if (_state.value.selectedWorkflow == null) runs else it.allWorkflowRuns,
                 workflowRuns = runs,
+                workflowRunsPage = 1,
+                workflowRunsHasMore = runs.size >= 30,
                 actionsRefreshing = false
             )}
         } catch (_: Exception) {
@@ -1061,18 +1053,41 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun loadWorkflowRuns(workflowId: Long? = null) = viewModelScope.launch {
         try {
-            val runs = repository.getWorkflowRuns(owner, repoName, workflowId)
-            _state.update { it.copy(allWorkflowRuns = runs, workflowRuns = runs) }
+            val runs = repository.getWorkflowRuns(owner, repoName, workflowId, page = 1)
+            _state.update { it.copy(
+                allWorkflowRuns = if (workflowId == null) runs else it.allWorkflowRuns,
+                workflowRuns = runs,
+                workflowRunsPage = 1,
+                workflowRunsHasMore = runs.size >= 30
+            )}
         } catch (_: Exception) {}
     }
 
-    fun selectWorkflow(workflow: GHWorkflow) {
-        val filteredRuns = _state.value.allWorkflowRuns.filter { it.workflowId == workflow.id }
-        _state.update { it.copy(selectedWorkflow = workflow, workflowRuns = filteredRuns) }
+    fun loadMoreWorkflowRuns() = viewModelScope.launch {
+        if (_state.value.workflowRunsLoadingMore || !_state.value.workflowRunsHasMore) return@launch
+        val nextPage = _state.value.workflowRunsPage + 1
+        _state.update { it.copy(workflowRunsLoadingMore = true) }
+        try {
+            val more = repository.getWorkflowRuns(owner, repoName, _state.value.selectedWorkflow?.id, page = nextPage)
+            _state.update { s -> s.copy(
+                workflowRuns = s.workflowRuns + more,
+                workflowRunsPage = nextPage,
+                workflowRunsHasMore = more.size >= 30,
+                workflowRunsLoadingMore = false
+            )}
+        } catch (_: Exception) {
+            _state.update { it.copy(workflowRunsLoadingMore = false) }
+        }
+    }
+
+    fun selectWorkflow(workflow: GHWorkflow) = viewModelScope.launch {
+        _state.update { it.copy(selectedWorkflow = workflow) }
+        loadWorkflowRuns(workflow.id)
     }
 
     fun clearSelectedWorkflow() {
-        _state.update { it.copy(selectedWorkflow = null, workflowRuns = it.allWorkflowRuns) }
+        _state.update { it.copy(selectedWorkflow = null) }
+        loadWorkflowRuns(null)
     }
 
     fun selectWorkflowRun(run: GHWorkflowRun) = viewModelScope.launch {
@@ -1159,16 +1174,29 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     }
 
     fun deleteWorkflowRun(runId: Long) = viewModelScope.launch {
+        val currentState = _state.value
+        _state.update { it.copy(
+            workflowRuns = it.workflowRuns.filter { r -> r.id != runId },
+            allWorkflowRuns = it.allWorkflowRuns.filter { r -> r.id != runId }
+        )}
+        
         try {
             val success = repository.deleteWorkflowRun(owner, repoName, runId)
             if (success) {
                 _state.update { it.copy(toast = "运行记录已删除") }
-                loadWorkflowRuns()
             } else {
-                _state.update { it.copy(toast = "删除失败") }
+                _state.update { it.copy(
+                    workflowRuns = currentState.workflowRuns,
+                    allWorkflowRuns = currentState.allWorkflowRuns,
+                    toast = "删除失败"
+                )}
             }
         } catch (e: Exception) {
-            _state.update { it.copy(toast = "删除失败：${e.message}") }
+            _state.update { it.copy(
+                workflowRuns = currentState.workflowRuns,
+                allWorkflowRuns = currentState.allWorkflowRuns,
+                toast = "删除失败：${e.message}"
+            )}
         }
     }
 
@@ -1392,15 +1420,40 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     // ── 星标用户列表 ────────────────────────────────────────────────────────
 
     /**
-     * 加载星标用户列表
+     * 加载星标用户列表（第一页）
      */
     fun loadStargazers() = viewModelScope.launch {
-        _state.update { it.copy(stargazersLoading = true) }
+        _state.update { it.copy(stargazersLoading = true, stargazersPage = 1, stargazersHasMore = false, stargazers = emptyList()) }
         try {
-            val stargazers = repository.getStargazers(owner, repoName)
-            _state.update { it.copy(stargazers = stargazers, stargazersLoading = false) }
+            val stargazers = repository.getStargazers(owner, repoName, page = 1)
+            _state.update { it.copy(
+                stargazers = stargazers,
+                stargazersPage = 1,
+                stargazersHasMore = stargazers.size >= 50,
+                stargazersLoading = false
+            ) }
         } catch (e: Exception) {
             _state.update { it.copy(stargazersLoading = false, toast = "加载星标用户失败: ${e.message}") }
+        }
+    }
+
+    /**
+     * 加载更多星标用户
+     */
+    fun loadMoreStargazers() = viewModelScope.launch {
+        if (_state.value.stargazersLoadingMore || !_state.value.stargazersHasMore) return@launch
+        val nextPage = _state.value.stargazersPage + 1
+        _state.update { it.copy(stargazersLoadingMore = true) }
+        try {
+            val more = repository.getStargazers(owner, repoName, page = nextPage)
+            _state.update { s -> s.copy(
+                stargazers = s.stargazers + more,
+                stargazersPage = nextPage,
+                stargazersHasMore = more.size >= 50,
+                stargazersLoadingMore = false,
+            )}
+        } catch (e: Exception) {
+            _state.update { it.copy(stargazersLoadingMore = false) }
         }
     }
 
@@ -1422,15 +1475,40 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     // ── 复刻仓库列表 ────────────────────────────────────────────────────────
 
     /**
-     * 加载复刻仓库列表
+     * 加载复刻仓库列表（第一页）
      */
     fun loadForks() = viewModelScope.launch {
-        _state.update { it.copy(forksLoading = true) }
+        _state.update { it.copy(forksLoading = true, forksPage = 1, forksHasMore = false, forks = emptyList()) }
         try {
-            val forks = repository.getForks(owner, repoName, sort = _state.value.forkSortBy.apiValue)
-            _state.update { it.copy(originalForks = forks, forks = applyForkFilters(forks), forksLoading = false) }
+            val forks = repository.getForks(owner, repoName, sort = _state.value.forkSortBy.apiValue, page = 1)
+            _state.update { it.copy(
+                forks = forks,
+                forksPage = 1,
+                forksHasMore = forks.size >= 50,
+                forksLoading = false
+            ) }
         } catch (e: Exception) {
             _state.update { it.copy(forksLoading = false, toast = "加载复刻仓库失败: ${e.message}") }
+        }
+    }
+
+    /**
+     * 加载更多复刻仓库
+     */
+    fun loadMoreForks() = viewModelScope.launch {
+        if (_state.value.forksLoadingMore || !_state.value.forksHasMore) return@launch
+        val nextPage = _state.value.forksPage + 1
+        _state.update { it.copy(forksLoadingMore = true) }
+        try {
+            val more = repository.getForks(owner, repoName, sort = _state.value.forkSortBy.apiValue, page = nextPage)
+            _state.update { s -> s.copy(
+                forks = s.forks + more,
+                forksPage = nextPage,
+                forksHasMore = more.size >= 50,
+                forksLoadingMore = false,
+            )}
+        } catch (e: Exception) {
+            _state.update { it.copy(forksLoadingMore = false) }
         }
     }
 
@@ -1443,105 +1521,6 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     }
 
     /**
-     * 设置复刻仓库期限筛选
-     */
-    fun setForkTimeFilter(filter: ForkTimeFilter) {
-        _state.update { it.copy(forkTimeFilter = filter) }
-        applyFilters()
-    }
-
-    /**
-     * 设置复刻仓库类型筛选
-     */
-    fun toggleForkTypeFilter(filter: ForkTypeFilter) {
-        val currentFilters = _state.value.forkTypeFilters
-        val newFilters = if (currentFilters.contains(filter)) {
-            currentFilters - filter
-        } else {
-            currentFilters + filter
-        }
-        _state.update { it.copy(forkTypeFilters = newFilters) }
-        applyFilters()
-    }
-
-    /**
-     * 设置复刻仓库排序方式
-     */
-    fun setForkOrderBy(orderBy: ForkOrderBy) {
-        _state.update { it.copy(forkOrderBy = orderBy) }
-        applyFilters()
-    }
-
-    /**
-     * 清除所有筛选
-     */
-    fun clearForkFilters() {
-        _state.update { 
-            it.copy(
-                forkTimeFilter = ForkTimeFilter.ALL,
-                forkTypeFilters = emptySet(),
-                forkOrderBy = ForkOrderBy.RECENTLY_UPDATED,
-                forks = it.originalForks
-            )
-        }
-    }
-
-    /**
-     * 应用筛选和排序
-     */
-    private fun applyFilters() {
-        val filtered = applyForkFilters(_state.value.originalForks)
-        _state.update { it.copy(forks = filtered) }
-    }
-
-    /**
-     * 应用筛选逻辑
-     */
-    private fun applyForkFilters(forks: List<GHRepo>): List<GHRepo> {
-        var result = forks
-
-        // 期限筛选
-        if (_state.value.forkTimeFilter != ForkTimeFilter.ALL) {
-            val cutoffTime = System.currentTimeMillis() - (_state.value.forkTimeFilter.months * 30L * 24L * 60L * 60L * 1000L)
-            result = result.filter { fork ->
-                fork.updatedAt?.let { updatedAt ->
-                    try {
-                        val date = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).parse(updatedAt)
-                        date?.time ?: 0 >= cutoffTime
-                    } catch (e: Exception) {
-                        true
-                    }
-                } ?: true
-            }
-        }
-
-        // 类型筛选
-        if (_state.value.forkTypeFilters.isNotEmpty()) {
-            result = result.filter { fork ->
-                _state.value.forkTypeFilters.any { type ->
-                    when (type) {
-                        ForkTypeFilter.ACTIVE -> !fork.archived && fork.updatedAt != null
-                        ForkTypeFilter.INACTIVE -> fork.archived || fork.updatedAt == null
-                        ForkTypeFilter.NETWORK -> true
-                        ForkTypeFilter.ARCHIVED -> fork.archived
-                        ForkTypeFilter.STARRED -> fork.stars > 0
-                    }
-                }
-            }
-        }
-
-        // 排序
-        result = when (_state.value.forkOrderBy) {
-            ForkOrderBy.RECENTLY_UPDATED -> result.sortedByDescending { it.updatedAt }
-            ForkOrderBy.MOST_STARS -> result.sortedByDescending { it.stars }
-            ForkOrderBy.OPEN_ISSUES -> result.sortedByDescending { it.openIssues }
-            ForkOrderBy.OPEN_PULL_REQUESTS -> result.sortedByDescending { it.openIssues }
-        }
-
-        return result
-    }
-
-    /**
      * 显示复刻仓库列表弹窗
      */
     fun showForksSheet() {
@@ -1549,6 +1528,14 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         if (_state.value.forks.isEmpty()) {
             loadForks()
         }
+    }
+
+    /**
+     * 清除复刻筛选，恢复默认排序
+     */
+    fun clearForkFilters() {
+        _state.update { it.copy(forkSortBy = ForkSortBy.NEWEST) }
+        loadForks()
     }
 
     /**

@@ -63,6 +63,10 @@ data class RepoDetailState(
     val workflowLogsLoading: Boolean = false,
     val workflowInputs: List<WorkflowInput> = emptyList(),
     val workflowInputsLoading: Boolean = false,
+    // 工作流运行记录分页状态
+    val workflowRunsPage: Int = 1,
+    val workflowRunsHasMore: Boolean = false,
+    val workflowRunsLoadingMore: Boolean = false,
     // 各Tab刷新状态
     val filesRefreshing: Boolean = false,
     val commitsRefreshing: Boolean = false,
@@ -97,17 +101,18 @@ data class RepoDetailState(
     // 星标用户列表
     val stargazers: List<GHStargazer> = emptyList(),
     val stargazersLoading: Boolean = false,
+    val stargazersPage: Int = 1,
+    val stargazersHasMore: Boolean = false,
+    val stargazersLoadingMore: Boolean = false,
     val showStargazersSheet: Boolean = false,
     // 复刻仓库列表
     val forks: List<GHRepo> = emptyList(),
     val forksLoading: Boolean = false,
+    val forksPage: Int = 1,
+    val forksHasMore: Boolean = false,
+    val forksLoadingMore: Boolean = false,
     val showForksSheet: Boolean = false,
     val forkSortBy: ForkSortBy = ForkSortBy.NEWEST,
-    // 复刻仓库筛选
-    val originalForks: List<GHRepo> = emptyList(),
-    val forkTimeFilter: ForkTimeFilter = ForkTimeFilter.ALL,
-    val forkTypeFilters: Set<ForkTypeFilter> = emptySet(),
-    val forkOrderBy: ForkOrderBy = ForkOrderBy.RECENTLY_UPDATED,
     // 文件历史
     val showFileHistorySheet: Boolean = false,
     val fileHistoryCommits: List<GHCommit> = emptyList(),
@@ -153,7 +158,8 @@ enum class ForkSyncCommitsType {
 enum class ForkSortBy(val displayName: String, val apiValue: String) {
     NEWEST("最新", "newest"),
     OLDEST("最早", "oldest"),
-    STARGAZERS("最多星标", "stargazers");
+    STARGAZERS("最多星标", "stargazers"),
+    WATCHERS("最多观看", "watchers");
 }
 
 /**
@@ -194,30 +200,30 @@ enum class ForkOrderBy(val displayName: String) {
  */
 data class IssueFilterState(
     val status: IssueStatusFilter = IssueStatusFilter.OPEN,
-    val sortBy: IssueSortBy = IssueSortBy.NEWEST,
+    val sortBy: IssueSortBy = IssueSortBy.CREATED_DESC,
     val selectedLabels: Set<String> = emptySet(),
-    val selectedAuthors: Set<String> = emptySet(),
-    val selectedAssignees: Set<String> = emptySet(),
-    val selectedMilestones: Set<String> = emptySet(),
+    val selectedCreator: String? = null,
 )
 
 /**
  * Issue状态筛选
  */
-enum class IssueStatusFilter(val displayName: String) {
-    OPEN("打开"),
-    CLOSED("关闭"),
-    ALL("所有");
+enum class IssueStatusFilter(val displayName: String, val apiValue: String) {
+    OPEN("打开", "open"),
+    CLOSED("关闭", "closed"),
+    ALL("所有", "all");
 }
 
 /**
- * Issue排序方式
+ * Issue排序方式（sort + direction）
  */
-enum class IssueSortBy(val displayName: String) {
-    NEWEST("最新"),
-    OLDEST("最早"),
-    MOST_COMMENTS("最多评论"),
-    LEAST_COMMENTS("最少评论");
+enum class IssueSortBy(val displayName: String, val sort: String, val direction: String) {
+    CREATED_DESC("最新", "created", "desc"),
+    CREATED_ASC("最早", "created", "asc"),
+    UPDATED_DESC("最近更新", "updated", "desc"),
+    UPDATED_ASC("最早更新", "updated", "asc"),
+    COMMENTS_DESC("最多评论", "comments", "desc"),
+    COMMENTS_ASC("最少评论", "comments", "asc");
 }
 
 /** Reset / Revert 操作结果 */

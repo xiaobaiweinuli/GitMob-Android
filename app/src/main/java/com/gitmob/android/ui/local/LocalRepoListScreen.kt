@@ -62,8 +62,8 @@ fun LocalRepoListScreen(
             },
             snackbarHost = {
                 state.toast?.let {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                        Snackbar(modifier = Modifier.padding(16.dp),
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                        Snackbar(modifier = Modifier.padding(top = 80.dp, start = 16.dp, end = 16.dp),
                             containerColor = c.bgCard, contentColor = c.textPrimary) { Text(it) }
                     }
                 }
@@ -104,14 +104,14 @@ private fun SwipeableLocalRepoCard(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                showDeleteDialog = true
-            }
-            false
+    val dismissState = rememberSwipeToDismissBoxState()
+
+    LaunchedEffect(dismissState.targetValue) {
+        if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+            showDeleteDialog = true
+            dismissState.reset()
         }
-    )
+    }
 
     SwipeToDismissBox(
         state = dismissState,

@@ -51,6 +51,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
 import java.net.URLEncoder
+import com.gitmob.android.ui.repo.EditFileScreen
+import com.gitmob.android.ui.repo.EditFileMode
 import com.gitmob.android.ui.repo.FilePatchInfo
 import com.gitmob.android.ui.repo.FileDiffSheet
 import android.net.Uri
@@ -83,6 +85,10 @@ sealed class Route(val path: String) {
     }
     object IssueDetail : Route("issue/{owner}/{repo}/{issueNumber}") {
         fun go(owner: String, repo: String, issueNumber: Int) = "issue/$owner/$repo/$issueNumber"
+    }
+    object EditFile : Route("edit_file/{owner}/{repo}/{branch}?path={path}&mode={mode}") {
+        fun go(owner: String, repo: String, path: String, branch: String, mode: String) =
+            "edit_file/$owner/$repo/$branch?path=${URLEncoder.encode(path, "UTF-8")}&mode=$mode"
     }
 }
 
@@ -290,6 +296,14 @@ fun AppNavGraph(
                 onForkedRepoClick = { o, r ->
                     navController.navigate(Route.RepoDetail.go(o, r))
                 },
+                onEditFile = { path, mode, branch ->
+                    val fullPath = if (mode == "NEW" && path.isNotEmpty()) {
+                        "$path/"
+                    } else {
+                        path
+                    }
+                    navController.navigate(Route.EditFile.go(owner, repo, fullPath, branch, mode))
+                },
                 vm = viewModel(factory = RepoDetailViewModel.factory(owner, repo)),
             )
         }
@@ -307,8 +321,13 @@ fun AppNavGraph(
             val repo   = back.arguments?.getString("repo")   ?: ""
             val branch = back.arguments?.getString("branch") ?: ""
             val path   = URLDecoder.decode(back.arguments?.getString("path") ?: "", "UTF-8")
-            FileViewerScreen(owner = owner, repo = repo, path = path, ref = branch,
-                onBack = { navController.popBackStack() })
+            FileViewerScreen(
+                owner = owner, repo = repo, path = path, ref = branch,
+                onBack = { navController.popBackStack() },
+                onEdit = {
+                    navController.navigate(Route.EditFile.go(owner, repo, path, branch, "EDIT"))
+                }
+            )
         }
 
         composable(
@@ -328,6 +347,84 @@ fun AppNavGraph(
                 issueNumber = issueNumber,
                 onBack = { navController.popBackStack() },
             )
+        }
+
+        composable(
+            route = Route.EditFile.path,
+            arguments = listOf(
+                navArgument("owner") { type = NavType.StringType },
+                navArgument("repo") { type = NavType.StringType },
+                navArgument("branch") { type = NavType.StringType },
+                navArgument("path") { type = NavType.StringType; defaultValue = "" },
+                navArgument("mode") { type = NavType.StringType; defaultValue = "EDIT" },
+            ),
+        ) { back ->
+            val owner = back.arguments?.getString("owner") ?: ""
+            val repo = back.arguments?.getString("repo") ?: ""
+            val branch = back.arguments?.getString("branch") ?: ""
+            val path = URLDecoder.decode(back.arguments?.getString("path") ?: "", "UTF-8")
+            val modeStr = back.arguments?.getString("mode") ?: "EDIT"
+            val mode = try { EditFileMode.valueOf(modeStr) } catch (e: Exception) { EditFileMode.EDIT }
+            val repository = remember { com.gitmob.android.data.RepoRepository() }
+            
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val scope = rememberCoroutineScope()
+            var initialContent by remember { mutableStateOf("") }
+            var initialFileName by remember { mutableStateOf(path.substringAfterLast("/")) }
+            var loading by remember { mutableStateOf(mode == EditFileMode.EDIT) }
+            var sha by remember { mutableStateOf<String?>(null) }
+            
+            LaunchedEffect(Unit) {
+                if (mode == EditFileMode.EDIT) {
+                    try {
+                        val fileInfo = repository.getFileInfo(owner, repo, path, branch)
+                        initialContent = repository.getFileContent(owner, repo, path, branch)
+                        sha = fileInfo.sha
+                        loading = false
+                    } catch (e: Exception) {
+                        loading = false
+                    }
+                }
+            }
+            
+            if (mode == EditFileMode.EDIT && loading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    com.gitmob.android.ui.common.LoadingBox(Modifier)
+                }
+            } else {
+                EditFileScreen(
+                    mode = mode,
+                    fileName = initialFileName,
+                    initialContent = initialContent,
+                    onBack = { navController.popBackStack() },
+                    onSave = { newFileName, newContent ->
+                        val fullPath = if (path.contains("/")) {
+                            val parentPath = path.substringBeforeLast("/")
+                            "$parentPath/$newFileName"
+                        } else {
+                            newFileName
+                        }
+                        val commitMsg = if (mode == EditFileMode.EDIT) "Update $fullPath" else "Create $fullPath"
+                        
+                        scope.launch {
+                            try {
+                                repository.createOrUpdateFile(
+                                    owner = owner,
+                                    repo = repo,
+                                    path = fullPath,
+                                    message = commitMsg,
+                                    content = newContent,
+                                    sha = sha,
+                                    branch = branch,
+                                )
+                                navController.popBackStack()
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(context, "保存失败: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                )
+            }
         }
 
         composable(
@@ -615,6 +712,7 @@ private fun MainScreen(
 @Composable
 fun FileViewerScreen(
     owner: String, repo: String, path: String, ref: String, onBack: () -> Unit,
+    onEdit: () -> Unit = {},
 ) {
     val c = LocalGmColors.current
     val repository = remember { RepoRepository() }
@@ -624,11 +722,7 @@ fun FileViewerScreen(
     var fileInfo by remember { mutableStateOf<com.gitmob.android.api.GHContent?>(null) }
     
     var showMenu by remember { mutableStateOf(false) }
-    var showEditDialog by remember { mutableStateOf(false) }
-    var showCommitMessageDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var editContent by remember { mutableStateOf("") }
-    var commitMessage by remember { mutableStateOf("") }
     var showHistory by remember { mutableStateOf(false) }
     var historyCommits by remember { mutableStateOf<List<com.gitmob.android.api.GHCommit>>(emptyList()) }
     var historyLoading by remember { mutableStateOf(false) }
@@ -642,7 +736,6 @@ fun FileViewerScreen(
         try { 
             fileInfo = repository.getFileInfo(owner, repo, path, ref)
             content = repository.getFileContent(owner, repo, path, ref)
-            editContent = content
             error = null 
         } catch (e: Exception) { 
             error = e.message 
@@ -696,8 +789,7 @@ fun FileViewerScreen(
                                 },
                                 onClick = {
                                     showMenu = false
-                                    editContent = content
-                                    showEditDialog = true
+                                    onEdit()
                                 },
                             )
                             DropdownMenuItem(
@@ -760,142 +852,6 @@ fun FileViewerScreen(
                 }
             }
         }
-    }
-    
-    if (showEditDialog) {
-        val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
-            skipPartiallyExpanded = true
-        )
-        androidx.compose.material3.ModalBottomSheet(
-            onDismissRequest = { showEditDialog = false },
-            sheetState = sheetState,
-            containerColor = c.bgCard,
-            dragHandle = null,
-            modifier = Modifier.fillMaxHeight()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 16.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("编辑文件", color = c.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                    IconButton(onClick = { showEditDialog = false }) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭", tint = c.textSecondary)
-                    }
-                }
-
-                OutlinedTextField(
-                    value = editContent,
-                    onValueChange = { editContent = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    label = { Text("文件内容") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Coral,
-                        unfocusedBorderColor = c.border,
-                        focusedTextColor = c.textPrimary,
-                        unfocusedTextColor = c.textPrimary,
-                        focusedContainerColor = c.bgItem,
-                        unfocusedContainerColor = c.bgItem,
-                        focusedLabelColor = Coral,
-                        unfocusedLabelColor = c.textTertiary,
-                    ),
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TextButton(
-                        onClick = { showEditDialog = false },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("取消", color = c.textSecondary)
-                    }
-                    Button(
-                        onClick = {
-                            showEditDialog = false
-                            commitMessage = "Update $path"
-                            showCommitMessageDialog = true
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Coral),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("保存")
-                    }
-                }
-            }
-        }
-    }
-    
-    if (showCommitMessageDialog) {
-        var commitMsg by remember { mutableStateOf(commitMessage) }
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showCommitMessageDialog = false },
-            containerColor = c.bgCard,
-            title = { Text("提交信息", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
-            text = {
-                OutlinedTextField(
-                    value = commitMsg,
-                    onValueChange = { commitMsg = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("提交信息") },
-                    placeholder = { Text("Describe your changes...", color = c.textTertiary) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Coral,
-                        unfocusedBorderColor = c.border,
-                        focusedTextColor = c.textPrimary,
-                        unfocusedTextColor = c.textPrimary,
-                        focusedContainerColor = c.bgItem,
-                        unfocusedContainerColor = c.bgItem,
-                        focusedLabelColor = Coral,
-                        unfocusedLabelColor = c.textTertiary,
-                    ),
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (commitMsg.isNotBlank()) {
-                            showCommitMessageDialog = false
-                            scope.launch {
-                                try {
-                                    repository.createOrUpdateFile(
-                                        owner = owner,
-                                        repo = repo,
-                                        path = path,
-                                        message = commitMsg,
-                                        content = editContent,
-                                        sha = fileInfo?.sha,
-                                        branch = ref,
-                                    )
-                                    content = editContent
-                                } catch (e: Exception) {
-                                    error = e.message
-                                }
-                            }
-                        }
-                    },
-                    enabled = commitMsg.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Coral),
-                ) {
-                    Text("确认")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCommitMessageDialog = false }) {
-                    Text("取消", color = c.textSecondary)
-                }
-            },
-        )
     }
     
     if (showDeleteDialog) {
@@ -1091,7 +1047,7 @@ fun FileViewerScreen(
                     Text("变更文件", fontSize = 14.sp, color = c.textPrimary, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(8.dp))
                     
-                    commit.files?.forEach { file ->
+                    commit.files.forEach { file ->
                         val status = when (file.status) {
                             "added" -> "新增"
                             "removed" -> "删除"
@@ -1109,10 +1065,10 @@ fun FileViewerScreen(
                                 .fillMaxWidth()
                                 .background(c.bgItem, RoundedCornerShape(8.dp))
                                 .clickable {
-                                    if (file.patch != null) {
+                                    file.patch?.let { patch ->
                                         selectedFilePatchForHistory.value = FilePatchInfo(
                                             filename         = file.filename,
-                                            patch            = file.patch!!,
+                                            patch            = patch,
                                             additions        = file.additions,
                                             deletions        = file.deletions,
                                             status           = file.status,

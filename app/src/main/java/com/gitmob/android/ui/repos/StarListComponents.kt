@@ -113,14 +113,15 @@ fun UserListsHeader(
                 // 独立的删除确认状态，每个列表项各自管理
                 var showDeleteConfirm by remember(list.id) { mutableStateOf(false) }
 
-                val dismissState = rememberSwipeToDismissBoxState(
-                    confirmValueChange = { value ->
-                        if (value == SwipeToDismissBoxValue.EndToStart) {
-                            showDeleteConfirm = true  // 只触发弹窗，不真实 dismiss
-                        }
-                        false  // 永远不真实 dismiss，卡片状态恢复
+                val dismissState = rememberSwipeToDismissBoxState()
+
+                LaunchedEffect(dismissState.targetValue) {
+                    if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+                        showDeleteConfirm = true
+                        dismissState.reset()
                     }
-                )
+                }
+
                 SwipeToDismissBox(
                     state = dismissState,
                     enableDismissFromStartToEnd = false,
