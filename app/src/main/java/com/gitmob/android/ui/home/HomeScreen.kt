@@ -157,7 +157,7 @@ fun HomeScreen(
                         if (targetUserLogin != null) {
                             vm.loadUser(targetUserLogin)
                         } else {
-                            vm.load()
+                            vm.load(forceRefresh = true)
                         }
                     }, colors = ButtonDefaults.buttonColors(containerColor = Coral)) {
                         Text("重试")
