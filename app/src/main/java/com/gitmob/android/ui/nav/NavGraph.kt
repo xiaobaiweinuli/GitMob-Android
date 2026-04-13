@@ -259,6 +259,12 @@ fun AppNavGraph(
                 navController.navigate(Route.UserProfile.go(dest.owner))
                 navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
             }
+            is GitHubDestination.ActionRun -> {
+                // Action Run 详情暂时跳转到仓库详情页（Actions 标签页）
+                // 后续可以优化为自动选中对应的 Run
+                navController.navigate(Route.UserProfile.go(dest.owner))
+                navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
+            }
             is GitHubDestination.FileView -> {
                 navController.navigate(Route.UserProfile.go(dest.owner))
                 navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))

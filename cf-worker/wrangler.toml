@@ -26,5 +26,6 @@ routes = [
   { pattern = "gitmob.16618888.xyz/*", zone_name = "16618888.xyz" }
 ]
 
+
 [env.staging]
 name = "gitmob-oauth-staging"

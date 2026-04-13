@@ -9,6 +9,7 @@ sealed class GitHubDestination {
     data class PR(val owner: String, val repo: String, val number: Int) : GitHubDestination()
     data class Discussion(val owner: String, val repo: String, val number: Int) : GitHubDestination()
     data class Commit(val owner: String, val repo: String, val sha: String) : GitHubDestination()
+    data class ActionRun(val owner: String, val repo: String, val runId: Long) : GitHubDestination()
     data class FileView(
         val owner: String,
         val repo: String,
@@ -73,14 +74,21 @@ object GitHubUrlParser {
                 if (sha != null) GitHubDestination.Commit(owner, repo, sha)
                 else GitHubDestination.Repo(owner, repo, "commits")
             }
+            "actions" -> {
+                // 处理 actions/runs/{runId} 这种 URL
+                if (segments.size >= 4 && segments[3] == "runs") {
+                    val runId = segments.getOrNull(4)?.toLongOrNull()
+                    if (runId != null) {
+                        return GitHubDestination.ActionRun(owner, repo, runId)
+                    }
+                }
+                GitHubDestination.Repo(owner, repo, "actions")
+            }
             "releases" -> {
                 GitHubDestination.Repo(owner, repo, "releases")
             }
             "tags" -> {
                 GitHubDestination.Repo(owner, repo, "releases")
-            }
-            "actions" -> {
-                GitHubDestination.Repo(owner, repo, "actions")
             }
             "branches" -> {
                 GitHubDestination.Repo(owner, repo, "branches")

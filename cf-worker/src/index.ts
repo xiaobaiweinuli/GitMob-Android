@@ -12,6 +12,7 @@
  *   GITHUB_CLIENT_ID      明文
  *   GITHUB_CLIENT_SECRET  加密 Secret
  */
+
 export interface Env {
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
