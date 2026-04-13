@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -86,6 +87,7 @@ fun IssueDetailScreen(
     var commentText by remember { mutableStateOf("") }
     var replyingToComment by remember { mutableStateOf<GHComment?>(null) }
     var replyingToIssue by remember { mutableStateOf(false) }
+    var showEditHistory by remember { mutableStateOf<EditHistoryType?>(null) }
 
     state.toast?.let { msg ->
         LaunchedEffect(msg) {
@@ -111,14 +113,6 @@ fun IssueDetailScreen(
                 },
                 actions = {
                     Row {
-                        val isSubscribed = state.subscription?.subscribed == true
-                        IconButton(onClick = { vm.toggleSubscription() }) {
-                            Icon(
-                                if (isSubscribed) Icons.Default.Notifications else Icons.Default.NotificationsOff,
-                                null,
-                                tint = if (isSubscribed) Coral else c.textSecondary,
-                            )
-                        }
                         IconButton(onClick = { state.issue?.let { shareIssue(context, it) } }) {
                             Icon(Icons.Default.Share, null, tint = c.textSecondary)
                         }
@@ -131,6 +125,28 @@ fun IssueDetailScreen(
                                 onDismissRequest = { showMenu = false },
                                 modifier = Modifier.background(c.bgCard),
                             ) {
+                                val isSubscribed = state.isSubscribed
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (isSubscribed) "取消订阅" else "订阅",
+                                            fontSize = 14.sp,
+                                            color = c.textPrimary
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (isSubscribed) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                                            null,
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        vm.toggleSubscription()
+                                    },
+                                )
                                 val isIssueAuthor = state.issue?.user?.login == state.userLogin
                                 val canEditOrClose = permission.isOwner || isIssueAuthor
                                 
@@ -150,21 +166,39 @@ fun IssueDetailScreen(
                                             showEditTitleDialog = true
                                         },
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("关闭议题", fontSize = 14.sp, color = c.textPrimary) },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Default.Close,
-                                                null,
-                                                tint = c.textSecondary,
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        },
-                                        onClick = {
-                                            showMenu = false
-                                            showCloseSubMenu = true
-                                        },
-                                    )
+                                    if (state.issue?.state == "open") {
+                                        DropdownMenuItem(
+                                            text = { Text("关闭议题", fontSize = 14.sp, color = c.textPrimary) },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Default.Close,
+                                                    null,
+                                                    tint = c.textSecondary,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                            },
+                                            onClick = {
+                                                showMenu = false
+                                                showCloseSubMenu = true
+                                            },
+                                        )
+                                    } else {
+                                        DropdownMenuItem(
+                                            text = { Text("重新打开议题", fontSize = 14.sp, color = c.textPrimary) },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Default.Check,
+                                                    null,
+                                                    tint = c.textSecondary,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                            },
+                                            onClick = {
+                                                showMenu = false
+                                                vm.updateIssue(state = "open")
+                                            },
+                                        )
+                                    }
                                 }
                                 PermissionRequired(permission = permission, requireOwner = true) {
                                     DropdownMenuItem(
@@ -239,6 +273,9 @@ fun IssueDetailScreen(
                             },
                             onEdit = { showEditBodyDialog = true },
                             onShare = { shareIssue(context, state.issue!!) },
+                            onShowEditHistory = { 
+                                showEditHistory = EditHistoryType.IssueBody(state.issue!!)
+                            }
                         )
                     }
 
@@ -255,6 +292,9 @@ fun IssueDetailScreen(
                             onEdit = { showCommentEditor = it },
                             onDelete = { vm.deleteComment(it.id) },
                             onShare = { shareComment(context, it) },
+                            onShowEditHistory = { 
+                                showEditHistory = EditHistoryType.Comment(it)
+                            }
                         )
                     }
 
@@ -385,6 +425,26 @@ fun IssueDetailScreen(
             onDismiss = { showCommentEditor = null },
         )
     }
+
+    if (showEditHistory != null) {
+        LaunchedEffect(showEditHistory) {
+            when (val type = showEditHistory!!) {
+                is EditHistoryType.IssueBody -> {
+                    vm.loadIssueBodyEditHistory()
+                }
+                is EditHistoryType.Comment -> {
+                    vm.loadIssueCommentEditHistory(type.comment.nodeId)
+                }
+            }
+        }
+        EditHistorySheet(
+            type = showEditHistory!!,
+            editHistory = state.editHistory,
+            loading = state.editHistoryLoading,
+            c = c,
+            onDismiss = { showEditHistory = null }
+        )
+    }
 }
 
 @Composable
@@ -445,9 +505,11 @@ private fun IssueBodyCard(
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onShare: () -> Unit,
+    onShowEditHistory: () -> Unit,
 ) {
     val isOwnIssue = issue.user.login == userLogin
     val canEdit = isOwnIssue || permission.isOwner
+    val isIssueEdited = isEdited(issue.createdAt, issue.updatedAt)
     var showMenu by remember { mutableStateOf(false) }
     
     Surface(
@@ -469,12 +531,23 @@ private fun IssueBodyCard(
                         .clip(CircleShape),
                 )
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        issue.user.login,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = c.textPrimary,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            issue.user.login,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = c.textPrimary,
+                        )
+                        if (isIssueEdited) {
+                            EditedButton(
+                                onClick = onShowEditHistory,
+                                c = c
+                            )
+                        }
+                    }
                     Text(
                         formatDate(issue.createdAt),
                         fontSize = 12.sp,
@@ -576,9 +649,11 @@ private fun CommentCard(
     onEdit: (GHComment) -> Unit,
     onDelete: (GHComment) -> Unit,
     onShare: (GHComment) -> Unit,
+    onShowEditHistory: (GHComment) -> Unit,
 ) {
     val isOwnComment = comment.user.login == userLogin
     val canEditOrDelete = isOwnComment || permission.isOwner
+    val isCommentEdited = isEdited(comment.createdAt, comment.updatedAt)
     var showMenu by remember { mutableStateOf(false) }
 
     Surface(
@@ -600,12 +675,23 @@ private fun CommentCard(
                         .clip(CircleShape),
                 )
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        comment.user.login,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = c.textPrimary,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            comment.user.login,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = c.textPrimary,
+                        )
+                        if (isCommentEdited) {
+                            EditedButton(
+                                onClick = { onShowEditHistory(comment) },
+                                c = c
+                            )
+                        }
+                    }
                     Text(
                         formatDate(comment.createdAt),
                         fontSize = 12.sp,
@@ -970,8 +1056,9 @@ private fun EditCommentDialog(
 private fun formatDate(dateStr: String): String {
     return try {
         val date = OffsetDateTime.parse(dateStr)
+        val localDateTime = date.atZoneSameInstant(java.time.ZoneId.systemDefault())
         val formatter = DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm")
-        date.format(formatter)
+        localDateTime.format(formatter)
     } catch (_: Exception) {
         dateStr
     }
@@ -1101,4 +1188,280 @@ private fun CommentInputDialog(
             }
         }
     }
+}
+
+/** 编辑历史类型 */
+sealed class EditHistoryType {
+    data class IssueBody(val issue: GHIssue) : EditHistoryType()
+    data class Comment(val comment: GHComment) : EditHistoryType()
+}
+
+/**
+ * 编辑历史底部弹窗
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditHistorySheet(
+    type: EditHistoryType,
+    editHistory: List<GHUserContentEdit>,
+    loading: Boolean,
+    c: GmColors,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { it != SheetValue.PartiallyExpanded }
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = c.bgCard,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = c.border) },
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "编辑历史",
+                fontSize = 16.sp,
+                color = c.textPrimary,
+                fontWeight = FontWeight.SemiBold
+            )
+            GmDivider()
+            
+            if (loading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Coral)
+                }
+            } else if (editHistory.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "暂无编辑历史",
+                        fontSize = 14.sp,
+                        color = c.textTertiary
+                    )
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(editHistory.reversed(), key = { it.id }) { edit ->
+                        EditHistoryItem(edit = edit, c = c)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 编辑历史单项组件
+ */
+@Composable
+private fun EditHistoryItem(
+    edit: GHUserContentEdit,
+    c: GmColors,
+) {
+    var showDiff by remember { mutableStateOf(false) }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = c.bgItem),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (edit.editor != null) {
+                        AsyncImage(
+                            model = edit.editor.avatarUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                        )
+                        Text(
+                            edit.editor.login,
+                            fontSize = 13.sp,
+                            color = c.textPrimary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                Text(
+                    formatDate(edit.createdAt),
+                    fontSize = 12.sp,
+                    color = c.textTertiary
+                )
+            }
+            
+            val diff = edit.diff
+            if (diff != null && diff.isNotBlank()) {
+                GmDivider()
+                Surface(
+                    onClick = { showDiff = !showDiff },
+                    color = Color.Transparent,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (showDiff) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            null,
+                            tint = Coral,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            if (showDiff) "隐藏差异" else "查看差异",
+                            fontSize = 13.sp,
+                            color = Coral,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                if (showDiff) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = c.bgDeep,
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            diff,
+                            fontSize = 12.sp,
+                            color = c.textPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(10.dp),
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 编辑历史内容组件（保留用于兼容性）
+ */
+@Composable
+private fun EditHistoryContent(
+    title: String,
+    createdAt: String?,
+    updatedAt: String?,
+    c: GmColors,
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            title,
+            fontSize = 14.sp,
+            color = c.textSecondary,
+            fontWeight = FontWeight.Medium
+        )
+        
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    "创建时间",
+                    fontSize = 11.sp,
+                    color = c.textTertiary
+                )
+                Text(
+                    createdAt?.let { formatDate(it) } ?: "-",
+                    fontSize = 13.sp,
+                    color = c.textPrimary
+                )
+            }
+            
+            if (updatedAt != null && updatedAt != createdAt) {
+                Column {
+                    Text(
+                        "最后编辑",
+                        fontSize = 11.sp,
+                        color = c.textTertiary
+                    )
+                    Text(
+                        formatDate(updatedAt),
+                        fontSize = 13.sp,
+                        color = Coral
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 已编辑按钮组件
+ */
+@Composable
+private fun EditedButton(
+    onClick: () -> Unit,
+    c: GmColors,
+) {
+    Surface(
+        onClick = onClick,
+        color = c.bgItem,
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier.height(24.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 6.dp)
+        ) {
+            Icon(
+                Icons.Default.History,
+                null,
+                tint = c.textTertiary,
+                modifier = Modifier.size(12.dp)
+            )
+            Text(
+                "已编辑",
+                fontSize = 10.sp,
+                color = c.textTertiary,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+/**
+ * 判断内容是否被编辑过
+ */
+private fun isEdited(createdAt: String?, updatedAt: String?): Boolean {
+    if (createdAt == null || updatedAt == null) return false
+    return createdAt != updatedAt
 }

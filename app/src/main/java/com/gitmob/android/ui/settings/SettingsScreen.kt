@@ -65,6 +65,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.compose.material.icons.filled.FileUpload
 import com.gitmob.android.ui.filepicker.FilePickerScreen
 import com.gitmob.android.ui.filepicker.PickerMode
+import com.gitmob.android.util.LanguageManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -511,6 +512,66 @@ fun SettingsScreen(
                     onClick = { if (!hasNotifPerm.value) requestNotifPerm() },
                     c = c,
                 )
+
+                SDivider(c)
+
+                // ── 语言数据 ──────────────────────────────────────────────
+                val hasLangData = remember { mutableStateOf(LanguageManager.hasLanguageData(context)) }
+                var langFetching by remember { mutableStateOf(false) }
+                var langResult by remember { mutableStateOf<String?>(null) }
+                langResult?.let { msg ->
+                    LaunchedEffect(msg) { kotlinx.coroutines.delay(3000); langResult = null }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SIconBox(
+                        color = if (hasLangData.value) BlueDim else c.bgItem,
+                        icon = Icons.Default.Code,
+                        tint = if (hasLangData.value) BlueColor else c.textTertiary,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (hasLangData.value) "语言数据" else "语言数据（未获取）",
+                            fontSize = 15.sp, color = c.textPrimary, fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            if (hasLangData.value) "已获取 · 语言筛选使用本地数据及颜色"
+                            else "未获取 · 语言筛选仅显示已加载仓库的语言",
+                            fontSize = 12.sp, color = c.textSecondary,
+                        )
+                        langResult?.let { msg ->
+                            Text(msg, fontSize = 12.sp,
+                                color = if (msg.startsWith("✓")) Green else Color(0xFFF85149),
+                                modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                    if (langFetching) {
+                        CircularProgressIndicator(color = BlueColor,
+                            modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        TextButton(onClick = {
+                            langFetching = true
+                            scope.launch {
+                                val res = LanguageManager.fetchAndSave(context)
+                                langFetching = false
+                                if (res.isSuccess) {
+                                    hasLangData.value = true
+                                    langResult = "✓ 已获取 ${res.getOrDefault(0)} 种语言"
+                                } else {
+                                    langResult = "✗ ${res.exceptionOrNull()?.message ?: "获取失败"}"
+                                }
+                            }
+                        }) {
+                            Text(
+                                if (hasLangData.value) "更新语言数据" else "获取语言数据",
+                                color = BlueColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                }
             }
 
             // ── 日志 ──────────────────────────────────────────

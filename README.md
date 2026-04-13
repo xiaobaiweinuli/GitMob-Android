@@ -25,6 +25,14 @@
 - **Releases** — 发行版管理、Asset 下载（带进度通知，自动处理重定向）
 - **仓库订阅** — Watch/Unwatch，支持 Ignore/Participating/Releases 粒度
 - **创建仓库** — 支持私有/公开，可自动初始化 README
+- **讨论管理** — 仓库讨论列表与详情查看
+
+### 个人主页
+- **用户资料展示** — 头像、名称、登录名、简介、公司、位置、博客、Twitter 等信息
+- **关注者/关注列表** — 查看用户的关注者和关注的人
+- **仓库统计** — 展示用户的仓库、组织、星标数量
+- **置顶仓库** — 展示用户置顶的仓库
+- **收藏夹** — 支持仓库收藏分组管理，可创建多个收藏夹分组
 
 ### 本地 Git 操作
 基于 JGit 6.10 纯 Java 实现，无需外部 git 二进制：
@@ -48,6 +56,8 @@
 - 崩溃日志本地捕获与导出
 - GitHub Actions 自动构建签名 APK
 - 推送 tag 自动发布 Release
+- **搜索功能** — 支持仓库、用户、组织搜索
+- **导航系统** — 底部标签导航（主页、远程、本地、设置），支持用户主页和仓库详情导航
 
 ## 快速开始
 
@@ -179,7 +189,7 @@ GitMob 采用安全的 OAuth 2.0 认证流程，通过 Cloudflare Worker 中转�
 | 语言 | Kotlin 2.3.0 |
 | UI 框架 | Jetpack Compose BOM 2026.03.00 · Material 3 |
 | 架构组件 | Lifecycle 2.9.0 · ViewModel · Navigation Compose 2.9.7 · DataStore 1.2.1 |
-| 网络 | Retrofit 2.11.0 · OkHttp 4.12.0 · Gson 2.11.0 |
+| 网络 | Retrofit 2.11.0 · OkHttp 4.12.0 · Gson 2.11.0 · Cronet 18.1.1（Chromium 网络栈） |
 | 本地 Git | JGit 6.10.0（纯 Java 实现，无需外部 git） |
 | 图片加载 | Coil 3.4.0（支持 SVG、OkHttp 网络层） |
 | 数据解析 | Jackson 2.17.2（YAML）· Gson 2.11.0（JSON） |
@@ -204,12 +214,13 @@ GitMob-Android/
 │   │   └── GraphQLClient.kt       # GraphQL 客户端
 │   │
 │   ├── auth/               # 认证与授权
-│   │   ├── OAuthManager.kt        # OAuth 2.0 认证管理
-│   │   ├── TokenStorage.kt        # Token 持久化存储
 │   │   ├── AccountStore.kt        # 多账号管理
-│   │   └── RootManager.kt         # Root 权限管理
+│   │   ├── OAuthManager.kt        # OAuth 2.0 认证管理
+│   │   ├── RootManager.kt         # Root 权限管理
+│   │   └── TokenStorage.kt        # Token 持久化存储
 │   │
 │   ├── data/               # 数据层
+│   │   ├── FavoritesManager.kt    # 收藏夹管理
 │   │   ├── RepoRepository.kt      # 仓库数据仓库
 │   │   └── ThemePreference.kt     # 主题偏好设置
 │   │
@@ -223,65 +234,82 @@ GitMob-Android/
 │   │   │   ├── Components.kt
 │   │   │   └── GmWebView.kt
 │   │   │
-│   │   ├── login/                 # 登录页面
-│   │   │   ├── LoginScreen.kt
-│   │   │   └── LoginViewModel.kt
-│   │   │
-│   │   ├── repos/                 # 仓库列表
-│   │   │   ├── RepoListScreen.kt
-│   │   │   ├── RepoListViewModel.kt
-│   │   │   ├── RepoFilterComponents.kt
-│   │   │   ├── StarListComponents.kt
-│   │   │   └── StarListViewModel.kt
-│   │   │
-│   │   ├── repo/                  # 仓库详情
-│   │   │   ├── RepoDetailScreen.kt
-│   │   │   ├── RepoDetailViewModel.kt
-│   │   │   ├── RepoDetailState.kt
-│   │   │   ├── CommitComponents.kt
-│   │   │   ├── BranchComponents.kt
-│   │   │   ├── ActionsComponents.kt
-│   │   │   ├── IssuesComponents.kt
-│   │   │   ├── IssueDetailScreen.kt
-│   │   │   ├── ReleasesComponents.kt
-│   │   │   ├── DiffComponents.kt
-│   │   │   ├── EditFileScreen.kt
-│   │   │   ├── UploadComponents.kt
-│   │   │   ├── WatchComponents.kt
-│   │   │   ├── RepoDialogs.kt
-│   │   │   └── RepoPermission.kt
-│   │   │
-│   │   ├── local/                 # 本地仓库管理
-│   │   │   ├── LocalRepoListScreen.kt
-│   │   │   ├── LocalRepoDetailScreen.kt
-│   │   │   ├── LocalRepoViewModel.kt
-│   │   │   └── GitOperationSheet.kt
-│   │   │
 │   │   ├── create/                # 创建仓库
 │   │   │   └── CreateRepoScreen.kt
 │   │   │
 │   │   ├── filepicker/            # 文件选择器
 │   │   │   └── FilePickerScreen.kt
 │   │   │
-│   │   ├── settings/              # 设置页面
-│   │   │   └── SettingsScreen.kt
+│   │   ├── home/                  # 个人主页
+│   │   │   ├── HomeScreen.kt
+│   │   │   └── HomeViewModel.kt
+│   │   │
+│   │   ├── local/                 # 本地仓库管理
+│   │   │   ├── GitOperationSheet.kt
+│   │   │   ├── LocalRepoDetailScreen.kt
+│   │   │   ├── LocalRepoListScreen.kt
+│   │   │   └── LocalRepoViewModel.kt
+│   │   │
+│   │   ├── login/                 # 登录页面
+│   │   │   ├── LoginScreen.kt
+│   │   │   └── LoginViewModel.kt
 │   │   │
 │   │   ├── nav/                   # 导航
 │   │   │   └── NavGraph.kt
 │   │   │
+│   │   ├── repo/                  # 仓库详情
+│   │   │   ├── ActionsComponents.kt
+│   │   │   ├── BranchComponents.kt
+│   │   │   ├── CommitComponents.kt
+│   │   │   ├── DiffComponents.kt
+│   │   │   ├── DiscussionDetailScreen.kt
+│   │   │   ├── DiscussionDetailViewModel.kt
+│   │   │   ├── DiscussionsComponents.kt
+│   │   │   ├── EditFileScreen.kt
+│   │   │   ├── IssueDetailScreen.kt
+│   │   │   ├── IssueDetailViewModel.kt
+│   │   │   ├── IssuesComponents.kt
+│   │   │   ├── PRComponents.kt
+│   │   │   ├── PRDetailViewModel.kt
+│   │   │   ├── ReleasesComponents.kt
+│   │   │   ├── RepoDetailScreen.kt
+│   │   │   ├── RepoDetailState.kt
+│   │   │   ├── RepoDetailViewModel.kt
+│   │   │   ├── RepoDialogs.kt
+│   │   │   ├── RepoPermission.kt
+│   │   │   ├── UploadComponents.kt
+│   │   │   └── WatchComponents.kt
+│   │   │
+│   │   ├── repos/                 # 仓库列表
+│   │   │   ├── RepoFilterComponents.kt
+│   │   │   ├── RepoFilterModels.kt
+│   │   │   ├── RepoListScreen.kt
+│   │   │   ├── RepoListViewModel.kt
+│   │   │   ├── StarListComponents.kt
+│   │   │   ├── StarListModels.kt
+│   │   │   └── StarListViewModel.kt
+│   │   │
+│   │   ├── search/                # 搜索功能
+│   │   │   ├── SearchScreen.kt
+│   │   │   └── SearchViewModel.kt
+│   │   │
+│   │   ├── settings/              # 设置页面
+│   │   │   └── SettingsScreen.kt
+│   │   │
 │   │   └── theme/                 # 主题系统
-│   │       ├── Theme.kt
 │   │       ├── Color.kt
 │   │       ├── GmColors.kt
+│   │       ├── Theme.kt
 │   │       └── Type.kt
 │   │
 │   └── util/               # 工具类
+│       ├── CrashHandler.kt        # 崩溃日志处理
 │       ├── DownloadManager.kt     # 下载管理器
 │       ├── DownloadReceiver.kt    # 下载广播接收器
-│       ├── CrashHandler.kt        # 崩溃日志处理
+│       ├── GitHubUrlParser.kt     # GitHub URL 解析
+│       ├── LanguageManager.kt     # 语言管理
 │       ├── LogManager.kt          # 日志管理
-│       ├── MarkdownUtils.kt       # Markdown 渲染工具
-│       └── GitHubUrlParser.kt     # GitHub URL 解析
+│       └── MarkdownUtils.kt       # Markdown 渲染工具
 │
 ├── cf-worker/              # Cloudflare Worker（OAuth 中转）
 │   ├── src/index.ts               # Worker 主逻辑
@@ -298,19 +326,15 @@ GitMob-Android/
 
 ### 功能增强
 
-1. **GitHub的搜索功能**
+1.  **仓库详情页交互优化**
 
-2. **仓库详情页交互优化**
+2. *本地仓库管理增强**
 
-3. **PR 功能完善**
+3. **启动速度优化**
 
-4. **本地仓库管理增强**
+4. **Token 加密存储**
 
-5. **启动速度优化**
-
-6. **Token 加密存储**
-
-7. **Git 底层改造**
+5. **Git 底层改造**
 
 
 ## 许可证
@@ -323,6 +347,11 @@ GitMob-Android/
 - [Jetpack Compose](https://developer.android.com/jetpack/compose) - 现代化 Android UI 工具包
 - [Cloudflare Workers](https://workers.cloudflare.com/) - 边缘计算平台
 - [Material Design 3](https://m3.material.io/) - Google 设计系统
+- [GitHub Markdown风格的CSS](https://github.com/sindresorhus/github-markdown-css) - Markdown 渲染样式表
+- [Flexmark](https://github.com/vsch/flexmark-java) - Markdown 解析库
+- [Jackson](https://github.com/FasterXML/jackson) - JSON 解析库
+- [Gson](https://github.com/google/gson) - JSON 解析库
+
 
 ---
 

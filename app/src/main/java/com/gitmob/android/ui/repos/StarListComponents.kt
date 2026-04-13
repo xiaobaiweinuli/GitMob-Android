@@ -45,9 +45,9 @@ fun UserListsHeader(
     selectedListId: String?,
     onToggleExpand: () -> Unit,
     onSelectList: (String?) -> Unit,
-    onCreate: () -> Unit,
-    onEdit: (UserList) -> Unit,
-    onDelete: (UserList) -> Unit,
+    onCreate: (() -> Unit)?,
+    onEdit: ((UserList) -> Unit)?,
+    onDelete: ((UserList) -> Unit)?,
     c: GmColors,
 ) {
     Column(
@@ -80,15 +80,17 @@ fun UserListsHeader(
                     null, tint = c.textTertiary, modifier = Modifier.size(18.dp),
                 )
             }
-            // 添加列表按钮
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .background(CoralDim, RoundedCornerShape(6.dp))
-                    .clickable(onClick = onCreate),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.Add, null, tint = Coral, modifier = Modifier.size(16.dp))
+            // 添加列表按钮（仅自己的列表可见）
+            if (onCreate != null) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .background(CoralDim, RoundedCornerShape(6.dp))
+                        .clickable(onClick = onCreate),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Add, null, tint = Coral, modifier = Modifier.size(16.dp))
+                }
             }
         }
 
@@ -153,8 +155,8 @@ fun UserListsHeader(
                         itemCount = list.itemCount,
                         selected = selectedListId == list.id,
                         onClick = { onSelectList(list.id) },
-                        onEdit = { onEdit(list) },
-                        onDelete = { showDeleteConfirm = true },
+                        onEdit   = if (onEdit != null) { { onEdit(list) } } else null,
+                        onDelete = if (onDelete != null) { { showDeleteConfirm = true } } else null,
                         c = c,
                     )
                 }
@@ -175,7 +177,7 @@ fun UserListsHeader(
                         },
                         confirmButton = {
                             Button(
-                                onClick = { onDelete(list); showDeleteConfirm = false },
+                                onClick = { onDelete?.invoke(list); showDeleteConfirm = false },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
                             ) { Text("删除") }
                         },

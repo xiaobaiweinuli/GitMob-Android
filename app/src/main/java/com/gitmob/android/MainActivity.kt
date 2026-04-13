@@ -35,15 +35,21 @@ class MainActivity : ComponentActivity() {
 
         tokenStorage = (application as GitMobApp).tokenStorage
 
-        // 不再阻塞 splash：Compose 层在未就绪时自己处理 loading
-        // DataStore 第一帧收集速度足够快（<16ms），无需延长 splash
-        splash.setKeepOnScreenCondition { false }
+        var keepSplashOnScreen by mutableStateOf(true)
+
+        splash.setKeepOnScreenCondition { keepSplashOnScreen }
 
         // 处理冷启动时就带着 gitmob:// 链接的情况（极少见）
         handleDeepLink(intent)
 
         setContent {
             val themeMode by tokenStorage.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
+            val accessToken by tokenStorage.accessToken.collectAsState(initial = null)
+            
+            LaunchedEffect(accessToken) {
+                keepSplashOnScreen = false
+            }
+            
             GitMobTheme(themeMode = themeMode) {
                 AppNavGraph(
                     tokenStorage  = tokenStorage,

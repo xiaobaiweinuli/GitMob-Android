@@ -33,6 +33,16 @@ class TokenStorage(private val context: Context) {
         val LOG_LEVEL     = intPreferencesKey("log_level")
         val TAB_STEP_BACK = booleanPreferencesKey("tab_step_back")      // 仓库详情Tab逐级返回
         val SU_EXEC_MODE  = intPreferencesKey("su_exec_mode")            // 已探测的 su 执行模式缓存
+        val SEARCH_HISTORY = stringPreferencesKey("search_history_json") // 全局搜索历史（JSON数组）
+    }
+
+    // ── 收藏夹（按账号隔离：key = "favorites_json_{login}"）──────────────────
+    fun favoritesJsonFlow(login: String): Flow<String> = context.dataStore.data.map {
+        it[stringPreferencesKey("favorites_json_$login")] ?: "{\"groups\":[],\"ungrouped\":[]}"
+    }
+
+    suspend fun saveFavoritesJson(login: String, json: String) {
+        context.dataStore.edit { it[stringPreferencesKey("favorites_json_$login")] = json }
     }
 
     val accessToken: Flow<String?> = context.dataStore.data.map { it[Keys.ACCESS_TOKEN] }
@@ -109,6 +119,31 @@ class TokenStorage(private val context: Context) {
 
     suspend fun setSuExecModeCache(mode: Int) {
         context.dataStore.edit { it[Keys.SU_EXEC_MODE] = mode }
+    }
+
+    // ── 全局搜索历史（最多保留 15 条，JSON 数组格式）──────────────────────────
+    val searchHistoryJson: Flow<String> = context.dataStore.data.map {
+        it[Keys.SEARCH_HISTORY] ?: "[]"
+    }
+
+    suspend fun addSearchHistory(query: String) {
+        if (query.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val raw = prefs[Keys.SEARCH_HISTORY] ?: "[]"
+            // 简单 JSON 数组解析（避免引入额外解析库）
+            val list = raw.removeSurrounding("[", "]")
+                .split(",")
+                .map { it.trim().removeSurrounding("\"") }
+                .filter { it.isNotBlank() && it != query }
+                .toMutableList()
+            list.add(0, query)
+            val trimmed = list.take(15)
+            prefs[Keys.SEARCH_HISTORY] = "[" + trimmed.joinToString(",") { "\"$it\"" } + "]"
+        }
+    }
+
+    suspend fun clearSearchHistory() {
+        context.dataStore.edit { it[Keys.SEARCH_HISTORY] = "[]" }
     }
 
     suspend fun clear() { context.dataStore.edit { it.clear() } }

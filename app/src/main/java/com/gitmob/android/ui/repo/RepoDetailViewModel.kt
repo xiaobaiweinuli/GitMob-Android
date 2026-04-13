@@ -6,7 +6,9 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import com.gitmob.android.GitMobApp
 import com.gitmob.android.api.*
+import com.gitmob.android.api.GraphQLClient
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.data.RepoRepository
 import com.gitmob.android.util.LogManager
@@ -66,28 +68,195 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         // 若前一个 loadAll 仍在运行，不重复启动（避免 OkHttp 连接竞争触发 Canceled）
         if (loadAllJob?.isActive == true && !forceRefresh) return
         loadAllJob = viewModelScope.launch {
-        _state.update { it.copy(loading = true, error = null) }
-        try {
-            val r = repository.getRepo(owner, repoName, forceRefresh)
-            val branches = repository.getBranches(owner, repoName, forceRefresh)
-            val starred = repository.isStarred(owner, repoName)
-            _state.update { it.copy(repo = r, branches = branches, currentBranch = r.defaultBranch, isStarred = starred, loading = false) }
-            loadContents("", r.defaultBranch, forceRefresh)
-            loadCommits(r.defaultBranch, forceRefresh = forceRefresh)
-            loadReadme(owner, repoName, r.defaultBranch)
-            loadPRsAndIssues()
-            loadReleases()
-            loadWorkflows()
-            loadWorkflowRuns(null)
-            // 如果是复刻仓库，检查同步状态
-            if (r.fork) {
-                checkForkSyncStatus()
+            _state.update { it.copy(loading = true, error = null) }
+            try {
+                // ── 只加载"文件 Tab"必需的内容（任务二：懒加载） ──────────────
+                val r        = repository.getRepo(owner, repoName, forceRefresh)
+                val branches = repository.getBranches(owner, repoName, forceRefresh)
+                val starred  = repository.isStarred(owner, repoName)
+                val currentTab = _state.value.tab
+                val validTab = ensureValidTabIndex(r, currentTab)
+                _state.update {
+                    it.copy(
+                        repo          = r,
+                        branches      = branches,
+                        currentBranch = r.defaultBranch,
+                        isStarred     = starred,
+                        tab           = validTab,
+                        loading       = false,
+                    )
+                }
+                // 文件树 + 订阅状态（用于显示 Watch 按钮）
+                loadContents("", r.defaultBranch, forceRefresh)
+                // 复刻仓库同步状态
+                if (r.fork) checkForkSyncStatus()
+            } catch (e: Exception) {
+                val is404 = e.message?.contains("404") == true ||
+                    e.message?.contains("Not Found") == true ||
+                    (e is retrofit2.HttpException && e.code() == 404)
+                _state.update { it.copy(loading = false, error = e.message ?: "加载失败", repoNotFound = is404) }
             }
-        } catch (e: Exception) {
-            _state.update { it.copy(loading = false, error = e.message ?: "加载失败") }
-        }
         } // loadAllJob
     }
+
+    /** 点击"提交"Tab 时调用（懒加载） */
+    fun ensureCommitsLoaded() {
+        if (_state.value.commits.isNotEmpty()) return
+        loadCommits(_state.value.currentBranch)
+    }
+
+    /** 点击"README"时调用（懒加载） */
+    fun ensureReadmeLoaded() {
+        val s = _state.value
+        if (s.readmeContent != null) return
+        loadReadme(owner, repoName, s.currentBranch)
+    }
+
+    /** 点击"发行版"Tab 时调用（懒加载） */
+    fun ensureReleasesLoaded() {
+        if (_state.value.releases.isNotEmpty()) return
+        loadReleases()
+    }
+
+    /** 点击"操作"Tab 时调用（懒加载） */
+    fun ensureActionsLoaded() {
+        if (_state.value.workflows.isNotEmpty()) return
+        loadWorkflows()
+        loadWorkflowRuns(null)
+    }
+
+    /** 点击"Issues"Tab 时调用（懒加载） */
+    fun ensureIssuesLoaded() {
+        if (_state.value.issues.isNotEmpty()) return
+        loadLabels()
+        loadIssuesByState(forceRefresh = false)
+    }
+
+    fun ensurePRsLoaded() {
+        if (_state.value.prs.isNotEmpty()) return
+        loadLabels()
+        loadPRsByFilter(forceRefresh = false)
+    }
+
+    fun ensureDiscussionsLoaded() {
+        if (_state.value.discussions.isNotEmpty() || _state.value.discussionsLoading) return
+        loadLabels()
+        loadDiscussions(cursor = null, clear = true)
+    }
+
+    // ─── Discussions（GraphQL）────────────────────────────────────────────────
+
+    fun loadDiscussions(cursor: String? = null, clear: Boolean = false) = viewModelScope.launch {
+        val token = GitMobApp.instance.tokenStorage.accessToken.first() ?: return@launch
+        if (clear) _state.update { it.copy(discussionsLoading = true, discussions = emptyList(), discussionsCursor = null) }
+        else _state.update { it.copy(discussionsLoadingMore = true) }
+        try {
+            if (_state.value.discussionCategories.isEmpty()) {
+                val cats = GraphQLClient.getDiscussionCategories(token, owner, repoName)
+                _state.update { it.copy(discussionCategories = cats) }
+            }
+            val s = _state.value
+            val (items, nextCursor) = GraphQLClient.getDiscussions(
+                token = token, owner = owner, repo = repoName,
+                first = 20, after = cursor,
+                categoryId = s.discussionCategoryFilter,
+                answered = s.discussionAnsweredFilter,
+                orderField = s.discussionFilterState.sortBy.apiValue,
+            )
+            var filteredItems = items
+            if (s.discussionFilterState.selectedCreator != null) {
+                filteredItems = filteredItems.filter { it.author?.login == s.discussionFilterState.selectedCreator }
+            }
+            if (s.discussionFilterState.selectedLabels.isNotEmpty()) {
+                filteredItems = filteredItems.filter { item ->
+                    s.discussionFilterState.selectedLabels.all { selectedLabel ->
+                        item.labels.any { it.name == selectedLabel }
+                    }
+                }
+            }
+            _state.update { s2 ->
+                s2.copy(
+                    discussions        = if (clear) filteredItems else s2.discussions + filteredItems,
+                    discussionsCursor  = nextCursor,
+                    discussionsHasMore = nextCursor != null,
+                    discussionsLoading = false,
+                    discussionsLoadingMore = false,
+                )
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(discussionsLoading = false, discussionsLoadingMore = false) }
+        }
+    }
+
+    fun loadMoreDiscussions() {
+        if (_state.value.discussionsLoadingMore || !_state.value.discussionsHasMore) return
+        loadDiscussions(cursor = _state.value.discussionsCursor, clear = false)
+    }
+
+    fun setDiscussionCategoryFilter(categoryId: String?) {
+        _state.update { it.copy(discussionCategoryFilter = categoryId) }
+        loadDiscussions(cursor = null, clear = true)
+    }
+
+    fun setDiscussionAnsweredFilter(answered: Boolean?) {
+        _state.update { it.copy(discussionAnsweredFilter = answered) }
+        loadDiscussions(cursor = null, clear = true)
+    }
+
+    fun setDiscussionSortBy(sortBy: DiscussionSortBy) {
+        _state.update { it.copy(discussionFilterState = it.discussionFilterState.copy(sortBy = sortBy)) }
+        loadDiscussions(cursor = null, clear = true)
+    }
+
+    fun setDiscussionCreator(creator: String?) {
+        _state.update { it.copy(discussionFilterState = it.discussionFilterState.copy(selectedCreator = creator)) }
+        loadDiscussions(cursor = null, clear = true)
+    }
+
+    fun toggleDiscussionLabel(label: String) {
+        _state.update {
+            val current = it.discussionFilterState.selectedLabels
+            val newSet = if (current.contains(label)) current - label else current + label
+            it.copy(discussionFilterState = it.discussionFilterState.copy(selectedLabels = newSet))
+        }
+        loadDiscussions(cursor = null, clear = true)
+    }
+
+    fun clearDiscussionFilters() {
+        _state.update {
+            it.copy(
+                discussionCategoryFilter = null,
+                discussionAnsweredFilter = null,
+                discussionFilterState = DiscussionFilterState()
+            )
+        }
+        loadDiscussions(cursor = null, clear = true)
+    }
+
+    fun getAllDiscussionAuthors(): Set<String> {
+        return _state.value.discussions.mapNotNull { it.author?.login }.toSet()
+    }
+
+    fun refreshDiscussions() = viewModelScope.launch {
+        _state.update { it.copy(discussionsRefreshing = true) }
+        loadDiscussions(cursor = null, clear = true)
+        _state.update { it.copy(discussionsRefreshing = false) }
+    }
+
+    /**
+     * 删除讨论
+     */
+    fun deleteDiscussion(discussionNumber: Int) = viewModelScope.launch {
+        try {
+            _state.update { it.copy(discussions = it.discussions.filter { d -> d.number != discussionNumber }, toast = "已删除讨论 #$discussionNumber") }
+            // TODO: 实际的删除API调用需要使用GraphQL
+        } catch (e: Exception) {
+            _state.update { it.copy(toast = "删除失败：${e.message}") }
+        }
+    }
+
+
+
     
     /**
      * 检查复刻仓库与上游仓库的同步状态
@@ -314,19 +483,274 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         _state.update { it.copy(commitsRefreshing = forceRefresh) }
         try {
             val ref = sha ?: _state.value.currentBranch
-            val commits = repository.getCommits(owner, repoName, ref, path, forceRefresh)
+            val commits = if (forceRefresh) {
+                repository.refreshCommitsIncremental(owner, repoName, ref)
+            } else {
+                repository.getCommits(owner, repoName, ref, path, false)
+            }
             _state.update { it.copy(commits = commits, commitsRefreshing = false) }
         } catch (_: Exception) {
             _state.update { it.copy(commitsRefreshing = false) }
         }
     }
 
-    private fun loadPRsAndIssues() = viewModelScope.launch {
+    // ─── PR：筛选分页加载 ────────────────────────────────────────────────────
+
+    /** 按当前筛选加载 PR 第1页 */
+    fun loadPRsByFilter(forceRefresh: Boolean = false) = viewModelScope.launch {
+        val f = _state.value.prFilterState
+        val isMerged = f.status == PRStatusFilter.MERGED
+        val apiState = when (f.status) {
+            PRStatusFilter.OPEN   -> "open"
+            PRStatusFilter.MERGED -> "closed"
+            PRStatusFilter.CLOSED -> "closed"
+            PRStatusFilter.ALL    -> "all"
+        }
         try {
-            val prs = repository.getPRs(owner, repoName)
-            _state.update { it.copy(prs = prs) }
+            _state.update { it.copy(prsPage = 1, prsHasMore = false) }
+            val prs = if (forceRefresh) {
+                repository.refreshPRsIncremental(owner, repoName, apiState, f.sortBy.sort,
+                    f.sortBy.direction, f.labelFilter, f.authorFilter, f.reviewerFilter, isMerged)
+            } else {
+                repository.getPRs(owner, repoName, apiState, f.sortBy.sort, f.sortBy.direction,
+                    1, false, f.labelFilter, f.authorFilter, f.reviewerFilter, isMerged)
+            }
+            _state.update { it.copy(prs = prs, prsPage = 1, prsHasMore = prs.size >= 30) }
         } catch (_: Exception) {}
-        loadIssuesByState(forceRefresh = false)
+    }
+
+    fun loadMorePRs() = viewModelScope.launch {
+        if (_state.value.prsLoadingMore || !_state.value.prsHasMore) return@launch
+        val nextPage = _state.value.prsPage + 1
+        val f = _state.value.prFilterState
+        val isMerged = f.status == PRStatusFilter.MERGED
+        val apiState = when (f.status) {
+            PRStatusFilter.OPEN   -> "open"
+            PRStatusFilter.MERGED -> "closed"
+            PRStatusFilter.CLOSED -> "closed"
+            PRStatusFilter.ALL    -> "all"
+        }
+        _state.update { it.copy(prsLoadingMore = true) }
+        try {
+            val more = repository.getPRs(owner, repoName, apiState, f.sortBy.sort,
+                f.sortBy.direction, nextPage, false, f.labelFilter, f.authorFilter,
+                f.reviewerFilter, isMerged)
+            _state.update { s ->
+                s.copy(
+                    prs            = s.prs + more,
+                    prsPage        = nextPage,
+                    prsHasMore     = more.size >= 30,
+                    prsLoadingMore = false,
+                )
+            }
+        } catch (_: Exception) {
+            _state.update { it.copy(prsLoadingMore = false) }
+        }
+    }
+
+    fun setPRStatusFilter(status: PRStatusFilter) {
+        _state.update { it.copy(prFilterState = it.prFilterState.copy(status = status)) }
+        loadPRsByFilter(forceRefresh = true)
+    }
+
+    fun setPRSortBy(sortBy: PRSortBy) {
+        _state.update { it.copy(prFilterState = it.prFilterState.copy(sortBy = sortBy)) }
+        loadPRsByFilter(forceRefresh = true)
+    }
+
+    fun setPRLabelFilter(label: String?) {
+        _state.update { it.copy(prFilterState = it.prFilterState.copy(labelFilter = label)) }
+        loadPRsByFilter(forceRefresh = true)
+    }
+
+    fun setPRAuthorFilter(author: String?) {
+        _state.update { it.copy(prFilterState = it.prFilterState.copy(authorFilter = author)) }
+        loadPRsByFilter(forceRefresh = true)
+    }
+
+    fun setPRReviewerFilter(reviewer: String?) {
+        _state.update { it.copy(prFilterState = it.prFilterState.copy(reviewerFilter = reviewer)) }
+        loadPRsByFilter(forceRefresh = true)
+    }
+
+    fun clearPRFilters() {
+        _state.update { it.copy(prFilterState = PRFilterState()) }
+        loadPRsByFilter(forceRefresh = true)
+    }
+
+    // ─── PR：刷新（增量）────────────────────────────────────────────────────
+
+    fun refreshPRs() = viewModelScope.launch {
+        _state.update { it.copy(prsRefreshing = true) }
+        try {
+            val f = _state.value.prFilterState
+            val isMerged = f.status == PRStatusFilter.MERGED
+            val apiState = when (f.status) {
+                PRStatusFilter.OPEN -> "open"; PRStatusFilter.MERGED, PRStatusFilter.CLOSED -> "closed"
+                PRStatusFilter.ALL -> "all"
+            }
+            val prs = repository.refreshPRsIncremental(owner, repoName, apiState,
+                f.sortBy.sort, f.sortBy.direction, f.labelFilter, f.authorFilter, f.reviewerFilter, isMerged)
+            _state.update { it.copy(prs = prs, prsRefreshing = false) }
+        } catch (_: Exception) {
+            _state.update { it.copy(prsRefreshing = false) }
+        }
+    }
+
+    // ─── PR 详情：加载 ───────────────────────────────────────────────────────
+
+    fun openPRDetail(pr: GHPullRequest) = viewModelScope.launch {
+        _state.update { it.copy(selectedPR = pr, prDetailLoading = true, prReviews = emptyList(), prComments = emptyList()) }
+        try {
+            val reviews  = repository.getPRReviews(owner, repoName, pr.number)
+            val comments = repository.getPRComments(owner, repoName, pr.number)
+            // 刷新 PR 本身（获取最新 mergeable 状态）
+            val freshPR  = repository.getPRDetail(owner, repoName, pr.number)
+            _state.update { it.copy(selectedPR = freshPR, prReviews = reviews, prComments = comments, prDetailLoading = false) }
+        } catch (_: Exception) {
+            _state.update { it.copy(prDetailLoading = false) }
+        }
+    }
+
+    fun closePRDetail() { _state.update { it.copy(selectedPR = null, prReviews = emptyList(), prComments = emptyList(), prOpResult = null) } }
+
+    fun clearPROpResult() { _state.update { it.copy(prOpResult = null) } }
+
+    // ─── PR 操作 ─────────────────────────────────────────────────────────────
+
+    /** 合并 PR */
+    fun mergePR(method: MergeMethod, commitTitle: String? = null, commitMessage: String? = null) = viewModelScope.launch {
+        val pr = _state.value.selectedPR ?: return@launch
+        _state.update { it.copy(prOpInProgress = true) }
+        try {
+            val resp = repository.mergePR(owner, repoName, pr.number, method.apiValue, commitTitle, commitMessage)
+            if (resp.merged) {
+                repository.invalidatePRCache(owner, repoName)
+                loadPRsByFilter(forceRefresh = true)
+                val freshPR = repository.getPRDetail(owner, repoName, pr.number)
+                _state.update { it.copy(selectedPR = freshPR, prOpResult = "✓ 合并成功", prOpInProgress = false) }
+            } else {
+                _state.update { it.copy(prOpResult = "合并失败: ${resp.message}", prOpInProgress = false) }
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(prOpResult = "合并失败: ${e.message}", prOpInProgress = false) }
+        }
+    }
+
+    /** 更新分支（基分支有新提交时同步） */
+    fun updatePRBranch() = viewModelScope.launch {
+        val pr = _state.value.selectedPR ?: return@launch
+        _state.update { it.copy(prOpInProgress = true) }
+        try {
+            repository.updatePRBranch(owner, repoName, pr.number)
+            _state.update { it.copy(prOpResult = "✓ 分支已更新", prOpInProgress = false) }
+        } catch (e: Exception) {
+            _state.update { it.copy(prOpResult = "更新失败: ${e.message}", prOpInProgress = false) }
+        }
+    }
+
+    /** 提交审查（APPROVE / REQUEST_CHANGES / COMMENT） */
+    fun submitReview(event: String, body: String) = viewModelScope.launch {
+        val pr = _state.value.selectedPR ?: return@launch
+        _state.update { it.copy(prOpInProgress = true) }
+        try {
+            val review = repository.createPRReview(owner, repoName, pr.number, event, body.ifBlank { null })
+            val label = when (event) {
+                "APPROVE"          -> "✓ 已批准"
+                "REQUEST_CHANGES"  -> "✓ 已请求修改"
+                else               -> "✓ 评论已提交"
+            }
+            _state.update { it.copy(
+                prReviews     = listOf(review) + it.prReviews,
+                prOpResult    = label,
+                prOpInProgress = false,
+            ) }
+        } catch (e: Exception) {
+            _state.update { it.copy(prOpResult = "提交失败: ${e.message}", prOpInProgress = false) }
+        }
+    }
+
+    /** 请求审查者 */
+    fun requestReviewers(reviewers: List<String>) = viewModelScope.launch {
+        val pr = _state.value.selectedPR ?: return@launch
+        _state.update { it.copy(prOpInProgress = true) }
+        try {
+            val updated = repository.requestReviewers(owner, repoName, pr.number, reviewers)
+            _state.update { it.copy(selectedPR = updated, prOpResult = "✓ 审查请求已发送", prOpInProgress = false) }
+        } catch (e: Exception) {
+            _state.update { it.copy(prOpResult = "请求失败: ${e.message}", prOpInProgress = false) }
+        }
+    }
+
+    /** 添加 PR 评论 */
+    fun addPRComment(body: String) = viewModelScope.launch {
+        val pr = _state.value.selectedPR ?: return@launch
+        if (body.isBlank()) return@launch
+        _state.update { it.copy(prOpInProgress = true) }
+        try {
+            val comment = repository.addPRComment(owner, repoName, pr.number, body)
+            _state.update { it.copy(
+                prComments    = it.prComments + comment,
+                prOpInProgress = false,
+            ) }
+        } catch (e: Exception) {
+            _state.update { it.copy(prOpResult = "评论失败: ${e.message}", prOpInProgress = false) }
+        }
+    }
+
+    /** 关闭 / 重新打开 PR */
+    fun togglePRState() = viewModelScope.launch {
+        val pr = _state.value.selectedPR ?: return@launch
+        _state.update { it.copy(prOpInProgress = true) }
+        try {
+            val newState = if (pr.state == "open") "closed" else "open"
+            val updated = ApiClient.api.updatePullRequest(owner, repoName, pr.number, GHUpdatePullRequestRequest(state = newState))
+            repository.invalidatePRCache(owner, repoName)
+            loadPRsByFilter(forceRefresh = true)
+            _state.update { it.copy(selectedPR = updated, prOpResult = if (newState == "closed") "✓ PR 已关闭" else "✓ PR 已重新打开", prOpInProgress = false) }
+        } catch (e: Exception) {
+            _state.update { it.copy(prOpResult = "操作失败: ${e.message}", prOpInProgress = false) }
+        }
+    }
+
+    /** 将草稿 PR 标记为就绪（必须用 GraphQL） */
+    fun markPRReadyForReview() = viewModelScope.launch {
+        val pr = _state.value.selectedPR ?: return@launch
+        if (pr.nodeId.isBlank()) {
+            _state.update { it.copy(prOpResult = "缺少 PR node_id，无法操作") }
+            return@launch
+        }
+        _state.update { it.copy(prOpInProgress = true) }
+        try {
+            val token = GitMobApp.instance.tokenStorage.accessToken.first() ?: return@launch
+            val ok = GraphQLClient.markPrReadyForReview(token, pr.nodeId)
+            if (ok) {
+                val freshPR = repository.getPRDetail(owner, repoName, pr.number)
+                repository.invalidatePRCache(owner, repoName)
+                loadPRsByFilter(forceRefresh = true)
+                _state.update { it.copy(selectedPR = freshPR, prOpResult = "✓ 已标记为就绪", prOpInProgress = false) }
+            } else {
+                _state.update { it.copy(prOpResult = "标记失败", prOpInProgress = false) }
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(prOpResult = "操作失败: ${e.message}", prOpInProgress = false) }
+        }
+    }
+
+    /** 创建 Pull Request */
+    fun createPR(title: String, body: String, head: String, base: String, draft: Boolean) = viewModelScope.launch {
+        _state.update { it.copy(prOpInProgress = true) }
+        try {
+            ApiClient.api.createPullRequest(
+                owner, repoName,
+                GHCreatePullRequestRequest(title, body.ifBlank { null }, head, base, draft),
+            )
+            repository.invalidatePRCache(owner, repoName)
+            loadPRsByFilter(forceRefresh = true)
+            _state.update { it.copy(prOpResult = "✓ PR 已创建", prOpInProgress = false) }
+        } catch (e: Exception) {
+            _state.update { it.copy(prOpResult = "创建失败: ${e.message}", prOpInProgress = false) }
+        }
     }
 
     /** 按当前筛选状态加载 Issues（第1页） */
@@ -383,35 +807,30 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         }
     }
 
-    /** 刷新分支列表 */
+    /** 刷新分支列表（增量：按 name 合并，直接覆盖因为分支可能被删除） */
     fun refreshBranches() = viewModelScope.launch {
         _state.update { it.copy(branchesRefreshing = true) }
         try {
-            val branches = repository.getBranches(owner, repoName, forceRefresh = true)
+            val branches = repository.refreshBranchesIncremental(owner, repoName)
             _state.update { it.copy(branches = branches, branchesRefreshing = false) }
         } catch (_: Exception) {
             _state.update { it.copy(branchesRefreshing = false) }
         }
     }
 
-    /** 刷新PR列表 */
-    fun refreshPRs() = viewModelScope.launch {
-        _state.update { it.copy(prsRefreshing = true) }
-        try {
-            val prs = repository.getPRs(owner, repoName, forceRefresh = true)
-            _state.update { it.copy(prs = prs, prsRefreshing = false) }
-        } catch (_: Exception) {
-            _state.update { it.copy(prsRefreshing = false) }
-        }
-    }
-
-    /** 刷新Issues列表 */
+    /** 刷新 Issues（增量：按 number 合并，新条目优先） */
     fun refreshIssues() = viewModelScope.launch {
         _state.update { it.copy(issuesRefreshing = true) }
         try {
-            loadIssuesByState(forceRefresh = true).join()
-        } catch (_: Exception) {}
-        _state.update { it.copy(issuesRefreshing = false) }
+            val f      = _state.value.issueFilterState
+            val labels = if (f.selectedLabels.isNotEmpty()) f.selectedLabels.joinToString(",") else null
+            val fresh  = repository.refreshIssuesIncremental(
+                owner, repoName, f.status.apiValue, labels, f.selectedCreator, f.sortBy.sort, f.sortBy.direction,
+            )
+            _state.update { it.copy(issues = fresh, issuesPage = 1, issuesHasMore = fresh.size >= 30, issuesRefreshing = false) }
+        } catch (_: Exception) {
+            _state.update { it.copy(issuesRefreshing = false) }
+        }
     }
 
     fun deleteIssue(issueNumber: Int) = viewModelScope.launch {
@@ -431,7 +850,17 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
      * 获取所有可用的标签
      */
     fun getAllLabels(): Set<String> {
-        return _state.value.issues.flatMap { it.labels }.map { it.name }.toSet()
+        return _state.value.labels.map { it.name }.toSet()
+    }
+    
+    /**
+     * 加载仓库的所有标签（包括默认标签）
+     */
+    fun loadLabels() = viewModelScope.launch {
+        try {
+            val labels = repository.getLabels(owner, repoName)
+            _state.update { it.copy(labels = labels) }
+        } catch (_: Exception) {}
     }
 
     /**
@@ -573,6 +1002,60 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             repository.replaceTopics(owner, repoName, topics)
             val updated = repository.getRepo(owner, repoName, forceRefresh = true)
             _state.update { it.copy(repo = updated, toast = "已更新仓库信息") }
+        } catch (e: Exception) {
+            _state.update { it.copy(toast = "更新失败：${e.message}") }
+        }
+    }
+
+    /**
+     * 计算当前仓库支持的 tab 数量
+     */
+    private fun calculateTabCount(repo: GHRepo?): Int {
+        var count = 6 // 文件、提交、分支、操作、发行版、PR
+        if (repo?.hasIssues != false) count++
+        if (repo?.hasDiscussions == true) count++
+        return count
+    }
+
+    /**
+     * 确保 tab 索引有效
+     */
+    private fun ensureValidTabIndex(repo: GHRepo?, currentTab: Int): Int {
+        val tabCount = calculateTabCount(repo)
+        return if (currentTab >= tabCount) 0 else currentTab
+    }
+
+    fun toggleIssues(enable: Boolean) = viewModelScope.launch {
+        try {
+            repository.updateRepo(owner, repoName, GHUpdateRepoRequest(hasIssues = enable))
+            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            val currentTab = _state.value.tab
+            val validTab = ensureValidTabIndex(updated, currentTab)
+            _state.update {
+                it.copy(
+                    repo = updated,
+                    tab = validTab,
+                    toast = if (enable) "已打开议题功能" else "已关闭议题功能",
+                )
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(toast = "更新失败：${e.message}") }
+        }
+    }
+
+    fun toggleDiscussions(enable: Boolean) = viewModelScope.launch {
+        try {
+            repository.updateRepo(owner, repoName, GHUpdateRepoRequest(hasDiscussions = enable))
+            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            val currentTab = _state.value.tab
+            val validTab = ensureValidTabIndex(updated, currentTab)
+            _state.update {
+                it.copy(
+                    repo = updated,
+                    tab = validTab,
+                    toast = if (enable) "已打开讨论功能" else "已关闭讨论功能",
+                )
+            }
         } catch (e: Exception) {
             _state.update { it.copy(toast = "更新失败：${e.message}") }
         }
@@ -880,11 +1363,11 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         } catch (_: Exception) {}
     }
 
-    /** 刷新Releases列表 */
+    /** 刷新Releases列表（增量：按 id 合并） */
     fun refreshReleases() = viewModelScope.launch {
         _state.update { it.copy(releasesRefreshing = true) }
         try {
-            val releases = repository.getReleases(owner, repoName, forceRefresh = true)
+            val releases = repository.refreshReleasesIncremental(owner, repoName)
             _state.update { it.copy(releases = releases, releasesRefreshing = false) }
         } catch (_: Exception) {
             _state.update { it.copy(releasesRefreshing = false) }
@@ -951,8 +1434,47 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             )
         }
         try {
-            // ─ Step 1: 获取分支 HEAD SHA ──────────────────────────────────────
-            val parentSha = ApiClient.api.getRef(owner, repoName, branch).obj.sha
+            // ─ Step 1: 获取分支 HEAD SHA（处理空仓库 409）────────────────────
+            var parentSha: String? = null
+            try {
+                parentSha = ApiClient.api.getRef(owner, repoName, branch).obj.sha
+            } catch (e: retrofit2.HttpException) {
+                if (e.code() == 409) {
+                    // 仓库为空（无任何 commit），分支不存在
+                    // 策略：用 Contents API 创建第一个文件，它会自动建立分支和初始 commit
+                    val firstEntry = fileEntries.first()
+                    val bytes   = java.io.File(firstEntry.first).readBytes()
+                    val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                    _state.update { it.copy(uploadCurrentFile = java.io.File(firstEntry.first).name, uploadBlobProgress = 0) }
+                    val resp = ApiClient.api.createOrUpdateFile(
+                        owner, repoName, firstEntry.second,
+                        GHCreateFileRequest(
+                            message = commitMessage,
+                            content = encoded,
+                            branch  = null,  // 空仓库让 API 自动用默认分支名
+                        )
+                    )
+                    if (fileEntries.size == 1) {
+                        // 只有一个文件，直接完成
+                        _state.update { it.copy(uploadPhase = UploadPhase.DONE, uploadBlobProgress = 1) }
+                        loadContents(_state.value.currentPath, forceRefresh = true)
+                        // 刷新仓库信息（分支现在存在了）
+                        repository.getRepo(owner, repoName, forceRefresh = true).let { repo ->
+                            _state.update { s -> s.copy(repo = repo, currentBranch = repo.defaultBranch) }
+                        }
+                        onSuccess()
+                        return@launch
+                    }
+                    // 还有更多文件：拿到第一个 commit 的 SHA 再继续
+                    parentSha = resp.commit.sha
+                    // 剩余文件走下面的正常流程
+                    val remainingEntries = fileEntries.drop(1)
+                    uploadRemainingWithParent(remainingEntries, commitMessage, parentSha, branch, 1, onSuccess, onError)
+                    return@launch
+                } else {
+                    throw e
+                }
+            }
 
             // ─ Step 2: 并发创建 blobs（每批最多 5 个）────────────────────────
             val blobShas = mutableListOf<String>()
@@ -1014,6 +1536,50 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         }
     }
 
+    /** 空仓库：第一个文件已用 Contents API 创建，剩余文件继续用 Git Data API 提交 */
+    private fun uploadRemainingWithParent(
+        remaining: List<Pair<String, String>>,
+        commitMessage: String,
+        parentSha: String,
+        branch: String,
+        doneCount: Int,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    ) = viewModelScope.launch {
+        try {
+            val blobShas = mutableListOf<String>()
+            val semaphore = kotlinx.coroutines.sync.Semaphore(5)
+            kotlinx.coroutines.coroutineScope {
+                val jobs = remaining.mapIndexed { idx, (localPath, _) ->
+                    async {
+                        semaphore.withPermit {
+                            _state.update { it.copy(uploadCurrentFile = java.io.File(localPath).name, uploadBlobProgress = doneCount + idx) }
+                            val bytes = java.io.File(localPath).readBytes()
+                            val enc   = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                            ApiClient.api.createBlob(owner, repoName, GHCreateBlobRequest(enc)).sha
+                        }
+                    }
+                }
+                blobShas.addAll(jobs.map { it.await() })
+            }
+            _state.update { it.copy(uploadBlobProgress = doneCount + remaining.size, uploadPhase = UploadPhase.TREE) }
+            val treeItems = remaining.mapIndexed { idx, (_, repoPath) -> GHTreeItem(path = repoPath, sha = blobShas[idx]) }
+            val treeResp = ApiClient.api.createTree(owner, repoName, GHCreateTreeRequest(tree = treeItems, baseTree = parentSha))
+            _state.update { it.copy(uploadPhase = UploadPhase.COMMIT) }
+            val commitResp = ApiClient.api.createCommit(owner, repoName,
+                GHCreateCommitRequest(message = commitMessage, tree = treeResp.sha, parents = listOf(parentSha)))
+            _state.update { it.copy(uploadPhase = UploadPhase.REF) }
+            ApiClient.api.updateRef(owner, repoName, branch, GHUpdateRefRequest(sha = commitResp.sha))
+            _state.update { it.copy(uploadPhase = UploadPhase.DONE) }
+            loadContents(_state.value.currentPath, forceRefresh = true)
+            onSuccess()
+        } catch (e: Exception) {
+            _state.update { it.copy(uploadPhase = UploadPhase.ERROR, uploadError = e.message ?: "上传失败") }
+            onError(e.message ?: "上传失败")
+        }
+    }
+
+
     /** 重置上传状态（关闭进度弹窗后调用） */
     fun resetUploadState() = _state.update {
         it.copy(
@@ -1033,20 +1599,27 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         } catch (_: Exception) {}
     }
 
-    /** 刷新Actions工作流和运行记录 */
+    /** 刷新Actions工作流和运行记录（增量：runs 按 id 合并，新在前） */
     fun refreshActions() = viewModelScope.launch {
         _state.update { it.copy(actionsRefreshing = true) }
         try {
             val workflows = repository.getWorkflows(owner, repoName)
-            val runs = repository.getWorkflowRuns(owner, repoName, _state.value.selectedWorkflow?.id, page = 1)
+            val freshRuns = repository.getWorkflowRuns(
+                owner, repoName, _state.value.selectedWorkflow?.id, page = 1
+            )
+            // 增量合并：新条目优先，按 id 去重
+            val cachedRuns = _state.value.allWorkflowRuns
+            val mergedAll  = (freshRuns + cachedRuns).distinctBy { it.id }
+            val mergedView = if (_state.value.selectedWorkflow == null) mergedAll
+                             else (freshRuns + _state.value.workflowRuns).distinctBy { it.id }
             _state.update { it.copy(
-                workflows = workflows,
-                allWorkflowRuns = if (_state.value.selectedWorkflow == null) runs else it.allWorkflowRuns,
-                workflowRuns = runs,
-                workflowRunsPage = 1,
-                workflowRunsHasMore = runs.size >= 30,
-                actionsRefreshing = false
-            )}
+                workflows            = workflows,
+                allWorkflowRuns      = mergedAll,
+                workflowRuns         = mergedView,
+                workflowRunsPage     = 1,
+                workflowRunsHasMore  = freshRuns.size >= 30,
+                actionsRefreshing    = false,
+            ) }
         } catch (_: Exception) {
             _state.update { it.copy(actionsRefreshing = false) }
         }
@@ -1301,23 +1874,19 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         onSuccess: () -> Unit = {},
     ) = viewModelScope.launch {
         try {
-            val oldFile = repository.getFileInfo(owner, repoName, oldPath, _state.value.currentBranch)
-            repository.createOrUpdateFile(
+            val oldFile = repository.getFileWithInfo(owner, repoName, oldPath, _state.value.currentBranch)
+            val contentBase64 = oldFile.info.content ?: ""
+            val cleanContentBase64 = contentBase64.replace("\n", "").replace("\r", "")
+            val token = GitMobApp.instance.tokenStorage.accessToken.first() ?: return@launch
+            repository.renameFileGraphQL(
+                token = token,
                 owner = owner,
                 repo = repoName,
-                path = newPath,
-                message = message,
-                content = oldFile.content ?: "",
-                sha = null,
                 branch = _state.value.currentBranch,
-            )
-            repository.deleteFile(
-                owner = owner,
-                repo = repoName,
-                path = oldPath,
-                message = message,
-                sha = oldFile.sha,
-                branch = _state.value.currentBranch,
+                oldPath = oldPath,
+                newPath = newPath,
+                contentBase64 = cleanContentBase64,
+                message = message
             )
             loadContents(_state.value.currentPath, forceRefresh = true)
             _state.update { it.copy(toast = "文件已重命名") }

@@ -11,6 +11,11 @@ data class GHUser(
     val followers: Int = 0,
     val following: Int = 0,
     val bio: String?,
+    val blog: String? = null,
+    val location: String? = null,
+    val company: String? = null,
+    @SerializedName("twitter_username") val twitterUsername: String? = null,
+    @SerializedName("html_url") val htmlUrl: String? = null,
 )
 
 data class GHRepo(
@@ -38,6 +43,8 @@ data class GHRepo(
     @SerializedName("is_template") val isTemplate: Boolean = false,
     @SerializedName("mirror_url") val mirrorUrl: String? = null,
     val parent: GHRepo? = null,
+    @SerializedName("has_issues") val hasIssues: Boolean = true,
+    @SerializedName("has_discussions") val hasDiscussions: Boolean = false,
 )
 
 data class GHOwner(
@@ -128,23 +135,162 @@ data class GHTopic(val names: List<String>)
 data class GHPullRequest(
     val number: Int,
     val title: String,
-    val state: String,
+    val state: String,           // "open" | "closed"
     val body: String?,
-    @SerializedName("html_url") val htmlUrl: String,
+    @SerializedName("html_url")   val htmlUrl: String,
     @SerializedName("created_at") val createdAt: String,
+    @SerializedName("updated_at") val updatedAt: String? = null,
+    @SerializedName("merged_at")  val mergedAt: String? = null,
+    @SerializedName("closed_at")  val closedAt: String? = null,
+    @SerializedName("last_edited_at") val lastEditedAt: String? = null,
     val user: GHOwner,
     val head: GHPRBranch,
     val base: GHPRBranch,
-)
+    val draft: Boolean = false,
+    val merged: Boolean = false,
+    val mergeable: Boolean? = null,
+    @SerializedName("mergeable_state") val mergeableState: String? = null,
+    val comments: Int = 0,
+    @SerializedName("review_comments") val reviewComments: Int = 0,
+    val labels: List<GHLabel> = emptyList(),
+    @SerializedName("requested_reviewers") val requestedReviewers: List<GHOwner> = emptyList(),
+    val assignees: List<GHOwner> = emptyList(),
+    @SerializedName("node_id") val nodeId: String = "",
+    val locked: Boolean = false,
+    val viewerSubscription: String? = null,
+) {
+    val isOpen    get() = state == "open"
+    val isMerged  get() = merged
+    val isDraft   get() = draft
+    val isClosed  get() = state == "closed" && !isMerged
+}
 
 data class GHCreatePullRequestRequest(
     val title: String,
     val body: String? = null,
     val head: String,
     val base: String,
+    val draft: Boolean = false,
 )
 
-data class GHPRBranch(val label: String, val ref: String, val sha: String)
+data class GHUpdatePullRequestRequest(
+    val title: String? = null,
+    val body: String? = null,
+    val state: String? = null,   // "open" | "closed"
+    val base: String? = null,
+)
+
+data class GHPRBranch(
+    val label: String,
+    val ref: String,
+    val sha: String,
+    val repo: GHRepo? = null,
+)
+
+/** 合并 PR 请求体 */
+data class GHMergePRRequest(
+    @SerializedName("commit_title")   val commitTitle: String? = null,
+    @SerializedName("commit_message") val commitMessage: String? = null,
+    @SerializedName("merge_method")   val mergeMethod: String = "merge", // merge|squash|rebase
+)
+
+/** 合并 PR 响应 */
+data class GHMergePRResponse(
+    val sha: String? = null,
+    val merged: Boolean = false,
+    val message: String? = null,
+)
+
+/** PR 审查（review）*/
+data class GHReview(
+    val id: Long,
+    val user: GHOwner,
+    val body: String?,
+    val state: String,           // APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED
+    @SerializedName("submitted_at") val submittedAt: String? = null,
+    @SerializedName("html_url")     val htmlUrl: String = "",
+)
+
+/** 提交审查请求体 */
+data class GHCreateReviewRequest(
+    val body: String? = null,
+    val event: String,           // APPROVE | REQUEST_CHANGES | COMMENT
+    val comments: List<GHReviewComment> = emptyList(),
+)
+
+data class GHReviewComment(
+    val path: String,
+    val position: Int? = null,
+    val body: String,
+)
+
+/** 管理审查请求 */
+data class GHReviewersRequest(
+    val reviewers: List<String> = emptyList(),
+    @SerializedName("team_reviewers") val teamReviewers: List<String> = emptyList(),
+)
+
+/** 更新分支（基分支有新提交时同步） */
+data class GHUpdateBranchRequest(
+    @SerializedName("expected_head_sha") val expectedHeadSha: String? = null,
+)
+
+data class GHUpdateBranchResponse(
+    val message: String? = null,
+    val url: String? = null,
+)
+
+/** PR 筛选状态 */
+data class PRFilterState(
+    val status: PRStatusFilter = PRStatusFilter.OPEN,
+    val sortBy: PRSortBy = PRSortBy.CREATED_DESC,
+    val labelFilter: String? = null,
+    val authorFilter: String? = null,
+    val reviewerFilter: String? = null,
+    val reviewStateFilter: PRReviewState? = null,
+) {
+    /** 是否需要切换到 Search API（REST /pulls 不支持 label/author/reviewer/merged） */
+    val useSearchApi: Boolean get() =
+        labelFilter != null || authorFilter != null ||
+        reviewerFilter != null || reviewStateFilter != null ||
+        status == PRStatusFilter.MERGED
+
+    val hasFilters: Boolean get() =
+        status != PRStatusFilter.OPEN || sortBy != PRSortBy.CREATED_DESC ||
+        labelFilter != null || authorFilter != null ||
+        reviewerFilter != null || reviewStateFilter != null
+}
+
+fun PRFilterState.hasAnyFilters(): Boolean = hasFilters
+
+enum class PRStatusFilter(val displayName: String, val apiValue: String, val searchQualifier: String) {
+    OPEN(   "打开",   "open",   "state:open is:pr"),
+    MERGED( "已合并", "closed", "state:closed is:merged is:pr"),
+    CLOSED( "已关闭", "closed", "state:closed is:unmerged is:pr"),
+    ALL(    "所有",   "all",    "is:pr"),
+}
+
+enum class PRSortBy(val displayName: String, val sort: String, val direction: String) {
+    CREATED_DESC( "最新",     "created",     "desc"),
+    CREATED_ASC(  "最早",     "created",     "asc"),
+    UPDATED_DESC( "最近更新", "updated",     "desc"),
+    UPDATED_ASC(  "最早更新", "updated",     "asc"),
+    COMMENTS_DESC("最多评论", "popularity",  "desc"),
+    COMMENTS_ASC( "最少评论", "popularity",  "asc"),
+}
+
+/** 审查状态筛选（走 Search API review: qualifier） */
+enum class PRReviewState(val displayName: String, val qualifier: String) {
+    APPROVED(           "已批准",   "review:approved"),
+    CHANGES_REQUESTED(  "需要修改", "review:changes_requested"),
+    REQUIRED(           "待审查",   "review:required"),
+}
+
+enum class MergeMethod(val displayName: String, val apiValue: String) {
+    MERGE("创建合并提交",  "merge"),
+    SQUASH("压缩合并",     "squash"),
+    REBASE("变基合并",     "rebase"),
+}
 
 data class GHIssue(
     val number: Int,
@@ -154,10 +300,16 @@ data class GHIssue(
     @SerializedName("html_url") val htmlUrl: String,
     @SerializedName("created_at") val createdAt: String,
     @SerializedName("updated_at") val updatedAt: String?,
+    @SerializedName("closed_at") val closedAt: String? = null,
+    @SerializedName("last_edited_at") val lastEditedAt: String? = null,
     val user: GHOwner,
     val labels: List<GHLabel> = emptyList(),
+    val assignees: List<GHOwner> = emptyList(),
     val comments: Int? = null,
     @SerializedName("pull_request") val pullRequest: Any? = null,
+    @SerializedName("node_id") val nodeId: String = "",
+    val locked: Boolean = false,
+    val viewerSubscription: String? = null,
 ) {
     val isPR get() = pullRequest != null
 }
@@ -175,8 +327,10 @@ data class GHComment(
     val user: GHOwner,
     @SerializedName("created_at") val createdAt: String,
     @SerializedName("updated_at") val updatedAt: String,
+    @SerializedName("last_edited_at") val lastEditedAt: String? = null,
     @SerializedName("html_url") val htmlUrl: String,
     @SerializedName("author_association") val authorAssociation: String?,
+    @SerializedName("node_id") val nodeId: String = "",
 )
 
 data class GHCreateCommentRequest(
@@ -197,6 +351,49 @@ data class GHUpdateIssueRequest(
 data class GHCreateIssueRequest(
     val title: String,
     val body: String? = null,
+)
+
+// ─── GitHub Discussions（GraphQL only）───────────────────────────────────────
+data class GHDiscussion(
+    val id: String,
+    val number: Int,
+    val title: String,
+    val body: String?,
+    val createdAt: String,
+    val updatedAt: String,
+    val lastEditedAt: String? = null,
+    val url: String,
+    val author: GHOwner?,
+    val category: GHDiscussionCategory?,
+    val comments: Int,           // totalCount
+    val upvoteCount: Int,
+    val isAnswered: Boolean,
+    val answeredBy: GHOwner?,    // 回答者
+    val viewerSubscription: String? = null,
+    val viewerCanUpdate: Boolean = false,
+    val viewerCanDelete: Boolean = false,
+    val labels: List<GHLabel> = emptyList(),
+)
+
+data class GHDiscussionComment(
+    val id: String,
+    val body: String,
+    val author: GHOwner?,
+    val createdAt: String,
+    val updatedAt: String,
+    val lastEditedAt: String? = null,
+    val url: String,
+    val viewerCanUpdate: Boolean = false,
+    val viewerCanDelete: Boolean = false,
+    val nodeId: String = "",
+)
+
+data class GHDiscussionCategory(
+    val id: String,
+    val name: String,
+    val emoji: String,
+    val description: String?,
+    val isAnswerable: Boolean = false,
 )
 
 data class GHIssueSubscription(
@@ -275,6 +472,8 @@ data class GHUpdateRepoRequest(
     val homepage: String? = null,
     @SerializedName("private") val private: Boolean? = null,
     @SerializedName("default_branch") val defaultBranch: String? = null,
+    @SerializedName("has_issues") val hasIssues: Boolean? = null,
+    @SerializedName("has_discussions") val hasDiscussions: Boolean? = null,
 )
 
 /** 仓库转移请求体 */
@@ -399,6 +598,38 @@ data class WorkflowInput(
     val default: Any?,
     val options: List<String>? = null,
 )
+
+// ── 编辑历史相关 ─────────────────────────────────────────────
+
+/** 用户内容编辑记录 */
+data class GHUserContentEdit(
+    val id: String,
+    val createdAt: String,
+    val diff: String?,
+    val editor: GHOwner?,
+    val deletedBy: GHOwner? = null,
+)
+
+/** 编辑历史连接（用于分页） */
+data class GHUserContentEditConnection(
+    val totalCount: Int,
+    val pageInfo: GHPageInfo,
+    val edges: List<GHUserContentEditEdge>?,
+    val nodes: List<GHUserContentEdit>?,
+)
+
+data class GHUserContentEditEdge(
+    val cursor: String,
+    val node: GHUserContentEdit,
+)
+
+data class GHPageInfo(
+    val startCursor: String?,
+    val endCursor: String?,
+    val hasNextPage: Boolean,
+    val hasPreviousPage: Boolean,
+)
+
 
 data class GHWorkflow(
     val id: Long,
@@ -670,6 +901,60 @@ enum class ForkSortBy(val displayName: String, val apiValue: String) {
     OLDEST("最早", "oldest"),
     STARGAZERS("最多星标", "stargazers");
 }
+
+// ── Search: Code ──────────────────────────────────────────────────────────────
+
+/**
+ * 代码搜索结果中的仓库信息（精简版，避免 GHRepo 必填字段反序列化失败）
+ */
+data class GHCodeRepository(
+    val id: Long,
+    val name: String,
+    @SerializedName("full_name") val fullName: String,
+    @SerializedName("html_url") val htmlUrl: String,
+    val description: String? = null,
+    @SerializedName("private") val isPrivate: Boolean = false,
+    val owner: GHOwner,
+)
+
+/**
+ * 代码搜索结果中的文本匹配段落（需要 Accept: text-match 头）
+ */
+data class GHTextMatch(
+    val fragment: String = "",
+    val matches: List<GHCodeMatch> = emptyList(),
+)
+
+data class GHCodeMatch(
+    val text: String = "",
+    val indices: List<Int> = emptyList(),
+)
+
+/**
+ * /search/code 接口返回的单条代码文件结果
+ */
+data class GHCodeResult(
+    val name: String,
+    val path: String,
+    val sha: String,
+    @SerializedName("html_url") val htmlUrl: String,
+    val repository: GHCodeRepository,
+    @SerializedName("text_matches") val textMatches: List<GHTextMatch> = emptyList(),
+)
+
+// ── Search: Users / Orgs ──────────────────────────────────────────────────────
+
+/**
+ * /search/users 接口返回的单条用户或组织结果
+ */
+data class GHSearchUser(
+    val id: Long = 0,
+    val login: String,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("html_url") val htmlUrl: String,
+    val type: String = "User",   // "User" | "Organization"
+    val score: Double = 0.0,
+)
 
 /**
  * GitHub Compare API 响应数据模型

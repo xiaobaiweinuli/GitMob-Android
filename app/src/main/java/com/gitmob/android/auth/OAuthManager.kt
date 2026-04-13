@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 object OAuthManager {
 
     private const val GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
-    private const val SCOPES = "repo,user,delete_repo,admin:public_key,workflow"
+    private const val SCOPES = "repo,user,delete_repo,admin:public_key,workflow,notifications"
 
     // Worker 基础 URL（去掉 /callback 后缀），所有 token/grant 操作走 Worker
     private val WORKER_BASE: String

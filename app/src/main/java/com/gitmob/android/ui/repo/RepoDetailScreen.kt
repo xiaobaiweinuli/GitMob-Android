@@ -83,6 +83,8 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.layout.defaultMinSize
 import okhttp3.Request
+import com.gitmob.android.data.FavoritesManager
+import com.gitmob.android.ui.home.AddToFavoritesDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,17 +95,53 @@ fun RepoDetailScreen(
     onBack: () -> Unit,
     onFileClick: (String, String, String, String) -> Unit,
     onIssueClick: (Int) -> Unit = {},
+    onPRClick: (Int) -> Unit = {},
+    onDiscussionClick: (Int) -> Unit = {},
     onForkedRepoClick: ((String, String) -> Unit)? = null,
+    onOwnerClick: ((String) -> Unit)? = null,
     onEditFile: (path: String, mode: String, branch: String) -> Unit = { _, _, _ -> },
-    vm: RepoDetailViewModel = viewModel(factory = RepoDetailViewModel.factory(owner, repoName)),
+    vm: RepoDetailViewModel = viewModel {
+        val app = checkNotNull(this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY])
+        val handle = androidx.lifecycle.SavedStateHandle(mapOf("owner" to owner, "repo" to repoName))
+        RepoDetailViewModel(app, handle)
+    },
 ) {
     val c = LocalGmColors.current
     val state by vm.state.collectAsState()
-    val tabs = listOf("文件", "提交", "分支", "操作", "发行版", "PR", "Issues")
-    val permission = rememberRepoPermission(state.repo, state.userLogin)
+    val repo = state.repo
+    val tabs = buildList {
+        add("文件")
+        add("提交")
+        add("分支")
+        add("操作")
+        add("发行版")
+        add("PR")
+        if (repo?.hasIssues != false) {
+            add("Issues")
+        }
+        if (repo?.hasDiscussions == true) {
+            add("讨论")
+        }
+    }
+    val permission = rememberRepoPermission(state.repo, state.userLogin, state.userOrgs)
     var showBranchDialog by remember { mutableStateOf(false) }
     var showNewBranchDialog by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
+    var showFavoritesDialog by remember { mutableStateOf(false) }
+    val favVm: FavoritesManager = viewModel()
+    state.userLogin.takeIf { it.isNotBlank() }?.let { login ->
+        LaunchedEffect(login) { favVm.init(login) }
+    }
+    val favState by favVm.state.collectAsState()
+    val isCurrentRepoFavorited = state.repo?.fullName?.let { favVm.isFavorited(it) } ?: false
+
+    // 仓库成功加载后：若已收藏则同步最新数据（stars/language/description 等）
+    LaunchedEffect(state.repo?.fullName) {
+        val repo = state.repo ?: return@LaunchedEffect
+        if (favVm.isFavorited(repo.fullName)) {
+            favVm.updateFavRepoData(repo)
+        }
+    }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -111,6 +149,8 @@ fun RepoDetailScreen(
     var showTransferDialog by remember { mutableStateOf(false) }
     var showCreateFileDialog by remember { mutableStateOf(false) }
     var showWatchSheet by remember { mutableStateOf(false) }
+    var showToggleIssuesDialog by remember { mutableStateOf(false) }
+    var showToggleDiscussionsDialog by remember { mutableStateOf(false) }
     var newFileName by remember { mutableStateOf("") }
     var newFileContent by remember { mutableStateOf("") }
     var showCommitMessageDialog by remember { mutableStateOf(false) }
@@ -220,8 +260,13 @@ fun RepoDetailScreen(
                                         color = BlueColor,
                                     )
                                 }
-                            } else if (!isOwnRepo) {
-                                Text(vm.owner, fontSize = 12.sp, color = c.textTertiary)
+                            } else {
+                                // 始终显示 owner，点击进入主页（包括自己的仓库也可以点）
+                                Text(
+                                    vm.owner, fontSize = 12.sp,
+                                    color = if (isOwnRepo) c.textTertiary else BlueColor,
+                                    modifier = if (onOwnerClick != null) Modifier.clickable { onOwnerClick.invoke(vm.owner) } else Modifier,
+                                )
                             }
                         }
                     }
@@ -230,26 +275,8 @@ fun RepoDetailScreen(
                     IconButton(onClick = handleTopBarBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = c.textSecondary) }
                 },
                 actions = {
-                    IconButton(onClick = vm::toggleStar) {
-                        Icon(
-                            if (state.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
-                            null, tint = if (state.isStarred) Yellow else c.textSecondary,
-                        )
-                    }
-                    IconButton(
-                        onClick = { if (!permission.isOwner) vm.showCreateForkDialog() },
-                        enabled = !permission.isOwner
-                    ) {
-                        Icon(
-                            Icons.Default.Share,
-                            contentDescription = "复刻仓库",
-                            tint = if (permission.isOwner) c.textTertiary else c.textSecondary,
-                        )
-                    }
-                    PermissionRequired(permission = permission, requireOwner = true) {
-                        IconButton(onClick = { vm.checkForkSyncStatus(); showForkSyncDialog = true }) {
-                            Icon(Icons.Default.Sync, null, tint = c.textSecondary)
-                        }
+                    IconButton(onClick = { vm.loadAll(forceRefresh = true) }) {
+                        Icon(Icons.Default.Refresh, null, tint = c.textSecondary)
                     }
                     Box {
                         PermissionRequired(permission = permission, requireOwner = true) {
@@ -353,6 +380,20 @@ fun RepoDetailScreen(
                                 },
                             )
                             DropdownMenuItem(
+                                text = { Text(if (isCurrentRepoFavorited) "已收藏" else "收藏仓库", fontSize = 14.sp, color = c.textPrimary) },
+                                leadingIcon = {
+                                    Icon(
+                                        if (isCurrentRepoFavorited) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                        null, tint = if (isCurrentRepoFavorited) Coral else c.textSecondary,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                },
+                                onClick = {
+                                    showSettingsMenu = false
+                                    showFavoritesDialog = true
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("订阅通知", fontSize = 14.sp, color = c.textPrimary) },
                                 leadingIcon = {
                                     Icon(Icons.Default.Notifications, null,
@@ -362,6 +403,46 @@ fun RepoDetailScreen(
                                     showSettingsMenu = false
                                     vm.loadSubscription()
                                     showWatchSheet = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (state.repo?.hasIssues != false) "关闭议题" else "打开议题",
+                                        fontSize = 14.sp, color = c.textPrimary
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.BugReport,
+                                        null,
+                                        tint = c.textSecondary,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                },
+                                onClick = {
+                                    showSettingsMenu = false
+                                    showToggleIssuesDialog = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (state.repo?.hasDiscussions == true) "关闭讨论" else "打开讨论",
+                                        fontSize = 14.sp, color = c.textPrimary
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Forum,
+                                        null,
+                                        tint = c.textSecondary,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                },
+                                onClick = {
+                                    showSettingsMenu = false
+                                    showToggleDiscussionsDialog = true
                                 },
                             )
                             DropdownMenuItem(
@@ -396,7 +477,34 @@ fun RepoDetailScreen(
         },
     ) { padding ->
         if (state.loading) { LoadingBox(Modifier.padding(padding)); return@Scaffold }
-        if (state.error != null && state.repo == null) { ErrorBox(state.error!!, vm::loadAll); return@Scaffold }
+        if (state.error != null && state.repo == null) {
+            ErrorBox(state.error!!, vm::loadAll)
+            // 仓库已删除时弹出提示
+            if (state.repoNotFound) {
+                AlertDialog(
+                    onDismissRequest = {},
+                    containerColor = c.bgCard,
+                    icon = { Icon(Icons.Default.DeleteForever, null, tint = Color(0xFFF85149), modifier = Modifier.size(32.dp)) },
+                    title = { Text("仓库已删除", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
+                    text = {
+                        Text(
+                            "「$owner/$repoName」已不存在（可能已被删除或设为私有）。\n是否同时删除收藏记录？",
+                            color = c.textSecondary, fontSize = 14.sp,
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = { favVm.removeFavorite("$owner/$repoName"); onBack() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF85149)),
+                        ) { Text("删除收藏并返回") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { onBack() }) { Text("仅返回", color = c.textSecondary) }
+                    },
+                )
+            }
+            return@Scaffold
+        }
         val repo = state.repo ?: return@Scaffold
 
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -422,16 +530,40 @@ fun RepoDetailScreen(
                     }
                     Spacer(Modifier.height(8.dp))
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     StatItem(Icons.Default.Star, "${repo.stars}", Yellow, onClick = { vm.showStargazersSheet() })
                     StatItem(Icons.Default.Share, "${repo.forks}", c.textSecondary, onClick = { vm.showForksSheet() })
-                    StatItem(Icons.Default.Warning, "${repo.openIssues}", RedColor)
+                    StatItem(Icons.Default.ErrorOutline, "${repo.openIssues}", Green)
+                    
+                    IconButton(onClick = vm::toggleStar, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            if (state.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
+                            null, tint = if (state.isStarred) Yellow else c.textSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    
+                    IconButton(
+                        onClick = { if (!permission.isOwner) vm.showCreateForkDialog() },
+                        enabled = !permission.isOwner,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = "复刻仓库",
+                            tint = if (permission.isOwner) c.textTertiary else c.textSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    
                     Spacer(Modifier.weight(1f))
+                    
                     if (!repo.language.isNullOrBlank()) {
                         Text(repo.language, fontSize = 11.sp, color = c.textTertiary,
                             modifier = Modifier.background(c.bgItem, RoundedCornerShape(20.dp))
                                 .padding(horizontal = 8.dp, vertical = 3.dp))
                     }
+                    
                     if (repo.private) GmBadge("私有", RedDim, RedColor)
                 }
             }
@@ -483,69 +615,97 @@ fun RepoDetailScreen(
             }
 
             when (state.tab) {
-                0 -> FilesTab(state, c, permission,
-                    onDirClick = { vm.loadContents(it) },
-                    onFileClick = { path -> onFileClick(owner, repoName, path, state.currentBranch) },
-                    onNavigateUp = vm::navigateUp,
-                    onRefresh = { vm.loadContents(state.currentPath, forceRefresh = true) },
-                    onUpload = { showUploadSourceSheet = true },
-                    onShare = {
-                        val url = "https://github.com/$owner/$repoName/blob/${state.currentBranch}/${state.currentPath}"
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, url)
-                        }
-                        context.startActivity(Intent.createChooser(intent, "分享"))
-                    },
-                    onAddFile = {
-                        val fullPath = if (state.currentPath.isNotEmpty()) {
-                            "${state.currentPath}/"
-                        } else {
-                            ""
-                        }
-                        onEditFile(fullPath, "NEW", state.currentBranch)
-                    },
-                    onHistory = {
-                        vm.setTab(1)
-                    },
-                    onFileRename = { content ->
-                        selectedFileForMenu = content
-                        renameFileNewName = content.name
-                        showRenameFileDialog = true
-                    },
-                    onFileDelete = { content ->
-                        selectedFileForMenu = content
-                        showDeleteFileDialog = true
-                    },
-                    onFileShare = { content ->
-                        val url = "https://github.com/$owner/$repoName/blob/${state.currentBranch}/${content.path}"
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, url)
-                        }
-                        context.startActivity(Intent.createChooser(intent, "分享"))
-                    },
-                    onFileHistory = { content ->
-                        vm.showFileHistory(content)
-                    },
-                )
-                1 -> CommitsTab(state, c, onCommitClick = { vm.loadCommitDetail(it.sha) },
-                    onRefresh = { vm.loadCommits(forceRefresh = true) })
+                0 -> {
+                    LaunchedEffect(Unit) { vm.ensureReadmeLoaded() }
+                    FilesTab(state, c, permission,
+                        onDirClick = { vm.loadContents(it) },
+                        onFileClick = { path -> onFileClick(owner, repoName, path, state.currentBranch) },
+                        onNavigateUp = vm::navigateUp,
+                        onRefresh = { vm.loadContents(state.currentPath, forceRefresh = true) },
+                        onUpload = { showUploadSourceSheet = true },
+                        onShare = {
+                            val url = "https://github.com/$owner/$repoName/blob/${state.currentBranch}/${state.currentPath}"
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, url)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "分享"))
+                        },
+                        onAddFile = {
+                            val fullPath = if (state.currentPath.isNotEmpty()) {
+                                "${state.currentPath}/"
+                            } else {
+                                ""
+                            }
+                            onEditFile(fullPath, "NEW", state.currentBranch)
+                        },
+                        onHistory = {
+                            vm.setTab(1)
+                        },
+                        onFileRename = { content ->
+                            selectedFileForMenu = content
+                            renameFileNewName = content.name
+                            showRenameFileDialog = true
+                        },
+                        onFileDelete = { content ->
+                            selectedFileForMenu = content
+                            showDeleteFileDialog = true
+                        },
+                        onFileShare = { content ->
+                            val url = "https://github.com/$owner/$repoName/blob/${state.currentBranch}/${content.path}"
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, url)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "分享"))
+                        },
+                        onFileHistory = { content ->
+                            vm.showFileHistory(content)
+                        },
+                    )
+                }
+                1 -> {
+                    LaunchedEffect(Unit) { vm.ensureCommitsLoaded() }
+                    CommitsTab(state, c, onCommitClick = { vm.loadCommitDetail(it.sha) },
+                        onRefresh = { vm.loadCommits(forceRefresh = true) })
+                }
                 2 -> BranchesTab(state, c, permission = permission, onSwitch = vm::switchBranch,
                     onNewBranch = { showNewBranchDialog = true },
                     onDelete = vm::deleteBranch, onRename = vm::renameBranch,
                     onSetDefault = vm::setDefaultBranch,
                     onRefresh = vm::refreshBranches)
-                3 -> ActionsTab(state, c, vm, owner, repoName, permission = permission,
-                    onRefresh = vm::refreshActions)
-                4 -> ReleasesTab(state, vm = vm, c = c, permission = permission,
-                    onRefresh = vm::refreshReleases)
-                5 -> PRTab(state, c,
-                    onRefresh = vm::refreshPRs)
-                6 -> IssuesTab(state, c, vm, permission = permission,
-                    onRefresh = vm::refreshIssues,
-                    onIssueClick = onIssueClick)
+                3 -> {
+                    LaunchedEffect(Unit) { vm.ensureActionsLoaded() }
+                    ActionsTab(state, c, vm, owner, repoName, permission = permission,
+                        onRefresh = vm::refreshActions)
+                }
+                4 -> {
+                    LaunchedEffect(Unit) { vm.ensureReleasesLoaded() }
+                    ReleasesTab(state, vm = vm, c = c, permission = permission,
+                        onRefresh = vm::refreshReleases)
+                }
+                5 -> PRTab(state, c, vm = vm, permission = permission,
+                    onRefresh = vm::refreshPRs, onPRClick = onPRClick)
+                6 -> {
+                    LaunchedEffect(Unit) { vm.ensureIssuesLoaded() }
+                    IssuesTab(state, c, vm, permission = permission,
+                        onRefresh = vm::refreshIssues,
+                        onIssueClick = onIssueClick)
+                }
+                7 -> {
+                    LaunchedEffect(Unit) { vm.ensureDiscussionsLoaded() }
+                    DiscussionsTab(state, c, vm, permission = permission,
+                        onRefresh = vm::refreshDiscussions,
+                        onDiscussionClick = onDiscussionClick)
+                }
             }
+        }
+    }
+
+    // ── 收藏对话框 ────────────────────────────────────────────────────────────
+    if (showFavoritesDialog) {
+        state.repo?.let { repo ->
+            AddToFavoritesDialog(repo = repo, favVm = favVm, c = c, onDismiss = { showFavoritesDialog = false })
         }
     }
 
@@ -1268,46 +1428,72 @@ fun RepoDetailScreen(
 
     if (showRenameFileDialog && selectedFileForMenu != null) {
         var newName by remember { mutableStateOf(renameFileNewName) }
+        var commitMsg by remember { mutableStateOf("Rename ${selectedFileForMenu!!.name} to ${renameFileNewName}") }
         AlertDialog(
             onDismissRequest = { showRenameFileDialog = false },
             containerColor = c.bgCard,
             title = { Text("重命名文件/文件夹", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
             text = {
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("新名称") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Coral,
-                        unfocusedBorderColor = c.border,
-                        focusedTextColor = c.textPrimary,
-                        unfocusedTextColor = c.textPrimary,
-                        focusedContainerColor = c.bgItem,
-                        unfocusedContainerColor = c.bgItem,
-                        focusedLabelColor = Coral,
-                        unfocusedLabelColor = c.textTertiary,
-                    ),
-                )
+                Column {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { 
+                            newName = it
+                            commitMsg = "Rename ${selectedFileForMenu!!.name} to $it"
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("新名称") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Coral,
+                            unfocusedBorderColor = c.border,
+                            focusedTextColor = c.textPrimary,
+                            unfocusedTextColor = c.textPrimary,
+                            focusedContainerColor = c.bgItem,
+                            unfocusedContainerColor = c.bgItem,
+                            focusedLabelColor = Coral,
+                            unfocusedLabelColor = c.textTertiary,
+                        ),
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = commitMsg,
+                        onValueChange = { commitMsg = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("提交信息") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Coral,
+                            unfocusedBorderColor = c.border,
+                            focusedTextColor = c.textPrimary,
+                            unfocusedTextColor = c.textPrimary,
+                            focusedContainerColor = c.bgItem,
+                            unfocusedContainerColor = c.bgItem,
+                            focusedLabelColor = Coral,
+                            unfocusedLabelColor = c.textTertiary,
+                        ),
+                    )
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (newName.isNotBlank() && newName != selectedFileForMenu!!.name) {
+                        if (newName.isNotBlank() && newName != selectedFileForMenu!!.name && commitMsg.isNotBlank()) {
                             showRenameFileDialog = false
-                            commitMessage = "Rename ${selectedFileForMenu!!.name} to $newName"
                             val oldPath = selectedFileForMenu!!.path
-                            val newPath = oldPath.replaceAfterLast("/", newName)
+                            val newPath = if (oldPath.contains("/")) {
+                                oldPath.replaceAfterLast("/", newName)
+                            } else {
+                                newName
+                            }
                             
                             vm.renameFile(
                                 oldPath = oldPath,
                                 newPath = newPath,
-                                message = commitMessage,
+                                message = commitMsg,
                             )
                         }
                     },
-                    enabled = newName.isNotBlank() && newName != selectedFileForMenu!!.name,
+                    enabled = newName.isNotBlank() && newName != selectedFileForMenu!!.name && commitMsg.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = Coral),
                 ) {
                     Text("重命名")
@@ -1358,6 +1544,98 @@ fun RepoDetailScreen(
     // 订阅设置 Sheet
     if (showWatchSheet) {
         WatchSheet(state = state, vm = vm, onDismiss = { showWatchSheet = false })
+    }
+
+    // 切换议题确认弹窗
+    if (showToggleIssuesDialog && state.repo != null) {
+        AlertDialog(
+            onDismissRequest = { showToggleIssuesDialog = false },
+            containerColor = c.bgCard,
+            icon = {
+                Icon(
+                    Icons.Default.BugReport,
+                    null,
+                    tint = if (state.repo!!.hasIssues) RedColor else Green,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    if (state.repo!!.hasIssues) "关闭议题" else "打开议题",
+                    color = c.textPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Text(
+                    if (state.repo!!.hasIssues) "确定要关闭此仓库的议题功能吗？之前的议题仍会保留。" else "确定要打开此仓库的议题功能吗？",
+                    fontSize = 13.sp,
+                    color = c.textSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showToggleIssuesDialog = false
+                        vm.toggleIssues(!state.repo!!.hasIssues)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (state.repo!!.hasIssues) RedColor else Coral),
+                ) {
+                    Text(if (state.repo!!.hasIssues) "关闭" else "打开")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showToggleIssuesDialog = false }) {
+                    Text("取消", color = c.textSecondary)
+                }
+            },
+        )
+    }
+
+    // 切换讨论确认弹窗
+    if (showToggleDiscussionsDialog && state.repo != null) {
+        AlertDialog(
+            onDismissRequest = { showToggleDiscussionsDialog = false },
+            containerColor = c.bgCard,
+            icon = {
+                Icon(
+                    Icons.Default.Forum,
+                    null,
+                    tint = if (state.repo!!.hasDiscussions) RedColor else Green,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    if (state.repo!!.hasDiscussions) "关闭讨论" else "打开讨论",
+                    color = c.textPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Text(
+                    if (state.repo!!.hasDiscussions) "确定要关闭此仓库的讨论功能吗？之前的讨论仍会保留。" else "确定要打开此仓库的讨论功能吗？",
+                    fontSize = 13.sp,
+                    color = c.textSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showToggleDiscussionsDialog = false
+                        vm.toggleDiscussions(!state.repo!!.hasDiscussions)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (state.repo!!.hasDiscussions) RedColor else Coral),
+                ) {
+                    Text(if (state.repo!!.hasDiscussions) "关闭" else "打开")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showToggleDiscussionsDialog = false }) {
+                    Text("取消", color = c.textSecondary)
+                }
+            },
+        )
     }
 
     // ── 上传入口 Sheet（选择"文件"还是"文件夹"）────────────────────────────
@@ -1965,53 +2243,6 @@ fun FilesTab(
 }
 
 /**
- * 提交记录标签页组件
- * 
- * @param state 仓库详情状态
- * @param c 颜色主题
- * @param onCommitClick 提交点击回调
- * @param onRefresh 刷新回调
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PRTab(
-    state: RepoDetailState, 
-    c: GmColors,
-    onRefresh: () -> Unit = {},
-) {
-    val prs = state.prs
-    PullToRefreshBox(
-        isRefreshing = state.prsRefreshing,
-        onRefresh = onRefresh,
-    ) {
-        if (prs.isEmpty()) {
-            EmptyBox("暂无 Pull Request")
-        } else {
-            LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(prs, key = { it.number }) { pr ->
-                    Column(Modifier.fillMaxWidth().background(c.bgCard, RoundedCornerShape(12.dp)).padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            GmBadge("#${pr.number}", GreenDim, Green)
-                            Text(pr.title, fontSize = 13.sp, color = c.textPrimary, modifier = Modifier.weight(1f))
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(pr.head.ref, fontSize = 11.sp, color = BlueColor, fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.background(BlueDim, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp))
-                            Text("→", fontSize = 11.sp, color = c.textTertiary)
-                            Text(pr.base.ref, fontSize = 11.sp, color = c.textSecondary, fontFamily = FontFamily.Monospace)
-                            Spacer(Modifier.weight(1f))
-                            Text(pr.user.login, fontSize = 11.sp, color = c.textTertiary)
-                        }
-                    }
-                }
-            }
-        }
-
-    }
-}
-
-/**
  * Issues标签页组件
  * 
  * @param state 仓库详情状态
@@ -2102,7 +2333,10 @@ fun StargazersSheet(
                     CircularProgressIndicator(color = Coral)
                 }
             } else if (state.stargazers.isEmpty()) {
-                EmptyBox("暂无星标用户")
+                Box(
+                    Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("暂无星标用户", fontSize = 14.sp, color = c.textTertiary) }
             } else {
                 LazyColumn(
                     state = listState,
@@ -2282,7 +2516,10 @@ fun ForksSheet(
                     CircularProgressIndicator(color = Coral)
                 }
             } else if (state.forks.isEmpty()) {
-                EmptyBox("暂无复刻仓库")
+                Box(
+                    Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("暂无复刻仓库", fontSize = 14.sp, color = c.textTertiary) }
             } else {
                 LazyColumn(
                     state = listState,

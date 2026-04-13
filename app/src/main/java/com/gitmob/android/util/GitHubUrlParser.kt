@@ -3,8 +3,12 @@ package com.gitmob.android.util
 import android.net.Uri
 
 sealed class GitHubDestination {
-    data class Repo(val owner: String, val repo: String) : GitHubDestination()
+    data class UserProfile(val login: String) : GitHubDestination()
+    data class Repo(val owner: String, val repo: String, val tab: String? = null) : GitHubDestination()
     data class Issue(val owner: String, val repo: String, val number: Int) : GitHubDestination()
+    data class PR(val owner: String, val repo: String, val number: Int) : GitHubDestination()
+    data class Discussion(val owner: String, val repo: String, val number: Int) : GitHubDestination()
+    data class Commit(val owner: String, val repo: String, val sha: String) : GitHubDestination()
     data class FileView(
         val owner: String,
         val repo: String,
@@ -24,7 +28,18 @@ object GitHubUrlParser {
 
         // pathSegments 会自动去掉空串（首尾斜杠）
         val segments = uri.pathSegments
-        if (segments.size < 2) return GitHubDestination.Home
+        if (segments.isEmpty()) return GitHubDestination.Home
+
+        // github.com/{username} 或 github.com/{orgname}
+        if (segments.size == 1) {
+            val login = segments[0]
+            // 排除一些特殊路径
+            if (login != "settings" && login != "organizations" && login != "explore" && 
+                login != "topics" && login != "marketplace" && login != "about") {
+                return GitHubDestination.UserProfile(login)
+            }
+            return GitHubDestination.Home
+        }
 
         val owner = segments[0]
         val repo  = segments[1]
@@ -36,11 +51,39 @@ object GitHubUrlParser {
             "issues" -> {
                 val num = segments.getOrNull(3)?.toIntOrNull()
                 if (num != null) GitHubDestination.Issue(owner, repo, num)
-                else GitHubDestination.Repo(owner, repo)
+                else GitHubDestination.Repo(owner, repo, "issues")
             }
             "pull" -> {
-                // 无独立 PR 详情页，回退到仓库详情
-                GitHubDestination.Repo(owner, repo)
+                val num = segments.getOrNull(3)?.toIntOrNull()
+                if (num != null) GitHubDestination.PR(owner, repo, num)
+                else GitHubDestination.Repo(owner, repo, "pr")
+            }
+            "discussions" -> {
+                val num = segments.getOrNull(3)?.toIntOrNull()
+                if (num != null) GitHubDestination.Discussion(owner, repo, num)
+                else GitHubDestination.Repo(owner, repo, "discussions")
+            }
+            "commits" -> {
+                val sha = segments.getOrNull(3)
+                if (sha != null) GitHubDestination.Commit(owner, repo, sha)
+                else GitHubDestination.Repo(owner, repo, "commits")
+            }
+            "commit" -> {
+                val sha = segments.getOrNull(3)
+                if (sha != null) GitHubDestination.Commit(owner, repo, sha)
+                else GitHubDestination.Repo(owner, repo, "commits")
+            }
+            "releases" -> {
+                GitHubDestination.Repo(owner, repo, "releases")
+            }
+            "tags" -> {
+                GitHubDestination.Repo(owner, repo, "releases")
+            }
+            "actions" -> {
+                GitHubDestination.Repo(owner, repo, "actions")
+            }
+            "branches" -> {
+                GitHubDestination.Repo(owner, repo, "branches")
             }
             "blob", "tree" -> {
                 val branch = segments.getOrNull(3) ?: return GitHubDestination.Repo(owner, repo)

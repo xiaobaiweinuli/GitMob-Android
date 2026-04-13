@@ -1,7 +1,10 @@
 package com.gitmob.android.api
 
+import android.content.Context
+import com.gitmob.android.GitMobApp
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.util.LogManager
+import com.google.net.cronet.okhttptransport.CronetInterceptor
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
@@ -9,9 +12,9 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.ConnectionPool
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
+import org.chromium.net.CronetEngine
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
@@ -28,6 +31,7 @@ object ApiClient {
     private var _okHttpClient: OkHttpClient? = null
 
     val api: GitHubApi get() = _api ?: error("ApiClient not initialized")
+    val okHttpClient: OkHttpClient get() = _okHttpClient ?: error("ApiClient not initialized")
 
     /** 全局 401/Token 失效事件——任何地方收到 401 都会 emit true */
     private val _tokenExpired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -38,18 +42,14 @@ object ApiClient {
         rebuild()
     }
 
-    fun clearConnectionPool() {
-        _okHttpClient?.connectionPool?.evictAll()
-        LogManager.i(TAG, "连接池已清理")
-    }
-
     /**
      * 重试拦截器（网络层）
      *
      * 处理策略：
-     * - SocketTimeoutException / SSLException / 连接重置：最多重试3次，指数退避
-     * - "Canceled"：OkHttp 内部取消（连接池回收/Call.cancel），不重试（避免无意义重试）
-     * - 5xx 服务器错误：最多重试2次
+     * - SocketTimeoutException / SSLException / 连接重置/关闭 / SETTINGS preface：最多重试3次，指数退避
+     * - "stream was reset: CANCEL"：HTTP/2 连接问题，立即重试到新连接（不等待）
+     * - "Canceled"：OkHttp 内部取消（Call.cancel），不重试
+     * - 5xx 服务器错误：最多重试2次，指数退避
      * - 其他 IOException：不重试，直接抛出
      *
      * 注意：此拦截器必须放在 authInterceptor 外层（addInterceptor 最后），
@@ -59,6 +59,8 @@ object ApiClient {
         companion object {
             private const val MAX_NET_RETRIES = 3
             private const val MAX_SERVER_RETRIES = 2
+            private const val INITIAL_DELAY_MS = 1000L
+            private const val BACKOFF_FACTOR = 2.0
         }
 
         override fun intercept(chain: Interceptor.Chain): Response {
@@ -66,40 +68,56 @@ object ApiClient {
             var lastException: IOException? = null
 
             // ── 网络层重试 ────────────────────────────────────────────────
-            repeat(MAX_NET_RETRIES) { attempt ->
+            for (attempt in 0 until MAX_NET_RETRIES) {
                 try {
                     val response = chain.proceed(request)
 
                     // 5xx 服务器错误重试
                     if (response.code >= 500 && attempt < MAX_SERVER_RETRIES) {
                         response.close()
-                        LogManager.w(TAG, "服务器错误 ${response.code}，重试 ${attempt + 1}/$MAX_SERVER_RETRIES")
-                        Thread.sleep(800L * (attempt + 1))
-                        return@repeat
+                        val delay = calculateDelay(attempt)
+                        LogManager.w(TAG, "服务器错误 ${response.code}，重试 ${attempt + 1}/$MAX_SERVER_RETRIES，等待 ${delay}ms")
+                        Thread.sleep(delay)
+                        continue  // 继续循环，进行下一次重试
                     }
                     return response
                 } catch (e: IOException) {
-                    // "Canceled" = OkHttp Call 被主动取消（协程取消 / 连接池回收），
-                    // 不应重试——协程已取消时重试毫无意义且可能造成资源泄漏
+                    // "Canceled" = OkHttp Call 被主动取消（协程取消），不应重试
                     if (e.message == "Canceled") throw e
+
+                    // "stream was reset: CANCEL" = HTTP/2 连接问题，立即重试（不等待）
+                    val isStreamResetCancel = e.message?.contains("stream was reset: CANCEL") == true
 
                     val retryable = e is SocketTimeoutException ||
                         e is SSLException ||
                         e.message?.contains("Connection reset") == true ||
                         e.message?.contains("Connection closed") == true ||
                         e.message?.contains("SETTINGS preface") == true ||
-                        e.message?.contains("stream was reset") == true
+                        isStreamResetCancel
 
                     if (retryable && attempt < MAX_NET_RETRIES - 1) {
                         lastException = e
-                        LogManager.w(TAG, "网络异常 [${e.javaClass.simpleName}] ${e.message}，重试 ${attempt + 1}/$MAX_NET_RETRIES")
-                        Thread.sleep(600L * (attempt + 1))
+                        val delay = if (isStreamResetCancel) 0L else calculateDelay(attempt)
+                        LogManager.w(TAG, "网络异常 [${e.javaClass.simpleName}] ${e.message}，重试 ${attempt + 1}/$MAX_NET_RETRIES${if (delay > 0) "，等待 ${delay}ms" else ""}")
+                        if (delay > 0) {
+                            Thread.sleep(delay)
+                        }
                     } else {
                         throw e
                     }
                 }
             }
             throw lastException ?: IOException("请求失败，已超出最大重试次数")
+        }
+
+        /**
+         * 计算指数退避延迟时间（含抖动）
+         */
+        private fun calculateDelay(attempt: Int): Long {
+            val baseDelay = (INITIAL_DELAY_MS * Math.pow(BACKOFF_FACTOR, attempt.toDouble())).toLong()
+            // 添加抖动：在 0.75x - 1.25x 之间随机
+            val jitter = 0.75 + Math.random() * 0.5
+            return (baseDelay * jitter).toLong()
         }
     }
 
@@ -124,19 +142,23 @@ object ApiClient {
             response
         }
 
-        _okHttpClient = OkHttpClient.Builder()
+        val okHttpClientBuilder = OkHttpClient.Builder()
             // 顺序重要：RetryInterceptor 在最外层，每次重试都会经过内层的 authInterceptor
             .addInterceptor(RetryInterceptor())
             .addInterceptor(authInterceptor)
             .addInterceptor(logging)
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)   // 增大读超时，减少因慢速响应触发 Canceled
+            .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(90, TimeUnit.SECONDS)   // 整体请求超时兜底
+            .callTimeout(90, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            .connectionPool(ConnectionPool(5, 3, TimeUnit.MINUTES))  // 缩小连接池，减少空闲连接被回收触发 Canceled
-            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
-            .build()
+
+        // 使用 Cronet 作为传输层（从 GitMobApp 获取）
+        okHttpClientBuilder.addInterceptor(
+            CronetInterceptor.newBuilder(GitMobApp.instance.cronetEngine).build()
+        )
+
+        _okHttpClient = okHttpClientBuilder.build()
 
         _api = Retrofit.Builder()
             .baseUrl(BASE_URL)

@@ -12,11 +12,41 @@ interface GitHubApi {
     @GET("users/{login}")
     suspend fun getUser(@Path("login") login: String): GHUser
 
+    @GET("users/{login}/followers")
+    suspend fun getFollowers(@Path("login") login: String, @Query("per_page") perPage: Int = 100): List<GHUser>
+
+    @GET("users/{login}/following")
+    suspend fun getFollowing(@Path("login") login: String, @Query("per_page") perPage: Int = 100): List<GHUser>
+
+    @GET("user/followers")
+    suspend fun getMyFollowers(@Query("per_page") perPage: Int = 100): List<GHUser>
+
+    @GET("user/following")
+    suspend fun getMyFollowing(@Query("per_page") perPage: Int = 100): List<GHUser>
+
     // ── Repos ──
     @GET("user/repos")
     suspend fun getMyRepos(
         @Query("type") type: String = "owner",
         @Query("sort") sort: String = "updated",
+        @Query("per_page") perPage: Int = 50,
+        @Query("page") page: Int = 1,
+    ): List<GHRepo>
+
+    @GET("users/{login}/repos")
+    suspend fun getUserRepos(
+        @Path("login") login: String,
+        @Query("type") type: String = "owner",
+        @Query("sort") sort: String = "updated",
+        @Query("per_page") perPage: Int = 50,
+        @Query("page") page: Int = 1,
+    ): List<GHRepo>
+
+    @GET("users/{login}/starred")
+    suspend fun getUserStarred(
+        @Path("login") login: String,
+        @Query("sort") sort: String = "created",
+        @Query("direction") direction: String = "desc",
         @Query("per_page") perPage: Int = 50,
         @Query("page") page: Int = 1,
     ): List<GHRepo>
@@ -144,16 +174,117 @@ interface GitHubApi {
     suspend fun getPullRequests(
         @Path("owner") owner: String,
         @Path("repo") repo: String,
-        @Query("state") state: String = "open",
-        @Query("per_page") perPage: Int = 30,
+        @Query("state")     state:     String  = "open",
+        @Query("sort")      sort:      String  = "created",
+        @Query("direction") direction: String  = "desc",
+        @Query("per_page")  perPage:   Int     = 30,
+        @Query("page")      page:      Int     = 1,
+        @Query("labels")    labels:    String? = null,
     ): List<GHPullRequest>
+
+    /** Search Issues API — 支持 author/review-requested 等高级 PR 筛选 */
+    @GET("search/issues")
+    suspend fun searchPullRequests(
+        @Query("q")        query:   String,
+        @Query("sort")     sort:    String = "created",
+        @Query("order")    order:   String = "desc",
+        @Query("per_page") perPage: Int    = 30,
+        @Query("page")     page:    Int    = 1,
+    ): GHSearchResult<GHIssue>
+
+    @GET("repos/{owner}/{repo}/pulls/{pull_number}")
+    suspend fun getPullRequest(
+        @Path("owner")       owner:      String,
+        @Path("repo")        repo:       String,
+        @Path("pull_number") pullNumber: Int,
+    ): GHPullRequest
 
     @POST("repos/{owner}/{repo}/pulls")
     suspend fun createPullRequest(
         @Path("owner") owner: String,
-        @Path("repo") repo: String,
+        @Path("repo")  repo:  String,
         @Body body: GHCreatePullRequestRequest,
     ): GHPullRequest
+
+    @PATCH("repos/{owner}/{repo}/pulls/{pull_number}")
+    suspend fun updatePullRequest(
+        @Path("owner")       owner:      String,
+        @Path("repo")        repo:       String,
+        @Path("pull_number") pullNumber: Int,
+        @Body body: GHUpdatePullRequestRequest,
+    ): GHPullRequest
+
+    @PUT("repos/{owner}/{repo}/pulls/{pull_number}/merge")
+    suspend fun mergePullRequest(
+        @Path("owner")       owner:      String,
+        @Path("repo")        repo:       String,
+        @Path("pull_number") pullNumber: Int,
+        @Body body: GHMergePRRequest,
+    ): GHMergePRResponse
+
+    @PUT("repos/{owner}/{repo}/pulls/{pull_number}/update-branch")
+    suspend fun updatePRBranch(
+        @Path("owner")       owner:      String,
+        @Path("repo")        repo:       String,
+        @Path("pull_number") pullNumber: Int,
+        @Body body: GHUpdateBranchRequest = GHUpdateBranchRequest(),
+    ): GHUpdateBranchResponse
+
+    @GET("repos/{owner}/{repo}/pulls/{pull_number}/reviews")
+    suspend fun getPRReviews(
+        @Path("owner")       owner:      String,
+        @Path("repo")        repo:       String,
+        @Path("pull_number") pullNumber: Int,
+    ): List<GHReview>
+
+    @POST("repos/{owner}/{repo}/pulls/{pull_number}/reviews")
+    suspend fun createPRReview(
+        @Path("owner")       owner:      String,
+        @Path("repo")        repo:       String,
+        @Path("pull_number") pullNumber: Int,
+        @Body body: GHCreateReviewRequest,
+    ): GHReview
+
+    @POST("repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers")
+    suspend fun requestReviewers(
+        @Path("owner")       owner:      String,
+        @Path("repo")        repo:       String,
+        @Path("pull_number") pullNumber: Int,
+        @Body body: GHReviewersRequest,
+    ): GHPullRequest
+
+    @DELETE("repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers")
+    suspend fun removeReviewers(
+        @Path("owner")       owner:      String,
+        @Path("repo")        repo:       String,
+        @Path("pull_number") pullNumber: Int,
+        @Body body: GHReviewersRequest,
+    ): Response<Unit>
+
+    @GET("repos/{owner}/{repo}/issues/{issue_number}/comments")
+    suspend fun getPRComments(
+        @Path("owner")        owner:       String,
+        @Path("repo")         repo:        String,
+        @Path("issue_number") issueNumber: Int,
+        @Query("per_page") perPage: Int = 50,
+    ): List<GHComment>
+
+    @POST("repos/{owner}/{repo}/issues/{issue_number}/comments")
+    suspend fun addPRComment(
+        @Path("owner")        owner:       String,
+        @Path("repo")         repo:        String,
+        @Path("issue_number") issueNumber: Int,
+        @Body body: GHCreateCommentRequest,
+    ): GHComment
+
+    // ── Labels ──
+    @GET("repos/{owner}/{repo}/labels")
+    suspend fun getLabels(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Query("per_page") perPage: Int = 100,
+        @Query("page") page: Int = 1,
+    ): List<GHLabel>
 
     // ── Issues ──
     @GET("repos/{owner}/{repo}/issues")
@@ -336,6 +467,7 @@ interface GitHubApi {
         @Query("q") query: String,
         @Query("sort") sort: String = "stars",
         @Query("per_page") perPage: Int = 20,
+        @Query("page") page: Int = 1,
     ): GHSearchResult<GHRepo>
 
     // ── Star ──
@@ -359,6 +491,9 @@ interface GitHubApi {
     // ── Orgs ──
     @GET("user/orgs")
     suspend fun getUserOrgs(@Query("per_page") perPage: Int = 50): List<GHOrg>
+
+    @GET("users/{login}/orgs")
+    suspend fun getUserOrgs(@Path("login") login: String, @Query("per_page") perPage: Int = 50): List<GHOrg>
 
     @GET("orgs/{org}/repos")
     suspend fun getOrgRepos(
@@ -587,4 +722,32 @@ interface GitHubApi {
         @Path("base") base: String,
         @Path("head") head: String,
     ): GHCompareResult
+
+    // ── Global Search ─────────────────────────────────────────────────────────
+
+    /** 搜索代码 — GET /search/code */
+    @Headers("Accept: application/vnd.github.text-match+json")
+    @GET("search/code")
+    suspend fun searchCode(
+        @Query("q") query: String,
+        @Query("per_page") perPage: Int = 20,
+        @Query("page") page: Int = 1,
+    ): GHSearchResult<GHCodeResult>
+
+    /** 搜索 Issues 或 PR — GET /search/issues（q 中追加 type:issue / type:pr）*/
+    @GET("search/issues")
+    suspend fun searchIssues(
+        @Query("q") query: String,
+        @Query("sort") sort: String = "updated",
+        @Query("per_page") perPage: Int = 20,
+        @Query("page") page: Int = 1,
+    ): GHSearchResult<GHIssue>
+
+    /** 搜索用户或组织 — GET /search/users（q 中追加 type:user / type:org）*/
+    @GET("search/users")
+    suspend fun searchUsers(
+        @Query("q") query: String,
+        @Query("per_page") perPage: Int = 20,
+        @Query("page") page: Int = 1,
+    ): GHSearchResult<GHSearchUser>
 }

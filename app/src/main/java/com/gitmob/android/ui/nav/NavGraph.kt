@@ -1,5 +1,5 @@
 package com.gitmob.android.ui.nav
-
+ 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment
@@ -39,9 +39,16 @@ import com.gitmob.android.ui.filepicker.PickerMode
 import com.gitmob.android.ui.login.LoginScreen
 import com.gitmob.android.ui.repo.IssueDetailScreen
 import com.gitmob.android.ui.repo.IssueDetailViewModel
+import com.gitmob.android.ui.repo.PRDetailScreen
+import com.gitmob.android.ui.repo.PRDetailViewModel
+import com.gitmob.android.ui.repo.DiscussionDetailScreen
+import com.gitmob.android.ui.repo.DiscussionDetailViewModel
 import com.gitmob.android.ui.repo.RepoDetailScreen
 import com.gitmob.android.ui.repo.RepoDetailViewModel
+import com.gitmob.android.ui.home.HomeScreen
+import com.gitmob.android.ui.home.HomeViewModel
 import com.gitmob.android.ui.repos.RepoListScreen
+import com.gitmob.android.ui.search.SearchScreen
 import com.gitmob.android.ui.settings.SettingsScreen
 import com.gitmob.android.ui.theme.Coral
 import com.gitmob.android.ui.theme.CoralDim
@@ -53,6 +60,7 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import com.gitmob.android.ui.repo.EditFileScreen
 import com.gitmob.android.ui.repo.EditFileMode
+import com.gitmob.android.ui.repo.CommitMessageDialog
 import com.gitmob.android.ui.repo.FilePatchInfo
 import com.gitmob.android.ui.repo.FileDiffSheet
 import android.net.Uri
@@ -65,7 +73,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-
+import com.gitmob.android.util.LogManager
+ 
 sealed class Route(val path: String) {
     object Login      : Route("login")
     object Main       : Route("main")
@@ -86,18 +95,41 @@ sealed class Route(val path: String) {
     object IssueDetail : Route("issue/{owner}/{repo}/{issueNumber}") {
         fun go(owner: String, repo: String, issueNumber: Int) = "issue/$owner/$repo/$issueNumber"
     }
+    object PRDetail : Route("pr/{owner}/{repo}/{prNumber}") {
+        fun go(owner: String, repo: String, prNumber: Int) = "pr/$owner/$repo/$prNumber"
+    }
+    object DiscussionDetail : Route("discussion/{owner}/{repo}/{discussionNumber}") {
+        fun go(owner: String, repo: String, discussionNumber: Int) = "discussion/$owner/$repo/$discussionNumber"
+    }
     object EditFile : Route("edit_file/{owner}/{repo}/{branch}?path={path}&mode={mode}") {
         fun go(owner: String, repo: String, path: String, branch: String, mode: String) =
             "edit_file/$owner/$repo/$branch?path=${URLEncoder.encode(path, "UTF-8")}&mode=$mode"
     }
+    object Search : Route("search")
+    object UserNavGraph : Route("user_graph") {
+        fun go() = "user_graph"
+    }
+    object UserProfile : Route("user_profile/{login}") {
+        fun go(login: String) = "user_profile/$login"
+    }
+    object UserRepos : Route("user_repos/{login}") {
+        fun go(login: String) = "user_repos/$login"
+    }
+    object UserStarred : Route("user_starred/{login}") {
+        fun go(login: String) = "user_starred/$login"
+    }
+    object UserOrgs : Route("user_orgs/{login}") {
+        fun go(login: String) = "user_orgs/$login"
+    }
 }
-
+ 
 sealed class BottomTab(val route: String, val label: String, val icon: ImageVector) {
+    object Home     : BottomTab("tab_home",     "主页",   Icons.Default.Home)
     object Remote   : BottomTab("tab_remote",   "远程",   Icons.Default.Cloud)
     object Local    : BottomTab("tab_local",    "本地",   Icons.Default.Folder)
     object Settings : BottomTab("tab_settings", "设置",   Icons.Default.Settings)
 }
-
+ 
 /**
  * App 初始化状态三态机：
  *   Loading  — DataStore 尚未发出第一个值（<16ms），显示 Loading
@@ -109,7 +141,7 @@ private sealed class AppInitState {
     object NeedsLogin : AppInitState()
     data class Ready(val token: String) : AppInitState()
 }
-
+ 
 @Composable
 fun AppNavGraph(
     tokenStorage: TokenStorage,
@@ -124,7 +156,11 @@ fun AppNavGraph(
     val currentTheme by tokenStorage.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
     val rootEnabled by tokenStorage.rootEnabled.collectAsState(initial = false)
     val tabStepBackEnabled by tokenStorage.tabStepBack.collectAsState(initial = false)
-
+    
+    // 共享的 ViewModel，在整个 AppNavGraph 范围内可用
+    val repoListVm: com.gitmob.android.ui.repos.RepoListViewModel = viewModel()
+    val starVm: com.gitmob.android.ui.repos.StarListViewModel = viewModel()
+ 
     // 三态初始化状态机：区分"正在加载"与"已加载但无 token"，修复新用户白屏
     val initState by produceState<AppInitState>(initialValue = AppInitState.Loading) {
         tokenStorage.accessToken.collect { token ->
@@ -132,7 +168,7 @@ fun AppNavGraph(
                     else AppInitState.Ready(token)
         }
     }
-
+ 
     // 初始化阶段显示居中 Loading
     if (initState == AppInitState.Loading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -140,9 +176,9 @@ fun AppNavGraph(
         }
         return
     }
-
+ 
     val startDest = if (initState is AppInitState.NeedsLogin) Route.Login.path else Route.Main.path
-
+ 
     // ── accounts_json 自动补全 ──────────────────────────────────────────────
     // 场景：release 混淆崩溃等原因导致 access_token 有效但 accounts_json 缺失。
     // token 存在时，自动用 API 拉取用户信息并写入 AccountStore，无需重新登录。
@@ -152,7 +188,7 @@ fun AppNavGraph(
         val accountStore = com.gitmob.android.auth.AccountStore(context)
         val existingAccounts = accountStore.accounts.first()
         if (existingAccounts.isNotEmpty()) return@LaunchedEffect  // 已有数据，无需恢复
-
+ 
         val token = tokenStorage.accessToken.first() ?: return@LaunchedEffect
         try {
             // token 有效但 accounts_json 为空 → 静默拉取用户信息补全
@@ -171,31 +207,72 @@ fun AppNavGraph(
             // 网络失败或 token 已失效 → 静默忽略，不影响正常使用
         }
     }
-
+ 
     // 监听 401 Token 失效事件
     LaunchedEffect(Unit) {
         ApiClient.tokenExpired.collect {
             navController.navigate(Route.Login.path) { popUpTo(0) { inclusive = true } }
         }
     }
-
+ 
     // 处理从其他 App 传入的 github.com 链接
     LaunchedEffect(initialGitHubUrl, initState) {
         val url = initialGitHubUrl ?: return@LaunchedEffect
         if (initState !is AppInitState.Ready) return@LaunchedEffect
+        
+        fun navigateWithBackStack(destinations: List<() -> Unit>) {
+            destinations.forEachIndexed { index, navigate ->
+                if (index == 0) {
+                    navigate()
+                } else {
+                    // 后续导航不添加到返回栈（使用 launchSingleTop）
+                    navigate()
+                }
+            }
+        }
+        
         when (val dest = GitHubUrlParser.parse(Uri.parse(url))) {
-            is GitHubDestination.Repo -> navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
-            is GitHubDestination.Issue -> navController.navigate(Route.IssueDetail.go(dest.owner, dest.repo, dest.number))
-            is GitHubDestination.FileView -> navController.navigate(
-                Route.FileViewer.go(dest.owner, dest.repo, dest.path, dest.branch)
-            )
+            is GitHubDestination.UserProfile -> {
+                navController.navigate(Route.UserProfile.go(dest.login))
+            }
+            is GitHubDestination.Repo -> {
+                navController.navigate(Route.UserProfile.go(dest.owner))
+                navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
+            }
+            is GitHubDestination.Issue -> {
+                navController.navigate(Route.UserProfile.go(dest.owner))
+                navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
+                navController.navigate(Route.IssueDetail.go(dest.owner, dest.repo, dest.number))
+            }
+            is GitHubDestination.PR -> {
+                navController.navigate(Route.UserProfile.go(dest.owner))
+                navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
+                navController.navigate(Route.PRDetail.go(dest.owner, dest.repo, dest.number))
+            }
+            is GitHubDestination.Discussion -> {
+                navController.navigate(Route.UserProfile.go(dest.owner))
+                navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
+                navController.navigate(Route.DiscussionDetail.go(dest.owner, dest.repo, dest.number))
+            }
+            is GitHubDestination.Commit -> {
+                // Commit 详情暂时跳转到仓库详情页（提交标签页）
+                navController.navigate(Route.UserProfile.go(dest.owner))
+                navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
+            }
+            is GitHubDestination.FileView -> {
+                navController.navigate(Route.UserProfile.go(dest.owner))
+                navController.navigate(Route.RepoDetail.go(dest.owner, dest.repo))
+                navController.navigate(
+                    Route.FileViewer.go(dest.owner, dest.repo, dest.path, dest.branch)
+                )
+            }
             is GitHubDestination.Home -> { /* 不跳转，保持主页 */ }
         }
         onGitHubUrlConsumed()
     }
-
+    
     NavHost(navController = navController, startDestination = startDest) {
-
+ 
         composable(Route.Login.path) {
             LoginScreen(
                 pendingToken = initialToken,
@@ -214,7 +291,7 @@ fun AppNavGraph(
                 },
             )
         }
-
+ 
         composable(Route.Main.path) {
             // ViewModel 在这里创建，作用域是 Route.Main 的 BackStackEntry
             // 两个 Tab 都接收同一实例，克隆操作因此生效
@@ -233,6 +310,11 @@ fun AppNavGraph(
                 },
                 onCreateRepo = { org -> navController.navigate(Route.CreateRepo.go(org)) },
                 localVm      = localVm,
+                repoListVm   = repoListVm,
+                starVm       = starVm,
+                onUserClick  = { login ->
+                    navController.navigate(Route.UserProfile.go(login))
+                },
                 onLogout     = { forceReauth ->
                     // forceReauth=true: 取消授权(deleteGrant)后需重新完整授权
                     // forceReauth=false: 普通退出登录(revokeToken)，grant保留，直接快速重登
@@ -249,9 +331,12 @@ fun AppNavGraph(
                         popUpTo(Route.Main.path) { saveState = true }
                     }
                 },
+                onSearchClick = {
+                    navController.navigate(Route.Search.path)
+                },
             )
         }
-
+ 
         composable(
             route = Route.CreateRepo.path,
             arguments = listOf(
@@ -273,7 +358,7 @@ fun AppNavGraph(
                 },
             )
         }
-
+ 
         composable(
             route = "repo/{owner}/{repo}",
             arguments = listOf(
@@ -293,8 +378,17 @@ fun AppNavGraph(
                 onIssueClick = { issueNumber ->
                     navController.navigate(Route.IssueDetail.go(owner, repo, issueNumber))
                 },
+                onPRClick = { prNumber ->
+                    navController.navigate(Route.PRDetail.go(owner, repo, prNumber))
+                },
+                onDiscussionClick = { discussionNumber ->
+                    navController.navigate(Route.DiscussionDetail.go(owner, repo, discussionNumber))
+                },
                 onForkedRepoClick = { o, r ->
                     navController.navigate(Route.RepoDetail.go(o, r))
+                },
+                onOwnerClick = { login ->
+                    navController.navigate(Route.UserProfile.go(login))
                 },
                 onEditFile = { path, mode, branch ->
                     val fullPath = if (mode == "NEW" && path.isNotEmpty()) {
@@ -304,10 +398,14 @@ fun AppNavGraph(
                     }
                     navController.navigate(Route.EditFile.go(owner, repo, fullPath, branch, mode))
                 },
-                vm = viewModel(factory = RepoDetailViewModel.factory(owner, repo)),
+                vm = viewModel {
+                        val app = checkNotNull(this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY])
+                        val handle = androidx.lifecycle.SavedStateHandle(mapOf("owner" to owner, "repo" to repo))
+                        RepoDetailViewModel(app, handle)
+                    },
             )
         }
-
+ 
         composable(
             route = Route.FileViewer.path,
             arguments = listOf(
@@ -329,7 +427,7 @@ fun AppNavGraph(
                 }
             )
         }
-
+ 
         composable(
             route = "issue/{owner}/{repo}/{issueNumber}",
             arguments = listOf(
@@ -348,7 +446,45 @@ fun AppNavGraph(
                 onBack = { navController.popBackStack() },
             )
         }
-
+ 
+        composable(
+            route = "pr/{owner}/{repo}/{prNumber}",
+            arguments = listOf(
+                navArgument("owner") { type = NavType.StringType },
+                navArgument("repo") { type = NavType.StringType },
+                navArgument("prNumber") { type = NavType.IntType },
+            ),
+        ) { back ->
+            val owner = back.arguments?.getString("owner") ?: ""
+            val repo = back.arguments?.getString("repo") ?: ""
+            val prNumber = back.arguments?.getInt("prNumber") ?: 0
+            PRDetailScreen(
+                owner = owner,
+                repoName = repo,
+                prNumber = prNumber,
+                onBack = { navController.popBackStack() },
+            )
+        }
+ 
+        composable(
+            route = "discussion/{owner}/{repo}/{discussionNumber}",
+            arguments = listOf(
+                navArgument("owner") { type = NavType.StringType },
+                navArgument("repo") { type = NavType.StringType },
+                navArgument("discussionNumber") { type = NavType.IntType },
+            ),
+        ) { back ->
+            val owner = back.arguments?.getString("owner") ?: ""
+            val repo = back.arguments?.getString("repo") ?: ""
+            val discussionNumber = back.arguments?.getInt("discussionNumber") ?: 0
+            DiscussionDetailScreen(
+                owner = owner,
+                repoName = repo,
+                discussionNumber = discussionNumber,
+                onBack = { navController.popBackStack() },
+            )
+        }
+ 
         composable(
             route = Route.EditFile.path,
             arguments = listOf(
@@ -369,17 +505,23 @@ fun AppNavGraph(
             
             val context = androidx.compose.ui.platform.LocalContext.current
             val scope = rememberCoroutineScope()
+            val c = com.gitmob.android.ui.theme.LocalGmColors.current
             var initialContent by remember { mutableStateOf("") }
             var initialFileName by remember { mutableStateOf(path.substringAfterLast("/")) }
             var loading by remember { mutableStateOf(mode == EditFileMode.EDIT) }
             var sha by remember { mutableStateOf<String?>(null) }
+            var showCommitDialog by remember { mutableStateOf(false) }
+            var pendingFileName by remember { mutableStateOf("") }
+            var pendingContent by remember { mutableStateOf("") }
+            var pendingCommitMsg by remember { mutableStateOf("") }
+            var pendingFullPath by remember { mutableStateOf("") }
             
             LaunchedEffect(Unit) {
                 if (mode == EditFileMode.EDIT) {
                     try {
-                        val fileInfo = repository.getFileInfo(owner, repo, path, branch)
-                        initialContent = repository.getFileContent(owner, repo, path, branch)
-                        sha = fileInfo.sha
+                        val fileWithInfo = repository.getFileWithInfo(owner, repo, path, branch)
+                        initialContent = fileWithInfo.content
+                        sha = fileWithInfo.info.sha
                         loading = false
                     } catch (e: Exception) {
                         loading = false
@@ -406,14 +548,29 @@ fun AppNavGraph(
                         }
                         val commitMsg = if (mode == EditFileMode.EDIT) "Update $fullPath" else "Create $fullPath"
                         
+                        pendingFileName = newFileName
+                        pendingContent = newContent
+                        pendingCommitMsg = commitMsg
+                        pendingFullPath = fullPath
+                        showCommitDialog = true
+                    }
+                )
+            }
+            
+            if (showCommitDialog) {
+                CommitMessageDialog(
+                    defaultMessage = pendingCommitMsg,
+                    c = c,
+                    onConfirm = { msg ->
+                        showCommitDialog = false
                         scope.launch {
                             try {
                                 repository.createOrUpdateFile(
                                     owner = owner,
                                     repo = repo,
-                                    path = fullPath,
-                                    message = commitMsg,
-                                    content = newContent,
+                                    path = pendingFullPath,
+                                    message = msg,
+                                    content = pendingContent,
                                     sha = sha,
                                     branch = branch,
                                 )
@@ -422,11 +579,12 @@ fun AppNavGraph(
                                 android.widget.Toast.makeText(context, "保存失败: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                             }
                         }
-                    }
+                    },
+                    onDismiss = { showCommitDialog = false }
                 )
             }
         }
-
+ 
         composable(
             route = "local_repo/{repoId}",
             arguments = listOf(
@@ -439,11 +597,197 @@ fun AppNavGraph(
                 onBack = { navController.popBackStack() },
             )
         }
+ 
+        composable(Route.Search.path) {
+            SearchScreen(
+                onBack = { navController.popBackStack() },
+                onRepoClick = { owner, repo ->
+                    navController.navigate(Route.RepoDetail.go(owner, repo))
+                },
+                onOrgClick = { orgLogin ->
+                    navController.popBackStack()
+                },
+                onUserClick = { login ->
+                    navController.navigate(Route.UserProfile.go(login))
+                },
+            )
+        }
+ 
+        // 用户主页
+        composable(
+            route = Route.UserProfile.path,
+            arguments = listOf(navArgument("login") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val login = backStackEntry.arguments?.getString("login") ?: ""
+            val homeVm: com.gitmob.android.ui.home.HomeViewModel = viewModel()
+            val favVm: com.gitmob.android.data.FavoritesManager = viewModel()
+            
+            com.gitmob.android.ui.home.HomeScreen(
+                onSearchClick = { 
+                    LogManager.d("NavGraph", "用户主页点击搜索，login=$login")
+                    navController.navigate(Route.Search.path) 
+                },
+                onSettingsClick = { 
+                    LogManager.d("NavGraph", "用户主页点击设置，login=$login")
+                    navController.navigate(Route.Settings.path) 
+                },
+                onRepoClick = { owner, repo -> 
+                    LogManager.d("NavGraph", "用户主页点击仓库，owner=$owner, repo=$repo, 当前用户=$login")
+                    navController.navigate(Route.RepoDetail.go(owner, repo)) 
+                },
+                onReposClick = { 
+                    LogManager.d("NavGraph", "用户主页点击仓库列表，login=$login")
+                    navController.navigate(Route.UserRepos.go(login))
+                },
+                onStarredClick = {
+                    LogManager.d("NavGraph", "用户主页点击星标列表，login=$login")
+                    navController.navigate(Route.UserStarred.go(login))
+                },
+                onOrgClick = {
+                    LogManager.d("NavGraph", "用户主页点击组织列表，login=$login")
+                    navController.navigate(Route.UserOrgs.go(login))
+                },
+                onUserClick = { targetLogin ->
+                    LogManager.d("NavGraph", "用户主页点击用户，当前用户=$login, 目标用户=$targetLogin")
+                    navController.navigate(Route.UserProfile.go(targetLogin))
+                },
+                onUserReposClick = { targetLogin ->
+                    LogManager.d("NavGraph", "用户主页点击用户仓库，当前用户=$login, 目标用户=$targetLogin")
+                    navController.navigate(Route.UserRepos.go(targetLogin))
+                },
+                onUserStarredClick = { targetLogin ->
+                    LogManager.d("NavGraph", "用户主页点击用户星标，当前用户=$login, 目标用户=$targetLogin")
+                    navController.navigate(Route.UserStarred.go(targetLogin))
+                },
+                onUserOrgsClick = { targetLogin ->
+                    LogManager.d("NavGraph", "用户主页点击用户组织，当前用户=$login, 目标用户=$targetLogin")
+                    navController.navigate(Route.UserOrgs.go(targetLogin))
+                },
+                onBack = { 
+                    LogManager.d("NavGraph", "用户主页点击返回，login=$login")
+                    navController.popBackStack() 
+                },
+                targetUserLogin = login,
+                vm = homeVm,
+                favVm = favVm,
+            )
+        }
+        
+        // 用户仓库列表
+        composable(
+            route = Route.UserRepos.path,
+            arguments = listOf(navArgument("login") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val login = backStackEntry.arguments?.getString("login") ?: ""
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val localVm: com.gitmob.android.ui.local.LocalRepoViewModel = viewModel()
+            
+            LogManager.d("NavGraph", "进入用户仓库列表页面，login=$login")
+            
+            // 切换到用户仓库
+            LaunchedEffect(login) {
+                repoListVm.switchToUserRepos(login, null)
+            }
+            
+            // 页面离开时重置 ViewModel 状态
+            DisposableEffect(Unit) {
+                onDispose {
+                    repoListVm.resetToCurrentUser()
+                }
+            }
+            
+            com.gitmob.android.ui.repos.RepoListScreen(
+                onRepoClick = { owner, repo ->
+                    LogManager.d("NavGraph", "用户仓库列表点击仓库，owner=$owner, repo=$repo, 当前用户=$login")
+                    navController.navigate(Route.RepoDetail.go(owner, repo))
+                },
+                onCreateRepo = { navController.navigate(Route.CreateRepo.go(null)) },
+                onCloneRepo = { url -> localVm.startClone(url) },
+                onBack = { navController.popBackStack() },
+                vm = repoListVm,
+                starVm = starVm,
+                onSearchClick = { navController.navigate(Route.Search.path) },
+            )
+        }
+        
+        // 用户星标列表
+        composable(
+            route = Route.UserStarred.path,
+            arguments = listOf(navArgument("login") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val login = backStackEntry.arguments?.getString("login") ?: ""
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val localVm: com.gitmob.android.ui.local.LocalRepoViewModel = viewModel()
+            
+            LogManager.d("NavGraph", "进入用户星标列表页面，login=$login")
+            
+            // 切换到用户星标
+            LaunchedEffect(login) {
+                repoListVm.switchToUserStarred(login, null)
+            }
+            
+            // 页面离开时重置 ViewModel 状态
+            DisposableEffect(Unit) {
+                onDispose {
+                    repoListVm.resetToCurrentUser()
+                }
+            }
+            
+            com.gitmob.android.ui.repos.RepoListScreen(
+                onRepoClick = { owner, repo ->
+                    LogManager.d("NavGraph", "用户星标列表点击仓库，owner=$owner, repo=$repo, 当前用户=$login")
+                    navController.navigate(Route.RepoDetail.go(owner, repo))
+                },
+                onCreateRepo = { navController.navigate(Route.CreateRepo.go(null)) },
+                onCloneRepo = { url -> localVm.startClone(url) },
+                onBack = { navController.popBackStack() },
+                vm = repoListVm,
+                starVm = starVm,
+                onSearchClick = { navController.navigate(Route.Search.path) },
+            )
+        }
+        
+        // 用户组织列表
+        composable(
+            route = Route.UserOrgs.path,
+            arguments = listOf(navArgument("login") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val login = backStackEntry.arguments?.getString("login") ?: ""
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val localVm: com.gitmob.android.ui.local.LocalRepoViewModel = viewModel()
+            
+            LogManager.d("NavGraph", "进入用户组织列表页面，login=$login")
+            
+            // 切换到用户组织
+            LaunchedEffect(login) {
+                repoListVm.switchToUserOrgs(login, null)
+            }
+            
+            // 页面离开时重置 ViewModel 状态
+            DisposableEffect(Unit) {
+                onDispose {
+                    repoListVm.resetToCurrentUser()
+                }
+            }
+            
+            com.gitmob.android.ui.repos.RepoListScreen(
+                onRepoClick = { owner, repo ->
+                    LogManager.d("NavGraph", "用户组织列表点击仓库，owner=$owner, repo=$repo, 当前用户=$login")
+                    navController.navigate(Route.RepoDetail.go(owner, repo))
+                },
+                onCreateRepo = { navController.navigate(Route.CreateRepo.go(null)) },
+                onCloneRepo = { url -> localVm.startClone(url) },
+                onBack = { navController.popBackStack() },
+                vm = repoListVm,
+                starVm = starVm,
+                onSearchClick = { navController.navigate(Route.Search.path) },
+            )
+        }
     }
 }
-
+ 
 // ─── MainScreen：不用嵌套 Scaffold，改用 Column+Box 避免双层 padding ──────────
-
+ 
 @Composable
 private fun MainScreen(
     tokenStorage: TokenStorage,
@@ -456,18 +800,51 @@ private fun MainScreen(
     onCreateRepo: (org: String?) -> Unit,
     localVm: LocalRepoViewModel,
     onLogout: (forceReauth: Boolean) -> Unit,
+    onUserClick: (String) -> Unit,
+    repoListVm: com.gitmob.android.ui.repos.RepoListViewModel,
+    starVm: com.gitmob.android.ui.repos.StarListViewModel,
     onSwitchAccount: (com.gitmob.android.auth.AccountInfo) -> Unit = {},
     onAddAccount: () -> Unit = {},
+    onSearchClick: () -> Unit = {},
+    onSettingsTabClick: () -> Unit = {},
 ) {
     val c = LocalGmColors.current
-    val tabs = listOf(BottomTab.Remote, BottomTab.Local, BottomTab.Settings)
+    val tabs = listOf(BottomTab.Home, BottomTab.Remote, BottomTab.Local, BottomTab.Settings)
     val tabNavController = rememberNavController()
     val navBackStack by tabNavController.currentBackStackEntryAsState()
     val currentRoute = navBackStack?.destination?.route
-
+ 
+    // 共享的 ViewModel 从外部传入
+    val repoListState by repoListVm.state.collectAsState()
+ 
+    // 当 targetUserLogin 不为 null 时自动切换到 Remote Tab（从 UserProfile 页面点击返回的情况）
+    // 但不应该在用户查看其他用户仓库列表时触发
+    LaunchedEffect(repoListState.targetUserLogin) {
+        // 只有在当前路由是Home或其他非用户仓库页面时才切换到Remote Tab
+        if (repoListState.targetUserLogin != null && 
+            currentRoute != BottomTab.Remote.route &&
+            currentRoute != Route.UserRepos.path &&
+            currentRoute != Route.UserStarred.path &&
+            currentRoute != Route.UserOrgs.path) {
+            tabNavController.navigate(BottomTab.Remote.route) {
+                popUpTo(tabNavController.graph.startDestinationId) { saveState = true }
+                launchSingleTop = true; restoreState = true
+            }
+        }
+    }
+ 
+    /** 切换到 Remote Tab 并可选地执行额外操作 */
+    fun navigateToRemote(extra: () -> Unit = {}) {
+        extra()
+        tabNavController.navigate(BottomTab.Remote.route) {
+            popUpTo(tabNavController.graph.startDestinationId) { saveState = true }
+            launchSingleTop = true; restoreState = true
+        }
+    }
+ 
     // 用 Column 替代 Scaffold：避免嵌套 Scaffold 造成 bottomBar insets 重复
     Column(modifier = Modifier.fillMaxSize()) {
-
+ 
         // 观察共享 VM 的克隆状态，在此层级弹出文件选择器
         val vmState by localVm.state.collectAsState()
         val vmBookmarks by localVm.customBookmarks.collectAsState()
@@ -477,24 +854,52 @@ private fun MainScreen(
         var newProjectParentDir by remember { mutableStateOf("") }
         var newProjectDialog by remember { mutableStateOf(false) }
         var newProjectName by remember { mutableStateOf("") }
-
+ 
         // 上部内容区域（Tab 页面各自有自己的 Scaffold + TopAppBar）
         // picker 仅在其所属 tab 激活时渲染；切走时视觉消失但 rememberSaveable 保留路径状态；切回自动恢复
         val isOnLocalTab  = currentRoute == BottomTab.Local.route
         val isOnRemoteTab = currentRoute == BottomTab.Remote.route
-
+ 
         // SaveableStateHolder：Navigation Compose 内部保留各 Tab 状态所用的同一机制
         // 让被条件移出 composition 的 FilePickerScreen 在重新进入时恢复所有 rememberSaveable 状态
         val pickerStateHolder = rememberSaveableStateHolder()
-
+ 
         Box(modifier = Modifier.weight(1f)) {
             NavHost(
                 navController = tabNavController,
-                startDestination = BottomTab.Remote.route,
+                startDestination = BottomTab.Home.route,
             ) {
+                composable(BottomTab.Home.route) {
+                    val homeVm: HomeViewModel = viewModel()
+                    HomeScreen(
+                        onSearchClick   = onSearchClick,
+                        onSettingsClick = {
+                            tabNavController.navigate(BottomTab.Settings.route) {
+                                popUpTo(tabNavController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true; restoreState = true
+                            }
+                        },
+                        onRepoClick     = onRepoClick,
+                        onReposClick    = { navigateToRemote() },
+                        onStarredClick  = {
+                            // 激活星标模式，再跳转到 Remote Tab
+                            navigateToRemote { starVm.toggleStarMode() }
+                        },
+                        onOrgClick      = { org ->
+                            // 切换到对应组织上下文，再跳转到 Remote Tab
+                            navigateToRemote {
+                                repoListVm.switchContext(
+                                    com.gitmob.android.ui.repos.OrgContext(
+                                        login = org.login, avatarUrl = org.avatarUrl, isUser = false
+                                    )
+                                )
+                            }
+                        },
+                        onUserClick     = onUserClick,
+                        vm = homeVm,
+                    )
+                }
                 composable(BottomTab.Remote.route) {
-                    val repoListVm: com.gitmob.android.ui.repos.RepoListViewModel = viewModel()
-                    val repoListState by repoListVm.state.collectAsState()
                     RepoListScreen(
                         onRepoClick    = onRepoClick,
                         onCreateRepo   = {
@@ -503,6 +908,8 @@ private fun MainScreen(
                         },
                         onCloneRepo    = { url -> localVm.startClone(url) },
                         vm             = repoListVm,
+                        starVm         = starVm,
+                        onSearchClick  = onSearchClick,
                     )
                 }
                 composable(BottomTab.Local.route) {
@@ -543,7 +950,7 @@ private fun MainScreen(
                     )
                 }
             }
-
+ 
             // ── 本地 tab 的 picker 覆盖层（仅本地 tab 激活时渲染）──────────────
             if (isOnLocalTab) {
                 if (vmState.showFilePicker) {
@@ -586,7 +993,7 @@ private fun MainScreen(
                     }
                 }
             }
-
+ 
             // ── 远程 tab 的 clone picker（仅远程 tab 激活时渲染）──────────────
             if (isOnRemoteTab) {
                 if (vmState.showClonePicker) {
@@ -653,7 +1060,7 @@ private fun MainScreen(
                 )
             }
         }
-
+ 
         // 底部导航栏（固定在 Column 底部，不参与 Scaffold inset 计算）
         NavigationBar(
             containerColor = c.bgCard,
@@ -666,7 +1073,7 @@ private fun MainScreen(
                     onClick = {
                         val localPickerOpen  = vmState.showFilePicker || showNewProjectPicker
                         val remotePickerOpen = vmState.showClonePicker
-
+ 
                         when {
                             // 点的是当前本地 tab 且本地 picker 开着 → 关闭 picker，不导航
                             tab.route == BottomTab.Local.route
@@ -707,7 +1114,7 @@ private fun MainScreen(
         }
     }
 }
-
+ 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileViewerScreen(
@@ -730,12 +1137,13 @@ fun FileViewerScreen(
     var commitDetailLoading by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-
+ 
     LaunchedEffect(path) {
         loading = true
         try { 
-            fileInfo = repository.getFileInfo(owner, repo, path, ref)
-            content = repository.getFileContent(owner, repo, path, ref)
+            val fileWithInfo = repository.getFileWithInfo(owner, repo, path, ref)
+            fileInfo = fileWithInfo.info
+            content = fileWithInfo.content
             error = null 
         } catch (e: Exception) { 
             error = e.message 
@@ -743,7 +1151,7 @@ fun FileViewerScreen(
             loading = false 
         }
     }
-
+ 
     Scaffold(
         containerColor = c.bgDeep,
         topBar = {
@@ -839,9 +1247,14 @@ fun FileViewerScreen(
             )
         },
     ) { padding ->
+        val isMd = path.lowercase().let { it.endsWith(".md") || it.endsWith(".markdown") }
         when {
             loading       -> LoadingBox(Modifier.padding(padding))
             error != null -> ErrorBox(error!!) {}
+            isMd          -> com.gitmob.android.ui.common.GmMarkdownWebView(
+                markdown = content,
+                modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            )
             else -> LazyColumn(
                 contentPadding = PaddingValues(16.dp),
                 modifier = Modifier.padding(padding),
@@ -984,12 +1397,16 @@ fun FileViewerScreen(
     
     selectedCommitForHistory?.let { commit ->
         val selectedFilePatchForHistory = remember { mutableStateOf<FilePatchInfo?>(null) }
-
+ 
         selectedFilePatchForHistory.value?.let { info ->
-            FileDiffSheet(info = info, c = c, vm = viewModel(factory = RepoDetailViewModel.factory(owner, repo)),
+            FileDiffSheet(info = info, c = c, vm = viewModel {
+                    val app = checkNotNull(this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY])
+                    val handle = androidx.lifecycle.SavedStateHandle(mapOf("owner" to owner, "repo" to repo))
+                    RepoDetailViewModel(app, handle)
+                },
                 onDismiss = { selectedFilePatchForHistory.value = null })
         }
-
+ 
         ModalBottomSheet(
             onDismissRequest = { selectedCommitForHistory = null },
             containerColor = c.bgCard,

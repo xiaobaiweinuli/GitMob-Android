@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.gitmob.android.api.*
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.data.RepoRepository
+import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -20,8 +21,10 @@ data class IssueDetailState(
     val userLogin: String = "",
     val toast: String? = null,
     val isRepoOwner: Boolean = false,
-    val subscription: GHIssueSubscription? = null,
-    val subscriptionLoading: Boolean = false,
+    val isSubscribed: Boolean = false,
+    val operationInProgress: Boolean = false,
+    val editHistoryLoading: Boolean = false,
+    val editHistory: List<GHUserContentEdit> = emptyList(),
 )
 
 class IssueDetailViewModel(
@@ -55,13 +58,24 @@ class IssueDetailViewModel(
     }
 
     fun loadIssueDetail(forceRefresh: Boolean = false) = viewModelScope.launch {
+        LogManager.d("IssueDetailViewModel", "开始加载 Issue 详情，owner: $owner, repo: $repoName, Issue号: $issueNumber, forceRefresh: $forceRefresh")
         _state.update { it.copy(loading = true, refreshing = forceRefresh, error = null) }
         try {
-            val issue = repository.getIssue(owner, repoName, issueNumber)
-            _state.update { it.copy(issue = issue, loading = false, refreshing = false) }
-            loadComments(forceRefresh)
+            LogManager.d("IssueDetailViewModel", "正在使用 GraphQL API 获取 Issue 详情...")
+            val (issue, comments) = repository.getIssueDetailGraphQL(owner, repoName, issueNumber)
+            
+            if (issue == null) {
+                throw Exception("Issue 详情获取失败")
+            }
+            
+            LogManager.d("IssueDetailViewModel", "Issue 详情获取成功，title: ${issue.title}, comments 字段值: ${issue.comments}, lastEditedAt: ${issue.lastEditedAt}")
+            LogManager.d("IssueDetailViewModel", "评论列表获取成功，数量: ${comments.size}")
+            
+            _state.update { it.copy(issue = issue, comments = comments, loading = false, refreshing = false) }
+            LogManager.d("IssueDetailViewModel", "Issue 详情加载完成，最终状态 - issue.comments: ${issue.comments}, comments.size: ${comments.size}")
             loadSubscription()
         } catch (e: Exception) {
+            LogManager.e("IssueDetailViewModel", "加载 Issue 详情失败", e)
             _state.update {
                 it.copy(
                     loading = false,
@@ -76,21 +90,24 @@ class IssueDetailViewModel(
      * 加载Issue订阅状态
      */
     fun loadSubscription() = viewModelScope.launch {
-        _state.update { it.copy(subscriptionLoading = true) }
         try {
-            val subscription = repository.getIssueSubscription(owner, repoName, issueNumber)
-            _state.update { it.copy(subscription = subscription, subscriptionLoading = false) }
+            val token = tokenStorage.accessToken.first() ?: return@launch
+            val subscription = GraphQLClient.getIssueSubscription(token, owner, repoName, issueNumber)
+            _state.update { it.copy(isSubscribed = subscription == "SUBSCRIBED") }
         } catch (e: Exception) {
-            _state.update { it.copy(subscription = null, subscriptionLoading = false) }
+            LogManager.w("IssueDetailViewModel", "loadSubscription 失败: ${e.message}")
         }
     }
 
     fun loadComments(forceRefresh: Boolean = false) = viewModelScope.launch {
         _state.update { it.copy(commentsLoading = true) }
         try {
+            LogManager.d("IssueDetailViewModel", "正在获取 Issue 评论列表...")
             val comments = repository.getIssueComments(owner, repoName, issueNumber)
+            LogManager.d("IssueDetailViewModel", "Issue 评论列表获取成功，数量: ${comments.size}")
             _state.update { it.copy(comments = comments, commentsLoading = false) }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            LogManager.e("IssueDetailViewModel", "获取 Issue 评论列表失败", e)
             _state.update { it.copy(commentsLoading = false) }
         }
     }
@@ -154,47 +171,42 @@ class IssueDetailViewModel(
     }
 
     /**
-     * 订阅Issue
-     */
-    fun subscribe() = viewModelScope.launch {
-        try {
-            val subscription = repository.subscribeIssue(owner, repoName, issueNumber)
-            _state.update { it.copy(subscription = subscription, toast = "已订阅") }
-        } catch (e: Exception) {
-            _state.update { it.copy(toast = "订阅失败：${e.message}") }
-        }
-    }
-
-    /**
-     * 取消订阅Issue
-     */
-    fun unsubscribe() = viewModelScope.launch {
-        try {
-            val success = repository.unsubscribeIssue(owner, repoName, issueNumber)
-            if (success) {
-                _state.update { 
-                    it.copy(
-                        subscription = it.subscription?.copy(subscribed = false),
-                        toast = "已取消订阅"
-                    ) 
-                }
-            } else {
-                _state.update { it.copy(toast = "取消订阅失败") }
-            }
-        } catch (e: Exception) {
-            _state.update { it.copy(toast = "取消订阅失败：${e.message}") }
-        }
-    }
-
-    /**
      * 切换订阅状态
      */
     fun toggleSubscription() = viewModelScope.launch {
-        val currentSubscription = _state.value.subscription
-        if (currentSubscription?.subscribed == true) {
-            unsubscribe()
-        } else {
-            subscribe()
+        val currentIssue = _state.value.issue ?: return@launch
+        _state.update { it.copy(operationInProgress = true) }
+        try {
+            val token = tokenStorage.accessToken.first() ?: return@launch
+            val newSubscribed = !_state.value.isSubscribed
+            val success = GraphQLClient.updateSubscribableSubscription(
+                token = token,
+                subscribableId = currentIssue.nodeId,
+                subscribed = newSubscribed
+            )
+            if (success) {
+                _state.update { 
+                    it.copy(
+                        isSubscribed = newSubscribed,
+                        operationInProgress = false,
+                        toast = if (newSubscribed) "已订阅" else "已取消订阅"
+                    ) 
+                }
+            } else {
+                _state.update {
+                    it.copy(
+                        operationInProgress = false,
+                        toast = "操作失败"
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            _state.update {
+                it.copy(
+                    operationInProgress = false,
+                    toast = "操作失败: ${e.message}"
+                )
+            }
         }
     }
 
@@ -213,6 +225,36 @@ class IssueDetailViewModel(
     }
 
     fun clearToast() = _state.update { it.copy(toast = null) }
+
+    /**
+     * 获取Issue主体的编辑历史
+     */
+    fun loadIssueBodyEditHistory() = viewModelScope.launch {
+        _state.update { it.copy(editHistoryLoading = true, editHistory = emptyList()) }
+        try {
+            val token = tokenStorage.accessToken.first() ?: return@launch
+            val history = GraphQLClient.getIssueBodyEditHistory(token, owner, repoName, issueNumber)
+            _state.update { it.copy(editHistoryLoading = false, editHistory = history) }
+        } catch (e: Exception) {
+            LogManager.w("IssueDetailViewModel", "loadIssueBodyEditHistory 失败: ${e.message}")
+            _state.update { it.copy(editHistoryLoading = false, editHistory = emptyList()) }
+        }
+    }
+
+    /**
+     * 获取Issue评论的编辑历史
+     */
+    fun loadIssueCommentEditHistory(commentId: String) = viewModelScope.launch {
+        _state.update { it.copy(editHistoryLoading = true, editHistory = emptyList()) }
+        try {
+            val token = tokenStorage.accessToken.first() ?: return@launch
+            val history = GraphQLClient.getIssueCommentEditHistory(token, commentId)
+            _state.update { it.copy(editHistoryLoading = false, editHistory = history) }
+        } catch (e: Exception) {
+            LogManager.w("IssueDetailViewModel", "loadIssueCommentEditHistory 失败: ${e.message}")
+            _state.update { it.copy(editHistoryLoading = false, editHistory = emptyList()) }
+        }
+    }
 
     companion object {
         fun factory(owner: String, repo: String, issueNumber: Int): androidx.lifecycle.ViewModelProvider.Factory =

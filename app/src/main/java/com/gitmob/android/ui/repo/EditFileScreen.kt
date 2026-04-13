@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,9 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,12 +68,17 @@ fun EditFileScreen(
         ) 
     }
     var currentContent by remember { mutableStateOf(initialContent) }
+    var showPreview by remember { mutableStateOf(false) }
     
     val hasChanges = remember(currentFileName, currentContent, mode) {
         when (mode) {
             EditFileMode.EDIT -> currentFileName != fileName || currentContent != initialContent
             EditFileMode.NEW -> currentFileName.isNotBlank()
         }
+    }
+    
+    val isMd = remember(currentFileName) {
+        currentFileName.lowercase().let { it.endsWith(".md") || it.endsWith(".markdown") }
     }
     
     Scaffold(
@@ -118,6 +124,16 @@ fun EditFileScreen(
                         }
                     }
                     
+                    if (isMd) {
+                        TextButton(onClick = { showPreview = !showPreview }) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Visibility, null, tint = if (showPreview) Coral else c.textSecondary, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("预览", color = if (showPreview) Coral else c.textSecondary)
+                            }
+                        }
+                    }
+                    
                     Button(
                         onClick = {
                             if (currentFileName.isNotBlank()) {
@@ -141,65 +157,80 @@ fun EditFileScreen(
                 }
             }
         }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-        ) {
-            OutlinedTextField(
-                value = currentFileName,
-                onValueChange = { currentFileName = it },
-                singleLine = true,
+    ) { paddingValues ->
+        if (showPreview && isMd) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                label = { Text("文件名") },
-                placeholder = { Text("请输入文件名", color = c.textTertiary) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Coral,
-                    unfocusedBorderColor = c.border,
-                    focusedTextColor = c.textPrimary,
-                    unfocusedTextColor = c.textPrimary,
-                    focusedContainerColor = c.bgItem,
-                    unfocusedContainerColor = c.bgItem,
-                    focusedLabelColor = Coral,
-                    unfocusedLabelColor = c.textTertiary,
-                ),
-            )
-            
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp)
-                    .background(c.bgItem, RoundedCornerShape(12.dp))
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .imePadding()
             ) {
-                BasicTextField(
-                    value = currentContent,
-                    onValueChange = { currentContent = it },
+                com.gitmob.android.ui.common.GmMarkdownWebView(
+                    markdown = currentContent,
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(
+                    value = currentFileName,
+                    onValueChange = { currentFileName = it },
+                    singleLine = true,
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    textStyle = TextStyle(
-                        color = c.textPrimary,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 18.sp
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    label = { Text("文件名") },
+                    placeholder = { Text("请输入文件名", color = c.textTertiary) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Coral,
+                        unfocusedBorderColor = c.border,
+                        focusedTextColor = c.textPrimary,
+                        unfocusedTextColor = c.textPrimary,
+                        focusedContainerColor = c.bgItem,
+                        unfocusedContainerColor = c.bgItem,
+                        focusedLabelColor = Coral,
+                        unfocusedLabelColor = c.textTertiary,
                     ),
-                    cursorBrush = SolidColor(Coral)
-                ) { innerTextField ->
-                    if (currentContent.isEmpty()) {
-                        Text(
-                            text = "// 文件内容",
-                            color = c.textTertiary,
+                )
+                
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 16.dp)
+                        .background(c.bgItem, RoundedCornerShape(12.dp))
+                ) {
+                    BasicTextField(
+                        value = currentContent,
+                        onValueChange = { currentContent = it },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        textStyle = TextStyle(
+                            color = c.textPrimary,
                             fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 18.sp
+                        ),
+                        cursorBrush = SolidColor(Coral)
+                    ) { innerTextField ->
+                        if (currentContent.isEmpty()) {
+                            Text(
+                                text = "// 文件内容",
+                                color = c.textTertiary,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        innerTextField()
                     }
-                    innerTextField()
                 }
             }
         }

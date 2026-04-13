@@ -308,7 +308,9 @@ fun UploadReviewSheet(
                     onValueChange = { commitMsg = it },
                     label = { Text("Commit 信息") },
                     placeholder = { Text("Add files via GitMob upload") },
-                    singleLine = true,
+                    singleLine = false,
+                    minLines = 2,
+                    maxLines = 5,
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor    = Coral,

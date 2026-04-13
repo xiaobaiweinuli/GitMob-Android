@@ -46,6 +46,7 @@ class RepoRepository {
     private val releaseCache  = java.util.concurrent.ConcurrentHashMap<String, Entry<List<GHRelease>>>()
     private val commitDetailCache = java.util.concurrent.ConcurrentHashMap<String, Entry<GHCommitFull>>()
     private val subscriptionCache = java.util.concurrent.ConcurrentHashMap<String, Entry<GHRepoSubscription?>>()
+    private val labelsCache   = java.util.concurrent.ConcurrentHashMap<String, Entry<List<GHLabel>>>()
     private val LIST_TTL      = 2 * 60 * 1000L   // 列表 2 分钟
     private val COMMIT_TTL    = 10 * 60 * 1000L  // commit detail 10 分钟（不变）
 
@@ -90,6 +91,85 @@ class RepoRepository {
         reposCache.clear()
     }
 
+    // ─── 增量刷新（Incremental Refresh）──────────────────────────────────────
+    // 统一策略：只拉第一页新数据，按唯一 key 去重后与旧缓存合并（新在前），
+    // 不清空已展示列表，避免 UI 闪烁和重复请求。
+
+    /** 仓库列表增量刷新：拉第一页，按 id 合并，旧的不在新页的也保留 */
+    suspend fun refreshMyReposIncremental(): ReposPageResult = withContext(Dispatchers.IO) {
+        val token = ApiClient.currentToken() ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val data = GraphQLClient.queryUserRepos(token, cursor = null)
+            ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val nodes = data.optJSONArray("nodes") ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val pageInfo   = data.optJSONObject("pageInfo")
+        val hasNext    = pageInfo?.optBoolean("hasNextPage") ?: false
+        val endCursor  = pageInfo?.optString("endCursor")?.takeIf { it.isNotEmpty() }
+        val fresh      = (0 until nodes.length()).mapNotNull { mapGraphQLToGHRepo(nodes.getJSONObject(it)) }
+        val cached     = reposCache["user"]?.repos ?: emptyList()
+        val merged     = (fresh + cached).distinctBy { it.id }
+        reposCache["user"] = ReposCacheEntry(merged, hasNext, endCursor)
+        ReposPageResult(merged, hasNext, endCursor)
+    }
+
+    /** 组织仓库列表增量刷新 */
+    suspend fun refreshOrgReposIncremental(org: String): ReposPageResult = withContext(Dispatchers.IO) {
+        val fresh   = api.getOrgRepos(org)
+        val key     = "org:$org"
+        val cached  = reposCache[key]?.repos ?: emptyList()
+        val merged  = (fresh + cached).distinctBy { it.id }
+        reposCache[key] = ReposCacheEntry(merged, false, null)
+        ReposPageResult(merged, false, null)
+    }
+
+    /** Commits 增量刷新：拉第一页，按 sha 合并 */
+    suspend fun refreshCommitsIncremental(owner: String, repo: String, sha: String): List<GHCommit> =
+        withContext(Dispatchers.IO) {
+            val key    = "$owner/$repo/$sha"
+            val fresh  = api.getCommits(owner, repo, sha)
+            val cached = commitCache[key]?.data ?: emptyList()
+            val merged = (fresh + cached).distinctBy { it.sha }
+            commitCache[key] = Entry(merged)
+            merged
+        }
+
+    /** Branches 增量刷新：按 name 合并（分支量小，全量拉然后合并） */
+    suspend fun refreshBranchesIncremental(owner: String, repo: String): List<GHBranch> =
+        withContext(Dispatchers.IO) {
+            val fresh  = api.getBranches(owner, repo)
+            val key    = "$owner/$repo"
+            // 分支以 fresh 为主（分支可能被删除），直接替换并更新缓存时间
+            branchCache[key] = Entry(fresh)
+            fresh
+        }
+
+    /** Issues 增量刷新：拉第一页，按 number 合并 */
+    suspend fun refreshIssuesIncremental(
+        owner: String, repo: String,
+        state: String = "open",
+        labels: String? = null,
+        creator: String? = null,
+        sort: String = "created",
+        direction: String = "desc",
+    ): List<GHIssue> = withContext(Dispatchers.IO) {
+        val key    = "$owner/$repo/$state/$labels/$creator/$sort/$direction/1"
+        val fresh  = api.getIssues(owner, repo, state, labels, creator, sort, direction, 30, 1)
+        val cached = issueCache[key]?.data ?: emptyList()
+        val merged = (fresh + cached).distinctBy { it.number }
+        issueCache[key] = Entry(merged)
+        merged
+    }
+
+    /** Releases 增量刷新：按 id 合并 */
+    suspend fun refreshReleasesIncremental(owner: String, repo: String): List<GHRelease> =
+        withContext(Dispatchers.IO) {
+            val key    = "$owner/$repo"
+            val fresh  = api.getReleases(owner, repo)
+            val cached = releaseCache[key]?.data ?: emptyList()
+            val merged = (fresh + cached).distinctBy { it.id }
+            releaseCache[key] = Entry(merged)
+            merged
+        }
+
     suspend fun getOrgRepos(org: String, cursor: String? = null): ReposPageResult = withContext(Dispatchers.IO) {
         val cacheKey = "org:$org"
         
@@ -114,16 +194,86 @@ class RepoRepository {
         ReposPageResult(repos, hasNextPage, endCursor)
     }
 
-    suspend fun getUserOrgs(): List<GHOrg> = withContext(Dispatchers.IO) {
-        api.getUserOrgs()
+    private val orgsCache = java.util.concurrent.ConcurrentHashMap<String, Entry<List<GHOrg>>>()
+
+    suspend fun getUserOrgs(forceRefresh: Boolean = false): List<GHOrg> = withContext(Dispatchers.IO) {
+        val key = "user_orgs"
+        if (!forceRefresh) {
+            orgsCache[key]?.takeIf { it.valid(FILE_TTL) }?.data?.let {
+                return@withContext it
+            }
+        }
+        val orgs = api.getUserOrgs(perPage = 100)
+        orgsCache[key] = Entry(orgs)
+        orgs
+    }
+
+    /**
+     * 获取指定用户的组织列表
+     */
+    suspend fun getUserOrgs(login: String, forceRefresh: Boolean = false): List<GHOrg> = withContext(Dispatchers.IO) {
+        val key = "user_orgs:$login"
+        if (!forceRefresh) {
+            orgsCache[key]?.takeIf { it.valid(FILE_TTL) }?.data?.let {
+                return@withContext it
+            }
+        }
+        val orgs = api.getUserOrgs(login, perPage = 100)
+        orgsCache[key] = Entry(orgs)
+        orgs
+    }
+
+    /**
+     * 获取指定用户的仓库列表（REST API）
+     */
+    suspend fun getUserRepos(login: String, forceRefresh: Boolean = false, page: Int = 1): ReposPageResult = withContext(Dispatchers.IO) {
+        val cacheKey = "user:$login"
+        
+        if (page == 1 && !forceRefresh) {
+            reposCache[cacheKey]?.takeIf { it.valid(CACHE_TTL) }?.let { 
+                return@withContext ReposPageResult(it.repos, it.hasNextPage, it.endCursor) 
+            }
+        }
+        
+        val repos = api.getUserRepos(login, sort = "updated", perPage = 50, page = page)
+        
+        if (page == 1) {
+            reposCache[cacheKey] = ReposCacheEntry(repos, repos.size >= 50, null)
+        }
+        
+        ReposPageResult(repos, repos.size >= 50, null)
+    }
+
+    /**
+     * 获取指定用户的星标仓库列表（REST API）
+     */
+    suspend fun getUserStarred(login: String, forceRefresh: Boolean = false, page: Int = 1): ReposPageResult = withContext(Dispatchers.IO) {
+        val cacheKey = "starred:$login"
+        
+        if (page == 1 && !forceRefresh) {
+            reposCache[cacheKey]?.takeIf { it.valid(CACHE_TTL) }?.let { 
+                return@withContext ReposPageResult(it.repos, it.hasNextPage, it.endCursor) 
+            }
+        }
+        
+        val repos = api.getUserStarred(login, sort = "created", direction = "desc", perPage = 50, page = page)
+        
+        if (page == 1) {
+            reposCache[cacheKey] = ReposCacheEntry(repos, repos.size >= 50, null)
+        }
+        
+        ReposPageResult(repos, repos.size >= 50, null)
     }
 
     suspend fun getRepo(owner: String, repo: String, forceRefresh: Boolean = false): GHRepo = withContext(Dispatchers.IO) {
         val key = "$owner/$repo"
         if (!forceRefresh) repoDetailCache[key]?.takeIf { it.valid(DETAIL_TTL) }?.data?.let { return@withContext it }
 
-        // 直接使用 REST API，确保能获取到 parent 字段
-        val result = api.getRepo(owner, repo)
+        // 使用 GraphQL 获取，确保 openIssues 数量正确（只包含 Issues，不含 PRs）
+        val token = ApiClient.currentToken()!!
+        val graphQLNode = GraphQLClient.queryRepoOverview(token, owner, repo)!!
+        val result = mapGraphQLToGHRepo(graphQLNode)
+
         repoDetailCache[key] = Entry(result)
         result
     }
@@ -165,6 +315,15 @@ class RepoRepository {
         api.getTopics(owner, repo).names
     }
 
+    suspend fun getLabels(owner: String, repo: String, forceRefresh: Boolean = false): List<GHLabel> = withContext(Dispatchers.IO) {
+        val key = "$owner/$repo"
+        if (!forceRefresh) labelsCache[key]?.takeIf { it.valid(LIST_TTL) }?.data?.let { return@withContext it }
+        
+        val labels = api.getLabels(owner, repo, 100, 1)
+        labelsCache[key] = Entry(labels)
+        labels
+    }
+
     suspend fun replaceTopics(owner: String, repo: String, topics: List<String>): List<String> = withContext(Dispatchers.IO) {
         api.replaceTopics(owner, repo, GHTopics(topics)).names
     }
@@ -197,32 +356,53 @@ class RepoRepository {
     }
 
     /**
+     * 获取文件信息和内容（Base64 解码），带 5 分钟内存缓存。
+     * 一次 API 调用同时获取文件信息（含 sha）和内容，避免重复请求。
+     */
+    data class FileWithInfo(
+        val info: GHContent,
+        val content: String
+    )
+    
+    private val fileWithInfoCache = java.util.concurrent.ConcurrentHashMap<String, Entry<FileWithInfo>>()
+    
+    suspend fun getFileWithInfo(
+        owner: String, repo: String, path: String, ref: String,
+        forceRefresh: Boolean = false,
+    ): FileWithInfo = withContext(Dispatchers.IO) {
+        val key = "$owner/$repo/$ref/$path"
+        if (!forceRefresh) {
+            fileWithInfoCache[key]?.takeIf { it.valid(FILE_TTL) }?.data?.let {
+                return@withContext it
+            }
+        }
+        val f = api.getFile(owner, repo, path, ref)
+        val encoded = f.content ?: ""
+        val decoded = String(Base64.decode(encoded.replace("\n", ""), Base64.DEFAULT), Charsets.UTF_8)
+        val result = FileWithInfo(f, decoded)
+        fileWithInfoCache[key] = Entry(result)
+        result
+    }
+
+    /**
      * 获取文件内容（Base64 解码），带 5 分钟内存缓存。
+     * 保留此方法用于向后兼容。
      */
     suspend fun getFileContent(
         owner: String, repo: String, path: String, ref: String,
         forceRefresh: Boolean = false,
     ): String = withContext(Dispatchers.IO) {
-        val key = "$owner/$repo/$ref/$path"
-        if (!forceRefresh) {
-            fileContentCache[key]?.takeIf { it.valid(FILE_TTL) }?.data?.let {
-                return@withContext it
-            }
-        }
-        val f = api.getFile(owner, repo, path, ref)
-        val encoded = f.content ?: return@withContext ""
-        val decoded = String(Base64.decode(encoded.replace("\n", ""), Base64.DEFAULT), Charsets.UTF_8)
-        fileContentCache[key] = Entry(decoded)
-        decoded
+        getFileWithInfo(owner, repo, path, ref, forceRefresh).content
     }
 
     /**
      * 获取文件信息（包含sha）
+     * 保留此方法用于向后兼容。
      */
     suspend fun getFileInfo(
         owner: String, repo: String, path: String, ref: String,
     ): GHContent = withContext(Dispatchers.IO) {
-        api.getFile(owner, repo, path, ref)
+        getFileWithInfo(owner, repo, path, ref).info
     }
 
     /**
@@ -243,6 +423,7 @@ class RepoRepository {
         val response = api.createOrUpdateFile(owner, repo, path, request)
         invalidateContentsCache(owner, repo)
         fileContentCache.clear()
+        fileWithInfoCache.clear()
         response
     }
 
@@ -262,7 +443,39 @@ class RepoRepository {
         val response = api.deleteFile(owner, repo, path, request)
         invalidateContentsCache(owner, repo)
         fileContentCache.clear()
+        fileWithInfoCache.clear()
         response.isSuccessful
+    }
+
+    /**
+     * 使用 GraphQL API 重命名文件（单次 commit）
+     */
+    suspend fun renameFileGraphQL(
+        token: String,
+        owner: String,
+        repo: String,
+        branch: String,
+        oldPath: String,
+        newPath: String,
+        contentBase64: String,
+        message: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val success = GraphQLClient.renameFileWithGraphQL(
+            token = token,
+            owner = owner,
+            repo = repo,
+            branch = branch,
+            oldPath = oldPath,
+            newPath = newPath,
+            contentBase64 = contentBase64,
+            message = message
+        )
+        if (success) {
+            invalidateContentsCache(owner, repo)
+            fileContentCache.clear()
+            fileWithInfoCache.clear()
+        }
+        success
     }
 
     // ─── Commits ───
@@ -437,14 +650,111 @@ class RepoRepository {
 
     // ─── PR / Issues ───
 
-    suspend fun getPRs(owner: String, repo: String, forceRefresh: Boolean = false): List<GHPullRequest> =
-        withContext(Dispatchers.IO) {
-            val key = "$owner/$repo"
-            if (!forceRefresh) prCache[key]?.takeIf { it.valid(LIST_TTL) }?.data?.let { return@withContext it }
-            val result = api.getPullRequests(owner, repo)
-            prCache[key] = Entry(result)
-            result
+    /**
+     * 加载 PR 列表，使用 REST API。
+     */
+    suspend fun getPRs(
+        owner: String,
+        repo: String,
+        state: String = "open",
+        sort: String = "created",
+        direction: String = "desc",
+        page: Int = 1,
+        forceRefresh: Boolean = false,
+        labelFilter: String? = null,
+        authorFilter: String? = null,
+        reviewerFilter: String? = null,
+        isMergedFilter: Boolean = false,
+    ): List<GHPullRequest> = withContext(Dispatchers.IO) {
+        val key = "$owner/$repo/pr/$state/$sort/$direction/$page/$labelFilter/$authorFilter/$reviewerFilter"
+        if (!forceRefresh && page == 1)
+            prCache[key]?.takeIf { it.valid(LIST_TTL) }?.data?.let { return@withContext it }
+
+        val token = ApiClient.currentToken() ?: return@withContext emptyList()
+        val apiState = when {
+            isMergedFilter -> "closed"
+            else -> state
         }
+        
+        val (prs, _) = GraphQLClient.getPullRequests(
+            token = token,
+            owner = owner,
+            repo = repo,
+            state = apiState,
+            first = 30
+        )
+        
+        val result = if (isMergedFilter) prs.filter { it.merged == true } else prs
+
+        if (page == 1) prCache[key] = Entry(result)
+        result
+    }
+
+    /** 增量刷新：只拉第一页，与缓存合并（按 number 去重，新条目在前） */
+    suspend fun refreshPRsIncremental(
+        owner: String, repo: String,
+        state: String = "open",
+        sort: String = "created",
+        direction: String = "desc",
+        labelFilter: String? = null,
+        authorFilter: String? = null,
+        reviewerFilter: String? = null,
+        isMergedFilter: Boolean = false,
+    ): List<GHPullRequest> = withContext(Dispatchers.IO) {
+        val key = "$owner/$repo/pr/$state/$sort/$direction/1/$labelFilter/$authorFilter/$reviewerFilter"
+        val fresh = getPRs(owner, repo, state, sort, direction, 1, true,
+            labelFilter, authorFilter, reviewerFilter, isMergedFilter)
+        val cached = prCache[key]?.data ?: emptyList()
+        val merged = (fresh + cached).distinctBy { it.number }
+        prCache[key] = Entry(merged)
+        merged
+    }
+
+    suspend fun getPRDetail(owner: String, repo: String, number: Int): GHPullRequest =
+        withContext(Dispatchers.IO) {
+            api.getPullRequest(owner, repo, number)
+        }
+
+    suspend fun getPRReviews(owner: String, repo: String, number: Int): List<GHReview> =
+        withContext(Dispatchers.IO) { api.getPRReviews(owner, repo, number) }
+
+    suspend fun getPRComments(owner: String, repo: String, number: Int): List<GHComment> =
+        withContext(Dispatchers.IO) { api.getPRComments(owner, repo, number) }
+
+    suspend fun mergePR(
+        owner: String, repo: String, number: Int, method: String, title: String?, message: String?,
+    ): GHMergePRResponse = withContext(Dispatchers.IO) {
+        api.mergePullRequest(owner, repo, number, GHMergePRRequest(title, message, method))
+    }
+
+    suspend fun updatePRBranch(owner: String, repo: String, number: Int): GHUpdateBranchResponse =
+        withContext(Dispatchers.IO) { api.updatePRBranch(owner, repo, number) }
+
+    suspend fun createPRReview(
+        owner: String, repo: String, number: Int, event: String, body: String?,
+    ): GHReview = withContext(Dispatchers.IO) {
+        api.createPRReview(owner, repo, number, GHCreateReviewRequest(body, event))
+    }
+
+    suspend fun requestReviewers(
+        owner: String, repo: String, number: Int, reviewers: List<String>,
+    ): GHPullRequest = withContext(Dispatchers.IO) {
+        api.requestReviewers(owner, repo, number, GHReviewersRequest(reviewers))
+    }
+
+    suspend fun addPRComment(owner: String, repo: String, number: Int, body: String): GHComment =
+        withContext(Dispatchers.IO) {
+            api.addPRComment(owner, repo, number, GHCreateCommentRequest(body))
+        }
+
+    suspend fun closePR(owner: String, repo: String, number: Int): GHPullRequest =
+        withContext(Dispatchers.IO) {
+            api.updatePullRequest(owner, repo, number, GHUpdatePullRequestRequest(state = "closed"))
+        }
+
+    fun invalidatePRCache(owner: String, repo: String) {
+        prCache.keys.filter { it.startsWith("$owner/$repo/pr/") }.forEach { prCache.remove(it) }
+    }
 
     suspend fun getIssues(
         owner: String, repo: String,
@@ -459,23 +769,42 @@ class RepoRepository {
         val key = "$owner/$repo/$state/$labels/$creator/$sort/$direction/$page"
         if (!forceRefresh && page == 1)
             issueCache[key]?.takeIf { it.valid(LIST_TTL) }?.data?.let { return@withContext it }
-        val result = api.getIssues(
+
+        val token = ApiClient.currentToken() ?: return@withContext emptyList()
+        val (issues, _) = GraphQLClient.getIssues(
+            token = token,
             owner = owner,
             repo = repo,
             state = state,
+            first = 30,
             labels = labels,
-            creator = creator,
-            sort = sort,
-            direction = direction,
-            perPage = 30,
-            page = page
+            creator = creator
         )
-        if (page == 1) issueCache[key] = Entry(result)
-        result
+
+        if (page == 1) issueCache[key] = Entry(issues)
+        issues
     }
 
     suspend fun getIssue(owner: String, repo: String, issueNumber: Int): GHIssue =
         withContext(Dispatchers.IO) { api.getIssue(owner, repo, issueNumber) }
+
+    /**
+     * 使用GraphQL API获取Issue详情和评论（包含lastEditedAt字段）
+     */
+    suspend fun getIssueDetailGraphQL(owner: String, repo: String, issueNumber: Int): Pair<GHIssue?, List<GHComment>> =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext Pair(null, emptyList())
+            GraphQLClient.getIssueDetail(token, owner, repo, issueNumber)
+        }
+
+    /**
+     * 使用GraphQL API获取PR详情、评论和审查（包含lastEditedAt字段）
+     */
+    suspend fun getPRDetailGraphQL(owner: String, repo: String, prNumber: Int): Triple<GHPullRequest?, List<GHComment>, List<GHReview>> =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext Triple(null, emptyList(), emptyList())
+            GraphQLClient.getPRDetail(token, owner, repo, prNumber)
+        }
 
     suspend fun updateIssue(
         owner: String,
@@ -537,6 +866,117 @@ class RepoRepository {
 
     suspend fun deleteIssueComment(owner: String, repo: String, commentId: Long): Boolean =
         withContext(Dispatchers.IO) { api.deleteIssueComment(owner, repo, commentId).isSuccessful }
+
+    // ─── Discussions (GraphQL) ───
+    
+    /**
+     * 获取Discussion分类列表
+     */
+    suspend fun getDiscussionCategories(owner: String, repo: String): List<com.gitmob.android.api.GHDiscussionCategory> =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext emptyList()
+            GraphQLClient.getDiscussionCategories(token, owner, repo)
+        }
+
+    /**
+     * 获取Discussion列表（带分页）
+     */
+    suspend fun getDiscussions(
+        owner: String, repo: String,
+        first: Int = 20, after: String? = null,
+        categoryId: String? = null,
+    ): Pair<List<com.gitmob.android.api.GHDiscussion>, String?> =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext Pair(emptyList(), null)
+            GraphQLClient.getDiscussions(token, owner, repo, first, after, categoryId)
+        }
+
+    /**
+     * 使用GraphQL API获取Discussion详情和评论（包含lastEditedAt字段）
+     */
+    suspend fun getDiscussionDetailGraphQL(
+        owner: String, repo: String, number: Int
+    ): Pair<com.gitmob.android.api.GHDiscussion?, List<com.gitmob.android.api.GHDiscussionComment>> =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext Pair(null, emptyList())
+            GraphQLClient.getDiscussionDetail(token, owner, repo, number)
+        }
+
+    /**
+     * 更新Discussion订阅状态
+     */
+    suspend fun updateDiscussionSubscription(discussionId: String, subscribed: Boolean): Boolean =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext false
+            GraphQLClient.updateDiscussionSubscription(token, discussionId, subscribed)
+        }
+
+    /**
+     * 更新Discussion
+     */
+    suspend fun updateDiscussion(discussionId: String, title: String? = null, body: String? = null): Boolean =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext false
+            GraphQLClient.updateDiscussion(token, discussionId, title, body)
+        }
+
+    /**
+     * 删除Discussion
+     */
+    suspend fun deleteDiscussion(discussionId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext false
+            GraphQLClient.deleteDiscussion(token, discussionId)
+        }
+
+    /**
+     * 添加Discussion评论
+     */
+    suspend fun addDiscussionComment(
+        discussionId: String, body: String, replyToId: String? = null
+    ): com.gitmob.android.api.GHDiscussionComment? =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext null
+            GraphQLClient.addDiscussionComment(token, discussionId, body, replyToId)
+        }
+
+    /**
+     * 更新Discussion评论
+     */
+    suspend fun updateDiscussionComment(commentId: String, body: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext false
+            GraphQLClient.updateDiscussionComment(token, commentId, body)
+        }
+
+    /**
+     * 删除Discussion评论
+     */
+    suspend fun deleteDiscussionComment(commentId: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext false
+            GraphQLClient.deleteDiscussionComment(token, commentId)
+        }
+
+    /**
+     * 获取Discussion主体的编辑历史
+     */
+    suspend fun getDiscussionBodyEditHistory(
+        owner: String, repo: String, number: Int
+    ): List<com.gitmob.android.api.GHUserContentEdit> =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext emptyList()
+            GraphQLClient.getDiscussionBodyEditHistory(token, owner, repo, number)
+        }
+
+    /**
+     * 获取Discussion评论的编辑历史
+     */
+    suspend fun getDiscussionCommentEditHistory(commentId: String): List<com.gitmob.android.api.GHUserContentEdit> =
+        withContext(Dispatchers.IO) {
+            val token = ApiClient.currentToken() ?: return@withContext emptyList()
+            GraphQLClient.getDiscussionCommentEditHistory(token, commentId)
+        }
 
     // ─── Releases ───
     suspend fun getReleases(owner: String, repo: String, forceRefresh: Boolean = false): List<GHRelease> =
@@ -671,6 +1111,8 @@ class RepoRepository {
         val stars    = node.optInt("stargazerCount", 0)
         val forks    = node.optInt("forkCount", 0)
         val openIssues = node.optJSONObject("openIssues")?.optInt("totalCount", 0) ?: 0
+        val hasIssues = node.optBoolean("hasIssuesEnabled", true)
+        val hasDiscussions = node.optBoolean("hasDiscussionsEnabled", false)
 
         // GitHub GraphQL node_id 是 base64 字符串，REST 用 Long；这里用 hashCode 兼容
         val idLong = node.optString("id").hashCode().toLong().let {
@@ -679,7 +1121,7 @@ class RepoRepository {
         val ownerAvatarUrl = node.optString("openGraphImageUrl").ifBlank { null }
         val owner = GHOwner(login = ownerLogin, avatarUrl = ownerAvatarUrl)
 
-        // 解析 parent 字段（如果存在）
+        // 解析 parent 字段（（（（（
         val parent = node.optJSONObject("parent")?.let { mapGraphQLToGHRepo(it) }
 
         return GHRepo(
@@ -702,6 +1144,8 @@ class RepoRepository {
             owner         = owner,
             fork          = node.optBoolean("isFork", false),
             parent        = parent,
+            hasIssues     = hasIssues,
+            hasDiscussions = hasDiscussions,
         )
     }
 

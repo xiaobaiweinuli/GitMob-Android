@@ -450,56 +450,58 @@ fun IssuesTab(
         isRefreshing = state.issuesRefreshing,
         onRefresh = onRefresh,
     ) {
-        Column {
-            IssueFilterToolbar(
-                state = state,
-                c = c,
-                vm = vm,
-                permission = permission,
-                onAddIssueClick = {
-                    // 先加载模板，加载完成/失败后再打开弹窗
-                    templatesLoading = true
-                    vm.loadIssueTemplates {
-                        templatesLoading = false
-                        showCreateIssueDialog = true
+        Box {
+            Column {
+                IssueFilterToolbar(
+                    state = state,
+                    c = c,
+                    vm = vm,
+                    permission = permission,
+                    onAddIssueClick = {
+                        // 先加载模板，加载完成/失败后再打开弹窗
+                        templatesLoading = true
+                        vm.loadIssueTemplates {
+                            templatesLoading = false
+                            showCreateIssueDialog = true
+                        }
                     }
-                }
-            )
+                )
 
-            if (issuesList.isEmpty() && !state.issuesRefreshing) {
-                EmptyBox("暂无 Issues")
-            } else {
-                LazyColumn(
-                    state = listState,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(issuesList, key = { it.number }) { issue ->
-                        SwipeableIssueCard(
-                            issue = issue,
-                            c = c,
-                            permission = permission,
-                            onDelete = { vm.deleteIssue(issue.number) },
-                            onClick = { onIssueClick(issue.number) }
-                        )
-                    }
-                    // 加载更多 footer
-                    if (state.issuesLoadingMore) {
-                        item {
-                            Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Coral)
+                if (issuesList.isEmpty() && !state.issuesRefreshing) {
+                    EmptyBox("暂无 Issues")
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(issuesList, key = { it.number }) { issue ->
+                            SwipeableIssueCard(
+                                issue = issue,
+                                c = c,
+                                permission = permission,
+                                onDelete = { vm.deleteIssue(issue.number) },
+                                onClick = { onIssueClick(issue.number) }
+                            )
+                        }
+                        // 加载更多 footer
+                        if (state.issuesLoadingMore) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Coral)
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-    }
 
-    // 模板加载中指示（在顶部显示进度）
-    if (templatesLoading) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Coral, modifier = Modifier.size(32.dp), strokeWidth = 2.5.dp)
+            // 模板加载中指示（在整个内容上覆盖显示）
+            if (templatesLoading) {
+                Box(Modifier.matchParentSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Coral, modifier = Modifier.size(32.dp), strokeWidth = 2.5.dp)
+                }
+            }
         }
     }
     if (showCreateIssueDialog) {

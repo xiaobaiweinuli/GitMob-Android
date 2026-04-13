@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -16,10 +17,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gitmob.android.ui.theme.*
+import com.gitmob.android.util.LanguageEntry
+import com.gitmob.android.util.LanguageManager
 
 /**
  * 远程仓库筛选工具栏组件
@@ -30,12 +34,20 @@ fun RepoFilterToolbar(
     c: GmColors,
     vm: RepoListViewModel,
 ) {
+    val context = LocalContext.current
     var showTypeDropdown by remember { mutableStateOf(false) }
     var showSortSheet by remember { mutableStateOf(false) }
     var showLanguageSheet by remember { mutableStateOf(false) }
 
     val hasFilters = hasAnyRepoFiltersApplied(state.filterState)
-    val allLanguages = extractLanguagesFromRepos(state.repos)
+    // 从当前已加载仓库提取出现的语言
+    val repoLanguages = remember(state.repos) {
+        state.repos.mapNotNull { it.language }.toSet()
+    }
+    // 构建语言列表（本地数据优先，仓库已出现的置顶）
+    val allLanguages = remember(repoLanguages) {
+        LanguageManager.buildLanguageList(context, repoLanguages)
+    }
 
     Column(
         modifier = Modifier
@@ -107,7 +119,7 @@ fun RepoFilterToolbar(
 
                 if (allLanguages.isNotEmpty()) {
                     FilterButton(
-                        text = state.filterState.languageFilter ?: "语言",
+                        text = state.filterState.languageFilter?.name ?: "语言",
                         isActive = state.filterState.languageFilter != null,
                         c = c,
                         onClick = { showLanguageSheet = true }
@@ -145,27 +157,21 @@ fun RepoFilterToolbar(
             c = c,
             onDismiss = { showLanguageSheet = false }
         ) {
-            FilterOptionItem(
-                text = "全部语言",
+            LanguageFilterOptionItem(
+                entry = null,
+                label = "全部语言",
                 isSelected = state.filterState.languageFilter == null,
-                isRadio = true,
                 c = c,
-                onClick = {
-                    vm.setLanguageFilter(null)
-                    showLanguageSheet = false
-                }
+                onClick = { vm.setLanguageFilter(null); showLanguageSheet = false }
             )
-            allLanguages.forEach { language ->
-                val isSelected = state.filterState.languageFilter == language
-                FilterOptionItem(
-                    text = language,
+            allLanguages.forEach { entry ->
+                val isSelected = state.filterState.languageFilter?.id == entry.id
+                LanguageFilterOptionItem(
+                    entry = entry,
+                    label = entry.name,
                     isSelected = isSelected,
-                    isRadio = true,
                     c = c,
-                    onClick = {
-                        vm.setLanguageFilter(language)
-                        showLanguageSheet = false
-                    }
+                    onClick = { vm.setLanguageFilter(entry); showLanguageSheet = false }
                 )
             }
         }
@@ -181,12 +187,18 @@ fun StarFilterToolbar(
     c: GmColors,
     vm: StarListViewModel,
 ) {
+    val context = LocalContext.current
     var showTypeDropdown by remember { mutableStateOf(false) }
     var showSortSheet by remember { mutableStateOf(false) }
     var showLanguageSheet by remember { mutableStateOf(false) }
 
     val hasFilters = hasAnyStarFiltersApplied(state.filterState)
-    val allLanguages = extractLanguagesFromStarredRepos(state.starredRepos)
+    val repoLanguages = remember(state.starredRepos) {
+        state.starredRepos.mapNotNull { it.language }.toSet()
+    }
+    val allLanguages = remember(repoLanguages) {
+        LanguageManager.buildLanguageList(context, repoLanguages)
+    }
 
     Column(
         modifier = Modifier
@@ -258,7 +270,7 @@ fun StarFilterToolbar(
 
                 if (allLanguages.isNotEmpty()) {
                     FilterButton(
-                        text = state.filterState.languageFilter ?: "语言",
+                        text = state.filterState.languageFilter?.name ?: "语言",
                         isActive = state.filterState.languageFilter != null,
                         c = c,
                         onClick = { showLanguageSheet = true }
@@ -296,27 +308,21 @@ fun StarFilterToolbar(
             c = c,
             onDismiss = { showLanguageSheet = false }
         ) {
-            FilterOptionItem(
-                text = "全部语言",
+            LanguageFilterOptionItem(
+                entry = null,
+                label = "全部语言",
                 isSelected = state.filterState.languageFilter == null,
-                isRadio = true,
                 c = c,
-                onClick = {
-                    vm.setStarLanguageFilter(null)
-                    showLanguageSheet = false
-                }
+                onClick = { vm.setStarLanguageFilter(null); showLanguageSheet = false }
             )
-            allLanguages.forEach { language ->
-                val isSelected = state.filterState.languageFilter == language
-                FilterOptionItem(
-                    text = language,
+            allLanguages.forEach { entry ->
+                val isSelected = state.filterState.languageFilter?.id == entry.id
+                LanguageFilterOptionItem(
+                    entry = entry,
+                    label = entry.name,
                     isSelected = isSelected,
-                    isRadio = true,
                     c = c,
-                    onClick = {
-                        vm.setStarLanguageFilter(language)
-                        showLanguageSheet = false
-                    }
+                    onClick = { vm.setStarLanguageFilter(entry); showLanguageSheet = false }
                 )
             }
         }
@@ -441,5 +447,52 @@ fun FilterOptionItem(
             colors = RadioButtonDefaults.colors(selectedColor = Coral)
         )
         Text(text, fontSize = 13.sp, color = c.textPrimary)
+    }
+}
+
+/**
+ * 语言选项条目：带颜色小圆点，文字颜色跟随 Linguist 配色
+ * entry = null 时显示"全部语言"（无颜色点）
+ */
+@Composable
+fun LanguageFilterOptionItem(
+    entry: LanguageEntry?,
+    label: String,
+    isSelected: Boolean,
+    c: GmColors,
+    onClick: () -> Unit,
+) {
+    // 解析 color 字符串 → Compose Color
+    val dotColor: Color? = remember(entry?.color) {
+        entry?.color?.let { hex ->
+            try { Color(android.graphics.Color.parseColor(hex)) }
+            catch (_: Exception) { null }
+        }
+    }
+    // 文字颜色：有颜色时使用 Linguist 颜色，否则用主题文字色
+    val textColor = if (dotColor != null) dotColor else c.textPrimary
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        RadioButton(
+            selected = isSelected,
+            onClick = null,
+            colors = RadioButtonDefaults.colors(selectedColor = Coral),
+        )
+        // 颜色小圆点（无颜色数据时不显示）
+        if (dotColor != null) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .background(dotColor, CircleShape),
+            )
+        }
+        Text(label, fontSize = 13.sp, color = textColor, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }

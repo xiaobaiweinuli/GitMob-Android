@@ -1,5 +1,6 @@
 package com.gitmob.android.ui.repos
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,6 +11,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,6 +35,7 @@ import com.gitmob.android.api.GHOrg
 import com.gitmob.android.api.GHRepo
 import com.gitmob.android.ui.common.*
 import com.gitmob.android.ui.theme.*
+import com.gitmob.android.util.LogManager
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.FolderDelete
 import androidx.compose.material.icons.filled.ContentCopy
@@ -48,8 +51,10 @@ fun RepoListScreen(
     onRepoClick: (String, String) -> Unit,
     onCreateRepo: () -> Unit,
     onCloneRepo: (String) -> Unit = {},
+    onBack: () -> Unit = {},
     vm: RepoListViewModel = viewModel(),
     starVm: StarListViewModel = viewModel(),
+    onSearchClick: () -> Unit = {},
 ) {
     val c = LocalGmColors.current
     val state by vm.state.collectAsState()
@@ -61,6 +66,31 @@ fun RepoListScreen(
     var editingList by remember { mutableStateOf<UserList?>(null) }
     var classifyRepo by remember { mutableStateOf<StarredRepo?>(null) }
     var createListFromClassify by remember { mutableStateOf(false) }
+    
+    val isViewingOtherUser = state.targetUserLogin != null
+    
+    // BackHandler: 拦截系统返回键
+    BackHandler(enabled = isViewingOtherUser) {
+        when (state.viewMode) {
+            ViewMode.STARRED -> {
+                // 如果当前是星标模式，切换回仓库模式
+                vm.switchToUserRepos(state.targetUserLogin!!, state.targetUserAvatar)
+            }
+            ViewMode.REPOS -> {
+                // 如果已经是仓库模式，直接返回上一个导航页面
+                onBack()
+            }
+        }
+    }
+
+    // 列表权限（控制添加按钮、卡片删除/重命名/编辑）
+    val listPermission = remember(state.currentContext, state.userLogin, state.userOrgs) {
+        com.gitmob.android.ui.repo.calcRepoListPermission(
+            currentContextLogin = state.currentContext?.login,
+            userLogin           = state.userLogin,
+            userOrgs            = state.userOrgs,
+        )
+    }
 
     // Toast
     state.toast?.let { msg ->
@@ -76,49 +106,114 @@ fun RepoListScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // 显示返回按钮（当查看其他用户时）
+                        if (isViewingOtherUser) {
+                            IconButton(onClick = { 
+                                LogManager.d("RepoListScreen", "点击返回按钮，targetUserLogin=${state.targetUserLogin}, viewMode=${state.viewMode}")
+                                when (state.viewMode) {
+                                    ViewMode.STARRED -> {
+                                        // 如果当前是星标模式，切换回仓库模式
+                                        LogManager.d("RepoListScreen", "从星标切换回仓库，login=${state.targetUserLogin}")
+                                        vm.switchToUserRepos(state.targetUserLogin!!, state.targetUserAvatar)
+                                    }
+                                    ViewMode.REPOS -> {
+                                        // 如果已经是仓库模式，直接返回上一个导航页面
+                                        LogManager.d("RepoListScreen", "调用 onBack() 返回上一个页面")
+                                        onBack()
+                                    }
+                                }
+                            }) {
+                                Icon(Icons.AutoMirrored.Default.ArrowBack, null, tint = c.textPrimary)
+                            }
+                        }
                         Box {
                             // 头像：显示当前组织/用户的头像（追加 s=40 缩略图）
-                            val displayAvatar = thumbUrl(state.currentContext?.avatarUrl ?: state.userAvatar)
+                            val displayAvatar = thumbUrl(
+                                if (isViewingOtherUser) {
+                                    state.targetUserAvatar ?: state.currentContext?.avatarUrl ?: state.userAvatar
+                                } else {
+                                    state.currentContext?.avatarUrl ?: state.userAvatar
+                                }
+                            )
                             AsyncImage(
                                 model = displayAvatar,
                                 contentDescription = null,
                                 modifier = Modifier.size(30.dp).clip(CircleShape)
-                                    .background(c.bgItem).clickable { showOrgMenu = true },
+                                    .background(c.bgItem).clickable { 
+                                        vm.ensureOrgsLoaded()
+                                        showOrgMenu = true 
+                                    },
                             )
                             DropdownMenu(
                                 expanded = showOrgMenu,
                                 onDismissRequest = { showOrgMenu = false },
                                 modifier = Modifier.background(c.bgCard),
                             ) {
-                                // 用户自己
-                                OrgMenuItem(
-                                    login = state.userLogin,
-                                    avatarUrl = thumbUrl(state.userAvatar),
-                                    selected = state.currentContext == null,
-                                    onClick = { vm.switchContext(null); showOrgMenu = false },
-                                    c = c,
-                                )
-                                if (state.userOrgs.isNotEmpty()) {
-                                    HorizontalDivider(color = c.border, thickness = 0.5.dp,
-                                        modifier = Modifier.padding(vertical = 4.dp))
-                                    state.userOrgs.forEach { org ->
-                                        val sel = state.currentContext?.login == org.login
-                                        OrgMenuItem(
-                                            login = org.login,
-                                            avatarUrl = org.avatarUrl,
-                                            selected = sel,
-                                            onClick = {
-                                                vm.switchContext(OrgContext(org.login, org.avatarUrl, false))
-                                                showOrgMenu = false
-                                            },
-                                            c = c,
-                                        )
+                                if (isViewingOtherUser) {
+                                    // 查看其他用户时，显示该用户的仓库选项和组织选项
+                                    OrgMenuItem(
+                                        login = state.targetUserLogin!!,
+                                        avatarUrl = thumbUrl(state.targetUserAvatar ?: state.currentContext?.avatarUrl),
+                                        selected = state.viewMode == ViewMode.REPOS && (state.currentContext?.isUser ?: true),
+                                        onClick = { 
+                                            vm.switchToUserRepos(state.targetUserLogin!!, state.targetUserAvatar)
+                                            showOrgMenu = false 
+                                        },
+                                        c = c,
+                                    )
+                                    if (state.userOrgs.isNotEmpty()) {
+                                        HorizontalDivider(color = c.border, thickness = 0.5.dp,
+                                            modifier = Modifier.padding(vertical = 4.dp))
+                                        state.userOrgs.forEach { org ->
+                                            val sel = state.currentContext?.login == org.login && !(state.currentContext?.isUser ?: true)
+                                            OrgMenuItem(
+                                                login = org.login,
+                                                avatarUrl = org.avatarUrl,
+                                                selected = sel,
+                                                onClick = {
+                                                    vm.switchContext(OrgContext(org.login, org.avatarUrl, false))
+                                                    showOrgMenu = false
+                                                },
+                                                c = c,
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    // 查看自己时，显示原来的选项
+                                    OrgMenuItem(
+                                        login = state.userLogin,
+                                        avatarUrl = thumbUrl(state.userAvatar),
+                                        selected = state.currentContext == null,
+                                        onClick = { vm.switchContext(null); showOrgMenu = false },
+                                        c = c,
+                                    )
+                                    if (state.userOrgs.isNotEmpty()) {
+                                        HorizontalDivider(color = c.border, thickness = 0.5.dp,
+                                            modifier = Modifier.padding(vertical = 4.dp))
+                                        state.userOrgs.forEach { org ->
+                                            val sel = state.currentContext?.login == org.login
+                                            OrgMenuItem(
+                                                login = org.login,
+                                                avatarUrl = org.avatarUrl,
+                                                selected = sel,
+                                                onClick = {
+                                                    vm.switchContext(OrgContext(org.login, org.avatarUrl, false))
+                                                    showOrgMenu = false
+                                                },
+                                                c = c,
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
+                        val titleText = when {
+                            isViewingOtherUser && state.viewMode == ViewMode.STARRED -> "${state.targetUserLogin} 的星标"
+                            isViewingOtherUser -> state.currentContext?.login ?: state.targetUserLogin ?: "GitMob"
+                            else -> state.currentContext?.login ?: "GitMob"
+                        }
                         Text(
-                            text = state.currentContext?.login ?: "GitMob",
+                            text = titleText,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             fontFamily = FontFamily.Monospace,
@@ -127,14 +222,41 @@ fun RepoListScreen(
                     }
                 },
                 actions = {
-                    // 星标管理按钮
-                    StarModeToggleButton(
-                        active = starState.starModeActive,
-                        onClick = { starVm.toggleStarMode() },
-                    )
-                    if (!starState.starModeActive) {
-                        IconButton(onClick = onCreateRepo) {
-                            Icon(Icons.Default.Add, null, tint = Coral)
+                    if (isViewingOtherUser) {
+                        // 查看其他用户时，显示切换仓库/星标按钮
+                        IconButton(
+                            onClick = {
+                                LogManager.d("RepoListScreen", "点击切换按钮，当前状态: targetUserLogin=${state.targetUserLogin}, viewMode=${state.viewMode}")
+                                if (state.viewMode == ViewMode.REPOS) {
+                                    LogManager.d("RepoListScreen", "从仓库切换到星标，login=${state.targetUserLogin}")
+                                    vm.switchToUserStarred(state.targetUserLogin!!, state.targetUserAvatar)
+                                } else {
+                                    LogManager.d("RepoListScreen", "从星标切换到仓库，login=${state.targetUserLogin}")
+                                    vm.switchToUserRepos(state.targetUserLogin!!, state.targetUserAvatar)
+                                }
+                            }
+                        ) {
+                            Icon(
+                                if (state.viewMode == ViewMode.STARRED) Icons.Default.Folder else Icons.Default.Star,
+                                null,
+                                tint = Coral
+                            )
+                        }
+                    } else {
+                        // 查看自己时，显示原来的星标管理按钮
+                        if (state.viewMode == ViewMode.REPOS) {
+                            StarModeToggleButton(
+                                active = starState.starModeActive,
+                                onClick = { starVm.toggleStarMode() },
+                            )
+                        }
+                        // 只有自己的列表或所属组织列表才显示添加按钮
+                        if (!starState.starModeActive && state.viewMode == ViewMode.REPOS) {
+                            if (listPermission.canManageRepos) {
+                                IconButton(onClick = onCreateRepo) {
+                                    Icon(Icons.Default.Add, null, tint = Coral)
+                                }
+                            }
                         }
                     }
                     if (state.loading || starState.reposLoading) {
@@ -212,9 +334,9 @@ fun RepoListScreen(
                         starVm.selectList(id)
                         if (starState.listsExpanded) starVm.toggleListsExpanded()
                     },
-                    onCreate = { showCreateListDialog = true },
-                    onEdit = { editingList = it },
-                    onDelete = starVm::deleteList,
+                    onCreate = if (starState.isOwnList) { { showCreateListDialog = true } } else null,
+                    onEdit   = if (starState.isOwnList) { { editingList = it } } else null,
+                    onDelete = if (starState.isOwnList) starVm::deleteList else { _ -> },
                     c = c,
                 )
             } else {
@@ -260,8 +382,8 @@ fun RepoListScreen(
                                             val parts = starred.nameWithOwner.split("/")
                                             onRepoClick(parts[0], parts[1])
                                         },
-                                        onRemoveStar = { starVm.removeStar(starred) },
-                                        onClassify = { classifyRepo = starred },
+                                        onRemoveStar = if (starState.isOwnList) { { starVm.removeStar(starred) } } else null,
+                                        onClassify = if (starState.isOwnList) { { classifyRepo = starred } } else null,
                                         c = c,
                                     )
                                 }
@@ -314,6 +436,7 @@ fun RepoListScreen(
                                         onEdit = { desc, site, topics -> vm.editRepo(repo.owner.login, repo.name, desc, site, topics) },
                                         onClone = { url -> onCloneRepo(url) },
                                         c = c,
+                                        canManage = listPermission.canManageRepos,
                                         onForkedRepoClick = { owner, name -> onRepoClick(owner, name) },
                                     )
                                 }
@@ -389,36 +512,40 @@ fun RepoListScreen(
 private fun SwipeableStarredRepoCard(
     repo: StarredRepo,
     onClick: () -> Unit,
-    onRemoveStar: () -> Unit,
-    onClassify: () -> Unit,
+    onRemoveStar: (() -> Unit)?,
+    onClassify: (() -> Unit)?,
     c: GmColors,
 ) {
     var showRemoveConfirm by remember { mutableStateOf(false) }
-    val dismissState = rememberSwipeToDismissBoxState()
+    val dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { totalDistance -> totalDistance * 0.45f },
+    )
     val scope = rememberCoroutineScope()
 
     SwipeToDismissBox(
         state = dismissState,
         enableDismissFromStartToEnd = false,
         onDismiss = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
+            if (value == SwipeToDismissBoxValue.EndToStart && onRemoveStar != null) {
                 showRemoveConfirm = true
             }
-            scope.launch {
-                dismissState.reset()
-            }
+            scope.launch { dismissState.reset() }
         },
         backgroundContent = {
-            val triggered = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
+            // 无论是否有权限都显示背景（只是颜色不同），对齐远程仓库卡片体验
             val color by animateColorAsState(
-                if (triggered) Yellow.copy(alpha = 0.85f) else Color.Transparent,
+                when {
+                    onRemoveStar != null && dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
+                        -> Yellow.copy(alpha = 0.85f)
+                    else -> c.border
+                },
                 label = "swipe_star",
             )
             Box(
                 Modifier.fillMaxSize().background(color, RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                if (triggered) {
+                if (onRemoveStar != null && dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(end = 20.dp),
@@ -448,7 +575,7 @@ private fun SwipeableStarredRepoCard(
             },
             confirmButton = {
                 Button(
-                    onClick = { onRemoveStar(); showRemoveConfirm = false },
+                    onClick = { onRemoveStar?.invoke(); showRemoveConfirm = false },
                     colors = ButtonDefaults.buttonColors(containerColor = Yellow),
                 ) { Text("取消星标", color = Color.Black) }
             },
@@ -466,7 +593,7 @@ private fun SwipeableStarredRepoCard(
 private fun StarredRepoCard(
     repo: StarredRepo,
     onClick: () -> Unit,
-    onClassify: () -> Unit,
+    onClassify: (() -> Unit)?,
     c: GmColors,
 ) {
     Column(
@@ -497,15 +624,17 @@ private fun StarredRepoCard(
             }
             if (repo.isPrivate) GmBadge("私有", RedDim, RedColor)
             Spacer(Modifier.width(4.dp))
-            // 书签按钮 → 打开分类管理 Sheet
-            IconButton(onClick = onClassify, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    Icons.Default.BookmarkAdd,
-                    contentDescription = "分类管理",
-                    tint = if (repo.listIds.isNotEmpty()) Yellow else c.textTertiary,
-                    modifier = Modifier.size(18.dp),
+            // 书签按钮：仅自己的星标列表才显示
+            if (onClassify != null) {
+                IconButton(onClick = onClassify, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        Icons.Default.BookmarkAdd,
+                        contentDescription = "分类管理",
+                        tint = if (repo.listIds.isNotEmpty()) Yellow else c.textTertiary,
+                        modifier = Modifier.size(18.dp),
                 )
             }
+            } // end if onClassify != null
         }
         // 底部信息行
         Spacer(Modifier.height(8.dp))
@@ -543,8 +672,8 @@ private fun StarredRepoCard(
             // 打开的 Issues 数（> 0 才显示，与远程仓库卡片一致）
             if (repo.openIssues > 0) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.Warning, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
-                    Text("${repo.openIssues}", fontSize = 11.sp, color = c.textTertiary)
+                    Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
+                    Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
                 }
             }
             // 默认分支标签（与远程仓库卡片一致）
@@ -589,6 +718,7 @@ fun SwipeableRepoCard(
     onEdit: (String, String, List<String>) -> Unit,
     onClone: (String) -> Unit,
     c: GmColors,
+    canManage: Boolean = true,
     onForkedRepoClick: ((String, String) -> Unit)? = null,
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -601,14 +731,14 @@ fun SwipeableRepoCard(
         state = dismissState,
         enableDismissFromStartToEnd = false,
         onDismiss = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
+            if (value == SwipeToDismissBoxValue.EndToStart && canManage) {
                 showDeleteDialog = true
             }
-            scope.launch {
-                dismissState.reset()
-            }
+            scope.launch { dismissState.reset() }
         },
         backgroundContent = {
+            // 无管理权限时不显示删除背景
+            if (!canManage) return@SwipeToDismissBox
             val color by animateColorAsState(
                 if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) RedColor else c.border,
                 label = "swipe_bg",
@@ -627,12 +757,14 @@ fun SwipeableRepoCard(
             }
         },
     ) {
-        RepoCardContent(repo = repo, onClick = onClick,
-            onRename = { showRenameDialog = true },
-            onEdit = { showEditDialog = true },
-            onClone = { onClone(repo.cloneUrl) },
+        RepoCardContent(
+            repo = repo, onClick = onClick,
+            onRename = if (canManage) { { showRenameDialog = true } } else null,
+            onEdit   = if (canManage) { { showEditDialog = true } } else null,
+            onClone  = { onClone(repo.cloneUrl) },
             c = c,
-            onForkedRepoClick = onForkedRepoClick)
+            onForkedRepoClick = onForkedRepoClick,
+        )
     }
 
     if (showDeleteDialog) {
@@ -667,7 +799,7 @@ fun SwipeableRepoCard(
 private fun RepoCardContent(
     repo: GHRepo,
     onClick: () -> Unit,
-    onRename: () -> Unit,
+    onRename: (() -> Unit)?,
     onEdit: (() -> Unit)?,
     onClone: () -> Unit,
     c: GmColors,
@@ -731,11 +863,13 @@ private fun RepoCardContent(
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false },
                     modifier = Modifier.background(c.bgCard)) {
-                    DropdownMenuItem(
-                        text = { Text("重命名", fontSize = 14.sp, color = c.textPrimary) },
-                        leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null, tint = c.textSecondary, modifier = Modifier.size(16.dp)) },
-                        onClick = { onRename(); showMenu = false },
-                    )
+                    if (onRename != null) {
+                        DropdownMenuItem(
+                            text = { Text("重命名", fontSize = 14.sp, color = c.textPrimary) },
+                            leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null, tint = c.textSecondary, modifier = Modifier.size(16.dp)) },
+                            onClick = { onRename(); showMenu = false },
+                        )
+                    }
                     if (onEdit != null) {
                         DropdownMenuItem(
                             text = { Text("编辑信息", fontSize = 14.sp, color = c.textPrimary) },
@@ -789,8 +923,8 @@ private fun RepoCardContent(
             }
             if (repo.openIssues > 0) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.ErrorOutline, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
-                    Text("${repo.openIssues}", fontSize = 11.sp, color = c.textTertiary)
+                    Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
+                    Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
                 }
             }
             Spacer(Modifier.weight(1f))

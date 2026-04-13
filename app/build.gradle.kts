@@ -8,6 +8,7 @@ android {
     namespace = "com.gitmob.android"
     compileSdk = 36
     ndkVersion = "29.0.14206865"
+    ndkPath = "D:/15268/Desktop/android-ndk-r29"
 
     defaultConfig {
         applicationId = "com.gitmob.android"
@@ -94,8 +95,19 @@ android {
 }
 
 dependencies {
+    // 强制统一 Cronet 版本，修复 namespace 冲突
+    constraints {
+        implementation("org.chromium.net:cronet-api:143.7445.0") {
+            because("修复 namespace 冲突")
+        }
+        implementation("org.chromium.net:cronet-shared:143.7445.0") {
+            because("修复 namespace 冲突")
+        }
+    }
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
@@ -118,6 +130,9 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.svg)
     implementation(libs.kotlinx.coroutines.android)
+    // Cronet - Chromium 网络栈，支持 HTTP/3 over QUIC
+    implementation(libs.cronet.play.services)
+    implementation(libs.cronet.okhttp)
     // JGit：纯 Java Git 实现，无需外部 git 可执行文件
     implementation(libs.jgit)
     implementation(libs.jgit.apache.http)

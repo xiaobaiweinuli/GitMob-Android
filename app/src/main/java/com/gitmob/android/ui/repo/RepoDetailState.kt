@@ -35,8 +35,24 @@ data class RepoDetailState(
     val loading: Boolean = false,
     val contentsLoading: Boolean = false,
     val error: String? = null,
+    /** 仓库已被删除（HTTP 404），供收藏场景显示提示 */
+    val repoNotFound: Boolean = false,
     val tab: Int = 0,
     val prs: List<GHPullRequest> = emptyList(),
+    val labels: List<GHLabel> = emptyList(),
+    // PR 筛选状态
+    val prFilterState: PRFilterState = PRFilterState(),
+    // PR 分页
+    val prsPage: Int = 1,
+    val prsHasMore: Boolean = false,
+    val prsLoadingMore: Boolean = false,
+    // PR 详情（当前打开的 PR）
+    val selectedPR: GHPullRequest? = null,
+    val prReviews: List<GHReview> = emptyList(),
+    val prComments: List<GHComment> = emptyList(),
+    val prDetailLoading: Boolean = false,
+    val prOpInProgress: Boolean = false,
+    val prOpResult: String? = null,   // 成功/失败消息
     val issues: List<GHIssue> = emptyList(),
     val selectedCommit: GHCommitFull? = null,
     val commitDetailLoading: Boolean = false,
@@ -81,6 +97,17 @@ data class RepoDetailState(
     val issuesPage: Int = 1,
     val issuesHasMore: Boolean = false,
     val issuesLoadingMore: Boolean = false,
+    // Discussions（GraphQL only）
+    val discussions: List<GHDiscussion> = emptyList(),
+    val discussionCategories: List<GHDiscussionCategory> = emptyList(),
+    val discussionsLoading: Boolean = false,
+    val discussionsLoadingMore: Boolean = false,
+    val discussionsHasMore: Boolean = false,
+    val discussionsCursor: String? = null,
+    val discussionCategoryFilter: String? = null,  // categoryId
+    val discussionAnsweredFilter: Boolean? = null,   // null=全部 true=已回答 false=未回答
+    val discussionFilterState: DiscussionFilterState = DiscussionFilterState(),
+    val discussionsRefreshing: Boolean = false,
     // README
     val readmeLoading: Boolean = false,
     val readmeContent: String? = null,
@@ -224,6 +251,23 @@ enum class IssueSortBy(val displayName: String, val sort: String, val direction:
     UPDATED_ASC("最早更新", "updated", "asc"),
     COMMENTS_DESC("最多评论", "comments", "desc"),
     COMMENTS_ASC("最少评论", "comments", "asc");
+}
+
+/**
+ * Discussion筛选状态
+ */
+data class DiscussionFilterState(
+    val sortBy: DiscussionSortBy = DiscussionSortBy.UPDATED_DESC,
+    val selectedCreator: String? = null,
+    val selectedLabels: Set<String> = emptySet(),
+)
+
+/**
+ * Discussion排序方式（sort + direction）
+ */
+enum class DiscussionSortBy(val displayName: String, val apiValue: String) {
+    UPDATED_DESC("最近更新", "UPDATED_AT"),
+    CREATED_DESC("最新创建", "CREATED_AT");
 }
 
 /** Reset / Revert 操作结果 */

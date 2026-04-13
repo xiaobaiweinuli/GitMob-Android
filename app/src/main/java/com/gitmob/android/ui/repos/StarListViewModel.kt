@@ -9,6 +9,8 @@ import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
+import com.gitmob.android.util.LanguageEntry
+
 private const val TAG = "StarListVM"
 
 // ─── 缓存配置 ──────────────────────────────────────────────────────────────────
@@ -27,7 +29,7 @@ private data class RepoCacheEntry(
 
 data class StarListState(
     val starModeActive: Boolean = false,
-    val starSearchQuery: String = "",   // 星标模式独立搜索，与远程仓库搜索隔离
+    val starSearchQuery: String = "",
     val userLists: List<UserList> = emptyList(),
     val listsLoading: Boolean = false,
     val listsExpanded: Boolean = false,
@@ -38,6 +40,8 @@ data class StarListState(
     val endCursor: String? = null,
     val filterState: StarFilterState = StarFilterState(),
     val toast: String? = null,
+    /** 当前展示的是登录用户自己的星标列表（为 false 时隐藏取消星标/书签/添加列表操作） */
+    val isOwnList: Boolean = true,
 )
 
 class StarListViewModel(app: Application) : AndroidViewModel(app) {
@@ -75,11 +79,13 @@ class StarListViewModel(app: Application) : AndroidViewModel(app) {
         if (entering) {
             _state.update { it.copy(starModeActive = true, selectedListId = null) }
             viewModelScope.launch {
-                // 先加载 UserList
-                loadUserLists(force = false).join()
-                // 加载全部星标（建立 repoToListIds 的基础数据）
-                loadStarredRepos(force = false)
+                // 同时启动加载 UserList 和 StarredRepos，不互相等待
+                launch { loadUserLists(force = false) }
+                launch { loadStarredRepos(force = false) }
                 // 后台静默预加载各列表，建立 repoToListIds 反向映射
+                // 等待 UserList 加载完成后再预加载各列表
+                val listsJob = loadUserLists(force = false)
+                listsJob.join()
                 val lists = _state.value.userLists
                 lists.forEach { list ->
                     // 只有缓存未命中时才请求
@@ -335,14 +341,17 @@ class StarListViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 手动强制刷新当前页（下拉刷新用） */
+    /** 增量刷新：只使第一页缓存失效，保留 repoToListIds 映射，避免 UI 闪烁 */
     fun refresh() {
         val listId = _state.value.selectedListId
+        // 只清除当前展示的 listId 对应的第一页缓存，不清 repoToListIds
         reposCache.remove(listId)
-        repoToListIds.clear()   // 重置映射，让下次加载重新建立
+        // UserList 元数据也刷新（可能有新建/删除）
         listsCache = null
-        loadUserLists(force = true)
-        loadStarredRepos(force = true)
+        viewModelScope.launch {
+            loadUserLists(force = true).join()
+            loadStarredRepos(force = true)
+        }
     }
 
     fun setStarSearch(q: String) = _state.update { it.copy(starSearchQuery = q) }
@@ -358,8 +367,8 @@ class StarListViewModel(app: Application) : AndroidViewModel(app) {
     }
     
     /** 设置语言筛选 */
-    fun setStarLanguageFilter(language: String?) = _state.update { 
-        it.copy(filterState = it.filterState.copy(languageFilter = language)) 
+    fun setStarLanguageFilter(entry: LanguageEntry?) = _state.update {
+        it.copy(filterState = it.filterState.copy(languageFilter = entry))
     }
     
     /** 清除所有筛选 */

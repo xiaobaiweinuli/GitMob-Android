@@ -24,3 +24,8 @@ local.properties
 # Secrets
 *.env
 .env.local
+# 其他
+docs
+*.txt
+.trae
+.kotlin

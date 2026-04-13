@@ -535,6 +535,9 @@ fun CommitMessageDialog(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("提交信息") },
                 placeholder = { Text("Describe your changes...", color = c.textTertiary) },
+                singleLine = false,
+                minLines = 2,
+                maxLines = 5,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Coral,
                     unfocusedBorderColor = c.border,
