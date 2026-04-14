@@ -468,6 +468,8 @@ fun ReleaseCard(
                                 Text("${dlPct}%", fontSize = 10.sp, color = Coral)
                             } else if (isDone) {
                                 Text("点击打开", fontSize = 10.sp, color = Green)
+                            } else {
+                                Text(formatSize(asset.size), fontSize = 10.sp, color = c.textTertiary)
                             }
                         }
                         when {

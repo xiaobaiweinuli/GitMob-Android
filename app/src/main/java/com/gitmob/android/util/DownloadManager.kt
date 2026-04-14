@@ -3,12 +3,14 @@ package com.gitmob.android.util
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.gitmob.android.api.ApiClient
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -206,30 +209,94 @@ object GmDownloadManager {
     }
 
     private suspend fun streamToFile(ctx: Context, task: DownloadTask, resp: okhttp3.Response) {
-        val body  = resp.body ?: error("响应体为空")
+        val body = resp.body ?: error("响应体为空")
         val total = body.contentLength()
         var written = 0L
-        val dest = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            task.filename)
 
-        body.byteStream().use { input ->
-            dest.outputStream().use { output ->
-                val buf = ByteArray(64 * 1024)
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    val n = input.read(buf)
-                    if (n == -1) break
-                    output.write(buf, 0, n)
-                    written += n
-                    val pct = if (total > 0) (written * 100 / total).toInt() else -1
-                    task.statusFlow.value = DownloadStatus.Progress(pct, written, total)
-                    if (pct >= 0 && pct % 5 == 0) postNotifProgress(ctx, task, pct)
+        val destFile: File
+        val uniqueFilename = getUniqueFilename(ctx, task.filename)
+        var outputStream: OutputStream
+        var downloadUri: android.net.Uri? = null
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, uniqueFilename)
+                put(MediaStore.Downloads.MIME_TYPE, "*/*")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+
+            downloadUri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                ?: error("无法创建 MediaStore 条目")
+
+            outputStream = ctx.contentResolver.openOutputStream(downloadUri) ?: error("无法打开输出流")
+            destFile = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), uniqueFilename)
+        } else {
+            destFile = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                uniqueFilename
+            )
+            outputStream = destFile.outputStream()
+        }
+
+        try {
+            body.byteStream().use { input ->
+                outputStream.use { output ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val n = input.read(buf)
+                        if (n == -1) break
+                        output.write(buf, 0, n)
+                        written += n
+                        val pct = if (total > 0) (written * 100 / total).toInt() else -1
+                        task.statusFlow.value = DownloadStatus.Progress(pct, written, total)
+                        if (pct >= 0 && pct % 5 == 0) postNotifProgress(ctx, task, pct)
+                    }
                 }
             }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && downloadUri != null) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.IS_PENDING, 0)
+                }
+                ctx.contentResolver.update(downloadUri, contentValues, null, null)
+            }
+        } finally {
+            outputStream.close()
         }
-        task.statusFlow.value = DownloadStatus.Success(dest)
-        postNotifSuccess(ctx, task, dest)
+
+        task.statusFlow.value = DownloadStatus.Success(destFile)
+        postNotifSuccess(ctx, task, destFile)
+    }
+
+    /**
+     * 生成唯一的文件名，如果已存在则添加序号 (1), (2), ...
+     */
+    private fun getUniqueFilename(ctx: Context, originalFilename: String): String {
+        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+
+        val file = File(downloadDir, originalFilename)
+        if (!file.exists()) {
+            return originalFilename
+        }
+
+        val nameWithoutExt = originalFilename.substringBeforeLast(".")
+        val ext = originalFilename.substringAfterLast(".", "")
+
+        var index = 1
+        while (true) {
+            val newName = if (ext.isEmpty()) {
+                "$nameWithoutExt ($index)"
+            } else {
+                "$nameWithoutExt ($index).$ext"
+            }
+            val newFile = File(downloadDir, newName)
+            if (!newFile.exists()) {
+                return newName
+            }
+            index++
+        }
     }
 
     // ── 通知────────────────────────────────────────────────────────

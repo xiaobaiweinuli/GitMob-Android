@@ -21,8 +21,8 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
     fun install(context: Context) {
         defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler(this)
-        crashDir = File(context.filesDir, "logs").also { it.mkdirs() }
-        LogManager.i("CrashHandler", "崩溃捕获器已安装")
+        crashDir = context.getExternalFilesDir("logs").also { it?.mkdirs() }
+        LogManager.i("CrashHandler", "崩溃捕获器已安装，目录：${crashDir?.absolutePath}")
     }
 
     override fun uncaughtException(thread: Thread, ex: Throwable) {

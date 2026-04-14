@@ -61,8 +61,10 @@ class GitMobApp : Application() {
         }
         // 3. 初始化网络状态监听
         initNetworkMonitor()
-        // 4. 创建 Cronet 引擎
-        _cronetEngine = org.chromium.net.CronetEngine.Builder(this).build()
+        // 4. 创建 Cronet 引擎（禁用 QUIC，因为 GitHub API 不支持）
+        _cronetEngine = org.chromium.net.CronetEngine.Builder(this)
+            .enableQuic(false)
+            .build()
         // 5. 初始化 ApiClient
         ApiClient.init(tokenStorage)
         // 6. 初始化 Coil3（OkHttp 网络 + SVG 解码支持）
@@ -128,7 +130,9 @@ class GitMobApp : Application() {
      */
     fun restartCronetEngine() {
         _cronetEngine?.shutdown()
-        _cronetEngine = org.chromium.net.CronetEngine.Builder(this).build()
+        _cronetEngine = org.chromium.net.CronetEngine.Builder(this)
+            .enableQuic(false)
+            .build()
         ApiClient.rebuild()
         LogManager.i("App", "Cronet 引擎已重启")
     }

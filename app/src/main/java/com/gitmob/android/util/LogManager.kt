@@ -50,9 +50,9 @@ object LogManager {
 
     fun init(context: Context, level: LogLevel = LogLevel.DEBUG) {
         minLevel = level
-        logDir = File(context.filesDir, "logs").also { it.mkdirs() }
+        logDir = context.getExternalFilesDir("logs").also { it?.mkdirs() }
         pruneOldLogs()
-        i("LogManager", "日志系统初始化，等级：${level.name}")
+        i("LogManager", "日志系统初始化，等级：${level.name}，目录：${logDir?.absolutePath}")
     }
 
     fun setLevel(level: LogLevel) {

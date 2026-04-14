@@ -20,8 +20,8 @@ android {
         versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
         versionName = System.getenv("VERSION_NAME") ?: "1.0.0"
         // OAuth 凭据：CI 通过环境变量注入，本地开发时回退占位符
-        val oauthClientId  = System.getenv("OAUTH_CLIENT_ID")  ?: "Ov23liP9mC2HXALHsFpk"
-        val oauthCallback  = System.getenv("OAUTH_CALLBACK_URL") ?: "https://gitmob.16618888.xyz"
+        val oauthClientId  = System.getenv("OAUTH_CLIENT_ID")  ?: "YOUR_GITHUB_CLIENT_ID"
+        val oauthCallback  = System.getenv("OAUTH_CALLBACK_URL") ?: "YOUR_OAUTH_CALLBACK_URL"
         buildConfigField("String", "GITHUB_CLIENT_ID",  "\"$oauthClientId\"")
         buildConfigField("String", "OAUTH_REDIRECT_URI", "\"$oauthCallback/callback\"")
         manifestPlaceholders["appScheme"] = "gitmob"

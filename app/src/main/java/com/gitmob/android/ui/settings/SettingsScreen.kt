@@ -187,18 +187,36 @@ fun SettingsScreen(
 
     // 导出日志：用文件选择器选择保存目录
     if (showExportLogPicker) {
-        com.gitmob.android.ui.filepicker.FilePickerScreen(
-            title       = "选择日志导出目录",
-            mode        = com.gitmob.android.ui.filepicker.PickerMode.DIRECTORY,
-            rootEnabled = rootEnabled,
-            onConfirm   = { dir, _ ->
+        LogManager.d("Settings", "FilePickerScreen 正在显示，showExportLogPicker=true")
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = {
+                LogManager.d("Settings", "Dialog onDismissRequest 被调用")
                 showExportLogPicker = false
-                scope.launch {
-                    exportLogs(dir)
-                }
             },
-            onDismiss = { showExportLogPicker = false },
-        )
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false
+            )
+        ) {
+            com.gitmob.android.ui.filepicker.FilePickerScreen(
+                title       = "选择日志导出目录",
+                mode        = com.gitmob.android.ui.filepicker.PickerMode.DIRECTORY,
+                rootEnabled = rootEnabled,
+                onConfirm   = { dir, _ ->
+                    LogManager.d("Settings", "FilePickerScreen 确认选择目录: $dir")
+                    showExportLogPicker = false
+                    scope.launch {
+                        LogManager.d("Settings", "开始调用 exportLogs 函数")
+                        exportLogs(dir)
+                    }
+                },
+                onDismiss = {
+                    LogManager.d("Settings", "FilePickerScreen 被关闭")
+                    showExportLogPicker = false
+                },
+            )
+        }
     }
 
     Scaffold(
@@ -642,7 +660,11 @@ fun SettingsScreen(
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, null,
                             tint = c.textTertiary, modifier = Modifier.size(16.dp))
                     },
-                    onClick = { showExportLogPicker = true },
+                    onClick = {
+                        LogManager.d("Settings", "导出日志按钮被点击，showExportLogPicker=$showExportLogPicker")
+                        showExportLogPicker = true
+                        LogManager.d("Settings", "showExportLogPicker 已设置为 true")
+                    },
                     c = c,
                 )
 
@@ -995,26 +1017,55 @@ private fun AboutLinkRow(
  * 若内存队列有日志但文件不存在，先把内存日志落盘再复制。
  */
 private suspend fun exportLogs(destDir: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    LogManager.d("Settings", "exportLogs 开始执行，目标目录: $destDir")
     try {
-        val logFile = LogManager.currentLogFile() ?: return@withContext
+        LogManager.d("Settings", "正在调用 LogManager.currentLogFile()")
+        val logFile = LogManager.currentLogFile()
+        LogManager.d("Settings", "LogManager.currentLogFile() 返回: $logFile")
+        
+        if (logFile == null) {
+            LogManager.e("Settings", "logFile 为 null，无法导出日志")
+            return@withContext
+        }
+        
+        LogManager.d("Settings", "日志文件路径: ${logFile.absolutePath}")
+        LogManager.d("Settings", "日志文件是否存在: ${logFile.exists()}")
+        
         // 若文件尚不存在，把内存队列强制写盘
         if (!logFile.exists()) {
+            LogManager.d("Settings", "日志文件不存在，尝试从内存队列落盘")
             val entries = LogManager.recent(5000)
-            if (entries.isEmpty()) return@withContext
+            LogManager.d("Settings", "从内存队列获取到 ${entries.size} 条日志")
+            
+            if (entries.isEmpty()) {
+                LogManager.w("Settings", "内存队列为空，没有日志可导出")
+                return@withContext
+            }
+            
+            LogManager.d("Settings", "创建日志文件目录: ${logFile.parentFile?.absolutePath}")
             logFile.parentFile?.mkdirs()
+            
+            LogManager.d("Settings", "开始写入日志文件")
             logFile.bufferedWriter().use { w ->
                 entries.reversed().forEach { e ->
                     w.write("${e.time} [${e.level.tag}] ${e.tag}: ${e.msg}")
                     w.newLine()
                 }
             }
+            LogManager.d("Settings", "日志文件写入完成")
         }
+        
         val dest = java.io.File(destDir, logFile.name)
+        LogManager.d("Settings", "目标文件路径: ${dest.absolutePath}")
+        
+        LogManager.d("Settings", "开始复制文件...")
         logFile.copyTo(dest, overwrite = true)
         LogManager.i("Settings", "日志已导出到 ${dest.absolutePath}")
+        
     } catch (e: Exception) {
         LogManager.e("Settings", "日志导出失败", e)
     }
+    LogManager.d("Settings", "exportLogs 执行结束")
 }
 
 // ─── 通用子组件 ────────────────────────────────────────────────────────────────
