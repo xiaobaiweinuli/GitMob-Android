@@ -10,6 +10,17 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
+ * 认证类型：OAuth 授权登录 或 Token 手动登录
+ */
+enum class AuthType {
+    @SerializedName("oauth")
+    OAUTH,  // OAuth 授权登录（默认）
+    
+    @SerializedName("token")
+    TOKEN   // 手动 Token 登录
+}
+
+/**
  * 单个账号的完整信息（token 明文存储，与现有单账号模式一致）
  *
  * 所有字段均标注 @SerializedName，确保 R8 混淆后 Gson 仍能按 JSON key 正确反序列化，
@@ -21,6 +32,7 @@ data class AccountInfo(
     @SerializedName("email")     val email: String,
     @SerializedName("avatarUrl") val avatarUrl: String,
     @SerializedName("token")     val token: String,
+    @SerializedName("authType")  val authType: AuthType = AuthType.OAUTH,
 ) {
     val displayName: String get() = name.ifBlank { login }
 }

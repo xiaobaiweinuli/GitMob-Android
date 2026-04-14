@@ -2,7 +2,9 @@ package com.gitmob.android.ui.update
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
@@ -16,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.gitmob.android.ui.common.GmMarkdownWebView
 import com.gitmob.android.ui.theme.*
 import com.gitmob.android.util.UpdateManager
 
@@ -88,6 +89,7 @@ fun UpdateDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
                     Text(
                         text = "更新日志",
@@ -96,9 +98,11 @@ fun UpdateDialog(
                         color = c.textPrimary,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    GmMarkdownWebView(
-                        markdown = release.body,
-                        modifier = Modifier.fillMaxWidth().weight(1f)
+                    Text(
+                        text = release.body,
+                        fontSize = 13.sp,
+                        color = c.textSecondary,
+                        lineHeight = 20.sp
                     )
                 }
 

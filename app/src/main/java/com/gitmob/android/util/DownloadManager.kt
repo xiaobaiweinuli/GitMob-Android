@@ -338,8 +338,6 @@ object GmDownloadManager {
 
         val pi = PendingIntent.getActivity(ctx, task.id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
-        NotificationManagerCompat.from(ctx).cancel(task.id)
-
         val notif = NotificationCompat.Builder(ctx, CHANNEL_RESULT)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle(if (isApk) "下载完成，点击安装" else "下载完成")
@@ -357,8 +355,6 @@ object GmDownloadManager {
     }
 
     private fun postNotifFailed(ctx: Context, task: DownloadTask, msg: String) {
-        NotificationManagerCompat.from(ctx).cancel(task.id)
-
         val notif = NotificationCompat.Builder(ctx, CHANNEL_RESULT)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentTitle("下载失败")

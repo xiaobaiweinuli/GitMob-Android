@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
+import com.gitmob.android.auth.AccountInfo
+import com.gitmob.android.auth.AuthType
 import com.gitmob.android.auth.RootManager
 import com.gitmob.android.auth.ThemeMode
 import com.gitmob.android.auth.TokenStorage
@@ -95,6 +97,9 @@ fun SettingsScreen(
     val accountStore = remember { com.gitmob.android.auth.AccountStore(context) }
     val allAccounts by accountStore.accounts.collectAsState(initial = emptyList())
     val activeLogin by tokenStorage.userLogin.collectAsState(initial = null)
+    val activeAccount = remember(allAccounts, activeLogin) {
+        allAccounts.find { it.login == activeLogin }
+    }
     var accountCardExpanded by remember { mutableStateOf(false) }
 
     var rootCheckMsg by remember { mutableStateOf<String?>(null) }
@@ -318,11 +323,29 @@ fun SettingsScreen(
                                 .background(c.bgItem),
                         )
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                profile!!.second,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp, color = c.textPrimary,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(
+                                    profile!!.second,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp, color = c.textPrimary,
+                                )
+                                if (activeAccount?.authType == AuthType.TOKEN) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        shape = RoundedCornerShape(4.dp),
+                                    ) {
+                                        Text(
+                                            "Token",
+                                            fontSize = 10.sp, fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        )
+                                    }
+                                }
+                            }
                             Text(
                                 "@${profile!!.first}",
                                 fontSize = 12.sp, color = c.textSecondary,
@@ -373,12 +396,30 @@ fun SettingsScreen(
                                                 .background(c.bgItem),
                                         )
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                account.displayName,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = c.textPrimary,
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                Text(
+                                                    account.displayName,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = c.textPrimary,
+                                                )
+                                                if (account.authType == AuthType.TOKEN) {
+                                                    Surface(
+                                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                                        shape = RoundedCornerShape(4.dp),
+                                                    ) {
+                                                        Text(
+                                                            "Token",
+                                                            fontSize = 9.sp, fontWeight = FontWeight.Medium,
+                                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                                        )
+                                                    }
+                                                }
+                                            }
                                             Text(
                                                 "@${account.login}",
                                                 fontSize = 11.sp, color = c.textSecondary,
@@ -762,51 +803,69 @@ fun SettingsScreen(
             // ── 账号操作 ──────────────────────────────────────
             SLabel("账号操作", c)
             SCard(c) {
-                // 退出登录：仅撤销当前 Token，授权 Grant 保留
-                SRow(
-                    title      = "退出登录",
-                    subtitle   = "撤销当前 Token，授权记录保留",
-                    titleColor = RedColor,
-                    leadingIcon = {
-                        SIconBox(
-                            color = androidx.compose.ui.graphics.Color(0x22F87171),
-                            icon  = Icons.AutoMirrored.Filled.Logout,
-                            tint  = RedColor,
-                        )
-                    },
-                    onClick = { showLogoutDialog = true }, c = c,
-                )
-                HorizontalDivider(
-                    color     = c.border,
-                    thickness = 0.5.dp,
-                    modifier  = Modifier.padding(horizontal = 12.dp),
-                )
-                // 取消所有授权：彻底删除 Grant，需重新完整授权
-                SRow(
-                    title      = "取消所有授权",
-                    subtitle   = "彻底移除 GitMob 的 GitHub 授权",
-                    titleColor = RedColor,
-                    leadingIcon = {
-                        SIconBox(
-                            color = androidx.compose.ui.graphics.Color(0x22F87171),
-                            icon  = Icons.Default.NoAccounts,
-                            tint  = RedColor,
-                        )
-                    },
-                    onClick = { showRevokeDialog = true }, c = c,
-                )
+                if (activeAccount?.authType == AuthType.TOKEN) {
+                    // Token 账号：只显示移除账号
+                    SRow(
+                        title      = "移除账号",
+                        subtitle   = "从本地移除该 Token 账号",
+                        titleColor = RedColor,
+                        leadingIcon = {
+                            SIconBox(
+                                color = androidx.compose.ui.graphics.Color(0x22F87171),
+                                icon  = Icons.AutoMirrored.Filled.Logout,
+                                tint  = RedColor,
+                            )
+                        },
+                        onClick = { showLogoutDialog = true }, c = c,
+                    )
+                } else {
+                    // OAuth 账号：显示退出登录和取消授权
+                    SRow(
+                        title      = "退出登录",
+                        subtitle   = "撤销当前 Token，授权记录保留",
+                        titleColor = RedColor,
+                        leadingIcon = {
+                            SIconBox(
+                                color = androidx.compose.ui.graphics.Color(0x22F87171),
+                                icon  = Icons.AutoMirrored.Filled.Logout,
+                                tint  = RedColor,
+                            )
+                        },
+                        onClick = { showLogoutDialog = true }, c = c,
+                    )
+                    HorizontalDivider(
+                        color     = c.border,
+                        thickness = 0.5.dp,
+                        modifier  = Modifier.padding(horizontal = 12.dp),
+                    )
+                    SRow(
+                        title      = "取消所有授权",
+                        subtitle   = "彻底移除 GitMob 的 GitHub 授权",
+                        titleColor = RedColor,
+                        leadingIcon = {
+                            SIconBox(
+                                color = androidx.compose.ui.graphics.Color(0x22F87171),
+                                icon  = Icons.Default.NoAccounts,
+                                tint  = RedColor,
+                            )
+                        },
+                        onClick = { showRevokeDialog = true }, c = c,
+                    )
+                }
             }
 
             // ── 退出登录确认弹窗 ──
             if (showLogoutDialog) {
+                val isTokenAccount = activeAccount?.authType == AuthType.TOKEN
                 AlertDialog(
                     onDismissRequest = { showLogoutDialog = false },
                     containerColor   = c.bgCard,
                     icon  = { Icon(Icons.AutoMirrored.Filled.Logout, null, tint = RedColor) },
-                    title = { Text("退出登录", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
+                    title = { Text(if (isTokenAccount) "移除账号" else "退出登录", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
                     text  = {
                         Text(
-                            "将撤销当前 Token 并退出登录。\n\nGitHub 授权记录保留，下次可快速重新登录。",
+                            if (isTokenAccount) "将从本地移除该 Token 账号。" 
+                            else "将撤销当前 Token 并退出登录。\n\nGitHub 授权记录保留，下次可快速重新登录。",
                             fontSize = 14.sp, color = c.textSecondary, lineHeight = 22.sp,
                         )
                     },
@@ -816,8 +875,8 @@ fun SettingsScreen(
                                 showLogoutDialog = false
                                 scope.launch {
                                     val token = tokenStorage.accessToken.first()
-                                    // 撤销服务端 token（结果不影响本地清除流程）
-                                    if (!token.isNullOrBlank()) {
+                                    // 只有 OAuth 账号才撤销服务端 token
+                                    if (!isTokenAccount && !token.isNullOrBlank()) {
                                         com.gitmob.android.auth.OAuthManager.revokeToken(token)
                                     }
                                     val login = activeLogin
@@ -842,7 +901,7 @@ fun SettingsScreen(
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = RedColor),
-                        ) { Text("退出登录") }
+                        ) { Text(if (isTokenAccount) "移除" else "退出登录") }
                     },
                     dismissButton = {
                         TextButton(onClick = { showLogoutDialog = false }) {
@@ -853,7 +912,7 @@ fun SettingsScreen(
             }
 
             // ── 取消所有授权确认弹窗 ──
-            if (showRevokeDialog) {
+            if (showRevokeDialog && activeAccount?.authType != AuthType.TOKEN) {
                 AlertDialog(
                     onDismissRequest = { showRevokeDialog = false },
                     containerColor   = c.bgCard,

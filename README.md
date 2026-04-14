@@ -14,6 +14,7 @@
 
 ### 远程仓库管理
 - **OAuth 2.0 安全认证** — Cloudflare Worker 中转，client_secret 永不暴露在客户端
+- **Token 登录支持** — 支持使用 Personal Access Token 直接登录
 - **多账号管理** — 支持账号切换与新增，DataStore 持久化存储
 - **仓库操作** — 搜索、筛选（公开/私有）、Star/Unstar、语言标签
 - **文件管理** — 文件树浏览、在线编辑/删除、提交、历史记录与 diff 对比
@@ -166,6 +167,60 @@ GitMob 采用安全的 OAuth 2.0 认证流程，通过 Cloudflare Worker 中转�
 6. DataStore 持久化存储 → 所有 API 请求携带 Bearer token
 ```
 
+## Token 登录
+
+GitMob 也支持使用 GitHub Personal Access Token 直接登录，无需 OAuth 授权流程：
+
+### Token 权限要求
+
+Token 必须包含以下权限：
+- `repo` - 仓库读写权限
+- `workflow` - GitHub Actions 工作流权限
+- `user` - 用户信息权限
+- `notifications` - 通知权限
+- `admin:public_key` - 公钥管理权限
+- `delete_repo` - 删除仓库权限
+
+### 创建 Token
+
+1. 访问 [GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)
+2. 点击 "Generate new token" → "Generate new token (classic)"
+3. 勾选上述所有权限
+4. 点击 "Generate token"
+5. 复制生成的 token（仅显示一次）
+
+### 使用 Token 登录
+
+1. 在登录页面点击 "使用 Token 登录" 按钮
+2. 粘贴生成的 Personal Access Token
+3. 点击 "登录"，App 会自动验证 Token 有效性和权限范围
+4. 验证成功后即可使用
+
+### 账号区分
+
+- OAuth 登录的账号在账号列表中显示为普通账号
+- Token 登录的账号在账号列表中会显示 "Token" 标签
+- Token 登录的账号在设置页面仅显示 "移除账号" 选项，不显示 OAuth 相关的注销操作
+
+### 重复登录检测
+
+GitMob 支持智能检测同一用户的重复登录场景，并提供友好的选择：
+
+1. **Token 登录 → 检测 OAuth 账号**
+   - 如果检测到已有同一用户的 OAuth 账号，会询问是否撤销原 OAuth Token
+   - 提供三个选项：撤销并使用 Token、保留 OAuth 继续、取消
+   
+2. **OAuth 登录 → 检测 Token 账号**
+   - 如果检测到已有同一用户的 Token 账号，会提示 Token 无法自动撤销
+   - 提供两个选项：使用 OAuth（保留 Token）、保持 Token（撤销 OAuth）
+   
+3. **OAuth 登录 → 检测旧 OAuth 账号**
+   - 如果检测到已有同一用户的旧 OAuth 账号，会询问是否替换
+   - 提供两个选项：使用新 OAuth（撤销旧 OAuth）、保持旧 OAuth（撤销新 OAuth）
+   
+4. **相同 Token 检测**
+   - 如果输入的 Token 已存在于账号列表中，直接切换账号，无需弹窗
+
 ### 注销机制
 
 - **退出登录**：撤销当前 token（`DELETE /token`），授权记录保留，下次可快速重新登录
@@ -225,6 +280,7 @@ GitMob-Android/
 │   ├── auth/               # 认证与授权
 │   │   ├── AccountStore.kt        # 多账号管理
 │   │   ├── OAuthManager.kt        # OAuth 2.0 认证管理
+│   │   ├── TokenLoginManager.kt   # Token 登录验证与权限检查
 │   │   ├── RootManager.kt         # Root 权限管理
 │   │   └── TokenStorage.kt        # Token 持久化存储
 │   │

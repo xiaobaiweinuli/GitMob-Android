@@ -58,16 +58,25 @@
 
 ---
 
-### 8. 登录与账号管理增强
-- [ ] **新增 Token 登录功能**
-  - 在登录页面及设置「添加账号」页面，增加使用 Token 登录的入口
-  - **权限校验逻辑**：
-    - 调用 GitHub API (https://api.github.com) 进行权限预检
-    - 通过响应头中的 `x-oauth-scopes` 字段检测 Token 权限范围
-    - **必须包含权限**：`admin:public_key`, `delete_repo`, `notifications`, `repo`, `user`, `workflow`
-    - **异常处理**：
-      - 若返回 `401 Unauthorized`，提示 Token 无效、过期或已被撤销
-      - 若权限不全，需弹窗明确提示具体缺少的权限项
+### 8 认证体系全面重构：GitHub App 与后端架构升级
+- [ ] **多模式认证体系重构 (Client)**
+  - **GitHub App 深度集成**：在现有 OAuth App 基础上，增加对 GitHub App 认证模式的支持（包含私钥签名 JWT 及权限安装流）。
+  - **Token 刷新机制机制**：
+    - 实现基于 `refresh_token` 的自动续期逻辑。
+    - 拦截器增加感知逻辑：检测 Token 过期状态并自动触发刷新，确保用户使用无感。
+  - **数据层适配**：重构持久化加密存储，增加对 `refresh_token` 和 `expires_at` 等生命周期字段的管理在，确保刷新过程中的原子性。
+
+- [ ] **Worker 项目重构：多模式适配 (Backend)**
+  - **双协议支持**：重构 Cloudflare Worker 代码，确保一套代码同时支持 OAuth App 和 GitHub App 的回调逻辑与密钥管理。
+  - **落地页路由重组**：
+    - 重新定义落地页路径，明确划分为 `/oauth/` 和 `/github/` 两个独立入口。
+    - **API 路径映射**：所有 API 请求均在落地页路径后追加（如 `/oauth/callback` 或 `/github/callback`）。
+    - **后端统一封装**：重构核心逻辑层，使一套 Worker 代码通过环境变量动态适配两套 Client ID 与 Secret 体系。
+
+- [ ] **API 适配与交互优化**
+  - **动态 BaseURL**：Retrofit 需根据当前用户选择的登录模式，动态指向对应的落地页 API 根路径。
+  - **授权 UI 升级**：登录界面增加「GitHub App 认证」选项，并与新的后端落地页地址完成对接。
+  - 完善授权后的撤销与重新授权流程，确保两套体系的 Token 存储互不干扰。
 
 ---
 

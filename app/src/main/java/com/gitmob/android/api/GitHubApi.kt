@@ -9,6 +9,9 @@ interface GitHubApi {
     @GET("user")
     suspend fun getCurrentUser(): GHUser
 
+    @GET("user")
+    suspend fun getCurrentUserWithResponse(): retrofit2.Response<GHUser>
+
     @GET("users/{login}")
     suspend fun getUser(@Path("login") login: String): GHUser
 

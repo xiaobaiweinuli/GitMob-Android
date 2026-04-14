@@ -27,6 +27,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.gitmob.android.R
 import com.gitmob.android.auth.AccountInfo
+import com.gitmob.android.auth.AuthType
 import com.gitmob.android.auth.OAuthManager
 import com.gitmob.android.ui.theme.*
 
@@ -41,6 +42,7 @@ fun LoginScreen(
     val context = LocalContext.current
     val state   by vm.state.collectAsState()
     val savedAccounts by vm.savedAccounts.collectAsState()
+    var showTokenLoginDialog by remember { mutableStateOf(false) }
 
     // 处理 OAuth 回调：token 用完即焚，防止重入
     LaunchedEffect(pendingToken) {
@@ -78,13 +80,107 @@ fun LoginScreen(
                 isReauth      = isReauth,
                 onSelectAccount = { vm.switchToAccount(it) },
                 onAddAccount  = { OAuthManager.launchOAuth(context, forceReauth = false) },
+                onTokenLogin  = { showTokenLoginDialog = true },
             )
         } else {
             // ── 全新登录页 ──────────────────────────────────────────
             FreshLoginContent(
-                state    = state,
-                context  = context,
-                isReauth = isReauth,
+                state          = state,
+                context        = context,
+                isReauth       = isReauth,
+                onTokenLogin   = { showTokenLoginDialog = true },
+            )
+        }
+
+        // Token 登录弹窗
+        if (showTokenLoginDialog) {
+            TokenLoginDialog(
+                onDismiss     = { showTokenLoginDialog = false },
+                onTokenSubmit = { token ->
+                    vm.onManualTokenReceived(token)
+                    showTokenLoginDialog = false
+                },
+                state         = state,
+            )
+        }
+        
+        // 确认替换 OAuth 账号弹窗
+        if (state is LoginUiState.ConfirmReplaceOAuth) {
+            val confirmState = state as LoginUiState.ConfirmReplaceOAuth
+            ConfirmReplaceOAuthDialog(
+                login              = confirmState.login,
+                onConfirm          = {
+                    vm.confirmReplaceOAuth(
+                        token               = confirmState.token,
+                        login               = confirmState.login,
+                        name                = confirmState.name,
+                        email               = confirmState.email,
+                        avatarUrl           = confirmState.avatarUrl,
+                        existingOAuthToken  = confirmState.existingOAuthToken
+                    )
+                },
+                onSkip             = {
+                    vm.skipRevokeAndLogin(
+                        token     = confirmState.token,
+                        login     = confirmState.login,
+                        name      = confirmState.name,
+                        email     = confirmState.email,
+                        avatarUrl = confirmState.avatarUrl
+                    )
+                },
+                onCancel           = {
+                    vm.cancelTokenLogin()
+                },
+                onDismiss          = {
+                    vm.cancelTokenLogin()
+                },
+            )
+        }
+        
+        // 确认替换 Token 账号弹窗（OAuth 登录时）
+        if (state is LoginUiState.ConfirmReplaceToken) {
+            val confirmState = state as LoginUiState.ConfirmReplaceToken
+            ConfirmReplaceTokenDialog(
+                login              = confirmState.login,
+                onUseOAuth         = {
+                    vm.confirmUseOAuthKeepToken(
+                        oauthToken = confirmState.oauthToken,
+                        login      = confirmState.login,
+                        name       = confirmState.name,
+                        email      = confirmState.email,
+                        avatarUrl  = confirmState.avatarUrl
+                    )
+                },
+                onKeepToken        = {
+                    vm.keepTokenAndRevokeOAuth(
+                        oauthToken = confirmState.oauthToken
+                    )
+                },
+                onDismiss          = { /* 不处理，必须选择一个选项 */ },
+            )
+        }
+        
+        // 确认替换旧 OAuth 账号弹窗（OAuth 登录时）
+        if (state is LoginUiState.ConfirmReplaceOldOAuth) {
+            val confirmState = state as LoginUiState.ConfirmReplaceOldOAuth
+            ConfirmReplaceOldOAuthDialog(
+                login              = confirmState.login,
+                onUseNewOAuth      = {
+                    vm.confirmUseNewOAuth(
+                        newOAuthToken = confirmState.newOAuthToken,
+                        login         = confirmState.login,
+                        name          = confirmState.name,
+                        email         = confirmState.email,
+                        avatarUrl     = confirmState.avatarUrl,
+                        oldOAuthToken = confirmState.oldOAuthToken
+                    )
+                },
+                onKeepOldOAuth     = {
+                    vm.keepOldOAuthAndRevokeNew(
+                        newOAuthToken = confirmState.newOAuthToken
+                    )
+                },
+                onDismiss          = { /* 不处理，必须选择一个选项 */ },
             )
         }
     }
@@ -99,6 +195,7 @@ private fun AccountPickerContent(
     isReauth: Boolean,
     onSelectAccount: (AccountInfo) -> Unit,
     onAddAccount: () -> Unit,
+    onTokenLogin: () -> Unit,
 ) {
     val c = LocalGmColors.current
 
@@ -219,7 +316,21 @@ private fun AccountPickerContent(
         ) {
             Icon(Icons.Default.Add, null, tint = Coral, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("添加账号", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Coral)
+            Text("OAuth 授权登录", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Coral)
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Token 登录按钮
+        OutlinedButton(
+            onClick  = onTokenLogin,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape    = RoundedCornerShape(14.dp),
+            border   = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
+        ) {
+            Icon(Icons.Default.Key, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("使用 Token 登录", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.secondary)
         }
 
         Spacer(Modifier.height(16.dp))
@@ -259,11 +370,29 @@ private fun AccountItemRow(
         )
         // 用户信息
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                account.displayName,
-                fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                color = c.textPrimary,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    account.displayName,
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    color = c.textPrimary,
+                )
+                if (account.authType == AuthType.TOKEN) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(4.dp),
+                    ) {
+                        Text(
+                            "Token",
+                            fontSize = 10.sp, fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
             Text(
                 "@${account.login}",
                 fontSize = 12.sp, color = c.textSecondary,
@@ -284,6 +413,7 @@ private fun FreshLoginContent(
     state: LoginUiState,
     context: android.content.Context,
     isReauth: Boolean,
+    onTokenLogin: () -> Unit,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -346,11 +476,39 @@ private fun FreshLoginContent(
                 LoginButton(label = "重新授权登录") {
                     OAuthManager.launchOAuth(context, forceReauth = true)
                 }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onTokenLogin,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.secondary
+                    ),
+                ) {
+                    Icon(Icons.Default.Key, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("使用 Token 登录", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
-            else -> LoginButton(
-                label = if (isReauth) "重新授权登录" else "使用 GitHub 登录",
-            ) {
-                OAuthManager.launchOAuth(context, forceReauth = isReauth)
+            else -> {
+                LoginButton(
+                    label = if (isReauth) "重新授权登录" else "使用 GitHub 登录",
+                ) {
+                    OAuthManager.launchOAuth(context, forceReauth = isReauth)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onTokenLogin,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.secondary
+                    ),
+                ) {
+                    Icon(Icons.Default.Key, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("使用 Token 登录", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
 
@@ -374,4 +532,463 @@ private fun LoginButton(label: String = "使用 GitHub 登录", onClick: () -> U
     ) {
         Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
     }
+}
+
+// ── Token 登录弹窗 ─────────────────────────────────────────
+@Composable
+private fun TokenLoginDialog(
+    onDismiss: () -> Unit,
+    onTokenSubmit: (String) -> Unit,
+    state: LoginUiState,
+) {
+    var tokenInput by remember { mutableStateOf("") }
+    val isLoading = state is LoginUiState.Loading
+
+    AlertDialog(
+        onDismissRequest = { if (!isLoading) onDismiss() },
+        confirmButton = {
+            Button(
+                onClick = { onTokenSubmit(tokenInput) },
+                enabled = tokenInput.isNotBlank() && !isLoading,
+            ) {
+                Text("登录")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isLoading,
+            ) {
+                Text("取消")
+            }
+        },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Default.Key, contentDescription = null)
+                Text("使用 Token 登录")
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "请输入 GitHub Personal Access Token (PAT)",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = tokenInput,
+                    onValueChange = { tokenInput = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Token") },
+                    placeholder = { Text("ghp_...") },
+                    singleLine = true,
+                    enabled = !isLoading,
+                )
+                if (state is LoginUiState.Error) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            state.msg,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                }
+                Text(
+                    "所需权限：repo, workflow, user, notifications, admin:public_key, delete_repo",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+    )
+}
+
+// ── 确认替换 OAuth 账号弹窗 ──────────────────────────────────────
+@Composable
+private fun ConfirmReplaceOAuthDialog(
+    login: String,
+    onConfirm: () -> Unit,
+    onSkip: () -> Unit,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("撤销并使用 Token")
+            }
+        },
+        dismissButton = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextButton(onClick = onCancel) {
+                    Text("取消")
+                }
+                TextButton(onClick = onSkip) {
+                    Text("保留 OAuth 继续")
+                }
+            }
+        },
+        icon = {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = {
+            Text("检测到同一账号已通过 OAuth 登录")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "你当前账号 @$login 已通过 OAuth 授权登录。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "你要撤销原 OAuth Token 并切换到 Token 登录吗？",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                    Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            "撤销并使用 Token",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Text(
+                        "撤销原 OAuth Token，更安全（推荐）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                    Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            "保留 OAuth 继续",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Text(
+                        "保留原 OAuth Token，直接使用 Token 登录",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                    Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            "取消",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Text(
+                        "取消操作，继续使用当前 OAuth 登录",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+                }
+            }
+        },
+    )
+}
+
+// ── 确认替换 Token 账号弹窗（OAuth 登录时）─────────────────────────────────────
+@Composable
+private fun ConfirmReplaceTokenDialog(
+    login: String,
+    onUseOAuth: () -> Unit,
+    onKeepToken: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(onClick = onUseOAuth) {
+                Text("使用 OAuth 登录")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeepToken) {
+                Text("保持 Token 登录")
+            }
+        },
+        icon = {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = {
+            Text("检测到同一账号已使用 Token 登录")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "你当前账号 @$login 已通过 Token 登录。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Token 无法自动撤销，请选择你的操作：",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "使用 OAuth 登录",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "保留 Token 账号，切换到 OAuth 登录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                    }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "保持 Token 登录",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "撤销新产生的 OAuth Token，保持当前 Token 登录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+// ── 确认替换旧 OAuth 账号弹窗（OAuth 登录时）─────────────────────────────────────
+@Composable
+private fun ConfirmReplaceOldOAuthDialog(
+    login: String,
+    onUseNewOAuth: () -> Unit,
+    onKeepOldOAuth: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(onClick = onUseNewOAuth) {
+                Text("使用新 OAuth")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeepOldOAuth) {
+                Text("保持旧 OAuth")
+            }
+        },
+        icon = {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = {
+            Text("检测到同一账号已通过 OAuth 登录")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "你当前账号 @$login 已通过 OAuth 授权登录。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "你要使用新的 OAuth Token 替换旧的吗？",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "使用新 OAuth",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "撤销旧 OAuth Token，使用新 OAuth 登录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                    }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "保持旧 OAuth",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "撤销新产生的 OAuth Token，保持当前旧 OAuth 登录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+    )
 }
