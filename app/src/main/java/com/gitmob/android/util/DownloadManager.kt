@@ -251,7 +251,7 @@ object GmDownloadManager {
                         written += n
                         val pct = if (total > 0) (written * 100 / total).toInt() else -1
                         task.statusFlow.value = DownloadStatus.Progress(pct, written, total)
-                        if (pct >= 0 && pct % 5 == 0) postNotifProgress(ctx, task, pct)
+                        if (pct >= 0 && pct % 5 == 0 && pct < 100) postNotifProgress(ctx, task, pct)
                     }
                 }
             }
@@ -344,6 +344,7 @@ object GmDownloadManager {
             .setContentText(task.filename)
             .setContentIntent(pi)
             .setAutoCancel(true)
+            .setOngoing(false)
             .build()
 
         NotificationManagerCompat.from(ctx).notify(task.id, notif)
@@ -360,6 +361,7 @@ object GmDownloadManager {
             .setContentTitle("下载失败")
             .setContentText(msg)
             .setAutoCancel(true)
+            .setOngoing(false)
             .build()
 
         NotificationManagerCompat.from(ctx).notify(task.id, notif)

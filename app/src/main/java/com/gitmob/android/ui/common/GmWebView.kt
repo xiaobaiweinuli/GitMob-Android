@@ -58,6 +58,14 @@ fun GmMarkdownWebView(
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
+                
+                loadDataWithBaseURL(
+                    null,
+                    htmlContent,
+                    "text/html",
+                    "UTF-8",
+                    null
+                )
             }
         },
         update = { webView ->

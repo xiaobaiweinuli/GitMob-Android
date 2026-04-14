@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.gitmob.android.ui.common.GmMarkdownWebView
 import com.gitmob.android.ui.theme.*
 import com.gitmob.android.util.UpdateManager
 
@@ -86,10 +87,7 @@ fun UpdateDialog(
                 HorizontalDivider(color = c.border, thickness = 0.5.dp)
 
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 300.dp)
-                        .verticalScroll(rememberScrollState())
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = "更新日志",
@@ -98,11 +96,11 @@ fun UpdateDialog(
                         color = c.textPrimary,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    Text(
-                        text = release.body,
-                        fontSize = 13.sp,
-                        color = c.textSecondary,
-                        lineHeight = 20.sp
+                    GmMarkdownWebView(
+                        markdown = release.body,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp)
                     )
                 }
 
