@@ -171,6 +171,15 @@ GitMob 采用安全的 OAuth 2.0 认证流程，通过 Cloudflare Worker 中转�
 - **退出登录**：撤销当前 token（`DELETE /token`），授权记录保留，下次可快速重新登录
 - **取消授权**：删除 OAuth Grant（`DELETE /grant`），彻底清除授权，下次需重新完整授权
 
+### 关于卸载 App
+
+由于 Android 架构限制，卸载 App 时无法执行任何代码来撤销 token。如果需要完全撤销授权，可以：
+
+1. 在 GitHub 设置中手动撤销：[https://github.com/settings/connections/applications/Ov23liP9mC2HXALHsFpk](https://github.com/settings/connections/applications/Ov23liP9mC2HXALHsFpk)
+2. 或在 App 的「关于」页面点击「GitHub 授权管理」跳转
+
+GitHub OAuth token 长期有效（默认闲置 1 年才自动失效），但只有拥有该 token 的 App 才能使用。
+
 ### Worker API 路由
 
 | 路径 | 方法 | 功能 |

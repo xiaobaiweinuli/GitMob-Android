@@ -1007,6 +1007,19 @@ fun AboutDialog(onDismiss: () -> Unit) {
 
             HorizontalDivider(color = c.border, thickness = 0.5.dp)
 
+            // 权限
+            AboutSection(title = "权限", c = c) {
+                AboutLinkRow(
+                    icon = Icons.Default.Security,
+                    label = "GitHub 授权管理",
+                    sub = "查看、撤销 GitMob 对你账号的授权",
+                    url = "https://github.com/settings/connections/applications/Ov23liP9mC2HXALHsFpk",
+                    context = context, c = c,
+                )
+            }
+
+            HorizontalDivider(color = c.border, thickness = 0.5.dp)
+
             // 社区
             AboutSection(title = "社区", c = c) {
                 AboutLinkRow(
