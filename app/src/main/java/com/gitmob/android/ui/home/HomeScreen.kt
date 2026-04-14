@@ -44,6 +44,10 @@ import com.gitmob.android.data.FavoritesManager
 import com.gitmob.android.ui.common.GmDivider
 import com.gitmob.android.ui.common.LoadingBox
 import com.gitmob.android.ui.theme.*
+import com.gitmob.android.ui.update.UpdateDialog
+import com.gitmob.android.util.GmDownloadManager
+import com.gitmob.android.util.LogManager
+import com.gitmob.android.util.UpdateManager
 
 @Composable
 fun HomeScreen(
@@ -81,6 +85,52 @@ fun HomeScreen(
     var showAddGroupDialog by remember { mutableStateOf(false) }
     var showFavGroupDetail by remember { mutableStateOf<FavGroup?>(null) }
     var showUngroupedDetail by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var latestRelease by remember { mutableStateOf<UpdateManager.Release?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun downloadAndInstall(release: UpdateManager.Release) {
+        val apkUrl = release.apkUrl ?: return
+        LogManager.i("Home", "开始下载更新: ${release.tagName}")
+        GmDownloadManager.download(
+            ctx = ctx,
+            url = apkUrl,
+            filename = "gitmob-${release.tagName}.apk"
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        if (targetUserLogin == null) {
+            LogManager.d("Home", "进入主页，自动检测更新...")
+            val result = UpdateManager.checkForUpdate()
+            result.onSuccess { release ->
+                if (release != null && UpdateManager.shouldShowUpdateDialog(ctx, release)) {
+                    LogManager.i("Home", "检测到新版本: ${release.tagName}，显示更新弹窗")
+                    latestRelease = release
+                    showUpdateDialog = true
+                } else {
+                    LogManager.i("Home", "未检测到新版本或已忽略该版本")
+                }
+            }.onFailure { e ->
+                LogManager.e("Home", "自动检测更新失败", e)
+            }
+        }
+    }
+
+    if (showUpdateDialog && latestRelease != null) {
+        UpdateDialog(
+            release = latestRelease!!,
+            onDismiss = { showUpdateDialog = false },
+            onIgnore = {
+                UpdateManager.ignoreVersion(ctx, latestRelease!!.tagName)
+                showUpdateDialog = false
+            },
+            onUpdate = {
+                showUpdateDialog = false
+                downloadAndInstall(latestRelease!!)
+            }
+        )
+    }
 
     // 分组详情页（BackHandler 拦截系统返回键，避免关闭 APP）
     showFavGroupDetail?.let { group ->

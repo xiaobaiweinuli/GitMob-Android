@@ -316,27 +316,49 @@ object GmDownloadManager {
     }
 
     private fun postNotifSuccess(ctx: Context, task: DownloadTask, file: File) {
-        val openIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(
-                androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file),
-                "*/*"
-            )
-            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+        val isApk = file.name.endsWith(".apk", ignoreCase = true)
+
+        val intent: Intent = if (isApk) {
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(
+                    androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file),
+                    "application/vnd.android.package-archive"
+                )
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+        } else {
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(
+                    androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file),
+                    "*/*"
+                )
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+            }
         }
-        val pi = PendingIntent.getActivity(ctx, task.id, openIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+        val pi = PendingIntent.getActivity(ctx, task.id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+        NotificationManagerCompat.from(ctx).cancel(task.id)
 
         val notif = NotificationCompat.Builder(ctx, CHANNEL_RESULT)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("下载完成")
+            .setContentTitle(if (isApk) "下载完成，点击安装" else "下载完成")
             .setContentText(task.filename)
             .setContentIntent(pi)
             .setAutoCancel(true)
             .build()
 
         NotificationManagerCompat.from(ctx).notify(task.id, notif)
+
+        if (isApk) {
+            LogManager.i("DownloadManager", "APK 下载完成，自动打开安装界面")
+            ctx.startActivity(intent)
+        }
     }
 
     private fun postNotifFailed(ctx: Context, task: DownloadTask, msg: String) {
+        NotificationManagerCompat.from(ctx).cancel(task.id)
+
         val notif = NotificationCompat.Builder(ctx, CHANNEL_RESULT)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentTitle("下载失败")

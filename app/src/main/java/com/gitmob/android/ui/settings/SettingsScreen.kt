@@ -38,8 +38,12 @@ import com.gitmob.android.auth.RootManager
 import com.gitmob.android.auth.ThemeMode
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.ui.theme.*
+import com.gitmob.android.ui.update.UpdateDialog
+import com.gitmob.android.util.GmDownloadManager
+import com.gitmob.android.util.LanguageManager
 import com.gitmob.android.util.LogLevel
 import com.gitmob.android.util.LogManager
+import com.gitmob.android.util.UpdateManager
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -65,7 +69,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.compose.material.icons.filled.FileUpload
 import com.gitmob.android.ui.filepicker.FilePickerScreen
 import com.gitmob.android.ui.filepicker.PickerMode
-import com.gitmob.android.util.LanguageManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,6 +103,9 @@ fun SettingsScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showRevokeDialog by remember { mutableStateOf(false) }
     var showExportLogPicker by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var checkingForUpdate by remember { mutableStateOf(false) }
+    var latestRelease by remember { mutableStateOf<UpdateManager.Release?>(null) }
 
     // 检测 MANAGE_EXTERNAL_STORAGE
     val hasAllFilesAccess = remember {
@@ -181,8 +187,55 @@ fun SettingsScreen(
         }
     }
 
+    fun checkForUpdate() {
+        scope.launch {
+            checkingForUpdate = true
+            LogManager.d("Settings", "开始检测更新...")
+            val result = UpdateManager.checkForUpdate()
+            checkingForUpdate = false
+            result.onSuccess { release ->
+                if (release != null) {
+                    latestRelease = release
+                    showUpdateDialog = true
+                    LogManager.i("Settings", "检测到新版本: ${release.tagName}")
+                } else {
+                    LogManager.i("Settings", "当前已是最新版本")
+                    rootCheckMsg = "✓ 当前已是最新版本 (v${BuildConfig.VERSION_NAME})"
+                }
+            }.onFailure { e ->
+                LogManager.e("Settings", "检测更新失败", e)
+                rootCheckMsg = "✗ 检测更新失败: ${e.message}"
+            }
+        }
+    }
+
+    fun downloadAndInstall(release: UpdateManager.Release) {
+        val apkUrl = release.apkUrl ?: return
+        LogManager.i("Settings", "开始下载更新: ${release.tagName}")
+        GmDownloadManager.download(
+            ctx = context,
+            url = apkUrl,
+            filename = "gitmob-${release.tagName}.apk"
+        )
+    }
+
     if (showAbout) {
         AboutDialog(onDismiss = { showAbout = false })
+    }
+
+    if (showUpdateDialog && latestRelease != null) {
+        UpdateDialog(
+            release = latestRelease!!,
+            onDismiss = { showUpdateDialog = false },
+            onIgnore = {
+                UpdateManager.ignoreVersion(context, latestRelease!!.tagName)
+                showUpdateDialog = false
+            },
+            onUpdate = {
+                showUpdateDialog = false
+                downloadAndInstall(latestRelease!!)
+            }
+        )
     }
 
     // 导出日志：用文件选择器选择保存目录
@@ -404,6 +457,27 @@ fun SettingsScreen(
             // ── 高级 ──────────────────────────────────────────
             SLabel("高级", c)
             SCard(c) {
+
+                // 检测更新
+                SRow(
+                    title = "检测更新",
+                    subtitle = "当前版本 v${BuildConfig.VERSION_NAME}",
+                    leadingIcon = {
+                        SIconBox(CoralDim, Icons.Default.SystemUpdate, Coral)
+                    },
+                    trailing = {
+                        if (checkingForUpdate) {
+                            CircularProgressIndicator(color = Coral,
+                                modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("检查", fontSize = 12.sp, color = Coral, fontWeight = FontWeight.SemiBold)
+                        }
+                    },
+                    onClick = { checkForUpdate() },
+                    c = c,
+                )
+
+                SDivider(c)
 
                 // Root 开关
                 Row(
