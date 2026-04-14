@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 安装 APK 权限 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 前台服务权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:name=".GitMobApp"
@@ -56,6 +59,12 @@
                 <action android:name="com.gitmob.DOWNLOAD_CANCEL" />
             </intent-filter>
         </receiver>
+
+        <!-- 下载前台服务 -->
+        <service
+            android:name=".util.DownloadForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- FileProvider：供打开已下载文件使用 -->
         <provider

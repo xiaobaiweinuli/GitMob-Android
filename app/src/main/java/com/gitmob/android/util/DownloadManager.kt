@@ -116,9 +116,17 @@ object GmDownloadManager {
         val task = DownloadTask(id, filename, url)
         tasks[id] = task
 
+        DownloadForegroundService.start(ctx)
+
         task.job = scope.launch {
-            doDownload(ctx, task)
-            tasks.remove(id)
+            try {
+                doDownload(ctx, task)
+            } finally {
+                tasks.remove(id)
+                if (tasks.isEmpty()) {
+                    DownloadForegroundService.stop(ctx)
+                }
+            }
         }
         return id
     }
@@ -127,6 +135,10 @@ object GmDownloadManager {
         tasks[id]?.job?.cancel()
         tasks.remove(id)
         NotificationManagerCompat.from(ctx).cancel(id)
+        
+        if (tasks.isEmpty()) {
+            DownloadForegroundService.stop(ctx)
+        }
     }
 
     fun getTask(id: Int): DownloadTask? = tasks[id]

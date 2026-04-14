@@ -1,5 +1,6 @@
 package com.gitmob.android.ui.settings
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -648,6 +649,46 @@ fun SettingsScreen(
 
                 SDivider(c)
 
+                // 安装未知应用权限
+                val hasInstallPermission = remember { mutableStateOf(hasInstallPermission(context)) }
+                val installPermLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult()
+                ) {
+                    hasInstallPermission.value = hasInstallPermission(context)
+                }
+
+                SRow(
+                    title = "安装未知应用权限",
+                    subtitle = if (hasInstallPermission.value) "已授权 · 可自动安装更新"
+                               else "⚠ 未授权 · 下载后需手动安装",
+                    subtitleColor = if (hasInstallPermission.value) Green else Yellow,
+                    leadingIcon = {
+                        SIconBox(
+                            color = if (hasInstallPermission.value) GreenDim else YellowDim,
+                            icon = Icons.Default.GetApp,
+                            tint = if (hasInstallPermission.value) Green else Yellow,
+                        )
+                    },
+                    trailing = {
+                        if (!hasInstallPermission.value) {
+                            Text("去授权", fontSize = 12.sp, color = Coral, fontWeight = FontWeight.SemiBold)
+                        } else {
+                            Icon(Icons.Default.CheckCircle, null, tint = Green, modifier = Modifier.size(18.dp))
+                        }
+                    },
+                    onClick = { 
+                        if (!hasInstallPermission.value) {
+                            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                                data = Uri.parse("package:${context.packageName}")
+                            }
+                            installPermLauncher.launch(intent)
+                        }
+                    },
+                    c = c,
+                )
+
+                SDivider(c)
+
                 // ── 语言数据 ──────────────────────────────────────────────
                 val hasLangData = remember { mutableStateOf(LanguageManager.hasLanguageData(context)) }
                 var langFetching by remember { mutableStateOf(false) }
@@ -1280,5 +1321,16 @@ fun SIconBox(
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+    }
+}
+
+/**
+ * 检查是否有安装未知应用权限
+ */
+private fun hasInstallPermission(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        context.packageManager.canRequestPackageInstalls()
+    } else {
+        true
     }
 }
