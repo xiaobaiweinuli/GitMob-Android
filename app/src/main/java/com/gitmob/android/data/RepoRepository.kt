@@ -1017,13 +1017,74 @@ class RepoRepository {
     }
 
     suspend fun deleteWorkflowRun(owner: String, repo: String, runId: Long): Boolean =
-        withContext(Dispatchers.IO) { api.deleteWorkflowRun(owner, repo, runId).isSuccessful }
+        withContext(Dispatchers.IO) {
+            try {
+                val response = api.deleteWorkflowRun(owner, repo, runId)
+                val isSuccess = response.isSuccessful || response.code() in listOf(200, 201, 202, 204)
+
+                if (isSuccess) {
+                    LogManager.d("WorkflowDelete", "删除 Workflow Run #$runId 成功（状态码: ${response.code()}）")
+                    true
+                } else {
+                    val errorBody = response.errorBody()?.string() ?: "未知错误"
+                    LogManager.e("WorkflowDelete",
+                        "删除 Workflow Run #$runId 失败，状态码: ${response.code()}, 错误: $errorBody")
+                    false
+                }
+            } catch (e: Exception) {
+                LogManager.e("WorkflowDelete", "删除 Workflow Run #$runId 时发生异常", e)
+                false
+            }
+        }
 
     suspend fun rerunWorkflow(owner: String, repo: String, runId: Long): Boolean =
-        withContext(Dispatchers.IO) { api.rerunWorkflow(owner, repo, runId).isSuccessful }
+        withContext(Dispatchers.IO) {
+            try {
+                val response = api.rerunWorkflow(owner, repo, runId)
+                val isSuccess = response.isSuccessful || response.code() in listOf(200, 201, 202, 204)
+
+                if (isSuccess) {
+                    LogManager.d("WorkflowRerun", "重新运行 Workflow Run #$runId 成功（状态码: ${response.code()}）")
+                    true
+                } else {
+                    val errorBody = response.errorBody()?.string() ?: "未知错误"
+                    LogManager.e("WorkflowRerun",
+                        "重新运行 Workflow Run #$runId 失败，状态码: ${response.code()}, 错误: $errorBody")
+                    false
+                }
+            } catch (e: Exception) {
+                LogManager.e("WorkflowRerun", "重新运行 Workflow Run #$runId 时发生异常", e)
+                false
+            }
+        }
 
     suspend fun cancelWorkflow(owner: String, repo: String, runId: Long): Boolean =
-        withContext(Dispatchers.IO) { api.cancelWorkflow(owner, repo, runId).isSuccessful }
+        withContext(Dispatchers.IO) {
+            try {
+                val response = api.cancelWorkflow(owner, repo, runId)
+
+                // GitHub 官方推荐的成功状态码
+                val isSuccess = when (response.code()) {
+                    202,  // Accepted（异步取消请求已接受）← 最常见
+                    200,  // 极少数情况下返回 200
+                    204 -> true   // No Content
+                    else -> false
+                }
+
+                if (isSuccess) {
+                    LogManager.d("WorkflowCancel", "取消 Workflow Run #$runId 成功（状态码: ${response.code()}）")
+                    true
+                } else {
+                    val errorBody = response.errorBody()?.string() ?: "未知错误"
+                    LogManager.e("WorkflowCancel",
+                        "取消 Workflow Run #$runId 失败，状态码: ${response.code()}, 错误: $errorBody")
+                    false
+                }
+            } catch (e: Exception) {
+                LogManager.e("WorkflowCancel", "取消 Workflow Run #$runId 时发生异常", e)
+                false
+            }
+        }
 
     suspend fun getWorkflowLogs(owner: String, repo: String, runId: Long): Map<String, String>? =
         withContext(Dispatchers.IO) {
@@ -1044,7 +1105,25 @@ class RepoRepository {
         withContext(Dispatchers.IO) { api.getWorkflowRunArtifacts(owner, repo, runId).artifacts }
 
     suspend fun deleteArtifact(owner: String, repo: String, artifactId: Long): Boolean =
-        withContext(Dispatchers.IO) { api.deleteArtifact(owner, repo, artifactId).isSuccessful }
+        withContext(Dispatchers.IO) {
+            try {
+                val response = api.deleteArtifact(owner, repo, artifactId)
+                val isSuccess = response.isSuccessful || response.code() in listOf(200, 201, 202, 204)
+
+                if (isSuccess) {
+                    LogManager.d("ArtifactDelete", "删除 Artifact #$artifactId 成功（状态码: ${response.code()}）")
+                    true
+                } else {
+                    val errorBody = response.errorBody()?.string() ?: "未知错误"
+                    LogManager.e("ArtifactDelete",
+                        "删除 Artifact #$artifactId 失败，状态码: ${response.code()}, 错误: $errorBody")
+                    false
+                }
+            } catch (e: Exception) {
+                LogManager.e("ArtifactDelete", "删除 Artifact #$artifactId 时发生异常", e)
+                false
+            }
+        }
 
     /**
      * 解析工作流日志 zip 文件

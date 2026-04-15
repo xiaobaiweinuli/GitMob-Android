@@ -103,7 +103,7 @@ object LanguageManager {
                 .url(apiUrl)
                 .addHeader("Authorization", "Bearer $token")
                 .addHeader("Accept", "application/vnd.github.v3+json")
-                .addHeader("X-GitHub-Api-Version", "2022-11-28")
+                .addHeader("X-GitHub-Api-Version", "2026-03-10")
                 .build()
 
             val client = ApiClient.rawHttpClient()

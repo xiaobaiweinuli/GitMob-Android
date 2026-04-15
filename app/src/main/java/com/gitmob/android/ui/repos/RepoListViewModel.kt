@@ -42,6 +42,7 @@ data class RepoListState(
     val targetUserLogin: String? = null, // 用于查看其他用户的仓库
     val targetUserAvatar: String? = null, // 目标用户的头像
     val viewMode: ViewMode = ViewMode.REPOS, // 查看模式：仓库或星标
+    val initialViewMode: ViewMode = ViewMode.REPOS, // 初始进入时的视图模式
 )
 
 enum class ViewMode {
@@ -104,8 +105,12 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
                 targetUserLogin = login,
                 targetUserAvatar = avatarUrl,
                 viewMode = ViewMode.REPOS,
+                // 只有当是第一次进入该用户页面时才设置 initialViewMode
+                initialViewMode = if (it.targetUserLogin == null) ViewMode.REPOS else it.initialViewMode,
                 currentContext = OrgContext(login, avatarUrl, isUser = true),
                 userOrgs = emptyList(),
+                repos = emptyList(), // 立即清空旧数据，避免显示之前的内容
+                loading = true,
                 filterState = it.filterState.copy(languageFilter = null)
             ) 
         }
@@ -124,8 +129,12 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
                 targetUserLogin = login,
                 targetUserAvatar = avatarUrl,
                 viewMode = ViewMode.STARRED,
+                // 只有当是第一次进入该用户页面时才设置 initialViewMode
+                initialViewMode = if (it.targetUserLogin == null) ViewMode.STARRED else it.initialViewMode,
                 currentContext = OrgContext(login, avatarUrl, isUser = true),
                 userOrgs = emptyList(),
+                repos = emptyList(), // 立即清空旧数据，避免显示之前的内容
+                loading = true,
                 filterState = it.filterState.copy(languageFilter = null)
             ) 
         }
@@ -183,8 +192,11 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
                 targetUserLogin = null,
                 targetUserAvatar = null,
                 viewMode = ViewMode.REPOS,
+                initialViewMode = ViewMode.REPOS,
                 currentContext = null,
                 userOrgs = emptyList(),
+                repos = emptyList(), // 立即清空旧数据
+                loading = true,
                 filterState = it.filterState.copy(languageFilter = null)
             ) 
         }

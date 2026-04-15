@@ -181,7 +181,7 @@ object GmDownloadManager {
                 .url(task.url)
                 .header("Authorization", "Bearer $token")
                 .header("Accept", acceptHeader)
-                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("X-GitHub-Api-Version", "2026-03-10")
                 .build()
 
             var firstResp = noRedirectClient.newCall(firstReq).execute()
@@ -278,7 +278,11 @@ object GmDownloadManager {
             outputStream.close()
         }
 
+        if (total > 0) {
+            postNotifProgress(ctx, task, 100)
+        }
         task.statusFlow.value = DownloadStatus.Success(destFile)
+        kotlinx.coroutines.delay(300)
         postNotifSuccess(ctx, task, destFile)
     }
 

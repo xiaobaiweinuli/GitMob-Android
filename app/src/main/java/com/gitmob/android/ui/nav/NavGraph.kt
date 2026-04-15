@@ -690,8 +690,9 @@ fun AppNavGraph(
             
             LogManager.d("NavGraph", "进入用户仓库列表页面，login=$login")
             
-            // 切换到用户仓库
+            // 切换到用户仓库，同时退出星标模式
             LaunchedEffect(login) {
+                starVm.exitStarMode()
                 repoListVm.switchToUserRepos(login, null)
             }
             
@@ -727,8 +728,9 @@ fun AppNavGraph(
             
             LogManager.d("NavGraph", "进入用户星标列表页面，login=$login")
             
-            // 切换到用户星标
+            // 切换到用户星标，同时退出星标模式
             LaunchedEffect(login) {
+                starVm.exitStarMode()
                 repoListVm.switchToUserStarred(login, null)
             }
             
@@ -763,6 +765,11 @@ fun AppNavGraph(
             val localVm: com.gitmob.android.ui.local.LocalRepoViewModel = viewModel()
             
             LogManager.d("NavGraph", "进入用户组织列表页面，login=$login")
+            
+            // 进入页面时先退出星标模式，避免闪烁
+            LaunchedEffect(Unit) {
+                starVm.exitStarMode()
+            }
             
             // 切换到用户组织
             LaunchedEffect(login) {
@@ -886,10 +893,19 @@ private fun MainScreen(
                             }
                         },
                         onRepoClick     = onRepoClick,
-                        onReposClick    = { navigateToRemote() },
+                        onReposClick    = {
+                            // 重置回当前用户的仓库，同时退出星标模式，再跳转到 Remote Tab
+                            navigateToRemote { 
+                                starVm.exitStarMode()
+                                repoListVm.resetToCurrentUser() 
+                            }
+                        },
                         onStarredClick  = {
                             // 激活星标模式，再跳转到 Remote Tab
-                            navigateToRemote { starVm.toggleStarMode() }
+                            navigateToRemote { 
+                                repoListVm.resetToCurrentUser()
+                                starVm.toggleStarMode() 
+                            }
                         },
                         onOrgClick      = { org ->
                             // 切换到对应组织上下文，再跳转到 Remote Tab

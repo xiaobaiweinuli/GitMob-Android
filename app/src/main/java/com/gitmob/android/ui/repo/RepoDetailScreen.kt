@@ -279,46 +279,51 @@ fun RepoDetailScreen(
                         Icon(Icons.Default.Refresh, null, tint = c.textSecondary)
                     }
                     Box {
-                        PermissionRequired(permission = permission, requireOwner = true) {
-                            IconButton(onClick = { showSettingsMenu = true }) {
-                                Icon(Icons.Default.Settings, null, tint = c.textSecondary)
-                            }
+                        // 所有人都能看到设置按钮
+                        IconButton(onClick = { showSettingsMenu = true }) {
+                            Icon(Icons.Default.Settings, null, tint = c.textSecondary)
                         }
                         DropdownMenu(
                             expanded = showSettingsMenu,
                             onDismissRequest = { showSettingsMenu = false },
                             modifier = Modifier.background(c.bgCard),
                         ) {
-                            DropdownMenuItem(
-                                text = { Text("重命名", fontSize = 14.sp, color = c.textPrimary) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.DriveFileRenameOutline,
-                                        null,
-                                        tint = c.textSecondary,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                onClick = {
-                                    showSettingsMenu = false
-                                    showRenameDialog = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("编辑信息", fontSize = 14.sp, color = c.textPrimary) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.Edit,
-                                        null,
-                                        tint = c.textSecondary,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                onClick = {
-                                    showSettingsMenu = false
-                                    showEditDialog = true
-                                },
-                            )
+                            // 需要权限的选项用 PermissionRequired 包裹
+                            PermissionRequired(permission = permission, requireOwner = true) {
+                                DropdownMenuItem(
+                                    text = { Text("重命名", fontSize = 14.sp, color = c.textPrimary) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.DriveFileRenameOutline,
+                                            null,
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        showRenameDialog = true
+                                    },
+                                )
+                            }
+                            PermissionRequired(permission = permission, requireOwner = true) {
+                                DropdownMenuItem(
+                                    text = { Text("编辑信息", fontSize = 14.sp, color = c.textPrimary) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Edit,
+                                            null,
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        showEditDialog = true
+                                    },
+                                )
+                            }
+                            // 分享不需要权限
                             DropdownMenuItem(
                                 text = { Text("分享", fontSize = 14.sp, color = c.textPrimary) },
                                 leadingIcon = {
@@ -343,42 +348,47 @@ fun RepoDetailScreen(
                                     }
                                 },
                             )
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        if (state.repo?.private == true) "设为公开" else "设为私有",
-                                        fontSize = 14.sp,
-                                        color = c.textPrimary,
-                                    )
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.Lock,
-                                        null,
-                                        tint = c.textSecondary,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                onClick = {
-                                    showSettingsMenu = false
-                                    showVisibilityDialog = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("转移", fontSize = 14.sp, color = c.textPrimary) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.AccountCircle,
-                                        null,
-                                        tint = c.textSecondary,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                onClick = {
-                                    showSettingsMenu = false
-                                    showTransferDialog = true
-                                },
-                            )
+                            PermissionRequired(permission = permission, requireOwner = true) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (state.repo?.private == true) "设为公开" else "设为私有",
+                                            fontSize = 14.sp,
+                                            color = c.textPrimary,
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Lock,
+                                            null,
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        showVisibilityDialog = true
+                                    },
+                                )
+                            }
+                            PermissionRequired(permission = permission, requireOwner = true) {
+                                DropdownMenuItem(
+                                    text = { Text("转移", fontSize = 14.sp, color = c.textPrimary) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.AccountCircle,
+                                            null,
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        showTransferDialog = true
+                                    },
+                                )
+                            }
+                            // 收藏不需要权限
                             DropdownMenuItem(
                                 text = { Text(if (isCurrentRepoFavorited) "已收藏" else "收藏仓库", fontSize = 14.sp, color = c.textPrimary) },
                                 leadingIcon = {
@@ -393,6 +403,7 @@ fun RepoDetailScreen(
                                     showFavoritesDialog = true
                                 },
                             )
+                            // 订阅通知不需要权限
                             DropdownMenuItem(
                                 text = { Text("订阅通知", fontSize = 14.sp, color = c.textPrimary) },
                                 leadingIcon = {
@@ -405,61 +416,67 @@ fun RepoDetailScreen(
                                     showWatchSheet = true
                                 },
                             )
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        if (state.repo?.hasIssues != false) "关闭议题" else "打开议题",
-                                        fontSize = 14.sp, color = c.textPrimary
-                                    )
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.BugReport,
-                                        null,
-                                        tint = c.textSecondary,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                onClick = {
-                                    showSettingsMenu = false
-                                    showToggleIssuesDialog = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        if (state.repo?.hasDiscussions == true) "关闭讨论" else "打开讨论",
-                                        fontSize = 14.sp, color = c.textPrimary
-                                    )
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.Forum,
-                                        null,
-                                        tint = c.textSecondary,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                onClick = {
-                                    showSettingsMenu = false
-                                    showToggleDiscussionsDialog = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("删除", fontSize = 14.sp, color = RedColor) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        null,
-                                        tint = RedColor,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                },
-                                onClick = {
-                                    showSettingsMenu = false
-                                    showDeleteDialog = true
-                                },
-                            )
+                            PermissionRequired(permission = permission, requireOwner = true) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (state.repo?.hasIssues != false) "关闭议题" else "打开议题",
+                                            fontSize = 14.sp, color = c.textPrimary
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.BugReport,
+                                            null,
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        showToggleIssuesDialog = true
+                                    },
+                                )
+                            }
+                            PermissionRequired(permission = permission, requireOwner = true) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (state.repo?.hasDiscussions == true) "关闭讨论" else "打开讨论",
+                                            fontSize = 14.sp, color = c.textPrimary
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Forum,
+                                            null,
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        showToggleDiscussionsDialog = true
+                                    },
+                                )
+                            }
+                            PermissionRequired(permission = permission, requireOwner = true) {
+                                DropdownMenuItem(
+                                    text = { Text("删除", fontSize = 14.sp, color = RedColor) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            null,
+                                            tint = RedColor,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        showDeleteDialog = true
+                                    },
+                                )
+                            }
                         }
                     }
                 },

@@ -58,7 +58,9 @@ fun RepoListScreen(
 ) {
     val c = LocalGmColors.current
     val state by vm.state.collectAsState()
-    val repos by vm.filteredRepos.collectAsState()
+    val repos = remember(state.repos, state.searchQuery, state.filterState) {
+        filterAndSortRepos(state.repos, state.searchQuery, state.filterState)
+    }
     val starState by starVm.state.collectAsState()
     var showOrgMenu by remember { mutableStateOf(false) }
     // 星标模式弹窗状态
@@ -71,14 +73,17 @@ fun RepoListScreen(
     
     // BackHandler: 拦截系统返回键
     BackHandler(enabled = isViewingOtherUser) {
-        when (state.viewMode) {
-            ViewMode.STARRED -> {
-                // 如果当前是星标模式，切换回仓库模式
-                vm.switchToUserRepos(state.targetUserLogin!!, state.targetUserAvatar)
-            }
-            ViewMode.REPOS -> {
-                // 如果已经是仓库模式，直接返回上一个导航页面
+        when {
+            state.viewMode == state.initialViewMode -> {
+                // 如果当前视图与初始视图一致，直接返回上一页
                 onBack()
+            }
+            else -> {
+                // 否则切换回初始视图
+                when (state.initialViewMode) {
+                    ViewMode.STARRED -> vm.switchToUserStarred(state.targetUserLogin!!, state.targetUserAvatar)
+                    ViewMode.REPOS -> vm.switchToUserRepos(state.targetUserLogin!!, state.targetUserAvatar)
+                }
             }
         }
     }
@@ -109,17 +114,20 @@ fun RepoListScreen(
                         // 显示返回按钮（当查看其他用户时）
                         if (isViewingOtherUser) {
                             IconButton(onClick = { 
-                                LogManager.d("RepoListScreen", "点击返回按钮，targetUserLogin=${state.targetUserLogin}, viewMode=${state.viewMode}")
-                                when (state.viewMode) {
-                                    ViewMode.STARRED -> {
-                                        // 如果当前是星标模式，切换回仓库模式
-                                        LogManager.d("RepoListScreen", "从星标切换回仓库，login=${state.targetUserLogin}")
-                                        vm.switchToUserRepos(state.targetUserLogin!!, state.targetUserAvatar)
-                                    }
-                                    ViewMode.REPOS -> {
-                                        // 如果已经是仓库模式，直接返回上一个导航页面
-                                        LogManager.d("RepoListScreen", "调用 onBack() 返回上一个页面")
+                                LogManager.d("RepoListScreen", "点击返回按钮，targetUserLogin=${state.targetUserLogin}, viewMode=${state.viewMode}, initialViewMode=${state.initialViewMode}")
+                                when {
+                                    state.viewMode == state.initialViewMode -> {
+                                        // 如果当前视图与初始视图一致，直接返回上一页
+                                        LogManager.d("RepoListScreen", "当前视图与初始视图一致，调用 onBack() 返回上一个页面")
                                         onBack()
+                                    }
+                                    else -> {
+                                        // 否则切换回初始视图
+                                        LogManager.d("RepoListScreen", "当前视图与初始视图不一致，切换回初始视图")
+                                        when (state.initialViewMode) {
+                                            ViewMode.STARRED -> vm.switchToUserStarred(state.targetUserLogin!!, state.targetUserAvatar)
+                                            ViewMode.REPOS -> vm.switchToUserRepos(state.targetUserLogin!!, state.targetUserAvatar)
+                                        }
                                     }
                                 }
                             }) {
@@ -295,12 +303,13 @@ fun RepoListScreen(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             // 搜索框（星标模式和普通模式各自独立）
-            val searchValue = if (starState.starModeActive) starState.starSearchQuery else state.searchQuery
-            val onSearchChange: (String) -> Unit = if (starState.starModeActive) starVm::setStarSearch else vm::setSearch
+            val shouldShowStarMode = starState.starModeActive && !isViewingOtherUser
+            val searchValue = if (shouldShowStarMode) starState.starSearchQuery else state.searchQuery
+            val onSearchChange: (String) -> Unit = if (shouldShowStarMode) starVm::setStarSearch else vm::setSearch
             OutlinedTextField(
                 value = searchValue,
                 onValueChange = onSearchChange,
-                placeholder = { Text(if (starState.starModeActive) "搜索星标仓库…" else "搜索仓库…", color = c.textTertiary, fontSize = 14.sp) },
+                placeholder = { Text(if (shouldShowStarMode) "搜索星标仓库…" else "搜索仓库…", color = c.textTertiary, fontSize = 14.sp) },
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = c.textTertiary, modifier = Modifier.size(18.dp)) },
                 trailingIcon = {
                     if (searchValue.isNotEmpty())
@@ -318,7 +327,7 @@ fun RepoListScreen(
                 ),
             )
             // 过滤 / 星标模式 Header
-            if (starState.starModeActive) {
+            if (shouldShowStarMode) {
                 StarFilterToolbar(
                     state = starState,
                     c = c,
@@ -347,7 +356,7 @@ fun RepoListScreen(
                 )
             }
 
-            if (starState.starModeActive) {
+            if (shouldShowStarMode) {
                 // ── 星标模式：显示星标仓库 ────────────────────────────────────
                 val displayedRepos by starVm.filteredStarredRepos.collectAsState()
                 PullToRefreshBox(
@@ -399,7 +408,8 @@ fun RepoListScreen(
                     }
                 }
             } else {
-                // ── 普通模式：显示我的仓库 ────────────────────────────────────
+                // ── 普通模式：显示仓库或星标（根据 viewMode） ────────────────────────────────────
+                val isStarredMode = state.viewMode == ViewMode.STARRED
                 PullToRefreshBox(
                     isRefreshing = false,
                     onRefresh = { vm.loadRepos(forceRefresh = true) },
@@ -407,7 +417,7 @@ fun RepoListScreen(
                     when {
                         state.loading && repos.isEmpty() -> LoadingBox()
                         state.error != null && repos.isEmpty() -> ErrorBox(state.error!!) { vm.loadRepos(true) }
-                        repos.isEmpty() -> EmptyBox("暂无仓库，点击右上角 + 创建")
+                        repos.isEmpty() -> EmptyBox(if (isViewingOtherUser) "暂无仓库" else "暂无仓库，点击右上角 + 创建")
                         else -> {
                             val listState = rememberLazyListState()
                             val isAtBottom = remember {
