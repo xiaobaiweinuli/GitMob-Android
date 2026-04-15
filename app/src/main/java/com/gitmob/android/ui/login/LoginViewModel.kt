@@ -12,6 +12,7 @@ import com.gitmob.android.auth.TokenLoginManager
 import com.gitmob.android.auth.TokenLoginResult
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.ui.login.LoginUiState.*
+import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
@@ -284,20 +285,25 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
     /** 手动输入 Token 登录 */
     fun onManualTokenReceived(token: String) {
         viewModelScope.launch {
+            LogManager.d("LoginViewModel", "手动 Token 登录被触发")
+            LogManager.d("LoginViewModel", "输入 Token 前缀: ${token.take(20)}...")
             _state.value = Loading
             try {
                 // 先检查是否已有相同 Token 的账号
                 val existingAccounts = accountStore.accounts.first()
+                LogManager.d("LoginViewModel", "已有账号数量: ${existingAccounts.size}")
                 val existingSameTokenAccount = existingAccounts.firstOrNull { 
                     it.token == token 
                 }
                 
                 if (existingSameTokenAccount != null) {
+                    LogManager.d("LoginViewModel", "Token 已存在，直接返回")
                     _state.value = Error("该 Token 已存在于账号列表中，请直接切换账号使用")
                     return@launch
                 }
                 
                 // 验证 Token
+                LogManager.d("LoginViewModel", "开始调用 TokenLoginManager.verifyToken...")
                 val result = TokenLoginManager.verifyToken(token)
                 
                 when (result) {
@@ -409,13 +415,14 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
         email: String,
         avatarUrl: String
     ) {
+        val authType = AccountStore.identifyAuthType(token)
         val info = AccountInfo(
             login     = login,
             name      = name,
             email     = email,
             avatarUrl = avatarUrl,
             token     = token,
-            authType  = AuthType.TOKEN
+            authType  = authType
         )
         accountStore.addOrUpdateAccount(info)
         tokenStorage.syncActiveAccount(info)

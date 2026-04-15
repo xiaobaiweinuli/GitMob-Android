@@ -167,9 +167,16 @@ object ApiClient {
 
     fun currentToken(): String? = runBlocking { tokenStorage.accessToken.first() }
 
+    /**
+     * 创建干净的 OkHttpClient（不继承任何拦截器）
+     *
+     * 用于 Token 验证等场景，避免与认证拦截器冲突
+     */
     fun rawHttpClient(): OkHttpClient =
-        okHttpClient.newBuilder()
+        OkHttpClient.Builder()
             .readTimeout(120, TimeUnit.SECONDS)
             .followRedirects(true)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
             .build()
 }

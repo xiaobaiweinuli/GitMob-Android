@@ -13,7 +13,6 @@
 ## 核心特性
 
 ### 远程仓库管理
-
 - **OAuth 2.0 安全认证** — Cloudflare Worker 中转，client_secret 永不暴露在客户端
 - **Token 登录支持** — 支持使用 Personal Access Token 直接登录
 - **多账号管理** — 支持账号切换与新增，DataStore 持久化存储
@@ -30,7 +29,6 @@
 - **讨论管理** — 仓库讨论列表与详情查看
 
 ### 个人主页
-
 - **用户资料展示** — 头像、名称、登录名、简介、公司、位置、博客、Twitter 等信息
 - **关注者/关注列表** — 查看用户的关注者和关注的人
 - **仓库统计** — 展示用户的仓库、组织、星标数量
@@ -38,9 +36,7 @@
 - **收藏夹** — 支持仓库收藏分组管理，可创建多个收藏夹分组
 
 ### 本地 Git 操作
-
 基于 JGit 6.10 纯 Java 实现，无需外部 git 二进制：
-
 - `clone` — 带 token 认证的远程克隆
 - `init` — 初始化本地 Git 项目
 - `add / commit` — 暂存与提交（支持自定义作者）
@@ -50,7 +46,6 @@
 - **冲突检测** — fetch 后自动比较本地/远程差异并提示
 
 ### 文件选择器
-
 - 普通权限 + Root 双模式
 - 书签系统（内置常用目录 + 自定义书签）
 - 多种排序方式（名称/日期/大小/类型）
@@ -58,7 +53,6 @@
 - 完整支持含空格的目录名
 
 ### 用户体验
-
 - Material 3 动态主题（浅色/深色/跟随系统）
 - 崩溃日志本地捕获与导出
 - GitHub Actions 自动构建签名 APK
@@ -69,7 +63,6 @@
 ## 快速开始
 
 ### 前置要求
-
 - Android Studio Ladybug 或更高版本
 - JDK 17+
 - Android SDK 26+（目标 SDK 36）
@@ -79,10 +72,10 @@
 
 访问 [GitHub Developer Settings](https://github.com/settings/developers) 创建 OAuth App：
 
-| 字段                         | 值                                         |
-| -------------------------- | ----------------------------------------- |
-| Application name           | GitMob                                    |
-| Homepage URL               | `https://your-worker-domain.com`          |
+| 字段 | 值 |
+|------|-----|
+| Application name | GitMob |
+| Homepage URL | `https://your-worker-domain.com` |
 | Authorization callback URL | `https://your-worker-domain.com/callback` |
 
 保存 **Client ID** 和 **Client Secret**。
@@ -107,14 +100,14 @@ npm run deploy
 
 在仓库 Settings → Secrets and variables → Actions 添加：
 
-| Secret 名称            | 说明                            |
-| -------------------- | ----------------------------- |
-| `OAUTH_CLIENT_ID`    | GitHub OAuth App Client ID    |
+| Secret 名称 | 说明 |
+|------------|------|
+| `OAUTH_CLIENT_ID` | GitHub OAuth App Client ID |
 | `OAUTH_CALLBACK_URL` | Worker 基础 URL（不含 `/callback`） |
-| `KEYSTORE_BASE64`    | Keystore 文件的 base64 编码        |
-| `KEYSTORE_PASSWORD`  | Keystore 密码                   |
-| `KEY_ALIAS`          | Key alias                     |
-| `KEY_PASSWORD`       | Key 密码                        |
+| `KEYSTORE_BASE64` | Keystore 文件的 base64 编码 |
+| `KEYSTORE_PASSWORD` | Keystore 密码 |
+| `KEY_ALIAS` | Key alias |
+| `KEY_PASSWORD` | Key 密码 |
 
 > 注意：Secret 名称不能以 `GITHUB_` 开头（系统保留前缀）
 
@@ -133,14 +126,11 @@ buildConfigField("String", "OAUTH_REDIRECT_URI", "\"https://your-worker-domain.c
 ./gradlew assembleDebug
 ./gradlew installDebug
 ```
-
 或者
-
 ```bash
 gradle assembleDebug
 gradle installDebug
 ```
-
 ### 5. 生成签名 Keystore
 
 ```bash
@@ -184,12 +174,10 @@ GitMob 也支持使用 GitHub Personal Access Token 直接登录，无需 OAuth 
 ### Token 权限要求
 
 Token 必须包含以下权限：
-
 - `repo` - 仓库读写权限
 - `workflow` - GitHub Actions 工作流权限
 - `user` - 用户信息权限
 - `notifications` - 通知权限
-- `admin:public_key` - 公钥管理权限
 - `delete_repo` - 删除仓库权限
 
 ### 创建 Token
@@ -218,22 +206,18 @@ Token 必须包含以下权限：
 GitMob 支持智能检测同一用户的重复登录场景，并提供友好的选择：
 
 1. **Token 登录 → 检测 OAuth 账号**
-   
    - 如果检测到已有同一用户的 OAuth 账号，会询问是否撤销原 OAuth Token
    - 提供三个选项：撤销并使用 Token、保留 OAuth 继续、取消
-
-2. **OAuth 登录 → 检测 Token 账号**
    
+2. **OAuth 登录 → 检测 Token 账号**
    - 如果检测到已有同一用户的 Token 账号，会提示 Token 无法自动撤销
    - 提供两个选项：使用 OAuth（保留 Token）、保持 Token（撤销 OAuth）
-
-3. **OAuth 登录 → 检测旧 OAuth 账号**
    
+3. **OAuth 登录 → 检测旧 OAuth 账号**
    - 如果检测到已有同一用户的旧 OAuth 账号，会询问是否替换
    - 提供两个选项：使用新 OAuth（撤销旧 OAuth）、保持旧 OAuth（撤销新 OAuth）
-
-4. **相同 Token 检测**
    
+4. **相同 Token 检测**
    - 如果输入的 Token 已存在于账号列表中，直接切换账号，无需弹窗
 
 ### 注销机制
@@ -252,31 +236,31 @@ GitHub OAuth token 长期有效（默认闲置 1 年才自动失效），但只�
 
 ### Worker API 路由
 
-| 路径          | 方法     | 功能                                |
-| ----------- | ------ | --------------------------------- |
-| `/`         | GET    | App 落地页（APK 下载、功能介绍）              |
-| `/auth`     | GET    | 跳转 GitHub OAuth（`?force=1` 强制重授权） |
-| `/callback` | GET    | code → token，HTML 唤起 App 深链接      |
-| `/health`   | GET    | 健康检查 `{"ok": true}`               |
-| `/token`    | DELETE | 撤销当前 token                        |
-| `/grant`    | DELETE | 删除 OAuth grant（彻底注销）              |
+| 路径 | 方法 | 功能 |
+|------|------|------|
+| `/` | GET | App 落地页（APK 下载、功能介绍） |
+| `/auth` | GET | 跳转 GitHub OAuth（`?force=1` 强制重授权） |
+| `/callback` | GET | code → token，HTML 唤起 App 深链接 |
+| `/health` | GET | 健康检查 `{"ok": true}` |
+| `/token` | DELETE | 撤销当前 token |
+| `/grant` | DELETE | 删除 OAuth grant（彻底注销） |
 
 ## 技术栈
 
-| 类别       | 技术                                                                       |
-| -------- | ------------------------------------------------------------------------ |
-| 语言       | Kotlin 2.3.0                                                             |
-| UI 框架    | Jetpack Compose BOM 2026.03.00 · Material 3                              |
-| 架构组件     | Lifecycle 2.9.0 · ViewModel · Navigation Compose 2.9.7 · DataStore 1.2.1 |
-| 网络       | Retrofit 2.11.0 · OkHttp 4.12.0 · Gson 2.11.0                            |
-| 本地 Git   | JGit 6.10.0（纯 Java 实现，无需外部 git）                                          |
-| 图片加载     | Coil 3.4.0（支持 SVG、OkHttp 网络层）                                            |
-| 数据解析     | Jackson 2.17.2（YAML）· Gson 2.11.0（JSON）                                  |
-| Markdown | Flexmark 0.64.8                                                          |
-| 协程       | Kotlinx Coroutines 1.9.0                                                 |
-| 其他       | Material Components 1.12.0 · Browser 1.8.0 · SplashScreen 1.0.1          |
-| 后端       | Cloudflare Workers（TypeScript）                                           |
-| 构建工具     | Gradle 8.13.0 · AGP 8.13.2                                               |
+| 类别 | 技术 |
+|------|------|
+| 语言 | Kotlin 2.3.0 |
+| UI 框架 | Jetpack Compose BOM 2026.03.00 · Material 3 |
+| 架构组件 | Lifecycle 2.9.0 · ViewModel · Navigation Compose 2.9.7 · DataStore 1.2.1 |
+| 网络 | Retrofit 2.11.0 · OkHttp 4.12.0 · Gson 2.11.0 |
+| 本地 Git | JGit 6.10.0（纯 Java 实现，无需外部 git） |
+| 图片加载 | Coil 3.4.0（支持 SVG、OkHttp 网络层） |
+| 数据解析 | Jackson 2.17.2（YAML）· Gson 2.11.0（JSON） |
+| Markdown | Flexmark 0.64.8 |
+| 协程 | Kotlinx Coroutines 1.9.0 |
+| 其他 | Material Components 1.12.0 · Browser 1.8.0 · SplashScreen 1.0.1 |
+| 后端 | Cloudflare Workers（TypeScript） |
+| 构建工具 | Gradle 8.13.0 · AGP 8.13.2 |
 
 ## 项目结构
 
@@ -413,7 +397,7 @@ GitMob-Android/
 
 ### 功能增强
 
-1. **仓库详情页交互优化**
+1.  **仓库详情页交互优化**
 
 2. **本地仓库管理增强**
 
@@ -422,6 +406,7 @@ GitMob-Android/
 4. **Token 加密存储**
 
 5. **Git 底层改造**
+
 
 ## 许可证
 
@@ -438,6 +423,7 @@ GitMob-Android/
 - [Flexmark](https://github.com/vsch/flexmark-java) - Markdown 解析库
 - [Jackson](https://github.com/FasterXML/jackson) - JSON/YAML 解析库
 - [Gson](https://github.com/google/gson) - JSON 解析库
+
 
 ---
 

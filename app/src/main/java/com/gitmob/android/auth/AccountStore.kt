@@ -9,12 +9,32 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
+ * GitHub Token 前缀识别工具
+ */
+object GitHubTokenPrefix {
+    /** OAuth Token（第三方登录） */
+    const val OAUTH = "gho_"
+
+    /** Classic PAT（旧版个人访问令牌） */
+    const val CLASSIC_PAT = "ghp_"
+
+    /** Fine-grained PAT（新版细粒度个人访问令牌） */
+    const val FINE_GRAINED_PAT = "github_pat_"
+
+    /** App User Token（GitHub App 用户 token） */
+    const val APP_USER = "ghu_"
+
+    /** App Installation Token（GitHub App 安装 token / Actions token） */
+    const val APP_INSTALLATION = "ghs_"
+}
+
+/**
  * 认证类型：OAuth 授权登录 或 Token 手动登录
  */
 enum class AuthType {
     @SerializedName("oauth")
     OAUTH,  // OAuth 授权登录（默认）
-    
+
     @SerializedName("token")
     TOKEN   // 手动 Token 登录
 }
@@ -51,6 +71,21 @@ data class AccountInfo(
  *       彻底规避 R8 在 release 包中裁剪泛型签名导致的 IllegalStateException。
  */
 class AccountStore(private val context: Context) {
+
+    companion object {
+        /**
+         * 根据 GitHub Token 前缀自动识别认证类型
+         *
+         * @param token GitHub Token
+         * @return 识别的认证类型
+         */
+        fun identifyAuthType(token: String): AuthType {
+            return when {
+                token.startsWith(GitHubTokenPrefix.OAUTH) -> AuthType.OAUTH
+                else -> AuthType.TOKEN
+            }
+        }
+    }
 
     private val gson = Gson()
     private val prefs = EncryptedPreferences.getInstance(context)

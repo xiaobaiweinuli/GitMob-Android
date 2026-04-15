@@ -60,24 +60,20 @@ class GitMobApp : Application() {
         // 1. 最先安装崩溃捕获
         CrashHandler.install(this)
         tokenStorage = TokenStorage(this)
-        // 2. 数据迁移：DataStore → EncryptedPreferences
-        appScope.launch {
-            tokenStorage.migrateFromDataStoreIfNeeded()
-        }
-        // 3. 从 EncryptedPreferences 恢复日志等级
+        // 2. 从 EncryptedPreferences 恢复日志等级
         appScope.launch {
             val levelIdx = tokenStorage.logLevel.first()
             val level = LogLevel.entries.getOrElse(levelIdx) { LogLevel.DEBUG }
             LogManager.init(this@GitMobApp, level)
         }
-        // 4. 初始化 NetworkMonitor
+        // 3. 初始化 NetworkMonitor
         NetworkMonitor.init(this, appScope) {
             ApiClient.rebuild()
             LogManager.i("App", "OkHttp 客户端已重建（网络恢复/切换）")
         }
-        // 5. 初始化 ApiClient
+        // 4. 初始化 ApiClient
         ApiClient.init(tokenStorage)
-        // 6. 初始化 Coil3（OkHttp 网络 + SVG 解码支持）
+        // 5. 初始化 Coil3（OkHttp 网络 + SVG 解码支持）
         SingletonImageLoader.setSafe {
             ImageLoader.Builder(this)
                 .components {
@@ -86,7 +82,7 @@ class GitMobApp : Application() {
                 }
                 .build()
         }
-        // 7. Root 权限自动恢复（问题 6 + 7 + 8）
+        // 6. Root 权限自动恢复
         appScope.launch {
             val rootEnabled = tokenStorage.rootEnabled.first()
             if (!rootEnabled) {
@@ -95,19 +91,18 @@ class GitMobApp : Application() {
             }
             try {
                 LogManager.i("App", "尝试自动恢复 root 权限")
-                // 问题8: 注入上次探测的 su 执行模式缓存，跳过重复探测
+                // 注入上次探测的 su 执行模式缓存，跳过重复探测
                 val cachedMode = tokenStorage.getSuExecModeCache()
                 RootManager.injectSuExecModeCache(cachedMode)
 
                 val granted = RootManager.requestRoot()
 
-                // 问题8: 探测完成后，将最新模式写回 DataStore 缓存
+                // 探测完成后，将最新模式写回缓存
                 val newMode = RootManager.getSuExecModeForPersist()
                 if (newMode >= 0) tokenStorage.setSuExecModeCache(newMode)
 
                 if (!granted) {
-                    // 问题6: 授权失败时同步将 DataStore.rootEnabled 置回 false，
-                    // 避免开关显示"已启用"但功能静默失效
+                    // 授权失败时同步关闭 rootEnabled
                     LogManager.w("App", "Root 权限恢复失败，同步关闭 rootEnabled")
                     tokenStorage.setRootEnabled(false)
                 } else {
@@ -121,7 +116,7 @@ class GitMobApp : Application() {
                 rootReady.complete(false)
             }
         }
-        // 8. 监听应用生命周期，从后台进入前台时重建 OkHttp 客户端
+        // 7. 监听应用生命周期，从后台进入前台时重建 OkHttp 客户端
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 if (isFirstLaunch) {
@@ -133,7 +128,7 @@ class GitMobApp : Application() {
                 LogManager.i("App", "OkHttp 客户端已重建（从后台进入前台）")
             }
         })
-        // 9. 启动时检测更新
+        // 8. 启动时检测更新
         appScope.launch {
             if (!updateChecked) {
                 updateChecked = true

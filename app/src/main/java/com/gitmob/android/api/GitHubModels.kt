@@ -443,16 +443,6 @@ data class GHAsset(
     @SerializedName("download_count") val downloadCount: Int = 0,
 )
 
-data class GHSSHKey(
-    val id: Long,
-    val title: String,
-    val key: String,
-    @SerializedName("created_at") val createdAt: String,
-    val verified: Boolean,
-)
-
-data class GHCreateSSHKeyRequest(val title: String, val key: String)
-
 data class GHSearchResult<T>(
     @SerializedName("total_count") val totalCount: Int,
     val items: List<T>,

@@ -33,7 +33,6 @@ class TokenStorage(private val context: Context) {
         const val TAB_STEP_BACK = "tab_step_back"
         const val SU_EXEC_MODE  = "su_exec_mode"
         const val SEARCH_HISTORY = "search_history_json"
-        const val MIGRATED      = "data_migrated_to_encrypted"
     }
 
     // ── 收藏夹（按账号隔离：key = "favorites_json_{login}"）──────────────────
@@ -153,39 +152,4 @@ class TokenStorage(private val context: Context) {
         prefs.remove(Keys.USER_EMAIL)
         prefs.remove(Keys.AVATAR_URL)
     }
-
-    // ── 数据迁移（DataStore → EncryptedPreferences）────────────────
-    suspend fun migrateFromDataStoreIfNeeded() {
-        if (prefs.getBoolean(Keys.MIGRATED, false)) {
-            LogManager.i("TokenStorage", "数据已迁移，跳过")
-            return
-        }
-
-        LogManager.i("TokenStorage", "开始从 DataStore 迁移数据到 EncryptedPreferences")
-
-        try {
-            context.dataStore.data.first().let { dataStorePrefs ->
-                val migrationData = mutableMapOf<String, Any?>()
-
-                // 迁移所有 key
-                dataStorePrefs.asMap().forEach { (key, value) ->
-                    migrationData[key.name] = value
-                }
-
-                if (migrationData.isNotEmpty()) {
-                    prefs.putAll(migrationData)
-                    LogManager.i("TokenStorage", "迁移了 ${migrationData.size} 个 key")
-                }
-            }
-
-            // 标记已迁移
-            prefs.putBoolean(Keys.MIGRATED, true)
-            LogManager.i("TokenStorage", "数据迁移成功！")
-        } catch (e: Exception) {
-            LogManager.e("TokenStorage", "数据迁移失败", e)
-        }
-    }
 }
-
-// 保留 DataStore 引用（用于迁移完成后可能需要清除）
-private val Context.dataStore by androidx.datastore.preferences.preferencesDataStore(name = "gitmob_prefs")

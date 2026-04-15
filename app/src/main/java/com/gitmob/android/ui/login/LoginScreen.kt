@@ -63,8 +63,10 @@ fun LoginScreen(
         if (state is LoginUiState.Success) onSuccess()
     }
 
-    // 有已保存账号且是重新登录场景 → 显示账号选择页
-    val showAccountPicker = savedAccounts.isNotEmpty()
+    // 只有在 Idle 或 Loading 状态且有已保存账号时才显示账号选择页
+    // 避免登录成功前 savedAccounts 变化导致闪一下
+    val showAccountPicker = savedAccounts.isNotEmpty() && 
+        (state is LoginUiState.Idle || state is LoginUiState.Loading)
 
     Box(
         modifier = Modifier
@@ -514,7 +516,7 @@ private fun FreshLoginContent(
 
         Spacer(Modifier.height(24.dp))
         Text(
-            "使用 GitHub OAuth 授权登录\n权限：repo · workflow · user · notifications · admin:public_key · delete_repo",
+            "使用 GitHub OAuth 授权登录\n权限：repo · workflow · user · notifications · delete_repo",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
             textAlign = TextAlign.Center, lineHeight = 17.sp,
@@ -604,7 +606,7 @@ private fun TokenLoginDialog(
                     }
                 }
                 Text(
-                    "所需权限：repo, workflow, user, notifications, admin:public_key, delete_repo",
+                    "所需权限：repo, workflow, user, notifications, delete_repo",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

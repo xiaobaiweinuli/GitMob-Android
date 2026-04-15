@@ -454,16 +454,6 @@ interface GitHubApi {
         @Body body: GHCreateTreeRequest,
     ): GHTreeResponse
 
-    // ── SSH Keys ──
-    @GET("user/keys")
-    suspend fun getSSHKeys(): List<GHSSHKey>
-
-    @POST("user/keys")
-    suspend fun addSSHKey(@Body body: GHCreateSSHKeyRequest): GHSSHKey
-
-    @DELETE("user/keys/{keyId}")
-    suspend fun deleteSSHKey(@Path("keyId") keyId: Long): Response<Unit>
-
     // ── Search ──
     @GET("search/repositories")
     suspend fun searchRepos(

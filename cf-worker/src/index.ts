@@ -21,7 +21,7 @@ export interface Env {
 
 const APP_SCHEME = "gitmob://oauth";
 const REPO_URL = "https://github.com/xiaobaiweinuli/GitMob-Android";
-const SCOPES = "repo,user,delete_repo,admin:public_key,workflow";
+const SCOPES = "repo,user,delete_repo,workflow";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

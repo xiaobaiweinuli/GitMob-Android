@@ -139,24 +139,4 @@ class EncryptedPreferences private constructor(context: Context) {
         intFlows[key]?.value = getInt(key, 0)
         booleanFlows[key]?.value = getBoolean(key, false)
     }
-
-    // ── 一次性读取所有数据（用于迁移）────────────────────────────
-
-    fun getAll(): Map<String, *> {
-        return prefs.all
-    }
-
-    fun putAll(data: Map<String, *>) {
-        val editor = prefs.edit()
-        data.forEach { (key, value) ->
-            when (value) {
-                is String -> editor.putString(key, value)
-                is Int -> editor.putInt(key, value)
-                is Boolean -> editor.putBoolean(key, value)
-                is Float -> editor.putFloat(key, value)
-                is Long -> editor.putLong(key, value)
-            }
-        }
-        editor.apply()
-    }
 }

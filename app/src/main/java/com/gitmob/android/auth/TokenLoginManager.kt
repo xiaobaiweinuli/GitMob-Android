@@ -42,7 +42,6 @@ object TokenLoginManager {
 
     /** 必须的权限列表 */
     private val REQUIRED_SCOPES = listOf(
-        "admin:public_key",
         "delete_repo",
         "notifications",
         "repo",
@@ -65,6 +64,8 @@ object TokenLoginManager {
         
         try {
             LogManager.d(TAG, "开始验证 Token...")
+            LogManager.d(TAG, "Token 前缀: ${token.take(20)}...")
+            LogManager.d(TAG, "当前 TokenStorage token: ${originalToken?.take(20)}...")
             
             // 使用 rawHttpClient 直接请求，避免 ApiClient 的 401 拦截器影响
             val client = ApiClient.rawHttpClient()
@@ -75,11 +76,15 @@ object TokenLoginManager {
                 .addHeader("X-GitHub-Api-Version", "2022-11-28")
                 .build()
 
+            LogManager.d(TAG, "发送请求到 GitHub API...")
             val response = client.newCall(request).execute()
+            LogManager.d(TAG, "收到响应: HTTP ${response.code}")
             
             // 检查响应状态
             if (!response.isSuccessful) {
                 LogManager.e(TAG, "Token 验证失败: HTTP ${response.code}")
+                val errorBody = response.body?.string()
+                LogManager.e(TAG, "错误响应内容: $errorBody")
                 return@withContext when (response.code) {
                     401 -> TokenLoginResult.Failure("Token 无效、已过期或已被撤销")
                     else -> TokenLoginResult.Failure("验证失败: HTTP ${response.code}")
