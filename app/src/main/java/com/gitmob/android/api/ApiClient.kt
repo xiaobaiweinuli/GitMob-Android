@@ -1,10 +1,8 @@
 package com.gitmob.android.api
 
 import android.content.Context
-import com.gitmob.android.GitMobApp
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.util.LogManager
-import com.google.net.cronet.okhttptransport.CronetInterceptor
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
@@ -14,7 +12,6 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
-import org.chromium.net.CronetEngine
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
@@ -64,13 +61,13 @@ object ApiClient {
         }
 
         override fun intercept(chain: Interceptor.Chain): Response {
-            val request = chain.request()
             var lastException: IOException? = null
 
             // ── 网络层重试 ────────────────────────────────────────────────
             for (attempt in 0 until MAX_NET_RETRIES) {
                 try {
-                    val response = chain.proceed(request)
+                    // 每次重试都重新调用 chain.proceed()，这样会重新经过内层的 authInterceptor
+                    val response = chain.proceed(chain.request())
 
                     // 5xx 服务器错误重试
                     if (response.code >= 500 && attempt < MAX_SERVER_RETRIES) {
@@ -129,9 +126,9 @@ object ApiClient {
         val authInterceptor = Interceptor { chain ->
             val token = runBlocking { tokenStorage.accessToken.first() }
             val request = chain.request().newBuilder()
-                .addHeader("Authorization", "Bearer $token")
-                .addHeader("Accept", "application/vnd.github+json")
-                .addHeader("X-GitHub-Api-Version", "2022-11-28")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
                 .build()
             val response = chain.proceed(request)
             if (response.code == 401) {
@@ -143,20 +140,20 @@ object ApiClient {
         }
 
         val okHttpClientBuilder = OkHttpClient.Builder()
-            // 顺序重要：RetryInterceptor 在最外层，每次重试都会经过内层的 authInterceptor
+            // 顺序重要：RetryInterceptor 在最外层（第一个添加），每次重试都会经过内层的 authInterceptor
             .addInterceptor(RetryInterceptor())
-            .addInterceptor(authInterceptor)
             .addInterceptor(logging)
+            .addInterceptor(authInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .callTimeout(90, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-
-        // 使用 Cronet 作为传输层（从 GitMobApp 获取）
-        okHttpClientBuilder.addInterceptor(
-            CronetInterceptor.newBuilder(GitMobApp.instance.cronetEngine).build()
-        )
+            .connectionPool(ConnectionPool(
+                maxIdleConnections = 16,
+                keepAliveDuration = 3,
+                timeUnit = TimeUnit.MINUTES
+            ))
 
         _okHttpClient = okHttpClientBuilder.build()
 
@@ -171,8 +168,7 @@ object ApiClient {
     fun currentToken(): String? = runBlocking { tokenStorage.accessToken.first() }
 
     fun rawHttpClient(): OkHttpClient =
-        OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
+        okHttpClient.newBuilder()
             .readTimeout(120, TimeUnit.SECONDS)
             .followRedirects(true)
             .build()

@@ -71,7 +71,7 @@ fun BookmarkPath.resolveIcon(): ImageVector = when (iconKey.orEmpty()) {
 
 private fun defaultBookmarks(rootEnabled: Boolean): List<BookmarkPath> = emptyList()
 
-enum class PickerMode { DIRECTORY, MULTI_FILE }
+enum class PickerMode { DIRECTORY, MULTI_FILE, SINGLE_FILE }
 enum class SortType { NAME, DATE, SIZE, TYPE }
 enum class SortOrder { ASCENDING, DESCENDING }
 
@@ -129,15 +129,26 @@ private fun listNormal(path: String): List<FileEntry> {
         }
 }
 
+/** 检查文件扩展名是否允许 */
+private fun isExtensionAllowed(entry: FileEntry, allowedExtensions: List<String>?): Boolean {
+    if (entry.isDir) return true
+    if (allowedExtensions == null) return true
+    val nameLower = entry.name.lowercase()
+    return allowedExtensions.any { ext -> nameLower.endsWith(".$ext") }
+}
+
 /** 排序文件列表 */
 private fun sortFiles(
     files: List<FileEntry>,
     sortType: SortType,
     sortOrder: SortOrder,
-    showHidden: Boolean
+    showHidden: Boolean,
+    allowedExtensions: List<String>? = null
 ): List<FileEntry> {
-    val filtered = if (showHidden) files else files.filter { !it.name.startsWith(".") }
-    
+    var filtered = if (showHidden) files else files.filter { !it.name.startsWith(".") }
+    allowedExtensions?.let { exts ->
+        filtered = filtered.filter { isExtensionAllowed(it, exts) }
+    }
     val sorted = when (sortType) {
         SortType.NAME -> filtered.sortedBy { it.name.lowercase() }
         SortType.DATE -> filtered.sortedBy { it.lastModified }
@@ -162,6 +173,7 @@ fun FilePickerScreen(
     onAddBookmark: ((BookmarkPath) -> Unit)? = null,
     onRemoveBookmark: ((BookmarkPath) -> Unit)? = null,
     onEditBookmark: ((BookmarkPath) -> Unit)? = null,
+    allowedExtensions: List<String>? = null,   // 允许的文件扩展名（不包含点，如 ["json"]），null 表示无限制
     onConfirm: (selectedDir: String, selectedFiles: List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -237,7 +249,7 @@ fun FilePickerScreen(
                         e
                     }
                 }
-                entries = sortFiles(result, sortType, sortOrder, showHidden); currentPath = path
+                entries = sortFiles(result, sortType, sortOrder, showHidden, allowedExtensions); currentPath = path
             } catch (e: Exception) { errorMsg = e.message }
             finally { loading = false }
         }
@@ -300,7 +312,7 @@ fun FilePickerScreen(
     // 排序条件变化时只对已有列表重新排序，不重新读盘（原来重新 loadDir 会触发双重 loading）
     LaunchedEffect(sortType, sortOrder, showHidden) {
         if (entries.isNotEmpty()) {
-            entries = sortFiles(entries, sortType, sortOrder, showHidden)
+            entries = sortFiles(entries, sortType, sortOrder, showHidden, allowedExtensions)
         }
     }
 
@@ -949,10 +961,18 @@ fun FilePickerScreen(
                             onConfirm(currentPath, files)
                         },
                         colors = ButtonDefaults.textButtonColors(contentColor = accentColor),
+                        enabled = when (mode) {
+                            PickerMode.DIRECTORY -> true
+                            PickerMode.MULTI_FILE -> selected.isNotEmpty()
+                            PickerMode.SINGLE_FILE -> selected.isNotEmpty()
+                        }
                     ) {
                         Text(
-                            if (mode == PickerMode.DIRECTORY) "选择此处"
-                            else "确认(${selected.size})",
+                            when (mode) {
+                                PickerMode.DIRECTORY -> "选择此处"
+                                PickerMode.MULTI_FILE -> "确认(${selected.size})"
+                                PickerMode.SINGLE_FILE -> "确认"
+                            },
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
@@ -1021,19 +1041,33 @@ fun FilePickerScreen(
                             FileEntryRow(
                                 entry = entry,
                                 isSelected = selected[entry.path] == true,
-                                showCheckbox = mode == PickerMode.MULTI_FILE && !entry.isDir,
+                                showCheckbox = (mode == PickerMode.MULTI_FILE || mode == PickerMode.SINGLE_FILE) && !entry.isDir,
                                 textColor = onBg, textSecondary = onBgSecondary,
                                 textTertiary = onBgTertiary, accentColor = accentColor, c = c,
                                 onClick = {
-                                    if (entry.isDir) loadDir(entry.path)
-                                    else if (mode == PickerMode.MULTI_FILE)
+                                    if (entry.isDir) {
+                                        loadDir(entry.path)
+                                    } else if (mode == PickerMode.MULTI_FILE) {
                                         selected[entry.path] = !(selected[entry.path] ?: false)
+                                    } else if (mode == PickerMode.SINGLE_FILE) {
+                                        selected.clear()
+                                        selected[entry.path] = true
+                                    }
                                 },
                                 onLongClick = {
                                     contextMenuEntry = entry
                                     showContextMenu = true
                                 },
-                                onCheck = { checked -> selected[entry.path] = checked },
+                                onCheck = { checked ->
+                                    if (mode == PickerMode.SINGLE_FILE) {
+                                        selected.clear()
+                                        if (checked) {
+                                            selected[entry.path] = true
+                                        }
+                                    } else {
+                                        selected[entry.path] = checked
+                                    }
+                                },
                             )
                         }
                     }

@@ -451,7 +451,7 @@ fun FilterOptionItem(
 }
 
 /**
- * 语言选项条目：带颜色小圆点，文字颜色跟随 Linguist 配色
+ * 语言选项条目：带颜色小圆点
  * entry = null 时显示"全部语言"（无颜色点）
  */
 @Composable
@@ -463,14 +463,12 @@ fun LanguageFilterOptionItem(
     onClick: () -> Unit,
 ) {
     // 解析 color 字符串 → Compose Color
-    val dotColor: Color? = remember(entry?.color) {
+    val dotColor: Color = remember(entry?.color) {
         entry?.color?.let { hex ->
             try { Color(android.graphics.Color.parseColor(hex)) }
-            catch (_: Exception) { null }
-        }
+            catch (_: Exception) { Color.Black }
+        } ?: Color.Black
     }
-    // 文字颜色：有颜色时使用 Linguist 颜色，否则用主题文字色
-    val textColor = if (dotColor != null) dotColor else c.textPrimary
 
     Row(
         modifier = Modifier
@@ -485,14 +483,14 @@ fun LanguageFilterOptionItem(
             onClick = null,
             colors = RadioButtonDefaults.colors(selectedColor = Coral),
         )
-        // 颜色小圆点（无颜色数据时不显示）
-        if (dotColor != null) {
+        // 颜色小圆点（始终显示，颜色为 null 时显示黑色）
+        if (entry != null) {
             Box(
                 modifier = Modifier
                     .size(10.dp)
                     .background(dotColor, CircleShape),
             )
         }
-        Text(label, fontSize = 13.sp, color = textColor, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
+        Text(label, fontSize = 13.sp, color = c.textPrimary, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }

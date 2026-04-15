@@ -87,6 +87,36 @@ private fun GHRepo.toFavRepo(groupId: String?) = FavRepo(
 
 // ─── Manager ─────────────────────────────────────────────────────────────────
 
+// ─── 导入导出相关类型 ─────────────────────────────────────────────────────────
+
+enum class ImportConflictType {
+    GROUP_NAME,    // 分组名称冲突
+    REPO_EXISTS,   // 仓库已存在
+}
+
+data class ImportConflict(
+    val type: ImportConflictType,
+    val groupName: String? = null,       // 分组冲突时的名称
+    val repoFullName: String? = null,    // 仓库冲突时的 fullName
+    val existingGroupId: String? = null, // 已存在分组的 ID
+    val newGroupId: String? = null,      // 新分组的 ID
+)
+
+enum class ConflictResolution {
+    SKIP,        // 跳过
+    OVERWRITE,   // 覆盖
+    MERGE,       // 合并（仅分组合并适用）
+    RENAME,      // 重命名（仅分组适用）
+}
+
+data class ImportResult(
+    val success: Boolean,
+    val importedGroups: Int = 0,
+    val importedRepos: Int = 0,
+    val conflicts: List<ImportConflict> = emptyList(),
+    val errorMessage: String? = null,
+)
+
 class FavoritesManager(app: Application) : AndroidViewModel(app) {
 
     private val tokenStorage = TokenStorage(app)
@@ -264,5 +294,221 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
         } else cleanedGroups
         save(FavoritesState(groups = newGroups, ungroupedRepos = newUngrouped,
             allRepos = s.allRepos + (fullName to updatedRepo)))
+    }
+
+    // ─── 导出导入功能 ─────────────────────────────────────────────────────────────────
+
+    /**
+     * 导出收藏夹数据为 JSON 字符串
+     */
+    fun exportFavorites(): String {
+        return serialize(_state.value)
+    }
+
+    /**
+     * 解析导入数据并检测冲突
+     */
+    fun analyzeImport(jsonString: String): ImportResult {
+        return try {
+            val importedState = parse(jsonString)
+            val existingState = _state.value
+
+            val conflicts = mutableListOf<ImportConflict>()
+
+            // 检测分组名称冲突
+            val existingGroupNames = existingState.groups.associateBy { it.name }
+            importedState.groups.forEach { newGroup ->
+                if (existingGroupNames.containsKey(newGroup.name)) {
+                    conflicts.add(ImportConflict(
+                        type = ImportConflictType.GROUP_NAME,
+                        groupName = newGroup.name,
+                        existingGroupId = existingGroupNames[newGroup.name]?.id,
+                        newGroupId = newGroup.id
+                    ))
+                }
+            }
+
+            // 检测仓库冲突
+            importedState.allRepos.keys.forEach { fullName ->
+                if (existingState.allRepos.containsKey(fullName)) {
+                    conflicts.add(ImportConflict(
+                        type = ImportConflictType.REPO_EXISTS,
+                        repoFullName = fullName
+                    ))
+                }
+            }
+
+            ImportResult(
+                success = true,
+                importedGroups = importedState.groups.size,
+                importedRepos = importedState.allRepos.size,
+                conflicts = conflicts
+            )
+        } catch (e: Exception) {
+            ImportResult(
+                success = false,
+                errorMessage = e.message ?: "解析失败"
+            )
+        }
+    }
+
+    /**
+     * 执行导入
+     * @param jsonString JSON 字符串
+     * @param resolutions 冲突解决方案 map (冲突索引 -> 解决方案)
+     */
+    fun performImport(
+        jsonString: String,
+        resolutions: Map<Int, ConflictResolution> = emptyMap()
+    ): ImportResult {
+        return try {
+            val importedState = parse(jsonString)
+            val existingState = _state.value
+
+            val conflicts = mutableListOf<ImportConflict>()
+            val existingGroupNames = existingState.groups.associateBy { it.name }
+
+            // 先检测所有冲突
+            importedState.groups.forEach { newGroup ->
+                if (existingGroupNames.containsKey(newGroup.name)) {
+                    conflicts.add(ImportConflict(
+                        type = ImportConflictType.GROUP_NAME,
+                        groupName = newGroup.name,
+                        existingGroupId = existingGroupNames[newGroup.name]?.id,
+                        newGroupId = newGroup.id
+                    ))
+                }
+            }
+
+            importedState.allRepos.keys.forEach { fullName ->
+                if (existingState.allRepos.containsKey(fullName)) {
+                    conflicts.add(ImportConflict(
+                        type = ImportConflictType.REPO_EXISTS,
+                        repoFullName = fullName
+                    ))
+                }
+            }
+
+            // 处理分组
+            val finalGroups = existingState.groups.toMutableList()
+            val groupIdMapping = mutableMapOf<String, String>() // 新ID -> 最终ID
+
+            importedState.groups.forEachIndexed { idx, newGroup ->
+                val conflictIdx = conflicts.indexOfFirst {
+                    it.type == ImportConflictType.GROUP_NAME && it.newGroupId == newGroup.id
+                }
+
+                if (conflictIdx >= 0) {
+                    val resolution = resolutions[conflictIdx] ?: ConflictResolution.SKIP
+                    when (resolution) {
+                        ConflictResolution.SKIP -> {
+                            // 跳过，不处理
+                        }
+                        ConflictResolution.OVERWRITE -> {
+                            // 替换：删除旧分组，添加新分组
+                            finalGroups.removeIf { it.id == existingGroupNames[newGroup.name]?.id }
+                            finalGroups.add(newGroup)
+                            groupIdMapping[newGroup.id] = newGroup.id
+                        }
+                        ConflictResolution.MERGE -> {
+                            // 合并：保留旧分组 ID，合并仓库列表
+                            val existingGroup = existingGroupNames[newGroup.name]
+                            if (existingGroup != null) {
+                                val mergedRepoIds = (existingGroup.repoIds + newGroup.repoIds).distinct()
+                                val mergedGroup = existingGroup.copy(repoIds = mergedRepoIds)
+                                finalGroups.removeIf { it.id == existingGroup.id }
+                                finalGroups.add(mergedGroup)
+                                groupIdMapping[newGroup.id] = existingGroup.id
+                            }
+                        }
+                        ConflictResolution.RENAME -> {
+                            // 重命名：添加数字后缀
+                            var newName = newGroup.name
+                            var counter = 1
+                            while (finalGroups.any { it.name == newName }) {
+                                newName = "${newGroup.name} ($counter)"
+                                counter++
+                            }
+                            val renamedGroup = newGroup.copy(name = newName)
+                            finalGroups.add(renamedGroup)
+                            groupIdMapping[newGroup.id] = renamedGroup.id
+                        }
+                    }
+                } else {
+                    // 无冲突，直接添加
+                    finalGroups.add(newGroup)
+                    groupIdMapping[newGroup.id] = newGroup.id
+                }
+            }
+
+            // 处理仓库
+            val finalAllRepos = existingState.allRepos.toMutableMap()
+            val finalUngrouped = existingState.ungroupedRepos.toMutableList()
+
+            importedState.allRepos.values.forEach { importedRepo ->
+                val conflictIdx = conflicts.indexOfFirst {
+                    it.type == ImportConflictType.REPO_EXISTS && it.repoFullName == importedRepo.fullName
+                }
+
+                if (conflictIdx >= 0) {
+                    val resolution = resolutions[conflictIdx] ?: ConflictResolution.SKIP
+                    when (resolution) {
+                        ConflictResolution.SKIP -> {
+                            // 跳过
+                        }
+                        ConflictResolution.OVERWRITE -> {
+                            // 覆盖
+                            val finalGroupId = importedRepo.groupId?.let { groupIdMapping[it] ?: it }
+                            val updatedRepo = importedRepo.copy(groupId = finalGroupId)
+                            finalAllRepos[importedRepo.fullName] = updatedRepo
+
+                            // 更新未分组列表
+                            if (finalGroupId == null) {
+                                finalUngrouped.removeIf { it.fullName == importedRepo.fullName }
+                                finalUngrouped.add(updatedRepo)
+                            } else {
+                                finalUngrouped.removeIf { it.fullName == importedRepo.fullName }
+                            }
+                        }
+                        else -> {
+                            // 其他操作对于仓库只支持 SKIP 和 OVERWRITE
+                        }
+                    }
+                } else {
+                    // 无冲突，直接添加
+                    val finalGroupId = importedRepo.groupId?.let { groupIdMapping[it] ?: it }
+                    val newRepo = importedRepo.copy(groupId = finalGroupId)
+                    finalAllRepos[importedRepo.fullName] = newRepo
+
+                    if (finalGroupId == null) {
+                        finalUngrouped.add(newRepo)
+                    }
+                }
+            }
+
+            // 清理未分组列表中已在分组内的仓库
+            val groupedRepoIds = finalGroups.flatMap { it.repoIds }.toSet()
+            val cleanedUngrouped = finalUngrouped.filter { it.fullName !in groupedRepoIds }
+
+            // 保存最终状态
+            val finalState = FavoritesState(
+                groups = finalGroups,
+                ungroupedRepos = cleanedUngrouped,
+                allRepos = finalAllRepos
+            )
+            save(finalState)
+
+            ImportResult(
+                success = true,
+                importedGroups = finalGroups.size - existingState.groups.size,
+                importedRepos = finalAllRepos.size - existingState.allRepos.size,
+                conflicts = conflicts
+            )
+        } catch (e: Exception) {
+            ImportResult(
+                success = false,
+                errorMessage = e.message ?: "导入失败"
+            )
+        }
     }
 }

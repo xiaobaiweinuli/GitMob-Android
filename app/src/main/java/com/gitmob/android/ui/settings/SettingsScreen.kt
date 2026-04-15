@@ -70,6 +70,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.Lifecycle
 import androidx.compose.material.icons.filled.FileUpload
+import com.gitmob.android.data.FavoritesManager
+import com.gitmob.android.data.ImportConflict
+import com.gitmob.android.data.ImportConflictType
+import com.gitmob.android.data.ImportResult
+import com.gitmob.android.data.ConflictResolution
 import com.gitmob.android.ui.filepicker.FilePickerScreen
 import com.gitmob.android.ui.filepicker.PickerMode
 
@@ -94,12 +99,20 @@ fun SettingsScreen(
     val profile by tokenStorage.userProfile.collectAsState(initial = null)
     val logLevelIdx by tokenStorage.logLevel.collectAsState(initial = 1)
 
+    // FavoritesManager 实例
+    val favoritesManager = androidx.lifecycle.viewmodel.compose.viewModel<FavoritesManager>()
+
     // 多账号
     val accountStore = remember { com.gitmob.android.auth.AccountStore(context) }
     val allAccounts by accountStore.accounts.collectAsState(initial = emptyList())
     val activeLogin by tokenStorage.userLogin.collectAsState(initial = null)
     val activeAccount = remember(allAccounts, activeLogin) {
         allAccounts.find { it.login == activeLogin }
+    }
+
+    // 初始化 FavoritesManager
+    LaunchedEffect(activeLogin) {
+        activeLogin?.let { favoritesManager.init(it) }
     }
     var accountCardExpanded by remember { mutableStateOf(false) }
 
@@ -112,6 +125,15 @@ fun SettingsScreen(
     var showUpdateDialog by remember { mutableStateOf(false) }
     var checkingForUpdate by remember { mutableStateOf(false) }
     var latestRelease by remember { mutableStateOf<UpdateManager.Release?>(null) }
+
+    // 收藏夹导出导入
+    var showExportFavPicker by remember { mutableStateOf(false) }
+    var showImportFavPicker by remember { mutableStateOf(false) }
+    var showImportConflictDialog by remember { mutableStateOf(false) }
+    var importJsonString by remember { mutableStateOf("") }
+    var importResult by remember { mutableStateOf<ImportResult?>(null) }
+    var importResolutions by remember { mutableStateOf<Map<Int, ConflictResolution>>(emptyMap()) }
+    var showImportResultDialog by remember { mutableStateOf(false) }
 
     // 检测 MANAGE_EXTERNAL_STORAGE
     val hasAllFilesAccess = remember {
@@ -276,6 +298,111 @@ fun SettingsScreen(
                 },
             )
         }
+    }
+
+    // 导出收藏夹
+    if (showExportFavPicker) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showExportFavPicker = false },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false
+            )
+        ) {
+            com.gitmob.android.ui.filepicker.FilePickerScreen(
+                title       = "选择收藏夹导出目录",
+                mode        = com.gitmob.android.ui.filepicker.PickerMode.DIRECTORY,
+                rootEnabled = rootEnabled,
+                onConfirm   = { dir, _ ->
+                    showExportFavPicker = false
+                    scope.launch {
+                        exportFavorites(dir, favoritesManager.exportFavorites())
+                    }
+                },
+                onDismiss = {
+                    showExportFavPicker = false
+                },
+            )
+        }
+    }
+
+    // 导入收藏夹
+    if (showImportFavPicker) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showImportFavPicker = false },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false
+            )
+        ) {
+            com.gitmob.android.ui.filepicker.FilePickerScreen(
+                title       = "选择收藏夹 JSON 文件",
+                mode        = com.gitmob.android.ui.filepicker.PickerMode.SINGLE_FILE,
+                allowedExtensions = listOf("json"),
+                rootEnabled = rootEnabled,
+                onConfirm   = { _, files ->
+                    showImportFavPicker = false
+                    scope.launch {
+                        val file = files.firstOrNull()
+                        if (file != null) {
+                            val json = readImportFile(file)
+                            if (json != null) {
+                                importJsonString = json
+                                val result = favoritesManager.analyzeImport(json)
+                                importResult = result
+                                if (result.success && result.conflicts.isNotEmpty()) {
+                                    showImportConflictDialog = true
+                                } else if (result.success) {
+                                    val finalResult = favoritesManager.performImport(json)
+                                    importResult = finalResult
+                                    showImportResultDialog = true
+                                } else {
+                                    importResult = result
+                                    showImportResultDialog = true
+                                }
+                            }
+                        }
+                    }
+                },
+                onDismiss = {
+                    showImportFavPicker = false
+                },
+            )
+        }
+    }
+
+    // 导入冲突处理弹窗
+    if (showImportConflictDialog && importResult != null) {
+        ConflictResolutionDialog(
+            conflicts = importResult!!.conflicts,
+            onConfirm = { resolutions ->
+                importResolutions = resolutions
+                showImportConflictDialog = false
+                scope.launch {
+                    val finalResult = favoritesManager.performImport(importJsonString, resolutions)
+                    importResult = finalResult
+                    showImportResultDialog = true
+                }
+            },
+            onDismiss = {
+                showImportConflictDialog = false
+            },
+            c = c
+        )
+    }
+
+    // 导入结果弹窗
+    if (showImportResultDialog && importResult != null) {
+        ImportResultDialog(
+            result = importResult!!,
+            onDismiss = {
+                showImportResultDialog = false
+                importResult = null
+            },
+            c = c
+        )
     }
 
     Scaffold(
@@ -746,6 +873,42 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            // ── 收藏夹 ──────────────────────────────────────────
+            SLabel("收藏夹", c)
+            SCard(c) {
+                SRow(
+                    title = "导出收藏夹",
+                    subtitle = "将当前用户的收藏夹数据导出为 JSON 文件",
+                    leadingIcon = {
+                        SIconBox(GreenDim, Icons.Default.FileDownload, Green)
+                    },
+                    trailing = {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null,
+                            tint = c.textTertiary, modifier = Modifier.size(16.dp))
+                    },
+                    onClick = {
+                        showExportFavPicker = true
+                    },
+                    c = c,
+                )
+                SDivider(c)
+                SRow(
+                    title = "导入收藏夹",
+                    subtitle = "从 JSON 文件导入收藏夹数据到当前用户",
+                    leadingIcon = {
+                        SIconBox(BlueDim, Icons.Default.FileUpload, BlueColor)
+                    },
+                    trailing = {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null,
+                            tint = c.textTertiary, modifier = Modifier.size(16.dp))
+                    },
+                    onClick = {
+                        showImportFavPicker = true
+                    },
+                    c = c,
+                )
             }
 
             // ── 日志 ──────────────────────────────────────────
@@ -1332,5 +1495,240 @@ private fun hasInstallPermission(context: Context): Boolean {
         context.packageManager.canRequestPackageInstalls()
     } else {
         true
+    }
+}
+
+// ─── 收藏夹导出导入工具函数 ──────────────────────────────────────────────────────
+
+/**
+ * 导出收藏夹数据到文件
+ */
+private suspend fun exportFavorites(destDir: String, jsonString: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    try {
+        val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+        val dest = java.io.File(destDir, "gitmob_favorites_$timestamp.json")
+        dest.writeText(jsonString)
+        LogManager.i("Settings", "收藏夹已导出到 ${dest.absolutePath}")
+    } catch (e: Exception) {
+        LogManager.e("Settings", "收藏夹导出失败", e)
+    }
+}
+
+/**
+ * 读取导入文件内容
+ */
+private suspend fun readImportFile(filePath: String): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    try {
+        val file = java.io.File(filePath)
+        if (file.exists() && file.extension.lowercase() == "json") {
+            file.readText()
+        } else {
+            LogManager.e("Settings", "无效的文件格式，请选择 JSON 文件")
+            null
+        }
+    } catch (e: Exception) {
+        LogManager.e("Settings", "读取文件失败", e)
+        null
+    }
+}
+
+// ─── 冲突处理弹窗 ──────────────────────────────────────────────────────────────
+
+@Composable
+fun ConflictResolutionDialog(
+    conflicts: List<ImportConflict>,
+    onConfirm: (Map<Int, ConflictResolution>) -> Unit,
+    onDismiss: () -> Unit,
+    c: GmColors
+) {
+    val localResolutions = remember { mutableStateMapOf<Int, ConflictResolution>() }
+    val scrollState = rememberScrollState()
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .background(c.bgCard, RoundedCornerShape(20.dp))
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SIconBox(YellowDim, Icons.Default.Warning, Yellow)
+                Column {
+                    Text("发现冲突", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = c.textPrimary)
+                    Text("共 ${conflicts.size} 个冲突需要处理", fontSize = 13.sp, color = c.textSecondary)
+                }
+            }
+
+            HorizontalDivider(color = c.border, thickness = 0.5.dp)
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .weight(1f, false),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                conflicts.forEachIndexed { idx, conflict ->
+                    ConflictItem(
+                        conflict = conflict,
+                        currentResolution = localResolutions[idx] ?: ConflictResolution.SKIP,
+                        onResolutionChange = { localResolutions[idx] = it },
+                        c = c
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("取消", color = c.textSecondary)
+                }
+                Button(
+                    onClick = { onConfirm(localResolutions.toMap()) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Coral),
+                ) {
+                    Text("确认导入")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ConflictItem(
+    conflict: ImportConflict,
+    currentResolution: ConflictResolution,
+    onResolutionChange: (ConflictResolution) -> Unit,
+    c: GmColors
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(c.bgItem, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                if (conflict.type == ImportConflictType.GROUP_NAME) Icons.Default.Folder else Icons.Default.Star,
+                null,
+                tint = Yellow,
+                modifier = Modifier.size(18.dp)
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    when (conflict.type) {
+                        ImportConflictType.GROUP_NAME -> "分组名称冲突"
+                        ImportConflictType.REPO_EXISTS -> "仓库已存在"
+                    },
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = c.textPrimary
+                )
+                Text(
+                    conflict.groupName ?: conflict.repoFullName ?: "",
+                    fontSize = 12.sp,
+                    color = c.textSecondary
+                )
+            }
+        }
+
+        val options = when (conflict.type) {
+            ImportConflictType.GROUP_NAME -> listOf(
+                ConflictResolution.SKIP to "跳过",
+                ConflictResolution.OVERWRITE to "覆盖",
+                ConflictResolution.MERGE to "合并",
+                ConflictResolution.RENAME to "重命名"
+            )
+            ImportConflictType.REPO_EXISTS -> listOf(
+                ConflictResolution.SKIP to "跳过",
+                ConflictResolution.OVERWRITE to "覆盖"
+            )
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            options.forEach { (resolution, label) ->
+                FilterChip(
+                    selected = currentResolution == resolution,
+                    onClick = { onResolutionChange(resolution) },
+                    label = { Text(label, fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = if (currentResolution == resolution) CoralDim else c.bgItem,
+                        selectedLabelColor = if (currentResolution == resolution) Coral else c.textSecondary,
+                    ),
+                    modifier = Modifier.height(32.dp)
+                )
+            }
+        }
+    }
+}
+
+// ─── 导入结果弹窗 ──────────────────────────────────────────────────────────────
+
+@Composable
+fun ImportResultDialog(
+    result: ImportResult,
+    onDismiss: () -> Unit,
+    c: GmColors
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .background(c.bgCard, RoundedCornerShape(20.dp))
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (result.success) {
+                SIconBox(GreenDim, Icons.Default.CheckCircle, Green)
+                Text("导入成功", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = c.textPrimary)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.Start,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("新增分组: ${result.importedGroups}", fontSize = 14.sp, color = c.textSecondary)
+                    Text("新增仓库: ${result.importedRepos}", fontSize = 14.sp, color = c.textSecondary)
+                    if (result.conflicts.isNotEmpty()) {
+                        Text("处理冲突: ${result.conflicts.size}", fontSize = 14.sp, color = c.textSecondary)
+                    }
+                }
+            } else {
+                SIconBox(RedDim, Icons.Default.Error, RedColor)
+                Text("导入失败", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = c.textPrimary)
+                Text(result.errorMessage ?: "未知错误", fontSize = 14.sp, color = c.textSecondary)
+            }
+
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Coral),
+            ) {
+                Text("确定")
+            }
+        }
     }
 }

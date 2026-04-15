@@ -1,8 +1,7 @@
 package com.gitmob.android.auth
 
 import android.content.Context
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
+import com.gitmob.android.util.EncryptedPreferences
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.flow.Flow
@@ -21,7 +20,7 @@ enum class AuthType {
 }
 
 /**
- * 单个账号的完整信息（token 明文存储，与现有单账号模式一致）
+ * 单个账号的完整信息（所有数据加密存储）
  *
  * 所有字段均标注 @SerializedName，确保 R8 混淆后 Gson 仍能按 JSON key 正确反序列化，
  * 与 proguard-rules.pro 的 -keepclassmembers ... @SerializedName 规则配合双重保护。
@@ -38,10 +37,10 @@ data class AccountInfo(
 }
 
 /**
- * 多账号存储管理器
+ * 多账号存储管理器（使用 EncryptedPreferences）
  *
  * 数据模型：
- *   accounts_json  → List<AccountInfo> JSON（所有已授权账号）
+ *   accounts_json  → List<AccountInfo> JSON（所有已授权账号，加密存储）
  *   active_login   → 当前活跃账号的 login
  *
  * 与 TokenStorage 协同工作：
@@ -54,10 +53,11 @@ data class AccountInfo(
 class AccountStore(private val context: Context) {
 
     private val gson = Gson()
+    private val prefs = EncryptedPreferences.getInstance(context)
 
     private object Keys {
-        val ACCOUNTS_JSON  = stringPreferencesKey("accounts_json")
-        val ACTIVE_LOGIN   = stringPreferencesKey("active_login")
+        const val ACCOUNTS_JSON = "accounts_json"
+        const val ACTIVE_LOGIN  = "active_login"
     }
 
     /**
@@ -77,34 +77,31 @@ class AccountStore(private val context: Context) {
     }
 
     /** 所有已保存账号的流 */
-    val accounts: Flow<List<AccountInfo>> = context.dataStore.data.map { prefs ->
-        parseAccounts(prefs[Keys.ACCOUNTS_JSON])
-    }
+    val accounts: Flow<List<AccountInfo>> = prefs.getStringFlow(Keys.ACCOUNTS_JSON, "[]")
+        .map { parseAccounts(it) }
 
     /** 当前活跃账号的 login */
-    val activeLogin: Flow<String?> = context.dataStore.data.map { it[Keys.ACTIVE_LOGIN] }
+    val activeLogin: Flow<String?> = prefs.getStringFlow(Keys.ACTIVE_LOGIN)
 
     /** 当前活跃账号信息 */
-    val activeAccount: Flow<AccountInfo?> = context.dataStore.data.map { prefs ->
-        val login = prefs[Keys.ACTIVE_LOGIN] ?: return@map null
-        parseAccounts(prefs[Keys.ACCOUNTS_JSON]).firstOrNull { it.login == login }
+    val activeAccount: Flow<AccountInfo?> = prefs.getStringFlow(Keys.ACTIVE_LOGIN).map { login ->
+        if (login == null) return@map null
+        parseAccounts(prefs.getString(Keys.ACCOUNTS_JSON)).firstOrNull { it.login == login }
     }
 
     /** 添加或更新账号（login 相同则覆盖），并设为活跃账号 */
     suspend fun addOrUpdateAccount(info: AccountInfo) {
-        context.dataStore.edit { prefs ->
-            val current = parseAccounts(prefs[Keys.ACCOUNTS_JSON])
-            val updated = current.filter { it.login != info.login } + info
-            prefs[Keys.ACCOUNTS_JSON] = gson.toJson(updated)
-            prefs[Keys.ACTIVE_LOGIN]  = info.login
-        }
+        val current = parseAccounts(prefs.getString(Keys.ACCOUNTS_JSON))
+        val updated = current.filter { it.login != info.login } + info
+        prefs.putString(Keys.ACCOUNTS_JSON, gson.toJson(updated))
+        prefs.putString(Keys.ACTIVE_LOGIN, info.login)
     }
 
     /** 切换活跃账号，返回目标账号信息（不存在则返回 null） */
     suspend fun switchAccount(login: String): AccountInfo? {
         val list = accounts.first()
         val target = list.firstOrNull { it.login == login } ?: return null
-        context.dataStore.edit { it[Keys.ACTIVE_LOGIN] = login }
+        prefs.putString(Keys.ACTIVE_LOGIN, login)
         return target
     }
 
@@ -114,19 +111,17 @@ class AccountStore(private val context: Context) {
      */
     suspend fun removeAccount(login: String): List<AccountInfo> {
         var remaining: List<AccountInfo> = emptyList()
-        context.dataStore.edit { prefs ->
-            val current = parseAccounts(prefs[Keys.ACCOUNTS_JSON])
-            remaining = current.filter { it.login != login }
-            prefs[Keys.ACCOUNTS_JSON] = gson.toJson(remaining)
+        val current = parseAccounts(prefs.getString(Keys.ACCOUNTS_JSON))
+        remaining = current.filter { it.login != login }
+        prefs.putString(Keys.ACCOUNTS_JSON, gson.toJson(remaining))
 
-            // 如果移除的是活跃账号，切换到第一个剩余账号（或清空）
-            val activeWasRemoved = prefs[Keys.ACTIVE_LOGIN] == login
-            if (activeWasRemoved) {
-                if (remaining.isNotEmpty()) {
-                    prefs[Keys.ACTIVE_LOGIN] = remaining.first().login
-                } else {
-                    prefs.remove(Keys.ACTIVE_LOGIN)
-                }
+        // 如果移除的是活跃账号，切换到第一个剩余账号（或清空）
+        val activeWasRemoved = prefs.getString(Keys.ACTIVE_LOGIN) == login
+        if (activeWasRemoved) {
+            if (remaining.isNotEmpty()) {
+                prefs.putString(Keys.ACTIVE_LOGIN, remaining.first().login)
+            } else {
+                prefs.remove(Keys.ACTIVE_LOGIN)
             }
         }
         return remaining
@@ -138,9 +133,7 @@ class AccountStore(private val context: Context) {
 
     /** 清空所有账号数据 */
     suspend fun clearAll() {
-        context.dataStore.edit { prefs ->
-            prefs.remove(Keys.ACCOUNTS_JSON)
-            prefs.remove(Keys.ACTIVE_LOGIN)
-        }
+        prefs.remove(Keys.ACCOUNTS_JSON)
+        prefs.remove(Keys.ACTIVE_LOGIN)
     }
 }

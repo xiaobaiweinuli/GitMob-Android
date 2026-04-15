@@ -45,6 +45,7 @@ import com.gitmob.android.ui.common.GmDivider
 import com.gitmob.android.ui.common.LoadingBox
 import com.gitmob.android.ui.theme.*
 import com.gitmob.android.ui.update.UpdateDialog
+import com.gitmob.android.GitMobApp
 import com.gitmob.android.util.GmDownloadManager
 import com.gitmob.android.util.LogManager
 import com.gitmob.android.util.UpdateManager
@@ -89,6 +90,9 @@ fun HomeScreen(
     var latestRelease by remember { mutableStateOf<UpdateManager.Release?>(null) }
     val scope = rememberCoroutineScope()
 
+    val app = ctx.applicationContext as GitMobApp
+    val pendingUpdate by app.pendingUpdate.collectAsState(initial = null)
+
     fun downloadAndInstall(release: UpdateManager.Release) {
         val apkUrl = release.apkUrl ?: return
         LogManager.i("Home", "开始下载更新: ${release.tagName}")
@@ -99,21 +103,12 @@ fun HomeScreen(
         )
     }
 
-    LaunchedEffect(Unit) {
-        if (targetUserLogin == null) {
-            LogManager.d("Home", "进入主页，自动检测更新...")
-            val result = UpdateManager.checkForUpdate()
-            result.onSuccess { release ->
-                if (release != null && UpdateManager.shouldShowUpdateDialog(ctx, release)) {
-                    LogManager.i("Home", "检测到新版本: ${release.tagName}，显示更新弹窗")
-                    latestRelease = release
-                    showUpdateDialog = true
-                } else {
-                    LogManager.i("Home", "未检测到新版本或已忽略该版本")
-                }
-            }.onFailure { e ->
-                LogManager.e("Home", "自动检测更新失败", e)
-            }
+    LaunchedEffect(pendingUpdate) {
+        if (targetUserLogin == null && pendingUpdate != null && UpdateManager.shouldShowUpdateDialog(ctx, pendingUpdate!!)) {
+            LogManager.i("Home", "显示更新弹窗: ${pendingUpdate!!.tagName}")
+            latestRelease = pendingUpdate
+            showUpdateDialog = true
+            app.markUpdateShown()
         }
     }
 

@@ -95,29 +95,66 @@ object LanguageManager {
             val token = ApiClient.currentToken()
                 ?: return@withContext Result.failure(Exception("未登录，无法获取语言数据"))
 
-            // 1. 下载 YAML
-            val url = "https://api.github.com/repos/github-linguist/linguist/contents/lib/linguist/languages.yml"
-            val request = Request.Builder()
-                .url(url)
+            // 1. 首先调用 GitHub Contents API 获取 download_url
+            val apiUrl = "https://api.github.com/repos/github-linguist/linguist/contents/lib/linguist/languages.yml"
+            LogManager.d(TAG, "正在访问 API URL: $apiUrl")
+            
+            val apiRequest = Request.Builder()
+                .url(apiUrl)
                 .addHeader("Authorization", "Bearer $token")
-                .addHeader("Accept", "application/vnd.github.v3.raw")
+                .addHeader("Accept", "application/vnd.github.v3+json")
                 .addHeader("X-GitHub-Api-Version", "2022-11-28")
                 .build()
 
             val client = ApiClient.rawHttpClient()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("HTTP ${response.code}：${response.message}"))
+            val apiResponse = client.newCall(apiRequest).execute()
+            
+            LogManager.d(TAG, "API HTTP 响应码: ${apiResponse.code}")
+            
+            if (!apiResponse.isSuccessful) {
+                return@withContext Result.failure(Exception("HTTP ${apiResponse.code}：${apiResponse.message}"))
             }
-            val yamlText = response.body?.string()
-                ?: return@withContext Result.failure(Exception("响应体为空"))
+            
+            val apiJson = apiResponse.body?.string()
+                ?: return@withContext Result.failure(Exception("API 响应体为空"))
+            
+            LogManager.d(TAG, "API 响应 JSON: ${apiJson.take(500)}")
+            
+            val apiObj = JSONObject(apiJson)
+            val downloadUrl = apiObj.getString("download_url")
+            
+            LogManager.d(TAG, "获取到 download_url: $downloadUrl")
 
-            // 2. Jackson 解析 YAML → Map<String, Any>
+            // 2. 使用 download_url 直接下载原始 YAML 文件
+            LogManager.d(TAG, "正在下载原始 YAML 文件")
+            
+            val yamlRequest = Request.Builder()
+                .url(downloadUrl)
+                .build()
+            
+            val yamlResponse = client.newCall(yamlRequest).execute()
+            
+            LogManager.d(TAG, "YAML HTTP 响应码: ${yamlResponse.code}")
+            
+            if (!yamlResponse.isSuccessful) {
+                return@withContext Result.failure(Exception("HTTP ${yamlResponse.code}：${yamlResponse.message}"))
+            }
+            
+            val yamlText = yamlResponse.body?.string()
+                ?: return@withContext Result.failure(Exception("YAML 响应体为空"))
+
+            LogManager.d(TAG, "原始 YAML 长度: ${yamlText.length}")
+            LogManager.d(TAG, "原始 YAML 前500字符: ${yamlText.take(500)}")
+
+            // 3. Jackson 解析 YAML → Map<String, Any>
             val yamlMapper = ObjectMapper(YAMLFactory())
             @Suppress("UNCHECKED_CAST")
             val root = yamlMapper.readValue(yamlText, Map::class.java) as Map<String, Any?>
 
-            // 3. 转换为 LanguageEntry 列表
+            LogManager.d(TAG, "解析后根映射大小: ${root.size}")
+            LogManager.d(TAG, "解析后前10个键: ${root.keys.take(10)}")
+
+            // 4. 转换为 LanguageEntry 列表
             val entries = root.entries.mapNotNull { (rawName, value) ->
                 val attrs = value as? Map<*, *> ?: return@mapNotNull null
                 val color = attrs["color"] as? String
@@ -125,13 +162,18 @@ object LanguageManager {
                 LanguageEntry(id = id, name = rawName, color = color)
             }
 
-            // 4. 排序：字母开头在前，数字开头在后；同组内按字母升序
+            LogManager.d(TAG, "转换后条目数量: ${entries.size}")
+
+            // 5. 排序：字母开头在前，数字开头在后；同组内按字母升序
             val sorted = entries.sortedWith(compareBy(
                 { if (it.name.first().isDigit()) 1 else 0 },
                 { it.name.lowercase() },
             ))
 
-            // 5. 序列化为 JSON 保存
+            LogManager.d(TAG, "排序后条目数量: ${sorted.size}")
+            LogManager.d(TAG, "排序后前10个条目: ${sorted.take(10).map { it.name }}")
+
+            // 6. 序列化为 JSON 保存
             val jsonArr = JSONArray()
             sorted.forEach { entry ->
                 val obj = JSONObject()
@@ -140,9 +182,13 @@ object LanguageManager {
                 if (entry.color != null) obj.put("color", entry.color) else obj.put("color", JSONObject.NULL)
                 jsonArr.put(obj)
             }
-            jsonFile(context).writeText(jsonArr.toString())
+            val jsonText = jsonArr.toString()
+            jsonFile(context).writeText(jsonText)
 
-            // 6. 刷新内存缓存
+            LogManager.d(TAG, "生成的 JSON 长度: ${jsonText.length}")
+            LogManager.d(TAG, "生成的 JSON 前500字符: ${jsonText.take(500)}")
+
+            // 7. 刷新内存缓存
             invalidateCache()
             cache = sorted
 

@@ -17,8 +17,7 @@ splashscreen = "1.0.1"
 material = "1.12.0"
 jgit = "6.10.0.202406032230-r"
 jackson = "2.17.2"
-cronetPlayServices = "18.1.1"
-cronetOkhttp = "0.1.1"
+securityCrypto = "1.1.0-alpha06"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -53,8 +52,7 @@ jgit-apache-http = { group = "org.eclipse.jgit", name = "org.eclipse.jgit.http.a
 jackson-dataformat-yaml = { group = "com.fasterxml.jackson.dataformat", name = "jackson-dataformat-yaml", version.ref = "jackson" }
 jackson-module-kotlin = { group = "com.fasterxml.jackson.module", name = "jackson-module-kotlin", version.ref = "jackson" }
 
-cronet-play-services = { group = "com.google.android.gms", name = "play-services-cronet", version.ref = "cronetPlayServices" }
-cronet-okhttp = { group = "com.google.net.cronet", name = "cronet-okhttp", version.ref = "cronetOkhttp" }
+androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

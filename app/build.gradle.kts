@@ -95,16 +95,6 @@ android {
 }
 
 dependencies {
-    // 强制统一 Cronet 版本，修复 namespace 冲突
-    constraints {
-        implementation("org.chromium.net:cronet-api:143.7445.0") {
-            because("修复 namespace 冲突")
-        }
-        implementation("org.chromium.net:cronet-shared:143.7445.0") {
-            because("修复 namespace 冲突")
-        }
-    }
-
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.process)
@@ -118,6 +108,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation(libs.androidx.browser)
     implementation(libs.androidx.splashscreen)
     implementation(libs.material)
@@ -130,9 +121,6 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.svg)
     implementation(libs.kotlinx.coroutines.android)
-    // Cronet - Chromium 网络栈，支持 HTTP/3 over QUIC
-    implementation(libs.cronet.play.services)
-    implementation(libs.cronet.okhttp)
     // JGit：纯 Java Git 实现，无需外部 git 可执行文件
     implementation(libs.jgit)
     implementation(libs.jgit.apache.http)
