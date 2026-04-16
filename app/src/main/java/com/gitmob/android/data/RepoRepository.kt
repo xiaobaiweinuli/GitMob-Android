@@ -464,23 +464,28 @@ class RepoRepository {
     }
 
     /**
-     * 删除文件
+     * 删除文件（使用 GraphQL API）
      */
     suspend fun deleteFile(
         owner: String, repo: String, path: String,
         message: String, sha: String,
         branch: String? = null,
     ): Boolean = withContext(Dispatchers.IO) {
-        val request = GHDeleteFileRequest(
-            message = message,
-            sha = sha,
-            branch = branch,
+        val token = ApiClient.currentToken() ?: return@withContext false
+        val success = GraphQLClient.deleteFileWithGraphQL(
+            token = token,
+            owner = owner,
+            repo = repo,
+            branch = branch ?: "main",
+            path = path,
+            message = message
         )
-        val response = api.deleteFile(owner, repo, path, request)
-        invalidateContentsCache(owner, repo)
-        fileContentCache.clear()
-        fileWithInfoCache.clear()
-        response.isSuccessful
+        if (success) {
+            invalidateContentsCache(owner, repo)
+            fileContentCache.clear()
+            fileWithInfoCache.clear()
+        }
+        success
     }
 
     /**

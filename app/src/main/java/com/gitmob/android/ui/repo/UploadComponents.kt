@@ -18,13 +18,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.gitmob.android.api.GHContent
 import com.gitmob.android.ui.theme.*
 import java.io.File
 
@@ -78,24 +84,60 @@ fun UploadSourceSheet(
     onPickFolder: () -> Unit,      // 触发文件夹选择器（DIRECTORY）
     onDismiss: () -> Unit,
 ) {
+    // 消费所有垂直手势，防止 Sheet 跳动
+    val consumeAllVerticalScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                return available.copy(x = 0f)
+            }
+
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity
+            ): Velocity {
+                return available.copy(x = 0f)
+            }
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = c.bgCard,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = c.border) },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        dragHandle = null,
+        sheetGesturesEnabled = false,
+        properties = ModalBottomSheetProperties(
+            shouldDismissOnBackPress = true,
+            shouldDismissOnClickOutside = true
+        ),
+        sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            confirmValueChange = { it != SheetValue.Hidden }
+        ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
+                .padding(bottom = 32.dp)
+                .nestedScroll(consumeAllVerticalScroll),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // 标题
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 标题和关闭按钮
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Icon(Icons.Default.Upload, null, tint = Coral, modifier = Modifier.size(20.dp))
                 Text("上传文件", fontSize = 16.sp, color = c.textPrimary, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "关闭", tint = c.textSecondary, modifier = Modifier.size(20.dp))
+                }
             }
             // 目标路径提示
             val displayPath = if (repoPath.isEmpty()) "仓库根目录" else repoPath
@@ -156,18 +198,32 @@ fun UploadSourceSheet(
 /**
  * 第二步弹窗：预览文件列表 + 勾选 + commit message
  * allEntries：扫描/选取得到的完整列表（已携带 repoPath）
+ * existingFiles：仓库当前目录中已有的文件列表，用于检测重复
  */
 @Composable
 fun UploadReviewSheet(
     allEntries: List<UploadFileEntry>,
+    existingFiles: List<GHContent>,
     c: GmColors,
     onConfirm: (selected: List<UploadFileEntry>, message: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // 勾选状态（tooLarge 的默认不勾选）
+    // 检测与仓库已有文件的重复
+    val duplicatePaths = remember(allEntries, existingFiles) {
+        existingFiles.map { it.path }.toSet()
+    }
+    
+    val duplicateEntries = remember(allEntries, duplicatePaths) {
+        allEntries.filter { duplicatePaths.contains(it.repoPath) }
+    }
+    
+    // 勾选状态（tooLarge 的默认不勾选，重复的默认也不勾选）
     val checkedMap = remember(allEntries) {
         mutableStateMapOf<String, Boolean>().apply {
-            allEntries.forEach { e -> put(e.localPath, !e.tooLarge) }
+            allEntries.forEach { e -> 
+                val isDuplicate = duplicatePaths.contains(e.repoPath)
+                put(e.localPath, !e.tooLarge && !isDuplicate)
+            }
         }
     }
     var commitMsg by remember { mutableStateOf("") }
@@ -183,16 +239,45 @@ fun UploadReviewSheet(
     val totalBytes   = validEntries.sumOf { it.sizeBytes }
     val allChecked   = allEntries.filter { !it.tooLarge }.all { checkedMap[it.localPath] == true }
 
+    // 消费所有垂直手势，防止 Sheet 跳动
+    val consumeAllVerticalScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                return available.copy(x = 0f)
+            }
+
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity
+            ): Velocity {
+                return available.copy(x = 0f)
+            }
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = c.bgCard,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = c.border) },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        dragHandle = null,
+        sheetGesturesEnabled = false,
+        properties = ModalBottomSheetProperties(
+            shouldDismissOnBackPress = true,
+            shouldDismissOnClickOutside = true
+        ),
+        sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            confirmValueChange = { it != SheetValue.Hidden }
+        ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.92f),
+                .fillMaxHeight(0.92f)
+                .nestedScroll(consumeAllVerticalScroll),
         ) {
             // ── 头部 ──────────────────────────────────────────────────────────
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -201,10 +286,22 @@ fun UploadReviewSheet(
                     Spacer(Modifier.width(8.dp))
                     Text("确认上传文件", fontSize = 15.sp, color = c.textPrimary, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.weight(1f))
+                    if (duplicateEntries.isNotEmpty()) {
+                        Text(
+                            "${duplicateEntries.size} 个文件重复",
+                            fontSize = 11.sp, color = Color(0xFFD32F2F),
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
                     Text(
                         "${validEntries.size}/${allEntries.size} 个文件  ${formatUploadSize(totalBytes)}",
                         fontSize = 11.sp, color = c.textTertiary,
                     )
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭", tint = c.textSecondary, modifier = Modifier.size(18.dp))
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 // 全选/取消
@@ -239,22 +336,26 @@ fun UploadReviewSheet(
                 items(allEntries, key = { it.localPath }) { entry ->
                     val checked  = checkedMap[entry.localPath] ?: false
                     val repoPath = pathEditMap[entry.localPath] ?: entry.repoPath
+                    val isDuplicate = duplicatePaths.contains(repoPath)
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
-                                if (entry.tooLarge) Color(0x22D32F2F) else c.bgItem,
+                                when {
+                                    entry.tooLarge || isDuplicate -> Color(0x22D32F2F)
+                                    else -> c.bgItem
+                                },
                                 RoundedCornerShape(8.dp)
                             )
-                            .clickable(enabled = !entry.tooLarge) { checkedMap[entry.localPath] = !checked }
+                            .clickable(enabled = !entry.tooLarge && !isDuplicate) { checkedMap[entry.localPath] = !checked }
                             .padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Checkbox(
-                            checked = checked && !entry.tooLarge,
-                            onCheckedChange = if (entry.tooLarge) null
+                            checked = checked && !entry.tooLarge && !isDuplicate,
+                            onCheckedChange = if (entry.tooLarge || isDuplicate) null
                                              else { v -> checkedMap[entry.localPath] = v },
                             colors = CheckboxDefaults.colors(checkedColor = Coral),
                             modifier = Modifier.size(20.dp),
@@ -263,7 +364,10 @@ fun UploadReviewSheet(
                             Text(
                                 File(entry.localPath).name,
                                 fontSize = 13.sp,
-                                color = if (entry.tooLarge) Color(0xFFD32F2F) else c.textPrimary,
+                                color = when {
+                                    entry.tooLarge || isDuplicate -> Color(0xFFD32F2F)
+                                    else -> c.textPrimary
+                                },
                                 maxLines = 1,
                             )
                             Text(
@@ -276,10 +380,14 @@ fun UploadReviewSheet(
                             Text(
                                 formatUploadSize(entry.sizeBytes),
                                 fontSize = 10.sp,
-                                color = if (entry.tooLarge) Color(0xFFD32F2F) else c.textTertiary,
+                                color = when {
+                                    entry.tooLarge || isDuplicate -> Color(0xFFD32F2F)
+                                    else -> c.textTertiary
+                                },
                             )
-                            if (entry.tooLarge) {
-                                Text("超出限制", fontSize = 9.sp, color = Color(0xFFD32F2F))
+                            when {
+                                entry.tooLarge -> Text("超出限制", fontSize = 9.sp, color = Color(0xFFD32F2F))
+                                isDuplicate -> Text("文件重复", fontSize = 9.sp, color = Color(0xFFD32F2F))
                             }
                         }
                         // 编辑目标路径按钮

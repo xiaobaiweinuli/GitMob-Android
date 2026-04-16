@@ -1636,6 +1636,7 @@ fun RepoDetailScreen(
                             path = selectedFileForMenu!!.path,
                             message = commitMessage,
                             sha = selectedFileForMenu!!.sha,
+                            contentType = selectedFileForMenu!!.type,
                         )
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = RedColor),
@@ -1807,6 +1808,7 @@ fun RepoDetailScreen(
     if (showUploadReviewSheet && uploadEntries.isNotEmpty()) {
         UploadReviewSheet(
             allEntries = uploadEntries,
+            existingFiles = state.contents,
             c          = c,
             onConfirm  = { selected, message ->
                 showUploadReviewSheet = false

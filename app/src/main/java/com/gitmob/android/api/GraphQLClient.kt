@@ -2264,4 +2264,55 @@ object GraphQLClient {
             false
         }
     }
+
+    /**
+     * 使用 createCommitOnBranch mutation 删除文件（单次 commit）
+     */
+    suspend fun deleteFileWithGraphQL(
+        token: String,
+        owner: String,
+        repo: String,
+        branch: String,
+        path: String,
+        message: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val mutation = """
+                mutation CreateCommitOnBranch(${'$'}input: CreateCommitOnBranchInput!) {
+                  createCommitOnBranch(input: ${'$'}input) {
+                    commit {
+                      oid
+                      url
+                    }
+                  }
+                }
+            """.trimIndent()
+
+            val expectedHeadOid = getBranchHeadOid(token, owner, repo, branch)
+                ?: return@withContext false
+
+            val input = JSONObject().apply {
+                put("branch", JSONObject().apply {
+                    put("repositoryNameWithOwner", "$owner/$repo")
+                    put("branchName", branch)
+                })
+                put("message", JSONObject().apply {
+                    put("headline", message)
+                })
+                put("fileChanges", JSONObject().apply {
+                    put("deletions", org.json.JSONArray().apply {
+                        put(JSONObject().put("path", path))
+                    })
+                })
+                put("expectedHeadOid", expectedHeadOid)
+            }
+
+            val vars = JSONObject().put("input", input)
+            val json = post(token, JSONObject().put("query", mutation).put("variables", vars).toString())
+            json?.optJSONObject("data")?.has("createCommitOnBranch") == true
+        } catch (e: Exception) {
+            LogManager.w(TAG, "deleteFileWithGraphQL 失败: ${e.message}")
+            false
+        }
+    }
 }

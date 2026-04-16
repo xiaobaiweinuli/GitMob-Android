@@ -14,9 +14,9 @@
 
 ### 远程仓库管理
 - **OAuth 2.0 安全认证** — Cloudflare Worker 中转，client_secret 永不暴露在客户端
-- **Token 登录支持** — 支持使用 Personal Access Token 直接登录
+- **Token 登录支持** — 支持使用 Personal Access Token 直接登录，自动识别 Token 类型
 - **多账号管理** — 支持账号切换与新增，DataStore 持久化存储
-- **仓库操作** — 搜索、筛选（公开/私有）、Star/Unstar、语言标签
+- **仓库操作** — 搜索、筛选（公开/私有）、Star/Unstar、语言标签、归档/取消归档
 - **文件管理** — 文件树浏览、在线编辑/删除、提交、历史记录与 diff 对比
 - **提交历史** — 完整 commit 列表、逐文件 diff、支持 revert
 - **分支管理** — 创建、切换、删除、重命名、设置默认分支
@@ -195,11 +195,76 @@ Token 必须包含以下权限：
 3. 点击 "登录"，App 会自动验证 Token 有效性和权限范围
 4. 验证成功后即可使用
 
+### Token 类型识别
+
+GitMob 会自动识别 Token 的类型，为不同类型的 Token 提供相应的功能支持：
+
+| Token 前缀 | Token 类型 | 说明 |
+|-----------|-----------|------|
+| `gho_` | OAuth Token | OAuth 2.0 授权流程获取的访问令牌 |
+| `ghp_` | Classic Personal Access Token | 经典个人访问令牌（全功能） |
+| `github_pat_` | Fine-grained Personal Access Token | 细粒度个人访问令牌（推荐） |
+| 无前缀 | Legacy Token | 旧版 GitHub Token（已不推荐） |
+
 ### 账号区分
 
 - OAuth 登录的账号在账号列表中显示为普通账号
 - Token 登录的账号在账号列表中会显示 "Token" 标签
 - Token 登录的账号在设置页面仅显示 "移除账号" 选项，不显示 OAuth 相关的注销操作
+
+### 归档功能
+
+GitMob 支持仓库归档和取消归档操作：
+
+**功能说明：**
+- 归档仓库后，仓库将变为只读状态，无法编辑、提交、接受 PR 或打开 Issue
+- 取消归档后，仓库恢复正常读写状态
+- 只有仓库所有者或具有管理员权限的用户可以操作归档功能
+
+**操作步骤：**
+1. 进入仓库详情页
+2. 点击右上角的设置按钮（齿轮图标）
+3. 在下拉菜单中选择「归档」或「取消归档」（根据当前状态动态显示）
+4. 在确认对话框中确认操作
+5. 操作成功后，仓库状态将立即更新
+
+**视觉标识：**
+- 已归档的仓库在仓库列表卡片上会显示「已归档」标签
+- 已归档的仓库在仓库详情页会显示「已归档」标签（在「私有」标签旁边）
+- 已归档的仓库在收藏夹卡片上也会显示「已归档」标签
+
+### 仓库信息编辑
+
+GitMob 支持编辑仓库信息，包括 About 描述、Website 链接和 Topics 标签：
+
+**功能说明：**
+- 支持在仓库列表卡片和仓库详情页中编辑仓库信息
+- 编辑对话框会自动填充已有的 About、Website 和 Topics 内容
+- Topics 支持使用空格分隔多个标签
+
+**操作步骤：**
+1. 在仓库列表卡片或仓库详情页点击菜单按钮
+2. 选择「编辑信息」
+3. 修改 About 描述、Website 链接或 Topics 标签
+4. 点击「保存」确认修改
+
+### 收藏夹管理
+
+GitMob 支持仓库收藏分组管理，可创建多个收藏夹分组：
+
+**功能说明：**
+- 支持创建、编辑、删除收藏夹分组
+- 支持将仓库添加到不同的收藏夹分组
+- 支持收藏夹分组排序
+- 收藏卡片显示仓库完整信息：名称、描述、语言、星标、复刻、私有/归档状态、Topics、Website
+- Website 链接可直接点击打开
+- 私有和归档状态与名称水平排列
+- Topics 在星标和复刻下方换行显示，支持横向滚动
+
+**数据持久化：**
+- 收藏数据本地持久化存储
+- 支持收藏数据导入导出
+- 仓库信息自动更新（访问收藏仓库详情时自动同步最新数据）
 
 ### 重复登录检测
 
@@ -264,110 +329,155 @@ GitHub OAuth token 长期有效（默认闲置 1 年才自动失效），但只�
 
 ## 项目结构
 
+GitMob 采用 **分层架构**，遵循 Clean Architecture 原则，代码结构清晰、职责分明。
+
 ```
 GitMob-Android/
 ├── app/src/main/java/com/gitmob/android/
 │   ├── GitMobApp.kt        # Application 入口
+│   │                     - 初始化 TokenStorage、ApiClient、Coil、NetworkMonitor
+│   │                     - Root 权限自动恢复
+│   │                     - 应用生命周期监听（后台→前台时重建 OkHttp）
+│   │                     - 启动时检测更新
 │   ├── MainActivity.kt     # 主 Activity
+│   │                     - 处理 OAuth 深链接回调
+│   │                     - 处理 GitHub 链接跳转
+│   │                     - 主题切换
 │   │
-│   ├── api/                # 网络层
+│   ├── api/                # 网络层（API 访问）
 │   │   ├── ApiClient.kt           # Retrofit 客户端配置
+│   │                     - OkHttpClient 构建（含重试、认证、日志拦截器）
+│   │                     - 全局 401 Token 失效事件
+│   │                     - 网络层自动重试机制
 │   │   ├── GitHubApi.kt           # GitHub REST API 接口定义
+│   │                     - User、Repo、Contents、Commits、Branches、PR、Issues、Actions、Releases 等
 │   │   ├── GitHubModels.kt        # API 数据模型
+│   │                     - 所有 GitHub API 响应的数据类定义
 │   │   └── GraphQLClient.kt       # GraphQL 客户端
+│   │                     - 查询用户仓库
+│   │                     - 使用 createCommitOnBranch mutation 删除文件
+│   │                     - 获取分支最新 commit OID
 │   │
-│   ├── auth/               # 认证与授权
+│   ├── auth/               # 认证与授权层
 │   │   ├── AccountStore.kt        # 多账号管理
+│   │                     - 账号增删改查
+│   │                     - DataStore 持久化
 │   │   ├── OAuthManager.kt        # OAuth 2.0 认证管理
+│   │                     - Custom Tab 打开授权页面
 │   │   ├── TokenLoginManager.kt   # Token 登录验证与权限检查
+│   │                     - Token 类型识别（gho_/ghp_/github_pat_）
+│   │                     - 权限范围验证
 │   │   ├── RootManager.kt         # Root 权限管理
+│   │                     - su 执行模式探测
+│   │                     - Root 权限请求
 │   │   └── TokenStorage.kt        # Token 持久化存储（EncryptedPreferences）
+│   │                     - Token、主题、Root 开关、账号等状态存储
 │   │
-│   ├── data/               # 数据层
+│   ├── data/               # 数据层（Repository 模式）
 │   │   ├── FavoritesManager.kt    # 收藏夹管理（支持导出导入）
+│   │                     - 收藏夹分组创建/编辑/删除
+│   │                     - 收藏数据导入导出
 │   │   ├── RepoRepository.kt      # 仓库数据仓库
+│   │                     - 多级缓存策略（内存缓存 + TTL）
+│   │                     - 增量刷新机制
+│   │                     - 文件删除（GraphQL）
+│   │                     - 文件创建/编辑
 │   │   └── RepoUpdateEventBus.kt # 仓库更新事件总线
+│   │                     - PR、Issue 更新事件通知
 │   │
-│   ├── local/              # 本地 Git 操作
+│   ├── local/              # 本地 Git 操作层
 │   │   ├── GitRunner.kt           # JGit 操作封装
+│   │                     - clone、init、add、commit、push、pull、branch、diff、log
 │   │   ├── LocalRepo.kt           # 本地仓库模型
 │   │   └── LocalRepoStorage.kt    # 本地仓库存储管理
 │   │
 │   ├── ui/                 # UI 层（Jetpack Compose）
 │   │   ├── common/                # 通用组件
-│   │   │   ├── Components.kt
-│   │   │   └── GmWebView.kt
+│   │   │   ├── Components.kt      - Button、Card、Dialog、Loading、Error 等通用组件
+│   │   │   └── GmWebView.kt       - 自定义 WebView 组件
 │   │   │
-│   │   ├── create/                # 创建仓库
+│   │   ├── create/                # 创建仓库页面
 │   │   │   └── CreateRepoScreen.kt
 │   │   │
 │   │   ├── filepicker/            # 文件选择器
-│   │   │   └── FilePickerScreen.kt
+│   │   │   └── FilePickerScreen.kt - 普通权限 + Root 双模式
+│   │   │                             - 书签系统
+│   │   │                             - 多种排序方式
 │   │   │
 │   │   ├── home/                  # 个人主页
 │   │   │   ├── HomeScreen.kt
 │   │   │   └── HomeViewModel.kt
 │   │   │
 │   │   ├── local/                 # 本地仓库管理
-│   │   │   ├── GitOperationSheet.kt
+│   │   │   ├── GitOperationSheet.kt - Git 操作弹窗
 │   │   │   ├── LocalRepoDetailScreen.kt
 │   │   │   ├── LocalRepoListScreen.kt
 │   │   │   └── LocalRepoViewModel.kt
 │   │   │
 │   │   ├── login/                 # 登录页面
-│   │   │   ├── LoginScreen.kt
+│   │   │   ├── LoginScreen.kt     - OAuth 登录 + Token 登录
 │   │   │   └── LoginViewModel.kt
 │   │   │
-│   │   ├── nav/                   # 导航
-│   │   │   └── NavGraph.kt
+│   │   ├── nav/                   # 导航系统
+│   │   │   └── NavGraph.kt        - App 导航图定义
+│   │   │                             - 三态初始化状态机（Loading/NeedsLogin/Ready）
+│   │   │                             - 账号自动恢复
+│   │   │                             - GitHub 链接解析跳转
 │   │   │
-│   │   ├── repo/                  # 仓库详情
-│   │   │   ├── ActionsComponents.kt
-│   │   │   ├── BranchComponents.kt
-│   │   │   ├── CommitComponents.kt
-│   │   │   ├── DiffComponents.kt
-│   │   │   ├── DiscussionDetailScreen.kt
+│   │   ├── repo/                  # 仓库详情页（核心功能）
+│   │   │   ├── ActionsComponents.kt    - GitHub Actions 组件
+│   │   │   ├── BranchComponents.kt     - 分支管理组件
+│   │   │   ├── CommitComponents.kt     - 提交历史组件
+│   │   │   ├── DiffComponents.kt       - 代码对比组件
+│   │   │   ├── DiscussionDetailScreen.kt - 讨论详情页
 │   │   │   ├── DiscussionDetailViewModel.kt
-│   │   │   ├── DiscussionsComponents.kt
-│   │   │   ├── EditFileScreen.kt
-│   │   │   ├── IssueDetailScreen.kt
+│   │   │   ├── DiscussionsComponents.kt - 讨论列表组件
+│   │   │   ├── EditFileScreen.kt       - 文件编辑页
+│   │   │   ├── IssueDetailScreen.kt    - Issue 详情页
 │   │   │   ├── IssueDetailViewModel.kt
-│   │   │   ├── IssuesComponents.kt
-│   │   │   ├── PRComponents.kt
-│   │   │   ├── PRDetailViewModel.kt
-│   │   │   ├── ReleasesComponents.kt
-│   │   │   ├── RepoDetailScreen.kt
-│   │   │   ├── RepoDetailState.kt
-│   │   │   ├── RepoDetailViewModel.kt
-│   │   │   ├── RepoDialogs.kt
-│   │   │   ├── RepoPermission.kt
-│   │   │   ├── UploadComponents.kt
-│   │   │   └── WatchComponents.kt
+│   │   │   ├── IssuesComponents.kt     - Issue 列表组件
+│   │   │   ├── PRComponents.kt         - PR 列表组件
+│   │   │   ├── PRDetailViewModel.kt    - PR 详情 ViewModel
+│   │   │   ├── ReleasesComponents.kt   - Releases 组件
+│   │   │   ├── RepoDetailScreen.kt     - 仓库详情主页面
+│   │   │   ├── RepoDetailState.kt      - 仓库详情状态定义
+│   │   │   ├── RepoDetailViewModel.kt  - 仓库详情 ViewModel
+│   │   │                             - 文件浏览、编辑、删除
+│   │   │                             - 上传文件/文件夹（含重复检测）
+│   │   │                             - 删除 toast 动态显示（按文件类型）
+│   │   │   ├── RepoDialogs.kt          - 仓库相关对话框
+│   │   │   ├── RepoPermission.kt       - 仓库权限检查
+│   │   │   ├── UploadComponents.kt     - 上传组件
+│   │   │                             - UploadSourceSheet（选择文件/文件夹）
+│   │   │                             - UploadReviewSheet（预览确认，含重复检测）
+│   │   │                             - UploadProgressDialog（上传进度）
+│   │   │                             - 滑动优化（禁用手势、消费垂直滚动）
+│   │   │   └── WatchComponents.kt      - 仓库订阅组件
 │   │   │
-│   │   ├── repos/                 # 仓库列表
-│   │   │   ├── RepoFilterComponents.kt
-│   │   │   ├── RepoFilterModels.kt
-│   │   │   ├── RepoListScreen.kt
-│   │   │   ├── RepoListViewModel.kt
-│   │   │   ├── StarListComponents.kt
-│   │   │   ├── StarListModels.kt
-│   │   │   └── StarListViewModel.kt
+│   │   ├── repos/                 # 仓库列表页
+│   │   │   ├── RepoFilterComponents.kt - 仓库筛选组件
+│   │   │   ├── RepoFilterModels.kt     - 筛选模型
+│   │   │   ├── RepoListScreen.kt       - 仓库列表主页面
+│   │   │   ├── RepoListViewModel.kt     - 仓库列表 ViewModel
+│   │   │   ├── StarListComponents.kt    - 星标列表组件
+│   │   │   ├── StarListModels.kt        - 星标模型
+│   │   │   └── StarListViewModel.kt    - 星标 ViewModel
 │   │   │
 │   │   ├── search/                # 搜索功能
-│   │   │   ├── SearchScreen.kt
-│   │   │   └── SearchViewModel.kt
+│   │   │   ├── SearchScreen.kt       - 搜索页面
+│   │   │   └── SearchViewModel.kt    - 搜索 ViewModel
 │   │   │
 │   │   ├── settings/              # 设置页面
 │   │   │   └── SettingsScreen.kt
 │   │   │
 │   │   ├── theme/                 # 主题系统
-│   │   │   ├── Color.kt
-│   │   │   ├── GmColors.kt
-│   │   │   ├── Theme.kt
-│   │   │   └── Type.kt
+│   │   │   ├── Color.kt            - 颜色定义
+│   │   │   ├── GmColors.kt         - 颜色主题包装
+│   │   │   ├── Theme.kt            - Material 3 主题
+│   │   │   └── Type.kt             - 字体样式
 │   │   │
 │   │   └── update/                # 更新功能
-│   │       └── UpdateDialog.kt
+│   │       └── UpdateDialog.kt     - 更新对话框
 │   │
 │   └── util/               # 工具类
 │       ├── CrashHandler.kt        # 崩溃日志处理
@@ -390,6 +500,24 @@ GitMob-Android/
 │
 └── .github/workflows/      # CI/CD 配置
 ```
+
+### 核心设计模式
+
+1. **MVVM 架构**：所有 UI 页面都有对应的 ViewModel 管理状态和业务逻辑
+2. **Repository 模式**：`RepoRepository` 统一管理数据访问，包含多级缓存策略
+3. **事件总线**：`RepoUpdateEventBus` 用于组件间通信（PR、Issue 更新通知）
+4. **状态管理**：使用 Kotlin Coroutines Flow 管理状态，Compose 自动响应状态变化
+5. **依赖注入**：通过构造函数传递依赖，ViewModel 使用 SavedStateHandle
+
+### 关键技术亮点
+
+| 特性 | 说明 |
+|------|------|
+| **多级缓存** | 内存缓存 + TTL 过期策略，减少网络请求 |
+| **增量刷新** | 只拉取第一页新数据，按唯一 key 去重合并，避免 UI 闪烁 |
+| **网络重试** | OkHttp 拦截器实现智能重试（网络异常、5xx 错误、HTTP/2 连接问题） |
+| **Token 失效** | 全局 401 监听，自动清除授权并跳转登录 |
+| **GraphQL 删除** | 使用 createCommitOnBranch mutation 实现单次 commit 删除文件 |
 
 ## 待优化功能
 

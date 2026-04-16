@@ -1964,6 +1964,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         path: String,
         message: String,
         sha: String,
+        contentType: String = "file",
         onSuccess: () -> Unit = {},
     ) = viewModelScope.launch {
         try {
@@ -1976,7 +1977,14 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                 branch = _state.value.currentBranch,
             )
             loadContents(_state.value.currentPath, forceRefresh = true)
-            _state.update { it.copy(toast = "文件已删除") }
+            val toastMsg = when (contentType) {
+                "file" -> "文件已删除"
+                "dir" -> "文件夹已删除"
+                "symlink" -> "符号链接已删除"
+                "submodule" -> "子模块已删除"
+                else -> "已删除"
+            }
+            _state.update { it.copy(toast = toastMsg) }
             onSuccess()
         } catch (e: Exception) {
             _state.update { it.copy(toast = "删除失败：${e.message}") }
