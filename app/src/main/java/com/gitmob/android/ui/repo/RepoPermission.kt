@@ -1,5 +1,7 @@
 package com.gitmob.android.ui.repo
 
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.gitmob.android.api.GHOrg
@@ -96,13 +98,22 @@ fun calcRepoListPermission(
 }
 
 /**
- * 仅在满足权限条件时渲染内容
+ * 仅在满足权限条件时渲染内容，并支持检查仓库是否已归档
+ *
+ * @param permission         仓库权限
+ * @param requireOwner       是否需要所有者权限
+ * @param requireWrite       是否需要写入权限
+ * @param isArchived         仓库是否已归档
+ * @param allowWhenArchived  即使仓库已归档也允许操作（例如取消归档）
+ * @param content            要渲染的内容
  */
 @Composable
 fun PermissionRequired(
     permission: RepoPermission,
     requireOwner: Boolean = false,
     requireWrite: Boolean = false,
+    isArchived: Boolean = false,
+    allowWhenArchived: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val hasPermission = when {
@@ -110,5 +121,52 @@ fun PermissionRequired(
         requireWrite -> permission.canWrite
         else -> false
     }
-    if (hasPermission) content()
+    val isAllowed = hasPermission && (!isArchived || allowWhenArchived)
+    if (isAllowed) content()
+}
+
+/**
+ * 支持归档状态的 DropdownMenuItem，归档时自动禁用并置灰
+ *
+ * @param text               菜单项文本
+ * @param isArchived         仓库是否已归档
+ * @param allowWhenArchived  即使仓库已归档也允许操作
+ * @param leadingIcon        前置图标
+ * @param onClick            点击回调
+ */
+@Composable
+fun ArchivedAwareDropdownMenuItem(
+    text: @Composable () -> Unit,
+    isArchived: Boolean = false,
+    allowWhenArchived: Boolean = false,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val enabled = !isArchived || allowWhenArchived
+    val contentColor = if (enabled) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.38f)
+    
+    DropdownMenuItem(
+        text = {
+            androidx.compose.material3.ProvideTextStyle(
+                value = androidx.compose.material3.LocalTextStyle.current.copy(color = contentColor)
+            ) {
+                text()
+            }
+        },
+        leadingIcon = leadingIcon?.let { icon ->
+            {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalContentColor provides contentColor
+                ) {
+                    icon()
+                }
+            }
+        },
+        onClick = {
+            if (enabled) {
+                onClick()
+            }
+        },
+        enabled = enabled
+    )
 }

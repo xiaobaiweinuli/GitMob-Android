@@ -8,10 +8,11 @@ import android.net.Uri
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -151,6 +152,7 @@ fun RepoDetailScreen(
     var showWatchSheet by remember { mutableStateOf(false) }
     var showToggleIssuesDialog by remember { mutableStateOf(false) }
     var showToggleDiscussionsDialog by remember { mutableStateOf(false) }
+    var showArchiveDialog by remember { mutableStateOf(false) }
     var newFileName by remember { mutableStateOf("") }
     var newFileContent by remember { mutableStateOf("") }
     var showCommitMessageDialog by remember { mutableStateOf(false) }
@@ -237,14 +239,16 @@ fun RepoDetailScreen(
         handleBackPress()
     }
 
+    val isArchived = state.repo?.archived == true
+
     Scaffold(
         containerColor = c.bgDeep,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(vm.repoName, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = c.textPrimary)
                         state.repo?.let { repo ->
+                            Text(repo.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = c.textPrimary)
                             val isOwnRepo = repo.owner.login == state.userLogin
                             if (repo.fork && repo.parent != null) {
                                 Row(
@@ -263,12 +267,12 @@ fun RepoDetailScreen(
                             } else {
                                 // 始终显示 owner，点击进入主页（包括自己的仓库也可以点）
                                 Text(
-                                    vm.owner, fontSize = 12.sp,
+                                    repo.owner.login, fontSize = 12.sp,
                                     color = if (isOwnRepo) c.textTertiary else BlueColor,
-                                    modifier = if (onOwnerClick != null) Modifier.clickable { onOwnerClick.invoke(vm.owner) } else Modifier,
+                                    modifier = if (onOwnerClick != null) Modifier.clickable { onOwnerClick.invoke(repo.owner.login) } else Modifier,
                                 )
                             }
-                        }
+                        } ?: Text(vm.repoName, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = c.textPrimary)
                     }
                 },
                 navigationIcon = {
@@ -290,8 +294,9 @@ fun RepoDetailScreen(
                         ) {
                             // 需要权限的选项用 PermissionRequired 包裹
                             PermissionRequired(permission = permission, requireOwner = true) {
-                                DropdownMenuItem(
-                                    text = { Text("重命名", fontSize = 14.sp, color = c.textPrimary) },
+                                ArchivedAwareDropdownMenuItem(
+                                    text = { Text("重命名", fontSize = 14.sp) },
+                                    isArchived = isArchived,
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.DriveFileRenameOutline,
@@ -307,8 +312,9 @@ fun RepoDetailScreen(
                                 )
                             }
                             PermissionRequired(permission = permission, requireOwner = true) {
-                                DropdownMenuItem(
-                                    text = { Text("编辑信息", fontSize = 14.sp, color = c.textPrimary) },
+                                ArchivedAwareDropdownMenuItem(
+                                    text = { Text("编辑信息", fontSize = 14.sp) },
+                                    isArchived = isArchived,
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.Edit,
@@ -349,14 +355,14 @@ fun RepoDetailScreen(
                                 },
                             )
                             PermissionRequired(permission = permission, requireOwner = true) {
-                                DropdownMenuItem(
+                                ArchivedAwareDropdownMenuItem(
                                     text = {
                                         Text(
                                             if (state.repo?.private == true) "设为公开" else "设为私有",
                                             fontSize = 14.sp,
-                                            color = c.textPrimary,
                                         )
                                     },
+                                    isArchived = isArchived,
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.Lock,
@@ -372,8 +378,9 @@ fun RepoDetailScreen(
                                 )
                             }
                             PermissionRequired(permission = permission, requireOwner = true) {
-                                DropdownMenuItem(
-                                    text = { Text("转移", fontSize = 14.sp, color = c.textPrimary) },
+                                ArchivedAwareDropdownMenuItem(
+                                    text = { Text("转移", fontSize = 14.sp) },
+                                    isArchived = isArchived,
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.AccountCircle,
@@ -385,6 +392,30 @@ fun RepoDetailScreen(
                                     onClick = {
                                         showSettingsMenu = false
                                         showTransferDialog = true
+                                    },
+                                )
+                            }
+                            PermissionRequired(permission = permission, requireOwner = true) {
+                                ArchivedAwareDropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (state.repo?.archived == true) "取消归档" else "归档",
+                                            fontSize = 14.sp,
+                                        )
+                                    },
+                                    isArchived = isArchived,
+                                    allowWhenArchived = true,
+                                    leadingIcon = {
+                                        Icon(
+                                            if (state.repo?.archived == true) Icons.Default.Unarchive else Icons.Default.Archive,
+                                            null,
+                                            tint = c.textSecondary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        showArchiveDialog = true
                                     },
                                 )
                             }
@@ -417,13 +448,14 @@ fun RepoDetailScreen(
                                 },
                             )
                             PermissionRequired(permission = permission, requireOwner = true) {
-                                DropdownMenuItem(
+                                ArchivedAwareDropdownMenuItem(
                                     text = {
                                         Text(
                                             if (state.repo?.hasIssues != false) "关闭议题" else "打开议题",
-                                            fontSize = 14.sp, color = c.textPrimary
+                                            fontSize = 14.sp
                                         )
                                     },
+                                    isArchived = isArchived,
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.BugReport,
@@ -439,13 +471,14 @@ fun RepoDetailScreen(
                                 )
                             }
                             PermissionRequired(permission = permission, requireOwner = true) {
-                                DropdownMenuItem(
+                                ArchivedAwareDropdownMenuItem(
                                     text = {
                                         Text(
                                             if (state.repo?.hasDiscussions == true) "关闭讨论" else "打开讨论",
-                                            fontSize = 14.sp, color = c.textPrimary
+                                            fontSize = 14.sp
                                         )
                                     },
+                                    isArchived = isArchived,
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.Forum,
@@ -461,8 +494,9 @@ fun RepoDetailScreen(
                                 )
                             }
                             PermissionRequired(permission = permission, requireOwner = true) {
-                                DropdownMenuItem(
+                                ArchivedAwareDropdownMenuItem(
                                     text = { Text("删除", fontSize = 14.sp, color = RedColor) },
+                                    isArchived = isArchived,
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.Delete,
@@ -541,7 +575,22 @@ fun RepoDetailScreen(
                     Spacer(Modifier.height(10.dp))
                 }
                 if (!repo.homepage.isNullOrBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val urlToOpen = remember(repo.homepage) {
+                        val url = repo.homepage
+                        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                            "https://$url"
+                        } else {
+                            url
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.clickable {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(urlToOpen))
+                            context.startActivity(intent)
+                        }
+                    ) {
                         Icon(Icons.Default.Link, null, tint = BlueColor, modifier = Modifier.size(14.dp))
                         Text(repo.homepage, fontSize = 12.sp, color = BlueColor)
                     }
@@ -582,6 +631,29 @@ fun RepoDetailScreen(
                     }
                     
                     if (repo.private) GmBadge("私有", RedDim, RedColor)
+                    
+                    if (repo.archived == true) GmBadge("已归档", CoralDim, Coral)
+                }
+                
+                if (repo.topics.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        repo.topics.forEach { topic ->
+                            Text(
+                                text = topic,
+                                fontSize = 10.sp,
+                                color = c.textTertiary,
+                                modifier = Modifier
+                                    .background(BlueDim, RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
             }
 
@@ -634,7 +706,7 @@ fun RepoDetailScreen(
             when (state.tab) {
                 0 -> {
                     LaunchedEffect(Unit) { vm.ensureReadmeLoaded() }
-                    FilesTab(state, c, permission,
+                    FilesTab(state, c, permission, isArchived = state.repo?.archived ?: false,
                         onDirClick = { vm.loadContents(it) },
                         onFileClick = { path -> onFileClick(owner, repoName, path, state.currentBranch) },
                         onNavigateUp = vm::navigateUp,
@@ -686,7 +758,7 @@ fun RepoDetailScreen(
                     CommitsTab(state, c, onCommitClick = { vm.loadCommitDetail(it.sha) },
                         onRefresh = { vm.loadCommits(forceRefresh = true) })
                 }
-                2 -> BranchesTab(state, c, permission = permission, onSwitch = vm::switchBranch,
+                2 -> BranchesTab(state, c, permission = permission, isArchived = state.repo?.archived ?: false, onSwitch = vm::switchBranch,
                     onNewBranch = { showNewBranchDialog = true },
                     onDelete = vm::deleteBranch, onRename = vm::renameBranch,
                     onSetDefault = vm::setDefaultBranch,
@@ -694,24 +766,29 @@ fun RepoDetailScreen(
                 3 -> {
                     LaunchedEffect(Unit) { vm.ensureActionsLoaded() }
                     ActionsTab(state, c, vm, owner, repoName, permission = permission,
+                        isArchived = state.repo?.archived ?: false,
                         onRefresh = vm::refreshActions)
                 }
                 4 -> {
                     LaunchedEffect(Unit) { vm.ensureReleasesLoaded() }
                     ReleasesTab(state, vm = vm, c = c, permission = permission,
+                        isArchived = state.repo?.archived ?: false,
                         onRefresh = vm::refreshReleases)
                 }
                 5 -> PRTab(state, c, vm = vm, permission = permission,
+                    isArchived = state.repo?.archived ?: false,
                     onRefresh = vm::refreshPRs, onPRClick = onPRClick)
                 6 -> {
                     LaunchedEffect(Unit) { vm.ensureIssuesLoaded() }
                     IssuesTab(state, c, vm, permission = permission,
+                        isArchived = state.repo?.archived ?: false,
                         onRefresh = vm::refreshIssues,
                         onIssueClick = onIssueClick)
                 }
                 7 -> {
                     LaunchedEffect(Unit) { vm.ensureDiscussionsLoaded() }
                     DiscussionsTab(state, c, vm, permission = permission,
+                        isArchived = state.repo?.archived ?: false,
                         onRefresh = vm::refreshDiscussions,
                         onDiscussionClick = onDiscussionClick)
                 }
@@ -746,7 +823,7 @@ fun RepoDetailScreen(
             owner = repoForDialogs.owner.login,
             c = c,
             onConfirm = { newName ->
-                vm.renameRepo(newName) { onBack() }
+                vm.renameRepo(newName) {}
                 showRenameDialog = false
             },
             onDismiss = { showRenameDialog = false },
@@ -773,6 +850,23 @@ fun RepoDetailScreen(
                 showDeleteDialog = false
             },
             onDismiss = { showDeleteDialog = false },
+        )
+    }
+    if (showArchiveDialog && repoForDialogs != null) {
+        RepoArchiveDialog(
+            repoName = repoForDialogs.name,
+            owner = repoForDialogs.owner.login,
+            isArchived = repoForDialogs.archived == true,
+            c = c,
+            onConfirm = {
+                if (repoForDialogs.archived == true) {
+                    vm.unarchiveRepo { /* 刷新后界面自动更新 */ }
+                } else {
+                    vm.archiveRepo { /* 刷新后界面自动更新 */ }
+                }
+                showArchiveDialog = false
+            },
+            onDismiss = { showArchiveDialog = false },
         )
     }
     
@@ -1745,7 +1839,7 @@ fun RepoDetailScreen(
 
     // Commit 详情 Modal
     state.selectedCommit?.let { commit ->
-        CommitDetailSheet(commit = commit, c = c, permission = permission, vm = vm, onDismiss = vm::clearCommitDetail)
+        CommitDetailSheet(commit = commit, c = c, permission = permission, isArchived = state.repo?.archived ?: false, vm = vm, onDismiss = vm::clearCommitDetail)
     }
     // 星标用户列表 Modal
     if (state.showStargazersSheet) {
@@ -1986,6 +2080,8 @@ private fun StatItem(
  * 
  * @param state 仓库详情状态
  * @param c 颜色主题
+ * @param permission 仓库权限
+ * @param isArchived 仓库是否已归档
  * @param onDirClick 目录点击回调
  * @param onFileClick 文件点击回调
  * @param onNavigateUp 返回上一级目录回调
@@ -1997,6 +2093,7 @@ fun FilesTab(
     state: RepoDetailState,
     c: GmColors,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onDirClick: (String) -> Unit,
     onFileClick: (String) -> Unit,
     onNavigateUp: () -> Unit,
@@ -2043,15 +2140,16 @@ fun FilesTab(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        PermissionRequired(permission = permission, requireOwner = true) {
+                        PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
                             IconButton(
                                 onClick = onUpload,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(32.dp),
+                                enabled = !isArchived
                             ) {
                                 Icon(
                                     Icons.Default.Upload,
                                     contentDescription = "上传文件",
-                                    tint = Coral,
+                                    tint = if (isArchived) c.textTertiary else Coral,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -2067,15 +2165,16 @@ fun FilesTab(
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-                        PermissionRequired(permission = permission, requireOwner = true) {
+                        PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
                             IconButton(
                                 onClick = onAddFile,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(32.dp),
+                                enabled = !isArchived
                             ) {
                                 Icon(
                                     Icons.Default.Add,
                                     contentDescription = "添加文件",
-                                    tint = c.textSecondary,
+                                    tint = if (isArchived) c.textTertiary else c.textSecondary,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -2141,9 +2240,10 @@ fun FilesTab(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
                             ) {
-                                PermissionRequired(permission = permission, requireOwner = true) {
-                                    DropdownMenuItem(
-                                        text = { Text("重命名", fontSize = 13.sp, color = c.textPrimary) },
+                                PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+                                    ArchivedAwareDropdownMenuItem(
+                                        text = { Text("重命名", fontSize = 13.sp) },
+                                        isArchived = isArchived,
                                         leadingIcon = {
                                             Icon(
                                                 Icons.Default.DriveFileRenameOutline,
@@ -2158,14 +2258,15 @@ fun FilesTab(
                                         },
                                     )
                                 }
-                                PermissionRequired(permission = permission, requireOwner = true) {
-                                    DropdownMenuItem(
-                                        text = { Text("删除", fontSize = 13.sp, color = RedColor) },
+                                PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+                                    ArchivedAwareDropdownMenuItem(
+                                        text = { Text("删除", fontSize = 13.sp, color = if (isArchived) c.textTertiary else RedColor) },
+                                        isArchived = isArchived,
                                         leadingIcon = {
                                             Icon(
                                                 Icons.Default.Delete,
                                                 null,
-                                                tint = RedColor,
+                                                tint = if (isArchived) c.textTertiary else RedColor,
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         },
@@ -2176,7 +2277,7 @@ fun FilesTab(
                                     )
                                 }
                                 DropdownMenuItem(
-                                    text = { Text("分享", fontSize = 13.sp, color = c.textPrimary) },
+                                    text = { Text("分享", fontSize = 13.sp) },
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.Share,
@@ -2191,7 +2292,7 @@ fun FilesTab(
                                     },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("历史记录", fontSize = 13.sp, color = c.textPrimary) },
+                                    text = { Text("历史记录", fontSize = 13.sp) },
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.History,

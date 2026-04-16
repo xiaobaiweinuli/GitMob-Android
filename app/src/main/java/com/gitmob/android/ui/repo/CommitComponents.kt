@@ -144,6 +144,7 @@ fun CommitDetailSheet(
     commit: GHCommitFull,
     c: GmColors,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     vm: RepoDetailViewModel,
     onDismiss: () -> Unit,
 ) {
@@ -154,7 +155,7 @@ fun CommitDetailSheet(
 
     // ── Diff 查看器（二级 Sheet）──────────────────────────────────────────
     state.selectedFilePatch?.let { info ->
-        FileDiffSheet(info = info, c = c, vm = vm, onDismiss = vm::closeFilePatch)
+        FileDiffSheet(info = info, c = c, vm = vm, isArchived = isArchived, onDismiss = vm::closeFilePatch)
     }
 
     // ── 回滚确认 ──────────────────────────────────────────────────────────
@@ -326,8 +327,8 @@ fun CommitDetailSheet(
             Spacer(Modifier.height(12.dp))
 
             // ── 操作区 ─────────────────────────────────────────────────
-            PermissionRequired(permission = permission, requireOwner = true) {
-                Text("操作", fontSize = 12.sp, color = c.textSecondary, fontWeight = FontWeight.Medium)
+            PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+                Text("操作", fontSize = 12.sp, color = if (isArchived) c.textTertiary else c.textSecondary, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(10.dp))
 
                 // 撤销（Revert）：创建新 commit，保留历史 ─────────────────────
@@ -335,12 +336,20 @@ fun CommitDetailSheet(
                     onClick = { showRevertConfirm = true },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
                     shape  = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BlueColor),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isArchived) c.bgItem else BlueColor
+                    ),
+                    enabled = !isArchived
                 ) {
-                    Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.SwapHoriz, null, 
+                        tint = if (isArchived) c.textTertiary else Color.Unspecified,
+                        modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Column {
-                        Text("撤销此提交", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("撤销此提交", 
+                            fontSize = 13.sp, 
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isArchived) c.textTertiary else Color.Unspecified)
                     }
                 }
                 Spacer(Modifier.height(4.dp))
@@ -357,11 +366,17 @@ fun CommitDetailSheet(
                     onClick = { showResetConfirm = true },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
                     shape  = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, RedColor.copy(alpha = 0.7f)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isArchived) c.border else RedColor.copy(alpha = 0.7f)),
+                    enabled = !isArchived
                 ) {
-                    Icon(Icons.Default.RestartAlt, null, tint = RedColor, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.RestartAlt, null, 
+                        tint = if (isArchived) c.textTertiary else RedColor, 
+                        modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("回滚到此提交", fontSize = 13.sp, color = RedColor, fontWeight = FontWeight.SemiBold)
+                    Text("回滚到此提交", 
+                        fontSize = 13.sp, 
+                        color = if (isArchived) c.textTertiary else RedColor, 
+                        fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(

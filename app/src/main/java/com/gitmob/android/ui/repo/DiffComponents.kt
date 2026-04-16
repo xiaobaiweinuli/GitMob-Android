@@ -139,6 +139,7 @@ fun FileDiffSheet(
     info: FilePatchInfo,
     c: GmColors,
     vm: RepoDetailViewModel,
+    isArchived: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -218,11 +219,13 @@ fun FileDiffSheet(
 
                     // 撤销回滚按钮（仅 modified/added/removed 时显示）
                     if (info.parentSha != null && info.currentBranch.isNotBlank()) {
+                        val buttonBg = if (isArchived) Color(0xFF21262D) else Color(0xFF3D1F1F)
+                        val buttonTint = if (isArchived) Color(0xFF484F58) else Color(0xFFF85149)
                         Box(
                             modifier = Modifier
                                 .height(30.dp)
-                                .background(Color(0xFF3D1F1F), RoundedCornerShape(6.dp))
-                                .clickable { showRevertConfirm = true },
+                                .background(buttonBg, RoundedCornerShape(6.dp))
+                                .clickable(enabled = !isArchived) { showRevertConfirm = true },
                             contentAlignment = Alignment.Center,
                         ) {
                             Row(
@@ -231,8 +234,8 @@ fun FileDiffSheet(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 Icon(Icons.AutoMirrored.Filled.Undo, null,
-                                    tint = Color(0xFFF85149), modifier = Modifier.size(14.dp))
-                                Text("回滚提交", fontSize = 11.sp, color = Color(0xFFF85149))
+                                    tint = buttonTint, modifier = Modifier.size(14.dp))
+                                Text("回滚提交", fontSize = 11.sp, color = buttonTint)
                             }
                         }
                     }

@@ -19,6 +19,8 @@ data class StarredRepo(
     val nameWithOwner: String,
     val name: String,
     val description: String?,
+    val homepage: String? = null,
+    val topics: List<String> = emptyList(),
     val isPrivate: Boolean,
     val url: String,
     val sshUrl: String,
@@ -48,7 +50,7 @@ data class StarredRepo(
             name          = repo,
             fullName      = nameWithOwner,
             description   = description,
-            homepage      = null,
+            homepage      = homepage,
             private       = isPrivate,
             htmlUrl       = url,
             sshUrl        = sshUrl,
@@ -66,6 +68,7 @@ data class StarredRepo(
             archived      = archived,
             isTemplate    = isTemplate,
             mirrorUrl     = mirrorUrl,
+            topics        = topics,
         )
     }
 }
@@ -84,12 +87,32 @@ fun JSONObject.toStarredRepo(): StarredRepo? {
     val listIds = optJSONObject("lists")?.optJSONArray("nodes")
         ?.let { arr -> (0 until arr.length()).map { arr.getJSONObject(it).optString("id") } }
         ?: emptyList()
+    
+    // 解析 topics
+    val topics = mutableListOf<String>()
+    optJSONObject("repositoryTopics")?.let { rtNode ->
+        rtNode.optJSONArray("nodes")?.let { nodesArray ->
+            for (i in 0 until nodesArray.length()) {
+                nodesArray.optJSONObject(i)?.let { topicNode ->
+                    topicNode.optJSONObject("topic")?.let { innerTopic ->
+                        val topicName = innerTopic.optString("name")
+                        if (topicName.isNotBlank()) {
+                            topics.add(topicName)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     return StarredRepo(
         nodeId         = nodeId,
         databaseId     = optLong("databaseId"),
         nameWithOwner  = optString("nameWithOwner"),
         name           = optString("name"),
         description    = optString("description").takeIf { it.isNotBlank() },
+        homepage       = optString("homepageUrl").takeIf { it.isNotBlank() },
+        topics         = topics,
         isPrivate      = optBoolean("isPrivate"),
         url            = optString("url"),
         sshUrl         = optString("sshUrl"),

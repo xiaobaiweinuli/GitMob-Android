@@ -156,7 +156,7 @@ fun RepoEditDialog(
 ) {
     var desc by remember { mutableStateOf(repo.description ?: "") }
     var website by remember { mutableStateOf(repo.homepage ?: "") }
-    var topicsText by remember { mutableStateOf("") }
+    var topicsText by remember { mutableStateOf(repo.topics.joinToString(" ")) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -526,6 +526,63 @@ fun RepoTransferTargetRow(
             Icon(Icons.Default.Check, null, tint = Coral, modifier = Modifier.size(16.dp))
         }
     }
+}
+
+@Composable
+fun RepoArchiveDialog(
+    repoName: String,
+    owner: String,
+    isArchived: Boolean,
+    c: GmColors,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.bgCard,
+        icon = {
+            Icon(
+                if (isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+                null,
+                tint = if (isArchived) Coral else BlueColor,
+                modifier = Modifier.size(28.dp),
+            )
+        },
+        title = {
+            Text(
+                if (isArchived) "取消归档仓库" else "归档仓库",
+                color = c.textPrimary,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    if (isArchived)
+                        "取消归档 $owner/$repoName 后，你可以再次编辑仓库、接受拉取请求和打开议题。"
+                    else
+                        "归档 $owner/$repoName 后，仓库将变为只读，你无法编辑仓库、接受拉取请求或打开议题。",
+                    fontSize = 12.sp,
+                    color = c.textSecondary,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isArchived) Coral else BlueColor,
+                ),
+            ) {
+                Text(if (isArchived) "取消归档" else "归档")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = c.textSecondary)
+            }
+        },
+    )
 }
 
 /**

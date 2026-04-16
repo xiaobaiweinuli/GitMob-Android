@@ -27,7 +27,10 @@ data class FavRepo(
     val language: String?,
     val stars: Int,
     val isPrivate: Boolean,
+    val archived: Boolean,
     val htmlUrl: String,
+    val website: String?,
+    val topics: List<String>,
     val groupId: String?,        // null = 未分组
 )
 
@@ -43,7 +46,9 @@ data class FavoritesState(
 private fun FavRepo.toJson() = JSONObject().apply {
     put("fullName", fullName); put("name", name); put("ownerLogin", ownerLogin)
     put("description", description ?: ""); put("language", language ?: "")
-    put("stars", stars); put("isPrivate", isPrivate); put("htmlUrl", htmlUrl)
+    put("stars", stars); put("isPrivate", isPrivate); put("archived", archived); put("htmlUrl", htmlUrl)
+    put("website", website ?: "")
+    put("topics", JSONArray(topics))
     put("groupId", groupId ?: "")
 }
 
@@ -60,7 +65,12 @@ private fun JSONObject.toFavRepo() = FavRepo(
     language    = optString("language").ifBlank { null },
     stars       = optInt("stars"),
     isPrivate   = optBoolean("isPrivate"),
+    archived    = optBoolean("archived"),
     htmlUrl     = optString("htmlUrl"),
+    website     = optString("website").ifBlank { null },
+    topics      = (0 until (optJSONArray("topics")?.length() ?: 0)).map {
+        optJSONArray("topics")!!.optString(it)
+    },
     groupId     = optString("groupId").ifBlank { null },
 )
 
@@ -81,7 +91,10 @@ private fun GHRepo.toFavRepo(groupId: String?) = FavRepo(
     language    = language,
     stars       = stars,
     isPrivate   = private,
+    archived    = archived,
     htmlUrl     = htmlUrl,
+    website     = homepage,
+    topics      = topics,
     groupId     = groupId,
 )
 
@@ -255,7 +268,10 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
             language    = repo.language,
             stars       = repo.stars,
             isPrivate   = repo.private,
+            archived    = repo.archived,
             htmlUrl     = repo.htmlUrl,
+            website     = repo.homepage,
+            topics      = repo.topics,
         )
         if (updated == old) return  // 无变化不触发写入
         val newUngrouped = s.ungroupedRepos.map { if (it.fullName == repo.fullName) updated else it }

@@ -126,6 +126,7 @@ fun IssueDetailScreen(
                                 modifier = Modifier.background(c.bgCard),
                             ) {
                                 val isSubscribed = state.isSubscribed
+                                val isArchived = state.isArchived
                                 DropdownMenuItem(
                                     text = {
                                         Text(
@@ -151,8 +152,9 @@ fun IssueDetailScreen(
                                 val canEditOrClose = permission.isOwner || isIssueAuthor
                                 
                                 if (canEditOrClose) {
-                                    DropdownMenuItem(
-                                        text = { Text("编辑标题", fontSize = 14.sp, color = c.textPrimary) },
+                                    ArchivedAwareDropdownMenuItem(
+                                        text = { Text("编辑标题", fontSize = 14.sp) },
+                                        isArchived = isArchived,
                                         leadingIcon = {
                                             Icon(
                                                 Icons.Default.Edit,
@@ -167,8 +169,9 @@ fun IssueDetailScreen(
                                         },
                                     )
                                     if (state.issue?.state == "open") {
-                                        DropdownMenuItem(
-                                            text = { Text("关闭议题", fontSize = 14.sp, color = c.textPrimary) },
+                                        ArchivedAwareDropdownMenuItem(
+                                            text = { Text("关闭议题", fontSize = 14.sp) },
+                                            isArchived = isArchived,
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Default.Close,
@@ -183,8 +186,9 @@ fun IssueDetailScreen(
                                             },
                                         )
                                     } else {
-                                        DropdownMenuItem(
-                                            text = { Text("重新打开议题", fontSize = 14.sp, color = c.textPrimary) },
+                                        ArchivedAwareDropdownMenuItem(
+                                            text = { Text("重新打开议题", fontSize = 14.sp) },
+                                            isArchived = isArchived,
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Default.Check,
@@ -201,8 +205,9 @@ fun IssueDetailScreen(
                                     }
                                 }
                                 PermissionRequired(permission = permission, requireOwner = true) {
-                                    DropdownMenuItem(
-                                        text = { Text("置顶", fontSize = 14.sp, color = c.textPrimary) },
+                                    ArchivedAwareDropdownMenuItem(
+                                        text = { Text("置顶", fontSize = 14.sp) },
+                                        isArchived = isArchived,
                                         leadingIcon = {
                                             Icon(
                                                 Icons.Default.PushPin,
@@ -215,8 +220,9 @@ fun IssueDetailScreen(
                                             showMenu = false
                                         },
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("删除", fontSize = 14.sp, color = Color.Red) },
+                                    ArchivedAwareDropdownMenuItem(
+                                        text = { Text("删除", fontSize = 14.sp) },
+                                        isArchived = isArchived,
                                         leadingIcon = {
                                             Icon(
                                                 Icons.Default.Delete,
@@ -267,6 +273,7 @@ fun IssueDetailScreen(
                             c = c,
                             userLogin = state.userLogin,
                             permission = permission,
+                            isArchived = state.isArchived,
                             onReply = { 
                                 replyingToIssue = true
                                 showCommentInputDialog = true
@@ -285,6 +292,7 @@ fun IssueDetailScreen(
                             c = c,
                             userLogin = state.userLogin,
                             permission = permission,
+                            isArchived = state.isArchived,
                             onReply = { 
                                 replyingToComment = it
                                 showCommentInputDialog = true
@@ -313,9 +321,13 @@ fun IssueDetailScreen(
             contentAlignment = Alignment.BottomEnd,
         ) {
             FloatingActionButton(
-                onClick = { showCommentInputDialog = true },
-                containerColor = Coral,
-                contentColor = Color.White,
+                onClick = { 
+                    if (!state.isArchived) {
+                        showCommentInputDialog = true 
+                    }
+                },
+                containerColor = if (state.isArchived) Coral.copy(alpha = 0.38f) else Coral,
+                contentColor = if (state.isArchived) Color.White.copy(alpha = 0.38f) else Color.White,
                 modifier = Modifier.padding(16.dp),
             ) {
                 Icon(Icons.AutoMirrored.Filled.Comment, null)
@@ -502,6 +514,7 @@ private fun IssueBodyCard(
     c: GmColors,
     userLogin: String,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onShare: () -> Unit,
@@ -544,7 +557,8 @@ private fun IssueBodyCard(
                         if (isIssueEdited) {
                             EditedButton(
                                 onClick = onShowEditHistory,
-                                c = c
+                                c = c,
+                                enabled = true
                             )
                         }
                     }
@@ -586,8 +600,9 @@ private fun IssueBodyCard(
                                 onShare()
                             },
                         )
-                        DropdownMenuItem(
-                                text = { Text("引用回复", fontSize = 14.sp, color = c.textPrimary) },
+                        ArchivedAwareDropdownMenuItem(
+                                text = { Text("引用回复", fontSize = 14.sp) },
+                                isArchived = isArchived,
                                 leadingIcon = {
                                     Icon(
                                         Icons.AutoMirrored.Filled.Reply,
@@ -602,8 +617,9 @@ private fun IssueBodyCard(
                                 },
                             )
                             if (canEdit) {
-                                DropdownMenuItem(
-                                    text = { Text("编辑描述", fontSize = 14.sp, color = c.textPrimary) },
+                                ArchivedAwareDropdownMenuItem(
+                                    text = { Text("编辑描述", fontSize = 14.sp) },
+                                    isArchived = isArchived,
                                     leadingIcon = {
                                         Icon(
                                             Icons.Default.Edit,
@@ -645,6 +661,7 @@ private fun CommentCard(
     c: GmColors,
     userLogin: String,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onReply: (GHComment) -> Unit,
     onEdit: (GHComment) -> Unit,
     onDelete: (GHComment) -> Unit,
@@ -688,7 +705,8 @@ private fun CommentCard(
                         if (isCommentEdited) {
                             EditedButton(
                                 onClick = { onShowEditHistory(comment) },
-                                c = c
+                                c = c,
+                                enabled = true
                             )
                         }
                     }
@@ -730,8 +748,9 @@ private fun CommentCard(
                                 onShare(comment)
                             },
                         )
-                        DropdownMenuItem(
-                            text = { Text("引用回复", fontSize = 14.sp, color = c.textPrimary) },
+                        ArchivedAwareDropdownMenuItem(
+                            text = { Text("引用回复", fontSize = 14.sp) },
+                            isArchived = isArchived,
                             leadingIcon = {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Reply,
@@ -746,8 +765,9 @@ private fun CommentCard(
                             },
                         )
                         if (canEditOrDelete) {
-                            DropdownMenuItem(
-                                text = { Text("编辑", fontSize = 14.sp, color = c.textPrimary) },
+                            ArchivedAwareDropdownMenuItem(
+                                text = { Text("编辑", fontSize = 14.sp) },
+                                isArchived = isArchived,
                                 leadingIcon = {
                                     Icon(
                                         Icons.Default.Edit,
@@ -761,8 +781,9 @@ private fun CommentCard(
                                     onEdit(comment)
                                 },
                             )
-                            DropdownMenuItem(
-                                text = { Text("删除", fontSize = 14.sp, color = Color.Red) },
+                            ArchivedAwareDropdownMenuItem(
+                                text = { Text("删除", fontSize = 14.sp) },
+                                isArchived = isArchived,
                                 leadingIcon = {
                                     Icon(
                                         Icons.Default.Delete,
@@ -1430,12 +1451,14 @@ private fun EditHistoryContent(
 private fun EditedButton(
     onClick: () -> Unit,
     c: GmColors,
+    enabled: Boolean = true,
 ) {
     Surface(
         onClick = onClick,
-        color = c.bgItem,
+        color = if (enabled) c.bgItem else c.bgItem,
         shape = RoundedCornerShape(6.dp),
-        modifier = Modifier.height(24.dp)
+        modifier = Modifier.height(24.dp),
+        enabled = enabled
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1445,13 +1468,13 @@ private fun EditedButton(
             Icon(
                 Icons.Default.History,
                 null,
-                tint = c.textTertiary,
+                tint = if (enabled) c.textTertiary else c.textTertiary.copy(alpha = 0.38f),
                 modifier = Modifier.size(12.dp)
             )
             Text(
                 "已编辑",
                 fontSize = 10.sp,
-                color = c.textTertiary,
+                color = if (enabled) c.textTertiary else c.textTertiary.copy(alpha = 0.38f),
                 fontWeight = FontWeight.Medium
             )
         }

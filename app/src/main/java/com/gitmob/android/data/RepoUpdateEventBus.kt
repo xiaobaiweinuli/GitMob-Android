@@ -39,6 +39,14 @@ sealed class RepoUpdateEvent {
         val number: Int,
         val title: String? = null
     ) : RepoUpdateEvent()
+
+    /**
+     * 仓库本身更新事件（归档状态、可见性、名称等）
+     */
+    data class RepoUpdated(
+        val owner: String,
+        val repo: String
+    ) : RepoUpdateEvent()
 }
 
 /**

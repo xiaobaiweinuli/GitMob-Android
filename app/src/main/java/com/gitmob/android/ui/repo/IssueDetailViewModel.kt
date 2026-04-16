@@ -25,6 +25,7 @@ data class IssueDetailState(
     val operationInProgress: Boolean = false,
     val editHistoryLoading: Boolean = false,
     val editHistory: List<GHUserContentEdit> = emptyList(),
+    val isArchived: Boolean = false,
 )
 
 class IssueDetailViewModel(
@@ -71,8 +72,12 @@ class IssueDetailViewModel(
             LogManager.d("IssueDetailViewModel", "Issue 详情获取成功，title: ${issue.title}, comments 字段值: ${issue.comments}, lastEditedAt: ${issue.lastEditedAt}")
             LogManager.d("IssueDetailViewModel", "评论列表获取成功，数量: ${comments.size}")
             
-            _state.update { it.copy(issue = issue, comments = comments, loading = false, refreshing = false) }
-            LogManager.d("IssueDetailViewModel", "Issue 详情加载完成，最终状态 - issue.comments: ${issue.comments}, comments.size: ${comments.size}")
+            LogManager.d("IssueDetailViewModel", "正在加载仓库信息以判断是否归档...")
+            val repo = repository.getRepo(owner, repoName)
+            val isArchived = repo.archived == true
+            
+            _state.update { it.copy(issue = issue, comments = comments, isArchived = isArchived, loading = false, refreshing = false) }
+            LogManager.d("IssueDetailViewModel", "Issue 详情加载完成，最终状态 - issue.comments: ${issue.comments}, comments.size: ${comments.size}, isArchived: $isArchived")
             loadSubscription()
         } catch (e: Exception) {
             LogManager.e("IssueDetailViewModel", "加载 Issue 详情失败", e)

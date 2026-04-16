@@ -45,6 +45,7 @@ data class GHRepo(
     val parent: GHRepo? = null,
     @SerializedName("has_issues") val hasIssues: Boolean = true,
     @SerializedName("has_discussions") val hasDiscussions: Boolean = false,
+    val topics: List<String> = emptyList(),
 )
 
 data class GHOwner(
@@ -464,6 +465,7 @@ data class GHUpdateRepoRequest(
     @SerializedName("default_branch") val defaultBranch: String? = null,
     @SerializedName("has_issues") val hasIssues: Boolean? = null,
     @SerializedName("has_discussions") val hasDiscussions: Boolean? = null,
+    val archived: Boolean? = null,
 )
 
 /** 仓库转移请求体 */

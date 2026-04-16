@@ -103,6 +103,7 @@ fun IssueFilterToolbar(
     c: GmColors,
     vm: RepoDetailViewModel,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onAddIssueClick: () -> Unit = {},
 ) {
     var showStatusDropdown by remember { mutableStateOf(false) }
@@ -203,12 +204,13 @@ fun IssueFilterToolbar(
 
             IconButton(
                 onClick = onAddIssueClick,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(36.dp),
+                enabled = !isArchived
             ) {
                 Icon(
                     Icons.Default.Add,
                     null,
-                    tint = Coral,
+                    tint = if (isArchived) c.textTertiary else Coral,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -423,6 +425,7 @@ fun IssuesTab(
     c: GmColors, 
     vm: RepoDetailViewModel,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onRefresh: () -> Unit = {},
     onIssueClick: (Int) -> Unit = {},
 ) {
@@ -457,6 +460,7 @@ fun IssuesTab(
                     c = c,
                     vm = vm,
                     permission = permission,
+                    isArchived = isArchived,
                     onAddIssueClick = {
                         // 先加载模板，加载完成/失败后再打开弹窗
                         templatesLoading = true

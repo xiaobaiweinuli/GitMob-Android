@@ -63,6 +63,7 @@ fun PRTab(
     c: GmColors,
     vm: RepoDetailViewModel,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onRefresh: () -> Unit = {},
     onPRClick: (Int) -> Unit = {},
 ) {
@@ -91,7 +92,7 @@ fun PRTab(
     PullToRefreshBox(isRefreshing = state.prsRefreshing, onRefresh = onRefresh) {
         Column {
             // ── 筛选工具栏 ────────────────────────────────────────────────
-            PRFilterToolbar(state = state, c = c, vm = vm, permission = permission)
+            PRFilterToolbar(state = state, c = c, vm = vm, permission = permission, isArchived = isArchived)
 
             if (state.prs.isEmpty() && !state.prsRefreshing) {
                 EmptyBox("暂无 Pull Request")
@@ -137,6 +138,7 @@ private fun PRFilterToolbar(
     c: GmColors,
     vm: RepoDetailViewModel,
     permission: RepoPermission,
+    isArchived: Boolean = false,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var showStatusMenu   by remember { mutableStateOf(false) }
@@ -231,8 +233,17 @@ private fun PRFilterToolbar(
 
             // 创建 PR
             if (permission.canWrite) {
-                IconButton(onClick = { showCreateDialog = true }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Add, null, tint = Coral, modifier = Modifier.size(20.dp))
+                IconButton(
+                    onClick = { showCreateDialog = true }, 
+                    modifier = Modifier.size(36.dp),
+                    enabled = !isArchived
+                ) {
+                    Icon(
+                        Icons.Default.Add, 
+                        null, 
+                        tint = if (isArchived) c.textTertiary else Coral, 
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
         }
@@ -729,6 +740,7 @@ fun PRDetailScreen(
                                     val isPRAuthor = pr.user.login == state.userLogin
                                     val canEditOrClose = permission.isOwner || isPRAuthor
                                     val canLock = permission.isOwner || permission.canWrite
+                                    val isArchived = state.isArchived
 
                                     DropdownMenuItem(
                                         text = {
@@ -753,8 +765,9 @@ fun PRDetailScreen(
                                     )
 
                                     if (canEditOrClose) {
-                                        DropdownMenuItem(
-                                            text = { Text("编辑标题", fontSize = 14.sp, color = c.textPrimary) },
+                                        ArchivedAwareDropdownMenuItem(
+                                            text = { Text("编辑标题", fontSize = 14.sp) },
+                                            isArchived = isArchived,
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Default.Edit,
@@ -771,8 +784,9 @@ fun PRDetailScreen(
                                     }
 
                                     if (canEditOrClose) {
-                                        DropdownMenuItem(
-                                            text = { Text("更改基本分支", fontSize = 14.sp, color = c.textPrimary) },
+                                        ArchivedAwareDropdownMenuItem(
+                                            text = { Text("更改基本分支", fontSize = 14.sp) },
+                                            isArchived = isArchived,
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.AutoMirrored.Filled.CallMerge,
@@ -789,14 +803,14 @@ fun PRDetailScreen(
                                     }
 
                                     if (canLock) {
-                                        DropdownMenuItem(
+                                        ArchivedAwareDropdownMenuItem(
                                             text = {
                                                 Text(
                                                     if (pr.locked) "解锁对话" else "锁定对话",
                                                     fontSize = 14.sp,
-                                                    color = c.textPrimary
                                                 )
                                             },
+                                            isArchived = isArchived,
                                             leadingIcon = {
                                                 Icon(
                                                     if (pr.locked) Icons.Default.LockOpen else Icons.Default.Lock,
@@ -817,8 +831,9 @@ fun PRDetailScreen(
                                     }
 
                                     if (canEditOrClose && pr.isOpen) {
-                                        DropdownMenuItem(
-                                            text = { Text("关闭拉取请求", fontSize = 14.sp, color = c.textPrimary) },
+                                        ArchivedAwareDropdownMenuItem(
+                                            text = { Text("关闭拉取请求", fontSize = 14.sp) },
+                                            isArchived = isArchived,
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Default.Close,
@@ -833,8 +848,9 @@ fun PRDetailScreen(
                                             },
                                         )
                                     } else if (canEditOrClose && pr.isClosed) {
-                                        DropdownMenuItem(
-                                            text = { Text("重新打开拉取请求", fontSize = 14.sp, color = c.textPrimary) },
+                                        ArchivedAwareDropdownMenuItem(
+                                            text = { Text("重新打开拉取请求", fontSize = 14.sp) },
+                                            isArchived = isArchived,
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Default.Check,
@@ -884,6 +900,7 @@ fun PRDetailScreen(
                             pr = currentPR,
                             c  = c,
                             permission = permission,
+                            isArchived = state.isArchived,
                             onMergeClick        = { showMergeDialog = true },
                             onReviewClick       = { showReviewDialog = true },
                             onReviewerClick     = { showReviewerDialog = true },
@@ -899,6 +916,7 @@ fun PRDetailScreen(
                             c = c,
                             userLogin = state.userLogin,
                             permission = permission,
+                            isArchived = state.isArchived,
                             onReply = {
                                 replyingToPR = true
                                 showCommentInputDialog = true
@@ -917,6 +935,7 @@ fun PRDetailScreen(
                             c = c,
                             userLogin = state.userLogin,
                             permission = permission,
+                            isArchived = state.isArchived,
                             onReply = { text ->
                                 replyingToReviewText = text
                                 showCommentInputDialog = true
@@ -931,6 +950,7 @@ fun PRDetailScreen(
                             c = c,
                             userLogin = state.userLogin,
                             permission = permission,
+                            isArchived = state.isArchived,
                             onReply = { 
                                 replyingToComment = it
                                 showCommentInputDialog = true
@@ -954,9 +974,13 @@ fun PRDetailScreen(
             contentAlignment = Alignment.BottomEnd,
         ) {
             FloatingActionButton(
-                onClick = { showCommentInputDialog = true },
-                containerColor = Coral,
-                contentColor = Color.White,
+                onClick = { 
+                    if (!state.isArchived) {
+                        showCommentInputDialog = true 
+                    }
+                },
+                containerColor = if (state.isArchived) Coral.copy(alpha = 0.38f) else Coral,
+                contentColor = if (state.isArchived) Color.White.copy(alpha = 0.38f) else Color.White,
                 modifier = Modifier.padding(16.dp),
             ) {
                 Icon(Icons.AutoMirrored.Filled.Comment, null)
@@ -1406,6 +1430,7 @@ private fun PRBodyCard(
     c: GmColors,
     userLogin: String,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onShare: () -> Unit,
@@ -1455,7 +1480,8 @@ private fun PRBodyCard(
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                                 colors = ButtonDefaults.textButtonColors(
                                     contentColor = c.textSecondary
-                                )
+                                ),
+                                enabled = true
                             ) {
                                 Text(
                                     "已编辑",
@@ -1502,8 +1528,9 @@ private fun PRBodyCard(
                                 onShare()
                             },
                         )
-                        DropdownMenuItem(
-                            text = { Text("引用回复", fontSize = 14.sp, color = c.textPrimary) },
+                        ArchivedAwareDropdownMenuItem(
+                            text = { Text("引用回复", fontSize = 14.sp) },
+                            isArchived = isArchived,
                             leadingIcon = {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Reply,
@@ -1518,8 +1545,9 @@ private fun PRBodyCard(
                             },
                         )
                         if (canEdit) {
-                            DropdownMenuItem(
-                                text = { Text("编辑描述", fontSize = 14.sp, color = c.textPrimary) },
+                            ArchivedAwareDropdownMenuItem(
+                                text = { Text("编辑描述", fontSize = 14.sp) },
+                                isArchived = isArchived,
                                 leadingIcon = {
                                     Icon(
                                         Icons.Default.Edit,
@@ -1564,6 +1592,7 @@ private fun PRActionPanel(
     pr: GHPullRequest,
     c: GmColors,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onMergeClick: () -> Unit,
     onReviewClick: () -> Unit,
     onReviewerClick: () -> Unit,
@@ -1587,6 +1616,7 @@ private fun PRActionPanel(
                 icon = Icons.AutoMirrored.Filled.MergeType,
                 color = PurpleColor,
                 onClick = onMergeClick,
+                enabled = !isArchived,
             )
         }
 
@@ -1597,6 +1627,7 @@ private fun PRActionPanel(
                 icon = Icons.Default.CheckCircle,
                 color = Green,
                 onClick = onMarkReadyClick,
+                enabled = !isArchived,
             )
         }
 
@@ -1607,6 +1638,7 @@ private fun PRActionPanel(
                 icon = Icons.Default.RateReview,
                 color = Coral,
                 onClick = onReviewClick,
+                enabled = !isArchived,
             )
         }
 
@@ -1617,6 +1649,7 @@ private fun PRActionPanel(
                 icon = Icons.Default.PersonAdd,
                 color = c.textSecondary,
                 onClick = onReviewerClick,
+                enabled = !isArchived,
             )
         }
 
@@ -1627,6 +1660,7 @@ private fun PRActionPanel(
                 icon = Icons.Default.Sync,
                 color = BlueColor,
                 onClick = onUpdateBranchClick,
+                enabled = !isArchived,
             )
         }
 
@@ -1637,24 +1671,35 @@ private fun PRActionPanel(
                 icon = if (pr.state == "open") Icons.Default.Cancel else Icons.Default.Refresh,
                 color = if (pr.state == "open") Color(0xFFF85149) else Green,
                 onClick = onToggleStateClick,
+                enabled = !isArchived,
             )
         }
     }
 }
 
 @Composable
-private fun PRActionButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, color: Color, onClick: () -> Unit) {
+private fun PRActionButton(
+    label: String, 
+    icon: androidx.compose.ui.graphics.vector.ImageVector, 
+    color: Color, 
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    val c = LocalGmColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .background(
+                if (enabled) color.copy(alpha = 0.08f) else c.bgItem, 
+                RoundedCornerShape(8.dp)
+            )
+            .clickable(onClick = onClick, enabled = enabled)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
-        Text(label, fontSize = 13.sp, color = color, fontWeight = FontWeight.Medium)
+        Icon(icon, null, tint = if (enabled) color else c.textTertiary, modifier = Modifier.size(18.dp))
+        Text(label, fontSize = 13.sp, color = if (enabled) color else c.textTertiary, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -1711,6 +1756,7 @@ private fun ReviewItemAsComment(
     c: GmColors,
     userLogin: String,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onReply: (String) -> Unit,
     onShare: (GHReview) -> Unit,
 ) {
@@ -1812,8 +1858,9 @@ private fun ReviewItemAsComment(
                                 onShare(review)
                             },
                         )
-                        DropdownMenuItem(
-                            text = { Text("引用回复", fontSize = 14.sp, color = c.textPrimary) },
+                        ArchivedAwareDropdownMenuItem(
+                            text = { Text("引用回复", fontSize = 14.sp) },
+                            isArchived = isArchived,
                             leadingIcon = {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Reply,
@@ -1850,6 +1897,7 @@ private fun PRCommentItem(
     c: GmColors,
     userLogin: String,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onReply: (GHComment) -> Unit,
     onEdit: (GHComment) -> Unit,
     onDelete: (GHComment) -> Unit,
@@ -1895,7 +1943,8 @@ private fun PRCommentItem(
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                                 colors = ButtonDefaults.textButtonColors(
                                     contentColor = c.textSecondary
-                                )
+                                ),
+                                enabled = true
                             ) {
                                 Text(
                                     "已编辑",
@@ -1942,8 +1991,9 @@ private fun PRCommentItem(
                                 onShare(comment)
                             },
                         )
-                        DropdownMenuItem(
-                            text = { Text("引用回复", fontSize = 14.sp, color = c.textPrimary) },
+                        ArchivedAwareDropdownMenuItem(
+                            text = { Text("引用回复", fontSize = 14.sp) },
+                            isArchived = isArchived,
                             leadingIcon = {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Reply,
@@ -1958,8 +2008,9 @@ private fun PRCommentItem(
                             },
                         )
                         if (canEditOrDelete) {
-                            DropdownMenuItem(
-                                text = { Text("编辑", fontSize = 14.sp, color = c.textPrimary) },
+                            ArchivedAwareDropdownMenuItem(
+                                text = { Text("编辑", fontSize = 14.sp) },
+                                isArchived = isArchived,
                                 leadingIcon = {
                                     Icon(
                                         Icons.Default.Edit,
@@ -1973,8 +2024,9 @@ private fun PRCommentItem(
                                     onEdit(comment)
                                 },
                             )
-                            DropdownMenuItem(
-                                text = { Text("删除", fontSize = 14.sp, color = Color(0xFFF85149)) },
+                            ArchivedAwareDropdownMenuItem(
+                                text = { Text("删除", fontSize = 14.sp) },
+                                isArchived = isArchived,
                                 leadingIcon = {
                                     Icon(
                                         Icons.Default.Delete,

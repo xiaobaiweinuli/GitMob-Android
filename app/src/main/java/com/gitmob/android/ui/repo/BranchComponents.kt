@@ -89,6 +89,7 @@ import okhttp3.Request
 fun BranchesTab(
     state: RepoDetailState, c: GmColors,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onSwitch: (String) -> Unit, onNewBranch: () -> Unit,
     onDelete: (String) -> Unit, onRename: (String, String) -> Unit,
     onSetDefault: (String) -> Unit,
@@ -104,10 +105,15 @@ fun BranchesTab(
     ) {
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             item {
-                PermissionRequired(permission = permission, requireOwner = true) {
+                PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
                     Button(onClick = onNewBranch, modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = CoralDim, contentColor = Coral),
-                        shape = RoundedCornerShape(12.dp)) {
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isArchived) c.bgItem else CoralDim, 
+                            contentColor = if (isArchived) c.textTertiary else Coral
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !isArchived
+                    ) {
                         Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("新建分支", fontSize = 13.sp)
@@ -146,28 +152,31 @@ fun BranchesTab(
                             modifier = Modifier.background(c.bgCard)) {
                             if (!isCurrent) {
                                 DropdownMenuItem(
-                                    text = { Text("切换到此分支", fontSize = 13.sp, color = c.textPrimary) },
+                                    text = { Text("切换到此分支", fontSize = 13.sp) },
                                     leadingIcon = { Icon(Icons.Default.AccountTree, null, tint = BlueColor, modifier = Modifier.size(15.dp)) },
                                     onClick = { onSwitch(branch.name); showMenu = false },
                                 )
                             }
-                            PermissionRequired(permission = permission, requireOwner = true) {
+                            PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
                                 if (!isDefault) {
-                                    DropdownMenuItem(
-                                        text = { Text("设为默认分支", fontSize = 13.sp, color = c.textPrimary) },
-                                        leadingIcon = { Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(15.dp)) },
+                                    ArchivedAwareDropdownMenuItem(
+                                        text = { Text("设为默认分支", fontSize = 13.sp) },
+                                        isArchived = isArchived,
+                                        leadingIcon = { Icon(Icons.Default.Star, null, tint = if (isArchived) c.textTertiary else Yellow, modifier = Modifier.size(15.dp)) },
                                         onClick = { onSetDefault(branch.name); showMenu = false },
                                     )
                                 }
-                                DropdownMenuItem(
-                                    text = { Text("重命名", fontSize = 13.sp, color = c.textPrimary) },
-                                    leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null, tint = c.textSecondary, modifier = Modifier.size(15.dp)) },
+                                ArchivedAwareDropdownMenuItem(
+                                    text = { Text("重命名", fontSize = 13.sp) },
+                                    isArchived = isArchived,
+                                    leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null, tint = if (isArchived) c.textTertiary else c.textSecondary, modifier = Modifier.size(15.dp)) },
                                     onClick = { showRenameDialog = branch; showMenu = false },
                                 )
                                 if (!isDefault && !isCurrent) {
-                                    DropdownMenuItem(
-                                        text = { Text("删除分支", fontSize = 13.sp, color = RedColor) },
-                                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = RedColor, modifier = Modifier.size(15.dp)) },
+                                    ArchivedAwareDropdownMenuItem(
+                                        text = { Text("删除分支", fontSize = 13.sp, color = if (isArchived) c.textTertiary else RedColor) },
+                                        isArchived = isArchived,
+                                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = if (isArchived) c.textTertiary else RedColor, modifier = Modifier.size(15.dp)) },
                                         onClick = { showDeleteDialog = branch; showMenu = false },
                                     )
                                 }

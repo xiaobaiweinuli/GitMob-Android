@@ -92,6 +92,7 @@ fun ReleasesTab(
     vm: RepoDetailViewModel? = null,
     c: GmColors,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onRefresh: () -> Unit = {},
 ) {
     val releases = state.releases
@@ -107,7 +108,7 @@ fun ReleasesTab(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(releases, key = { it.id }) { release ->
-                    SwipeableReleaseCard(release = release, c = c, vm = vm, permission = permission)
+                    SwipeableReleaseCard(release = release, c = c, vm = vm, permission = permission, isArchived = isArchived)
                 }
             }
         }
@@ -117,14 +118,14 @@ fun ReleasesTab(
 // ── 左滑删除包装 ──────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeableReleaseCard(release: GHRelease, c: GmColors, vm: RepoDetailViewModel?, permission: RepoPermission) {
+private fun SwipeableReleaseCard(release: GHRelease, c: GmColors, vm: RepoDetailViewModel?, permission: RepoPermission, isArchived: Boolean = false) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showEditDialog   by remember { mutableStateOf(false) }
     var errorMsg         by remember { mutableStateOf<String?>(null) }
     val dismissState = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
     
-    if (permission.isOwner) {
+    if (permission.isOwner && !isArchived) {
         SwipeToDismissBox(
             state = dismissState,
             enableDismissFromStartToEnd = false,
@@ -172,7 +173,7 @@ private fun SwipeableReleaseCard(release: GHRelease, c: GmColors, vm: RepoDetail
             c         = c,
             vm        = vm,
             permission = permission,
-            onEditClick = null,
+            onEditClick = if (!isArchived && permission.isOwner) { { showEditDialog = true } } else null,
         )
     }
 

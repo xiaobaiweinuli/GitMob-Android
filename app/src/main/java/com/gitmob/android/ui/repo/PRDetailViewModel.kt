@@ -28,6 +28,7 @@ data class PRDetailState(
     val isSubscribed: Boolean = false,
     val editHistoryLoading: Boolean = false,
     val editHistory: List<GHUserContentEdit> = emptyList(),
+    val isArchived: Boolean = false,
 )
 
 class PRDetailViewModel(
@@ -82,17 +83,22 @@ class PRDetailViewModel(
             val branches = repository.getBranches(owner, repoName)
             LogManager.d("PRDetailViewModel", "分支列表获取成功，数量: ${branches.size}")
             
+            LogManager.d("PRDetailViewModel", "正在加载仓库信息以判断是否归档...")
+            val repo = repository.getRepo(owner, repoName)
+            val isArchived = repo.archived == true
+            
             _state.update {
                 it.copy(
                     pr = pr,
                     reviews = reviews,
                     comments = comments,
                     branches = branches,
+                    isArchived = isArchived,
                     loading = false,
                     refreshing = false
                 )
             }
-            LogManager.d("PRDetailViewModel", "PR 详情加载完成，最终状态 - pr.comments: ${pr.comments}, reviews.size: ${reviews.size}, comments.size: ${comments.size}")
+            LogManager.d("PRDetailViewModel", "PR 详情加载完成，最终状态 - pr.comments: ${pr.comments}, reviews.size: ${reviews.size}, comments.size: ${comments.size}, isArchived: $isArchived")
             loadSubscription()
         } catch (e: Exception) {
             LogManager.e("PRDetailViewModel", "加载 PR 详情失败", e)

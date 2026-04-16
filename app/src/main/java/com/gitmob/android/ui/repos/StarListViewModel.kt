@@ -5,6 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.android.api.GraphQLClient
 import com.gitmob.android.auth.TokenStorage
+import com.gitmob.android.data.RepoRepository
+import com.gitmob.android.data.RepoUpdateEvent
+import com.gitmob.android.data.RepoUpdateEventBus
 import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -47,6 +50,7 @@ data class StarListState(
 class StarListViewModel(app: Application) : AndroidViewModel(app) {
 
     private val tokenStorage = TokenStorage(app)
+    private val repo = RepoRepository()
     private val _state = MutableStateFlow(StarListState())
     val state = _state.asStateFlow()
 
@@ -59,6 +63,9 @@ class StarListViewModel(app: Application) : AndroidViewModel(app) {
      * 切换 listId 时直接读缓存，不重新请求
      */
     private val reposCache = mutableMapOf<String?, RepoCacheEntry>()
+
+    /** 事件监听任务，用于在退出星标模式时取消 */
+    private var eventJob: kotlinx.coroutines.Job? = null
 
     /**
      * 仓库 → 所属列表 ID 集合 的反向映射（key = repo nodeId）
@@ -78,6 +85,55 @@ class StarListViewModel(app: Application) : AndroidViewModel(app) {
         val entering = !_state.value.starModeActive
         if (entering) {
             _state.update { it.copy(starModeActive = true, selectedListId = null) }
+            // 启动仓库更新事件监听
+            eventJob = viewModelScope.launch {
+                RepoUpdateEventBus.events.collect { event ->
+                    when (event) {
+                        is RepoUpdateEvent.RepoUpdated -> {
+                            try {
+                                val updatedGHRepo = repo.getRepo(event.owner, event.repo, forceRefresh = true)
+                                // 更新所有相关的缓存
+                                reposCache.entries.forEach { (k, v) ->
+                                    reposCache[k] = v.copy(
+                                        repos = v.repos.map {
+                                            if (it.nameWithOwner == "${event.owner}/${event.repo}") {
+                                                it.copy(
+                                                    archived = updatedGHRepo.archived,
+                                                    isPrivate = updatedGHRepo.private,
+                                                    description = updatedGHRepo.description,
+                                                    name = updatedGHRepo.name
+                                                )
+                                            } else {
+                                                it
+                                            }
+                                        }
+                                    )
+                                }
+                                // 更新当前显示的列表
+                                _state.update { s ->
+                                    s.copy(
+                                        starredRepos = s.starredRepos.map {
+                                            if (it.nameWithOwner == "${event.owner}/${event.repo}") {
+                                                it.copy(
+                                                    archived = updatedGHRepo.archived,
+                                                    isPrivate = updatedGHRepo.private,
+                                                    description = updatedGHRepo.description,
+                                                    name = updatedGHRepo.name
+                                                )
+                                            } else {
+                                                it
+                                            }
+                                        }
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                LogManager.e("StarListViewModel", "更新星标仓库失败", e)
+                            }
+                        }
+                        else -> {}
+                    }
+                }
+            }
             viewModelScope.launch {
                 // 同时启动加载 UserList 和 StarredRepos，不互相等待
                 launch { loadUserLists(force = false) }
@@ -124,11 +180,17 @@ class StarListViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         } else {
+            eventJob?.cancel()
+            eventJob = null
             _state.update { StarListState() }
         }
     }
 
-    fun exitStarMode() = _state.update { StarListState() }
+    fun exitStarMode() {
+        eventJob?.cancel()
+        eventJob = null
+        _state.update { StarListState() }
+    }
 
     // ── 列表操作 ─────────────────────────────────────────────────────────────
     fun toggleListsExpanded() = _state.update { it.copy(listsExpanded = !it.listsExpanded) }

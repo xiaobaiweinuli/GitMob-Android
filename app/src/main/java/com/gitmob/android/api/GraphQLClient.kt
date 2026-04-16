@@ -36,6 +36,7 @@ object GraphQLClient {
                 name
                 nameWithOwner
                 description
+                homepageUrl
                 isPrivate
                 url
                 sshUrl
@@ -52,12 +53,14 @@ object GraphQLClient {
                 primaryLanguage { name }
                 owner { login avatarUrl }
                 openIssues: issues(states: OPEN) { totalCount }
+                repositoryTopics(first: 10) { nodes { topic { name } } }
                 parent {
                   id
                   databaseId
                   name
                   nameWithOwner
                   description
+                  homepageUrl
                   isPrivate
                   url
                   sshUrl
@@ -82,6 +85,7 @@ object GraphQLClient {
                 name
                 nameWithOwner
                 description
+                homepageUrl
                 isPrivate
                 url
                 sshUrl
@@ -98,12 +102,14 @@ object GraphQLClient {
                 primaryLanguage { name }
                 owner { login avatarUrl }
                 openIssues: issues(states: OPEN) { totalCount }
+                repositoryTopics(first: 10) { nodes { topic { name } } }
                 parent {
                   id
                   databaseId
                   name
                   nameWithOwner
                   description
+                  homepageUrl
                   isPrivate
                   url
                   sshUrl
@@ -129,6 +135,7 @@ object GraphQLClient {
                 name
                 nameWithOwner
                 description
+                homepageUrl
                 isPrivate
                 url
                 sshUrl
@@ -145,6 +152,7 @@ object GraphQLClient {
                 primaryLanguage { name }
                 owner { login avatarUrl }
                 openIssues: issues(states: OPEN) { totalCount }
+                repositoryTopics(first: 10) { nodes { topic { name } } }
               }
             }
           }
@@ -182,6 +190,7 @@ object GraphQLClient {
                     name
                     nameWithOwner
                     description
+                    homepageUrl
                     isPrivate
                     url
                     sshUrl
@@ -198,6 +207,7 @@ object GraphQLClient {
                     primaryLanguage { name }
                     owner { login avatarUrl }
                     openIssues: issues(states: OPEN) { totalCount }
+                    repositoryTopics(first: 10) { nodes { topic { name } } }
                   }
                 }
               }
@@ -400,6 +410,7 @@ object GraphQLClient {
             name
             nameWithOwner
             description
+            homepageUrl
             url
             isPrivate
             isFork
@@ -589,6 +600,7 @@ object GraphQLClient {
                   name
                   nameWithOwner
                   description
+                  homepageUrl
                   isPrivate
                   url
                   sshUrl
@@ -603,6 +615,7 @@ object GraphQLClient {
                   isArchived
                   isTemplate
                   owner { login avatarUrl }
+                  repositoryTopics(first: 10) { nodes { topic { name } } }
                 }
               }
             }
@@ -636,12 +649,30 @@ object GraphQLClient {
                     val fullName = n.optString("nameWithOwner").ifBlank {
                         "${owner.login}/${n.optString("name")}"
                     }
+                    
+                    // 解析 topics
+                    val topics = mutableListOf<String>()
+                    n.optJSONObject("repositoryTopics")?.let { rtNode ->
+                        rtNode.optJSONArray("nodes")?.let { nodesArray ->
+                            for (j in 0 until nodesArray.length()) {
+                                nodesArray.optJSONObject(j)?.let { topicNode ->
+                                    topicNode.optJSONObject("topic")?.let { innerTopic ->
+                                        val topicName = innerTopic.optString("name")
+                                        if (topicName.isNotBlank()) {
+                                            topics.add(topicName)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
                     val repo = com.gitmob.android.api.GHRepo(
                         id = n.optLong("databaseId"),
                         name = n.optString("name"),
                         fullName = fullName,
                         description = n.optString("description").ifBlank { null },
-                        homepage = null,
+                        homepage = n.optString("homepageUrl").ifBlank { null },
                         private = n.optBoolean("isPrivate"),
                         htmlUrl = n.optString("url"),
                         sshUrl = n.optString("sshUrl"),
@@ -658,6 +689,7 @@ object GraphQLClient {
                         updatedAt = n.optString("updatedAt").ifBlank { null },
                         pushedAt = n.optString("pushedAt").ifBlank { null },
                         createdAt = n.optString("createdAt").ifBlank { null },
+                        topics = topics,
                     )
                     result.add(repo)
                 }

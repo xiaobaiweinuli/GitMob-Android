@@ -9,6 +9,8 @@ import com.gitmob.android.api.GHRepo
 import com.gitmob.android.api.GHUpdateRepoRequest
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.data.RepoRepository
+import com.gitmob.android.data.RepoUpdateEvent
+import com.gitmob.android.data.RepoUpdateEventBus
 import com.gitmob.android.util.LanguageEntry
 import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.Job
@@ -67,6 +69,28 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
                 if (profile != null) {
                     _state.update { it.copy(userLogin = profile.first,
                         userAvatar = thumbUrl(profile.third).orEmpty()) }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            RepoUpdateEventBus.events.collect { event ->
+                when (event) {
+                    is RepoUpdateEvent.RepoUpdated -> {
+                        try {
+                            val updated = repo.getRepo(event.owner, event.repo, forceRefresh = true)
+                            _state.update { s ->
+                                s.copy(
+                                    repos = s.repos.map {
+                                        if (it.fullName == "${event.owner}/${event.repo}") updated else it
+                                    }
+                                )
+                            }
+                        } catch (e: Exception) {
+                            LogManager.e("RepoListViewModel", "更新仓库失败", e)
+                        }
+                    }
+                    else -> {}
                 }
             }
         }
@@ -327,6 +351,22 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
             val updated = repo.getRepo(owner, repoName)
             _state.update { s -> s.copy(repos = s.repos.map { if (it.name == repoName && it.owner.login == owner) updated else it }, toast = "已更新仓库信息") }
         } catch (e: Exception) { _state.update { it.copy(toast = "更新失败：${e.message}") } }
+    }
+
+    fun archiveRepo(owner: String, repoName: String) = viewModelScope.launch {
+        try {
+            repo.archiveRepo(owner, repoName)
+            val updated = repo.getRepo(owner, repoName)
+            _state.update { s -> s.copy(repos = s.repos.map { if (it.name == repoName && it.owner.login == owner) updated else it }, toast = "已归档 $repoName") }
+        } catch (e: Exception) { _state.update { it.copy(toast = "归档失败：${e.message}") } }
+    }
+
+    fun unarchiveRepo(owner: String, repoName: String) = viewModelScope.launch {
+        try {
+            repo.unarchiveRepo(owner, repoName)
+            val updated = repo.getRepo(owner, repoName)
+            _state.update { s -> s.copy(repos = s.repos.map { if (it.name == repoName && it.owner.login == owner) updated else it }, toast = "已取消归档 $repoName") }
+        } catch (e: Exception) { _state.update { it.copy(toast = "取消归档失败：${e.message}") } }
     }
 
     fun clearToast() = _state.update { it.copy(toast = null) }

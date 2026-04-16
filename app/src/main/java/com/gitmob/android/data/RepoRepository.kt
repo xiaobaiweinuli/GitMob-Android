@@ -291,7 +291,39 @@ class RepoRepository {
     suspend fun updateRepo(owner: String, repo: String, body: GHUpdateRepoRequest): GHRepo =
         withContext(Dispatchers.IO) {
             invalidateReposCache()
-            api.updateRepo(owner, repo, body)
+            val result = api.updateRepo(owner, repo, body)
+            RepoUpdateEventBus.send(RepoUpdateEvent.RepoUpdated(owner, repo))
+            result
+        }
+
+    suspend fun archiveRepo(owner: String, repo: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                invalidateReposCache()
+                repoDetailCache.remove("$owner/$repo")
+                val response = api.updateRepo(owner, repo, GHUpdateRepoRequest(archived = true))
+                LogManager.d("RepoArchive", "归档仓库 $owner/$repo 成功")
+                RepoUpdateEventBus.send(RepoUpdateEvent.RepoUpdated(owner, repo))
+                true
+            } catch (e: Exception) {
+                LogManager.e("RepoArchive", "归档仓库 $owner/$repo 时发生异常", e)
+                false
+            }
+        }
+
+    suspend fun unarchiveRepo(owner: String, repo: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                invalidateReposCache()
+                repoDetailCache.remove("$owner/$repo")
+                val response = api.updateRepo(owner, repo, GHUpdateRepoRequest(archived = false))
+                LogManager.d("RepoArchive", "取消归档仓库 $owner/$repo 成功")
+                RepoUpdateEventBus.send(RepoUpdateEvent.RepoUpdated(owner, repo))
+                true
+            } catch (e: Exception) {
+                LogManager.e("RepoArchive", "取消归档仓库 $owner/$repo 时发生异常", e)
+                false
+            }
         }
 
     suspend fun deleteRepo(owner: String, repo: String): Boolean = withContext(Dispatchers.IO) {
@@ -325,7 +357,11 @@ class RepoRepository {
     }
 
     suspend fun replaceTopics(owner: String, repo: String, topics: List<String>): List<String> = withContext(Dispatchers.IO) {
-        api.replaceTopics(owner, repo, GHTopics(topics)).names
+        invalidateReposCache()
+        repoDetailCache.remove("$owner/$repo")
+        val result = api.replaceTopics(owner, repo, GHTopics(topics)).names
+        RepoUpdateEventBus.send(RepoUpdateEvent.RepoUpdated(owner, repo))
+        result
     }
 
     // ─── Contents / Files ───
@@ -1192,6 +1228,25 @@ class RepoRepository {
         val openIssues = node.optJSONObject("openIssues")?.optInt("totalCount", 0) ?: 0
         val hasIssues = node.optBoolean("hasIssuesEnabled", true)
         val hasDiscussions = node.optBoolean("hasDiscussionsEnabled", false)
+        val archived = node.optBoolean("isArchived", false)
+        val homepage = node.optString("homepageUrl").ifBlank { null }
+
+        // 解析 topics
+        val topics = mutableListOf<String>()
+        node.optJSONObject("repositoryTopics")?.let { rtNode ->
+            rtNode.optJSONArray("nodes")?.let { nodesArray ->
+                for (i in 0 until nodesArray.length()) {
+                    nodesArray.optJSONObject(i)?.let { topicNode ->
+                    topicNode.optJSONObject("topic")?.let { innerTopic ->
+                        val topicName = innerTopic.optString("name")
+                        if (topicName.isNotBlank()) {
+                            topics.add(topicName)
+                        }
+                    }
+                }
+                }
+            }
+        }
 
         // GitHub GraphQL node_id 是 base64 字符串，REST 用 Long；这里用 hashCode 兼容
         val idLong = node.optString("id").hashCode().toLong().let {
@@ -1208,7 +1263,7 @@ class RepoRepository {
             name          = repoName,
             fullName      = nameWithOwner,
             description   = node.optString("description").ifBlank { null },
-            homepage      = null,
+            homepage      = homepage,
             private       = node.optBoolean("isPrivate", false),
             htmlUrl       = node.optString("url"),
             sshUrl        = "git@github.com:$nameWithOwner.git",
@@ -1225,6 +1280,8 @@ class RepoRepository {
             parent        = parent,
             hasIssues     = hasIssues,
             hasDiscussions = hasDiscussions,
+            archived      = archived,
+            topics        = topics,
         )
     }
 

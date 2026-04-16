@@ -1103,6 +1103,38 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         }
     }
 
+    fun archiveRepo(onSuccess: () -> Unit) = viewModelScope.launch {
+        try {
+            repository.archiveRepo(owner, repoName)
+            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            _state.update {
+                it.copy(
+                    repo = updated,
+                    toast = "已归档仓库 $repoName",
+                )
+            }
+            onSuccess()
+        } catch (e: Exception) {
+            _state.update { it.copy(toast = "归档失败：${e.message}") }
+        }
+    }
+
+    fun unarchiveRepo(onSuccess: () -> Unit) = viewModelScope.launch {
+        try {
+            repository.unarchiveRepo(owner, repoName)
+            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            _state.update {
+                it.copy(
+                    repo = updated,
+                    toast = "已取消归档仓库 $repoName",
+                )
+            }
+            onSuccess()
+        } catch (e: Exception) {
+            _state.update { it.copy(toast = "取消归档失败：${e.message}") }
+        }
+    }
+
     fun checkNameAvailability(
         owner: String,
         name: String,

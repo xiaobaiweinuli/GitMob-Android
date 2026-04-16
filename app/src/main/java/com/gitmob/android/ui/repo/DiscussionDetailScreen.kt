@@ -123,6 +123,7 @@ fun DiscussionDetailScreen(
                                 onDismissRequest = { showMenu = false },
                                 modifier = Modifier.background(c.bgCard),
                             ) {
+                                val isArchived = state.isArchived
                                 DropdownMenuItem(
                                     text = {
                                         Text(
@@ -148,8 +149,9 @@ fun DiscussionDetailScreen(
                                 val canEdit = permission.isOwner || isDiscussionAuthor
 
                                 if (canEdit) {
-                                    DropdownMenuItem(
-                                        text = { Text("编辑标题", fontSize = 14.sp, color = c.textPrimary) },
+                                    ArchivedAwareDropdownMenuItem(
+                                        text = { Text("编辑标题", fontSize = 14.sp) },
+                                        isArchived = isArchived,
                                         leadingIcon = {
                                             Icon(
                                                 Icons.Default.Edit,
@@ -165,8 +167,9 @@ fun DiscussionDetailScreen(
                                     )
                                 }
                                 PermissionRequired(permission = permission, requireOwner = true) {
-                                    DropdownMenuItem(
-                                        text = { Text("删除", fontSize = 14.sp, color = Color.Red) },
+                                    ArchivedAwareDropdownMenuItem(
+                                        text = { Text("删除", fontSize = 14.sp) },
+                                        isArchived = isArchived,
                                         leadingIcon = {
                                             Icon(
                                                 Icons.Default.Delete,
@@ -217,6 +220,7 @@ fun DiscussionDetailScreen(
                             c = c,
                             userLogin = state.userLogin,
                             permission = permission,
+                            isArchived = state.isArchived,
                             onReply = {
                                 replyingToDiscussion = true
                                 showCommentInputDialog = true
@@ -235,6 +239,7 @@ fun DiscussionDetailScreen(
                             c = c,
                             userLogin = state.userLogin,
                             permission = permission,
+                            isArchived = state.isArchived,
                             onReply = {
                                 replyingToComment = it
                                 showCommentInputDialog = true
@@ -262,9 +267,13 @@ fun DiscussionDetailScreen(
             contentAlignment = Alignment.BottomEnd,
         ) {
             FloatingActionButton(
-                onClick = { showCommentInputDialog = true },
-                containerColor = Coral,
-                contentColor = Color.White,
+                onClick = { 
+                    if (!state.isArchived) {
+                        showCommentInputDialog = true 
+                    }
+                },
+                containerColor = if (state.isArchived) Coral.copy(alpha = 0.38f) else Coral,
+                contentColor = if (state.isArchived) Color.White.copy(alpha = 0.38f) else Color.White,
                 modifier = Modifier.padding(16.dp),
             ) {
                 Icon(Icons.AutoMirrored.Filled.Comment, null)
@@ -715,6 +724,7 @@ private fun DiscussionBodyCard(
     c: GmColors,
     userLogin: String,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onShare: () -> Unit,
@@ -758,7 +768,8 @@ private fun DiscussionBodyCard(
                         if (isDiscussionEdited) {
                             EditedButton(
                                 onClick = onShowEditHistory,
-                                c = c
+                                c = c,
+                                enabled = true
                             )
                         }
                     }
@@ -800,8 +811,9 @@ private fun DiscussionBodyCard(
                                 onShare()
                             },
                         )
-                        DropdownMenuItem(
-                            text = { Text("引用回复", fontSize = 14.sp, color = c.textPrimary) },
+                        ArchivedAwareDropdownMenuItem(
+                            text = { Text("引用回复", fontSize = 14.sp) },
+                            isArchived = isArchived,
                             leadingIcon = {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Reply,
@@ -816,8 +828,9 @@ private fun DiscussionBodyCard(
                             },
                         )
                         if (isOwnerOrAuthor) {
-                            DropdownMenuItem(
-                                text = { Text("编辑描述", fontSize = 14.sp, color = c.textPrimary) },
+                            ArchivedAwareDropdownMenuItem(
+                                text = { Text("编辑描述", fontSize = 14.sp) },
+                                isArchived = isArchived,
                                 leadingIcon = {
                                     Icon(
                                         Icons.Default.Edit,
@@ -859,6 +872,7 @@ private fun DiscussionCommentCard(
     c: GmColors,
     userLogin: String,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onReply: (GHDiscussionComment) -> Unit,
     onEdit: (GHDiscussionComment) -> Unit,
     onDelete: (GHDiscussionComment) -> Unit,
@@ -903,7 +917,8 @@ private fun DiscussionCommentCard(
                         if (isCommentEdited) {
                             EditedButton(
                                 onClick = { onShowEditHistory(comment) },
-                                c = c
+                                c = c,
+                                enabled = true
                             )
                         }
                     }
@@ -930,8 +945,9 @@ private fun DiscussionCommentCard(
                         onDismissRequest = { showMenu = false },
                         modifier = Modifier.background(c.bgCard),
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("引用回复", fontSize = 14.sp, color = c.textPrimary) },
+                        ArchivedAwareDropdownMenuItem(
+                            text = { Text("引用回复", fontSize = 14.sp) },
+                            isArchived = isArchived,
                             leadingIcon = {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Reply,
@@ -946,8 +962,9 @@ private fun DiscussionCommentCard(
                             },
                         )
                         if (isOwnerOrAuthor && comment.viewerCanUpdate) {
-                            DropdownMenuItem(
-                                text = { Text("编辑", fontSize = 14.sp, color = c.textPrimary) },
+                            ArchivedAwareDropdownMenuItem(
+                                text = { Text("编辑", fontSize = 14.sp) },
+                                isArchived = isArchived,
                                 leadingIcon = {
                                     Icon(
                                         Icons.Default.Edit,
@@ -978,8 +995,9 @@ private fun DiscussionCommentCard(
                             },
                         )
                         if (isOwnerOrAuthor && comment.viewerCanDelete) {
-                            DropdownMenuItem(
-                                text = { Text("删除", fontSize = 14.sp, color = Color.Red) },
+                            ArchivedAwareDropdownMenuItem(
+                                text = { Text("删除", fontSize = 14.sp) },
+                                isArchived = isArchived,
                                 leadingIcon = {
                                     Icon(
                                         Icons.Default.Delete,
@@ -1301,12 +1319,14 @@ private fun EditHistoryContent(
 private fun EditedButton(
     onClick: () -> Unit,
     c: GmColors,
+    enabled: Boolean = true,
 ) {
     Surface(
         onClick = onClick,
-        color = c.bgItem,
+        color = if (enabled) c.bgItem else c.bgItem,
         shape = RoundedCornerShape(6.dp),
-        modifier = Modifier.height(24.dp)
+        modifier = Modifier.height(24.dp),
+        enabled = enabled
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1316,13 +1336,13 @@ private fun EditedButton(
             Icon(
                 Icons.Default.History,
                 null,
-                tint = c.textTertiary,
+                tint = if (enabled) c.textTertiary else c.textTertiary.copy(alpha = 0.38f),
                 modifier = Modifier.size(12.dp)
             )
             Text(
                 "已编辑",
                 fontSize = 10.sp,
-                color = c.textTertiary,
+                color = if (enabled) c.textTertiary else c.textTertiary.copy(alpha = 0.38f),
                 fontWeight = FontWeight.Medium
             )
         }

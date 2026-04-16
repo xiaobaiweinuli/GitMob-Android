@@ -104,6 +104,7 @@ fun ActionsTab(
     owner: String,
     repoName: String,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onRefresh: () -> Unit = {},
 ) {
     var showDispatchDialog by remember { mutableStateOf<GHWorkflow?>(null) }
@@ -206,7 +207,8 @@ fun ActionsTab(
                                 onClick = { vm.selectWorkflowRun(run) },
                                 onRerun = { vm.rerunWorkflow(run.id) },
                                 onCancel = { vm.cancelWorkflow(run.id) },
-                                onDelete = { showDeleteDialog = run }
+                                onDelete = { showDeleteDialog = run },
+                                isArchived = isArchived
                             )
                         }
                         if (state.workflowRunsLoadingMore) {
@@ -238,7 +240,8 @@ fun ActionsTab(
                                 c = c,
                                 onDispatch = { showDispatchDialog = workflow },
                                 onClick = { vm.selectWorkflow(workflow) },
-                                onRefresh = { vm.loadWorkflows() }
+                                onRefresh = { vm.loadWorkflows() },
+                                isArchived = isArchived
                             )
                         }
                         if (state.workflows.size > 2) {
@@ -294,7 +297,8 @@ fun ActionsTab(
                                 onClick = { vm.selectWorkflowRun(run) },
                                 onRerun = { vm.rerunWorkflow(run.id) },
                                 onCancel = { vm.cancelWorkflow(run.id) },
-                                onDelete = { showDeleteDialog = run }
+                                onDelete = { showDeleteDialog = run },
+                                isArchived = isArchived
                             )
                         }
                         if (state.workflowRunsLoadingMore) {
@@ -372,7 +376,8 @@ fun WorkflowItem(
     c: GmColors,
     onDispatch: () -> Unit,
     onClick: () -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    isArchived: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -394,8 +399,17 @@ fun WorkflowItem(
             Text(workflow.path, fontSize = 11.sp, color = c.textTertiary)
         }
         if (workflow.state == "active") {
-            IconButton(onClick = onDispatch, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Default.PlayCircle, null, tint = Coral, modifier = Modifier.size(18.dp))
+            IconButton(
+                onClick = onDispatch, 
+                modifier = Modifier.size(28.dp),
+                enabled = !isArchived
+            ) {
+                Icon(
+                    Icons.Default.PlayCircle, 
+                    null, 
+                    tint = if (isArchived) c.textTertiary else Coral, 
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }
@@ -408,7 +422,8 @@ fun WorkflowRunItem(
     onClick: () -> Unit,
     onRerun: () -> Unit,
     onCancel: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    isArchived: Boolean = false
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val statusColor = when (run.status) {
@@ -454,26 +469,38 @@ fun WorkflowRunItem(
             GmBadge(statusText, statusColor.copy(alpha = 0.15f), statusColor)
             Spacer(Modifier.width(4.dp))
             Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.MoreVert, null, tint = c.textTertiary, modifier = Modifier.size(16.dp))
+                IconButton(
+                    onClick = { showMenu = true }, 
+                    modifier = Modifier.size(28.dp),
+                    enabled = !isArchived
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert, 
+                        null, 
+                        tint = if (isArchived) c.textTertiary.copy(alpha = 0.38f) else c.textTertiary, 
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(c.bgCard)) {
                     if (run.status == "completed") {
-                        DropdownMenuItem(
+                        ArchivedAwareDropdownMenuItem(
                             text = { Text("重新运行", fontSize = 13.sp, color = c.textPrimary) },
+                            isArchived = isArchived,
                             leadingIcon = { Icon(Icons.Default.Refresh, null, tint = BlueColor, modifier = Modifier.size(16.dp)) },
                             onClick = { onRerun(); showMenu = false }
                         )
                     }
                     if (run.status == "in_progress") {
-                        DropdownMenuItem(
+                        ArchivedAwareDropdownMenuItem(
                             text = { Text("取消", fontSize = 13.sp, color = RedColor) },
+                            isArchived = isArchived,
                             leadingIcon = { Icon(Icons.Default.Close, null, tint = RedColor, modifier = Modifier.size(16.dp)) },
                             onClick = { onCancel(); showMenu = false }
                         )
                     }
-                    DropdownMenuItem(
+                    ArchivedAwareDropdownMenuItem(
                         text = { Text("删除", fontSize = 13.sp, color = RedColor) },
+                        isArchived = isArchived,
                         leadingIcon = { Icon(Icons.Default.Delete, null, tint = RedColor, modifier = Modifier.size(16.dp)) },
                         onClick = { onDelete(); showMenu = false }
                     )

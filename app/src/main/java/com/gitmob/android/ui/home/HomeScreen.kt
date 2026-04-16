@@ -8,7 +8,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -42,6 +44,7 @@ import com.gitmob.android.data.FavGroup
 import com.gitmob.android.data.FavRepo
 import com.gitmob.android.data.FavoritesManager
 import com.gitmob.android.ui.common.GmDivider
+import com.gitmob.android.ui.common.GmBadge
 import com.gitmob.android.ui.common.LoadingBox
 import com.gitmob.android.ui.theme.*
 import com.gitmob.android.ui.update.UpdateDialog
@@ -627,6 +630,7 @@ private fun FavRepoCard(
     val dismissState = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
     var showRemoveDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     SwipeToDismissBox(
         state = dismissState,
@@ -669,17 +673,66 @@ private fun FavRepoCard(
                 Spacer(Modifier.height(4.dp))
                 Text(repo.description, fontSize = 12.sp, color = c.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (!repo.language.isNullOrBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(10.dp).background(Coral, CircleShape)); Spacer(Modifier.width(4.dp))
-                        Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+            if (!repo.website.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                val urlToOpen = remember(repo.website) {
+                    val url = repo.website
+                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                        "https://$url"
+                    } else {
+                        url
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.StarBorder, null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
-                    Spacer(Modifier.width(3.dp)); Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.clickable {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(urlToOpen))
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Icon(Icons.Default.Link, null, tint = BlueColor, modifier = Modifier.size(12.dp))
+                    Text(repo.website, fontSize = 11.sp, color = BlueColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (!repo.language.isNullOrBlank()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(Modifier.size(10.dp).background(Coral, CircleShape))
+                            Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.StarBorder, null, tint = Yellow, modifier = Modifier.size(13.dp))
+                        Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
+                    }
+                    if (repo.isPrivate) {
+                        GmBadge("私有", RedDim, RedColor)
+                    }
+                    if (repo.archived) {
+                        GmBadge("已归档", CoralDim, Coral)
+                    }
+                }
+                if (repo.topics.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        repo.topics.forEach { topic ->
+                            Text(
+                                text = topic,
+                                fontSize = 9.sp,
+                                color = c.textTertiary,
+                                modifier = Modifier
+                                    .background(BlueDim, RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp),
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
             }
         }

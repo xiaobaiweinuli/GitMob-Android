@@ -4,7 +4,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,6 +36,7 @@ import coil3.compose.AsyncImage
 import com.gitmob.android.api.GHOrg
 import com.gitmob.android.api.GHRepo
 import com.gitmob.android.ui.common.*
+import com.gitmob.android.ui.repo.ArchivedAwareDropdownMenuItem
 import com.gitmob.android.ui.theme.*
 import com.gitmob.android.util.LogManager
 import androidx.compose.material.icons.filled.DeleteForever
@@ -448,6 +451,8 @@ fun RepoListScreen(
                                         c = c,
                                         canManage = listPermission.canManageRepos,
                                         onForkedRepoClick = { owner, name -> onRepoClick(owner, name) },
+                                        onArchive = if (listPermission.canManageRepos) { { vm.archiveRepo(repo.owner.login, repo.name) } } else null,
+                                        onUnarchive = if (listPermission.canManageRepos) { { vm.unarchiveRepo(repo.owner.login, repo.name) } } else null,
                                     )
                                 }
                                 if (state.loadingMore) {
@@ -615,13 +620,18 @@ private fun StarredRepoCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    text = repo.name,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    color = c.textPrimary,
-                    maxLines = 1,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = repo.name,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = c.textPrimary,
+                        maxLines = 1,
+                    )
+                    if (repo.archived) {
+                        GmBadge("已归档", CoralDim, Coral)
+                    }
+                }
                 if (!repo.description.isNullOrBlank()) {
                     Text(
                         text = repo.description,
@@ -630,6 +640,24 @@ private fun StarredRepoCard(
                         maxLines = 2,
                         modifier = Modifier.padding(top = 3.dp),
                     )
+                }
+                if (!repo.homepage.isNullOrBlank()) {
+                    val context = LocalContext.current
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .clickable {
+                                val url = if (repo.homepage.startsWith("http")) repo.homepage else "https://${repo.homepage}"
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                context.startActivity(intent)
+                            }
+                    ) {
+                        Icon(Icons.Default.Link, null, tint = BlueColor, modifier = Modifier.size(12.dp))
+                        Text(repo.homepage, fontSize = 11.sp, color = BlueColor, maxLines = 1)
+                    }
                 }
             }
             if (repo.isPrivate) GmBadge("私有", RedDim, RedColor)
@@ -657,6 +685,32 @@ private fun StarredRepoCard(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Box(Modifier.size(10.dp).background(Yellow, androidx.compose.foundation.shape.CircleShape))
                     Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+                }
+            }
+            // topics
+            if (repo.topics.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repo.topics.take(3).forEach { topic ->
+                        Text(
+                            text = topic,
+                            fontSize = 9.sp,
+                            color = c.textTertiary,
+                            modifier = Modifier
+                                .background(BlueDim, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                            maxLines = 1
+                        )
+                    }
+                    if (repo.topics.size > 3) {
+                        Text(
+                            text = "+${repo.topics.size - 3}",
+                            fontSize = 9.sp,
+                            color = c.textTertiary
+                        )
+                    }
                 }
             }
             // 星标数
@@ -730,6 +784,8 @@ fun SwipeableRepoCard(
     c: GmColors,
     canManage: Boolean = true,
     onForkedRepoClick: ((String, String) -> Unit)? = null,
+    onArchive: (() -> Unit)? = null,
+    onUnarchive: (() -> Unit)? = null,
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -771,6 +827,8 @@ fun SwipeableRepoCard(
             repo = repo, onClick = onClick,
             onRename = if (canManage) { { showRenameDialog = true } } else null,
             onEdit   = if (canManage) { { showEditDialog = true } } else null,
+            onArchive = if (canManage) onArchive else null,
+            onUnarchive = if (canManage) onUnarchive else null,
             onClone  = { onClone(repo.cloneUrl) },
             c = c,
             onForkedRepoClick = onForkedRepoClick,
@@ -811,12 +869,15 @@ private fun RepoCardContent(
     onClick: () -> Unit,
     onRename: (() -> Unit)?,
     onEdit: (() -> Unit)?,
+    onArchive: (() -> Unit)?,
+    onUnarchive: (() -> Unit)?,
     onClone: () -> Unit,
     c: GmColors,
     extraActions: @Composable (() -> Unit)? = null,
     onForkedRepoClick: ((String, String) -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var showArchiveDialog by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     Column(
@@ -825,7 +886,9 @@ private fun RepoCardContent(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(repo.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.textPrimary)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(repo.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.textPrimary)
+                }
                 if (repo.fork && repo.parent != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -863,8 +926,6 @@ private fun RepoCardContent(
                     }
                 }
             }
-            if (repo.private) GmBadge("私有", RedDim, RedColor)
-            Spacer(Modifier.width(4.dp))
             // 星标模式下注入自定义按钮（如分类管理三点菜单）
             extraActions?.invoke()
             Box {
@@ -873,18 +934,48 @@ private fun RepoCardContent(
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false },
                     modifier = Modifier.background(c.bgCard)) {
+                    val isArchived = repo.archived == true
                     if (onRename != null) {
-                        DropdownMenuItem(
-                            text = { Text("重命名", fontSize = 14.sp, color = c.textPrimary) },
-                            leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null, tint = c.textSecondary, modifier = Modifier.size(16.dp)) },
+                        ArchivedAwareDropdownMenuItem(
+                            text = { Text("重命名", fontSize = 14.sp) },
+                            isArchived = isArchived,
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.DriveFileRenameOutline,
+                                    null,
+                                    tint = c.textSecondary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
                             onClick = { onRename(); showMenu = false },
                         )
                     }
                     if (onEdit != null) {
-                        DropdownMenuItem(
-                            text = { Text("编辑信息", fontSize = 14.sp, color = c.textPrimary) },
-                            leadingIcon = { Icon(Icons.Default.Edit, null, tint = c.textSecondary, modifier = Modifier.size(16.dp)) },
+                        ArchivedAwareDropdownMenuItem(
+                            text = { Text("编辑信息", fontSize = 14.sp) },
+                            isArchived = isArchived,
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    null,
+                                    tint = c.textSecondary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
                             onClick = { onEdit(); showMenu = false },
+                        )
+                    }
+                    if (repo.archived == true && onUnarchive != null) {
+                        DropdownMenuItem(
+                            text = { Text("取消归档", fontSize = 14.sp, color = c.textPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Unarchive, null, tint = Coral, modifier = Modifier.size(16.dp)) },
+                            onClick = { showMenu = false; showArchiveDialog = true },
+                        )
+                    } else if (repo.archived != true && onArchive != null) {
+                        DropdownMenuItem(
+                            text = { Text("归档", fontSize = 14.sp, color = c.textPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Archive, null, tint = BlueColor, modifier = Modifier.size(16.dp)) },
+                            onClick = { showMenu = false; showArchiveDialog = true },
                         )
                     }
                     DropdownMenuItem(
@@ -916,40 +1007,140 @@ private fun RepoCardContent(
 
         Spacer(Modifier.height(10.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (!repo.language.isNullOrBlank()) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.size(8.dp).background(Coral, CircleShape))
-                    Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (!repo.language.isNullOrBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(Modifier.size(8.dp).background(Coral, CircleShape))
+                        Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+                    }
                 }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(12.dp))
-                Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
-                Text("${repo.forks}", fontSize = 11.sp, color = c.textTertiary)
-            }
-            if (repo.openIssues > 0) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
-                    Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
+                    Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(12.dp))
+                    Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
+                    Text("${repo.forks}", fontSize = 11.sp, color = c.textTertiary)
+                }
+                if (repo.openIssues > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
+                        Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                if (repo.private) GmBadge("私有", RedDim, RedColor)
+                if (repo.archived == true) GmBadge("已归档", CoralDim, Coral)
+                Text(
+                    text = repo.defaultBranch,
+                    fontSize = 10.5.sp, color = BlueColor,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.background(BlueDim, RoundedCornerShape(20.dp))
+                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                )
+            }
+            
+            // topics
+            if (repo.topics.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                ) {
+                    repo.topics.forEach { topic ->
+                        Text(
+                            text = topic,
+                            fontSize = 9.sp,
+                            color = c.textTertiary,
+                            modifier = Modifier
+                                .background(BlueDim, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                            maxLines = 1
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = repo.defaultBranch,
-                fontSize = 10.5.sp, color = BlueColor,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.background(BlueDim, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 7.dp, vertical = 2.dp),
-            )
         }
+    }
+
+    if (showArchiveDialog) {
+        ArchiveRepoDialog(
+            repoName = repo.name,
+            owner = repo.owner.login,
+            isArchived = repo.archived == true,
+            onConfirm = {
+                if (repo.archived == true) {
+                    onUnarchive?.invoke()
+                } else {
+                    onArchive?.invoke()
+                }
+                showArchiveDialog = false
+            },
+            onDismiss = { showArchiveDialog = false },
+            c = c,
+        )
     }
 }
 
 // ─── Dialogs ───────────────────────────────────────────────────
+
+@Composable
+private fun ArchiveRepoDialog(
+    repoName: String,
+    owner: String,
+    isArchived: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    c: GmColors,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.bgCard,
+        icon = {
+            Icon(
+                if (isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+                null,
+                tint = if (isArchived) Coral else BlueColor,
+                modifier = Modifier.size(28.dp),
+            )
+        },
+        title = {
+            Text(
+                if (isArchived) "取消归档仓库" else "归档仓库",
+                color = c.textPrimary,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    if (isArchived)
+                        "取消归档 $owner/$repoName 后，你可以再次编辑仓库、接受拉取请求和打开议题。"
+                    else
+                        "归档 $owner/$repoName 后，仓库将变为只读，你无法编辑仓库、接受拉取请求或打开议题。",
+                    fontSize = 12.sp,
+                    color = c.textSecondary,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isArchived) Coral else BlueColor,
+                ),
+            ) {
+                Text(if (isArchived) "取消归档" else "归档")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = c.textSecondary)
+            }
+        },
+    )
+}
 
 @Composable
 private fun DeleteRepoDialog(
@@ -1117,7 +1308,7 @@ private fun EditRepoDialog(
 ) {
     var desc by remember { mutableStateOf(repo.description ?: "") }
     var website by remember { mutableStateOf(repo.homepage ?: "") }
-    var topicsText by remember { mutableStateOf("") }
+    var topicsText by remember { mutableStateOf(repo.topics.joinToString(" ")) }
 
     AlertDialog(
         onDismissRequest = onDismiss,

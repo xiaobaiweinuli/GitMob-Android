@@ -46,6 +46,7 @@ fun DiscussionsTab(
     c: GmColors,
     vm: RepoDetailViewModel,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onRefresh: () -> Unit,
     onDiscussionClick: (Int) -> Unit = {},
 ) {
@@ -67,7 +68,7 @@ fun DiscussionsTab(
         onRefresh = onRefresh,
     ) {
         Column {
-            DiscussionFilterToolbar(state, c, vm, permission, onAddDiscussionClick = {
+            DiscussionFilterToolbar(state, c, vm, permission, isArchived = isArchived, onAddDiscussionClick = {
                 showCreateDiscussionDialog = true
             })
 
@@ -121,6 +122,7 @@ private fun DiscussionFilterToolbar(
     c: GmColors,
     vm: RepoDetailViewModel,
     permission: RepoPermission,
+    isArchived: Boolean = false,
     onAddDiscussionClick: () -> Unit = {},
 ) {
     var showCategorySheet by remember { mutableStateOf(false) }
@@ -236,12 +238,13 @@ private fun DiscussionFilterToolbar(
 
             IconButton(
                 onClick = onAddDiscussionClick,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(36.dp),
+                enabled = !isArchived
             ) {
                 Icon(
                     Icons.Default.Add,
                     null,
-                    tint = Coral,
+                    tint = if (isArchived) c.textTertiary else Coral,
                     modifier = Modifier.size(22.dp)
                 )
             }

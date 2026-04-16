@@ -26,6 +26,7 @@ data class DiscussionDetailState(
     val operationInProgress: Boolean = false,
     val editHistoryLoading: Boolean = false,
     val editHistory: List<GHUserContentEdit> = emptyList(),
+    val isArchived: Boolean = false,
 )
 
 class DiscussionDetailViewModel(
@@ -66,10 +67,15 @@ class DiscussionDetailViewModel(
                 repo = repoName,
                 number = discussionNumber
             )
+            LogManager.d("DiscussionDetailViewModel", "正在加载仓库信息以判断是否归档...")
+            val repo = repository.getRepo(owner, repoName)
+            val isArchived = repo.archived == true
+            
             _state.update { 
                 it.copy(
                     discussion = discussion, 
                     comments = comments,
+                    isArchived = isArchived,
                     loading = false, 
                     refreshing = false,
                     isSubscribed = discussion?.viewerSubscription == "SUBSCRIBED"

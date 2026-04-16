@@ -363,10 +363,12 @@ private fun RepoItem(repo: GHRepo, c: GmColors, query: String, onRepoClick: (Str
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(if (repo.private) Icons.Default.Lock else Icons.Default.Folder, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(6.dp))
-                    HighlightText(repo.fullName, query, Coral, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    HighlightText(repo.name, query, Coral, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (repo.archived == true) {
+                        com.gitmob.android.ui.common.GmBadge("已归档", com.gitmob.android.ui.theme.CoralDim, com.gitmob.android.ui.theme.Coral)
+                    }
                 }
                 if (!repo.description.isNullOrBlank()) {
                     Spacer(Modifier.height(4.dp))
