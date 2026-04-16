@@ -1,0 +1,35 @@
+# Build
+/build
+app/build
+cf-worker/node_modules
+cf-worker/.wrangler
+
+# Keystore（绝对不提交）
+*.jks
+*.keystore
+*.p12
+
+# Local config
+local.properties
+.gradle
+*.iml
+.idea/
+.DS_Store
+
+# Android
+/captures
+.externalNativeBuild
+.cxx
+
+# Secrets
+*.env
+.env.local
+# 其他
+docs
+*.txt
+.trae
+.kotlin
+# 备份文件
+*.bak
+*.tmp
+*.temp

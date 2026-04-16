@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Downloads 目录：供打开已下载文件时授予 URI 权限 -->
+    <external-path name="downloads" path="Download/" />
+</paths>

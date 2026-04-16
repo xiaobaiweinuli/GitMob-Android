@@ -1,0 +1,31 @@
+name = "gitmob-oauth"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# 自定义域名路由（在 CF Dashboard 绑定后生效）
+routes = [
+  { pattern = "gitmob.16618888.xyz/*", zone_name = "16618888.xyz" }
+]
+
+# 静态资源配置
+[assets]
+directory = "./public"
+binding = "ASSETS"
+# 未匹配的路径返回 404，而不是 fallback 到 Worker
+not_found_handling = "404-page"
+
+
+# 环境变量在 CF Dashboard 设置：
+#   GITHUB_CLIENT_ID      → Plain text
+#   GITHUB_CLIENT_SECRET  → Secret（加密存储）
+
+[env.production]
+name = "gitmob-oauth"
+routes = [
+  { pattern = "gitmob.16618888.xyz/*", zone_name = "16618888.xyz" }
+]
+
+
+[env.staging]
+name = "gitmob-oauth-staging"

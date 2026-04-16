@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitMob — 页面未找到</title>
+  <meta name="description" content="GitMob 是采用 Kotlin + Jetpack Compose + Material 3 打造的纯原生 Android GitHub 客户端。">
+  <link rel="icon" href="/logo.png" type="image/png">
+  <link rel="apple-touch-icon" href="/logo.png">
+  <style>
+    :root {
+      --accent: #FF6B4A; --bg: #0F1117; --card-bg: #161B25;
+      --border: #2A3347; --text: #E8EAF0; --subtext: #9BA3BA; --feat-bg: #1E2535;
+    }
+    [data-theme="light"] {
+      --bg: #F8FAFC; --card-bg: #FFFFFF; --border: #E2E8F0;
+      --text: #0F172A; --subtext: #64748B; --feat-bg: #F1F5F9;
+    }
+    * { box-sizing: border-box; margin:0; padding:0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px; transition: background 0.6s ease;
+    }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+    .card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 32px;
+      padding: 60px 52px; max-width: 920px; width: 100%;
+      box-shadow: 0 30px 60px -15px rgb(0 0 0 / 0.3); position: relative;
+      animation: fadeInUp 0.9s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+      text-align: center;
+    }
+    .theme-toggle {
+      position: absolute; top: 28px; right: 28px; width: 48px; height: 48px;
+      border: none; background: transparent; font-size: 26px; cursor: pointer; color: var(--subtext);
+    }
+    .logo {
+      width: 128px; height: 128px; display: block; margin: 0 auto 28px;
+      border-radius: 32px; box-shadow: 0 20px 30px -10px rgb(0 0 0 / 0.2);
+      animation: float 3.5s ease-in-out infinite;
+    }
+    .error-code {
+      font-size: 120px; font-weight: 800; letter-spacing: -4px;
+      color: var(--accent); line-height: 1; margin-bottom: 10px;
+    }
+    h1 { font-size: 32px; font-weight: 700; letter-spacing: -1px; color: var(--text); margin-bottom: 16px; }
+    .subtitle { font-size: 18px; line-height: 1.6; color: var(--subtext); margin-bottom: 48px; }
+    .btn-group { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+    .btn { padding: 18px 40px; font-size: 17px; font-weight: 600; border-radius: 9999px; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; transition: all 0.3s ease; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { transform: translateY(-4px) scale(1.04); }
+    .btn-ghost { background: transparent; color: var(--subtext); border: 2px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    @media (max-width: 640px) { 
+      .card { padding: 48px 28px; } 
+      .logo { width: 108px; height: 108px; } 
+      .error-code { font-size: 80px; }
+      h1 { font-size: 26px; } 
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <button class="theme-toggle" id="themeToggle" aria-label="切换主题">🌙</button>
+    <img src="/logo.png" alt="GitMob Logo" class="logo">
+    <div class="error-code">404</div>
+    <h1>页面未找到</h1>
+    <p class="subtitle">抱歉，您访问的页面不存在<br>请检查 URL 是否正确</p>
+    <div class="btn-group">
+      <a href="/" class="btn btn-primary">🏠 返回首页</a>
+      <a href="https://github.com/xiaobaiweinuli/GitMob-Android" class="btn btn-ghost" target="_blank">GitHub 仓库</a>
+    </div>
+  </div>
+  <script>
+    const htmlEl = document.documentElement;
+    const toggle = document.getElementById('themeToggle');
+    function setTheme(t) {
+      htmlEl.setAttribute('data-theme', t);
+      toggle.textContent = t === 'dark' ? '☀️' : '🌙';
+      localStorage.setItem('gitmob-theme', t);
+    }
+    const saved = localStorage.getItem('gitmob-theme');
+    setTheme(saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+    toggle.addEventListener('click', () => setTheme((htmlEl.getAttribute('data-theme')||'dark')==='dark'?'light':'dark'));
+  </script>
+</body>
+</html>

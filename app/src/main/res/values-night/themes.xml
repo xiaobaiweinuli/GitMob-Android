@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.GitMob" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#121212</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_ground</item>
+        <item name="postSplashScreenTheme">@style/Theme.GitMob.Base</item>
+    </style>
+    <style name="Theme.GitMob.Base" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#121212</item>
+        <item name="android:navigationBarColor">#121212</item>
+        <item name="android:windowBackground">#121212</item>
+    </style>
+</resources>
