@@ -26,6 +26,7 @@ enum class WatchMode {
 
 data class RepoDetailState(
     val repo: GHRepo? = null,
+    val currentRepoName: String = "",  // 动态维护的仓库名
     val branches: List<GHBranch> = emptyList(),
     val commits: List<GHCommit> = emptyList(),
     val contents: List<GHContent> = emptyList(),
@@ -39,6 +40,7 @@ data class RepoDetailState(
     val repoNotFound: Boolean = false,
     val tab: Int = 0,
     val prs: List<GHPullRequest> = emptyList(),
+    val prsLoaded: Boolean = false,  // PR 列表是否已加载过
     val labels: List<GHLabel> = emptyList(),
     // PR 筛选状态
     val prFilterState: PRFilterState = PRFilterState(),
@@ -54,6 +56,7 @@ data class RepoDetailState(
     val prOpInProgress: Boolean = false,
     val prOpResult: String? = null,   // 成功/失败消息
     val issues: List<GHIssue> = emptyList(),
+    val issuesLoaded: Boolean = false,  // Issues 列表是否已加载过
     val selectedCommit: GHCommitFull? = null,
     val commitDetailLoading: Boolean = false,
     val selectedFilePatch: FilePatchInfo? = null,

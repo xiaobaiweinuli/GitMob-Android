@@ -429,9 +429,6 @@ fun IssuesTab(
     onRefresh: () -> Unit = {},
     onIssueClick: (Int) -> Unit = {},
 ) {
-    val issuesList = remember(state.issues) {
-        state.issues.filter { !it.isPR }
-    }
     var showCreateIssueDialog by remember { mutableStateOf(false) }
     var templatesLoading by remember { mutableStateOf(false) }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -471,6 +468,7 @@ fun IssuesTab(
                     }
                 )
 
+                val issuesList = state.issues.filter { !it.isPR }
                 if (issuesList.isEmpty() && !state.issuesRefreshing) {
                     EmptyBox("暂无 Issues")
                 } else {

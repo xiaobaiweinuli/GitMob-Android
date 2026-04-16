@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.android.api.GHRepo
 import com.gitmob.android.auth.TokenStorage
+import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -20,6 +21,7 @@ data class FavGroup(
 )
 
 data class FavRepo(
+    val id: Long,
     val fullName: String,
     val name: String,
     val ownerLogin: String,
@@ -39,12 +41,14 @@ data class FavoritesState(
     val ungroupedRepos: List<FavRepo> = emptyList(),
     /** fullName → FavRepo，包含所有收藏（ungrouped + 各分组内） */
     val allRepos: Map<String, FavRepo> = emptyMap(),
+    /** id → FavRepo，用于通过仓库 id 快速查找 */
+    val allReposById: Map<Long, FavRepo> = emptyMap(),
 )
 
 // ─── JSON 序列化 ──────────────────────────────────────────────────────────────
 
 private fun FavRepo.toJson() = JSONObject().apply {
-    put("fullName", fullName); put("name", name); put("ownerLogin", ownerLogin)
+    put("id", id); put("fullName", fullName); put("name", name); put("ownerLogin", ownerLogin)
     put("description", description ?: ""); put("language", language ?: "")
     put("stars", stars); put("isPrivate", isPrivate); put("archived", archived); put("htmlUrl", htmlUrl)
     put("website", website ?: "")
@@ -58,6 +62,7 @@ private fun FavGroup.toJson() = JSONObject().apply {
 }
 
 private fun JSONObject.toFavRepo() = FavRepo(
+    id          = optLong("id", 0L), // 向后兼容：旧数据没有 id 时默认为 0
     fullName    = optString("fullName"),
     name        = optString("name"),
     ownerLogin  = optString("ownerLogin"),
@@ -84,6 +89,7 @@ private fun JSONObject.toFavGroup() = FavGroup(
 )
 
 private fun GHRepo.toFavRepo(groupId: String?) = FavRepo(
+    id          = id,
     fullName    = fullName,
     name        = name,
     ownerLogin  = owner.login,
@@ -153,21 +159,20 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
         val root        = JSONObject(raw)
         val groupsArr   = root.optJSONArray("groups")   ?: JSONArray()
         val ungroupedArr = root.optJSONArray("ungrouped") ?: JSONArray()
-        // "allRepos" 保存所有收藏的完整 FavRepo 数据
         val allReposArr  = root.optJSONArray("allRepos")  ?: JSONArray()
 
         val groups    = (0 until groupsArr.length()).map { groupsArr.getJSONObject(it).toFavGroup() }
         val ungrouped = (0 until ungroupedArr.length()).map { ungroupedArr.getJSONObject(it).toFavRepo() }
 
-        // 优先用 allRepos 数组，降级时从 ungrouped 恢复（向后兼容旧数据）
-        val allReposMap: Map<String, FavRepo> = if (allReposArr.length() > 0) {
+        val allReposList = if (allReposArr.length() > 0) {
             (0 until allReposArr.length()).map { allReposArr.getJSONObject(it).toFavRepo() }
-                .associateBy { it.fullName }
         } else {
-            ungrouped.associateBy { it.fullName }
+            ungrouped
         }
+        val allReposMap = allReposList.associateBy { it.fullName }
+        val allReposByIdMap = allReposList.associateBy { it.id }
 
-        FavoritesState(groups = groups, ungroupedRepos = ungrouped, allRepos = allReposMap)
+        FavoritesState(groups = groups, ungroupedRepos = ungrouped, allRepos = allReposMap, allReposById = allReposByIdMap)
     } catch (_: Exception) { FavoritesState() }
 
     private fun serialize(s: FavoritesState): String {
@@ -226,7 +231,9 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
             val all       = s.allRepos + movedMap
             ungroup to all
         }
-        save(FavoritesState(groups = newGroups, ungroupedRepos = newUngrouped, allRepos = newAllRepos))
+        // 重新构建 allReposById
+        val newAllReposById = newAllRepos.values.associateBy { it.id }
+        save(FavoritesState(groups = newGroups, ungroupedRepos = newUngrouped, allRepos = newAllRepos, allReposById = newAllReposById))
     }
 
     // ── 收藏操作 ─────────────────────────────────────────────────────────────────
@@ -235,7 +242,6 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
     fun addFavorite(repo: GHRepo, groupId: String?) {
         val s = _state.value
         val favRepo = repo.toFavRepo(groupId)
-        // 若已收藏到其他分组，先从旧位置移除
         val cleanedGroups = s.groups.map { g ->
             g.copy(repoIds = g.repoIds.filter { it != repo.fullName })
         }
@@ -253,7 +259,8 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
         } else cleanedGroups
 
         val newAllRepos = s.allRepos + (repo.fullName to favRepo)
-        save(FavoritesState(groups = newGroups, ungroupedRepos = newUngrouped, allRepos = newAllRepos))
+        val newAllReposById = newAllRepos.values.associateBy { it.id }
+        save(FavoritesState(groups = newGroups, ungroupedRepos = newUngrouped, allRepos = newAllRepos, allReposById = newAllReposById))
     }
 
     /**
@@ -262,8 +269,13 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
      */
     fun updateFavRepoData(repo: GHRepo) {
         val s = _state.value
-        val old = s.allRepos[repo.fullName] ?: return
+        
+        val old = s.allReposById[repo.id] ?: return
+        
         val updated = old.copy(
+            id          = repo.id,
+            name        = repo.name,
+            fullName    = repo.fullName,
             description = repo.description,
             language    = repo.language,
             stars       = repo.stars,
@@ -273,10 +285,38 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
             website     = repo.homepage,
             topics      = repo.topics,
         )
-        if (updated == old) return  // 无变化不触发写入
-        val newUngrouped = s.ungroupedRepos.map { if (it.fullName == repo.fullName) updated else it }
-        val newAllRepos  = s.allRepos + (repo.fullName to updated)
-        save(FavoritesState(groups = s.groups, ungroupedRepos = newUngrouped, allRepos = newAllRepos))
+        
+        if (updated == old) {
+            return
+        }
+        
+        val finalAllRepos: MutableMap<String, FavRepo>
+        val finalAllReposById: MutableMap<Long, FavRepo>
+        val finalUngrouped: List<FavRepo>
+        val finalGroups: List<FavGroup>
+        
+        if (old.fullName != repo.fullName) {
+            finalAllRepos = s.allRepos.filterKeys { it != old.fullName }.toMutableMap()
+            finalAllRepos[repo.fullName] = updated
+            finalAllReposById = s.allReposById.toMutableMap()
+            finalAllReposById[repo.id] = updated
+            finalUngrouped = s.ungroupedRepos.map { 
+                if (it.id == repo.id) updated else it 
+            }
+            finalGroups = s.groups.map { group ->
+                val newRepoIds = group.repoIds.map { id ->
+                    if (id == old.fullName) repo.fullName else id
+                }
+                group.copy(repoIds = newRepoIds)
+            }
+        } else {
+            finalAllRepos = (s.allRepos + (repo.fullName to updated)).toMutableMap()
+            finalAllReposById = (s.allReposById + (repo.id to updated)).toMutableMap()
+            finalUngrouped = s.ungroupedRepos.map { if (it.id == repo.id) updated else it }
+            finalGroups = s.groups
+        }
+        
+        save(FavoritesState(groups = finalGroups, ungroupedRepos = finalUngrouped, allRepos = finalAllRepos, allReposById = finalAllReposById))
     }
 
     /** 移出收藏 */
@@ -286,8 +326,10 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
         val newGroups    = s.groups.map { g ->
             g.copy(repoIds = g.repoIds.filter { it != fullName })
         }
+        val newAllRepos = s.allRepos - fullName
+        val newAllReposById = newAllRepos.values.associateBy { it.id }
         save(FavoritesState(groups = newGroups, ungroupedRepos = newUngrouped,
-            allRepos = s.allRepos - fullName))
+            allRepos = newAllRepos, allReposById = newAllReposById))
     }
 
     /** 修改分组（移动到其他分组或未分组） */
@@ -308,8 +350,9 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
                 else g
             }
         } else cleanedGroups
-        save(FavoritesState(groups = newGroups, ungroupedRepos = newUngrouped,
-            allRepos = s.allRepos + (fullName to updatedRepo)))
+        val newAllRepos = s.allRepos + (fullName to updatedRepo)
+        val newAllReposById = newAllRepos.values.associateBy { it.id }
+        save(FavoritesState(groups = newGroups, ungroupedRepos = newUngrouped, allRepos = newAllRepos, allReposById = newAllReposById))
     }
 
     // ─── 导出导入功能 ─────────────────────────────────────────────────────────────────

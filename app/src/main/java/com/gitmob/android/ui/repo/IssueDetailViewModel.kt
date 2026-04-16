@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.gitmob.android.api.*
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.data.RepoRepository
+import com.gitmob.android.data.RepoUpdateEvent
+import com.gitmob.android.data.RepoUpdateEventBus
 import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -170,6 +172,15 @@ class IssueDetailViewModel(
                 GHUpdateIssueRequest(title = title, body = body, state = state, stateReason = stateReason)
             )
             _state.update { it.copy(issue = updated, toast = "议题已更新") }
+            RepoUpdateEventBus.send(
+                RepoUpdateEvent.IssueUpdated(
+                    owner = owner,
+                    repo = repoName,
+                    number = issueNumber,
+                    title = updated.title,
+                    state = updated.state
+                )
+            )
         } catch (e: Exception) {
             _state.update { it.copy(toast = "更新失败：${e.message}") }
         }

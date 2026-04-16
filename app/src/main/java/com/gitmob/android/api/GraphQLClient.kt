@@ -407,6 +407,7 @@ object GraphQLClient {
         query RepoOverview(${'$'}owner: String!, ${'$'}name: String!) {
           repository(owner: ${'$'}owner, name: ${'$'}name) {
             id
+            databaseId
             name
             nameWithOwner
             description

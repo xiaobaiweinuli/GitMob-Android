@@ -11,6 +11,8 @@ import com.gitmob.android.api.*
 import com.gitmob.android.api.GraphQLClient
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.data.RepoRepository
+import com.gitmob.android.data.RepoUpdateEvent
+import com.gitmob.android.data.RepoUpdateEventBus
 import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -25,12 +27,15 @@ import kotlinx.coroutines.Job
 class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
 
     val owner: String = savedStateHandle["owner"] ?: ""
-    val repoName: String = savedStateHandle["repo"] ?: ""
+    private val initialRepoName: String = savedStateHandle["repo"] ?: ""
 
     private val repository = RepoRepository()
     private val tokenStorage = TokenStorage(app)
     private val _state = MutableStateFlow(RepoDetailState())
     val state = _state.asStateFlow()
+
+    private val currentRepoName: String
+        get() = _state.value.currentRepoName
 
     // ── Job 去重：同类请求只保留最新一个，取消旧 Job 前先等其自然结束 ──────
     // 注意：不主动 cancel 旧 Job，让其继续执行直到 OkHttp 完成；
@@ -40,6 +45,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     private var commitsJob: Job? = null
 
     init {
+        _state.update { it.copy(currentRepoName = initialRepoName) }
         // 当前登录用户名与组织（用于仓库转移等）
         viewModelScope.launch {
             tokenStorage.userProfile.collect { profile ->
@@ -51,6 +57,27 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                         )
                     }
                     loadOrgs()
+                }
+            }
+        }
+        // 监听仓库更新事件（PR、Issue等更新）
+        viewModelScope.launch {
+            RepoUpdateEventBus.events.collect { event ->
+                LogManager.d("RepoDetailViewModel", "收到事件: $event")
+                when (event) {
+                    is RepoUpdateEvent.PRUpdated -> {
+                        LogManager.d("RepoDetailViewModel", "PRUpdated 事件匹配: owner match=${event.owner == owner}, repo match=${event.repo == currentRepoName}")
+                        if (event.owner == owner && event.repo == currentRepoName) {
+                            handlePRUpdated(event)
+                        }
+                    }
+                    is RepoUpdateEvent.IssueUpdated -> {
+                        LogManager.d("RepoDetailViewModel", "IssueUpdated 事件匹配: owner match=${event.owner == owner}, repo match=${event.repo == currentRepoName}")
+                        if (event.owner == owner && event.repo == currentRepoName) {
+                            handleIssueUpdated(event)
+                        }
+                    }
+                    else -> {}
                 }
             }
         }
@@ -71,9 +98,9 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             _state.update { it.copy(loading = true, error = null) }
             try {
                 // ── 只加载"文件 Tab"必需的内容（任务二：懒加载） ──────────────
-                val r        = repository.getRepo(owner, repoName, forceRefresh)
-                val branches = repository.getBranches(owner, repoName, forceRefresh)
-                val starred  = repository.isStarred(owner, repoName)
+                val r        = repository.getRepo(owner, currentRepoName, forceRefresh)
+                val branches = repository.getBranches(owner, currentRepoName, forceRefresh)
+                val starred  = repository.isStarred(owner, currentRepoName)
                 val currentTab = _state.value.tab
                 val validTab = ensureValidTabIndex(r, currentTab)
                 _state.update {
@@ -109,7 +136,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun ensureReadmeLoaded() {
         val s = _state.value
         if (s.readmeContent != null) return
-        loadReadme(owner, repoName, s.currentBranch)
+        loadReadme(owner, currentRepoName, s.currentBranch)
     }
 
     /** 点击"发行版"Tab 时调用（懒加载） */
@@ -127,13 +154,13 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     /** 点击"Issues"Tab 时调用（懒加载） */
     fun ensureIssuesLoaded() {
-        if (_state.value.issues.isNotEmpty()) return
+        if (_state.value.issuesLoaded) return
         loadLabels()
         loadIssuesByState(forceRefresh = false)
     }
 
     fun ensurePRsLoaded() {
-        if (_state.value.prs.isNotEmpty()) return
+        if (_state.value.prsLoaded) return
         loadLabels()
         loadPRsByFilter(forceRefresh = false)
     }
@@ -152,12 +179,12 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         else _state.update { it.copy(discussionsLoadingMore = true) }
         try {
             if (_state.value.discussionCategories.isEmpty()) {
-                val cats = GraphQLClient.getDiscussionCategories(token, owner, repoName)
+                val cats = GraphQLClient.getDiscussionCategories(token, owner, _state.value.currentRepoName)
                 _state.update { it.copy(discussionCategories = cats) }
             }
             val s = _state.value
             val (items, nextCursor) = GraphQLClient.getDiscussions(
-                token = token, owner = owner, repo = repoName,
+                token = token, owner = owner, repo = _state.value.currentRepoName,
                 first = 20, after = cursor,
                 categoryId = s.discussionCategoryFilter,
                 answered = s.discussionAnsweredFilter,
@@ -283,7 +310,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             
             // 反向比较：fork...upstream，获取fork落后的提交（即upstream领先的提交）
             val reverseCompareResult = repository.compareCommits(
-                owner, repoName,
+                owner, _state.value.currentRepoName,
                 forkBranch,
                 "$upstreamOwner:$upstreamBranch"
             )
@@ -329,7 +356,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         }
         
         try {
-            val response = repository.syncForkBranch(owner, repoName, _state.value.currentBranch)
+            val response = repository.syncForkBranch(owner, _state.value.currentRepoName, _state.value.currentBranch)
             
             _state.update { 
                 it.copy(
@@ -380,7 +407,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             
             // 2. 强制重置当前分支到上游的 commit
             repository.resetBranchToCommit(
-                owner, repoName, currentBranch,
+                owner, _state.value.currentRepoName, currentBranch,
                 upstreamBranchData.commit.sha
             )
             
@@ -432,7 +459,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             val pr = repository.createPullRequest(
                 upstreamOwner, upstreamRepo,
                 "同步 ${repo.owner.login}/${currentBranch} 到上游",
-                "此 PR 用于同步 ${repo.owner.login}/${repoName} 的 ${currentBranch} 分支到 ${upstreamOwner}/${upstreamRepo} 的 ${upstreamBranch} 分支。\n\n自动创建",
+                "此 PR 用于同步 ${repo.owner.login}/${currentRepoName} 的 ${currentBranch} 分支到 ${upstreamOwner}/${upstreamRepo} 的 ${upstreamBranch} 分支。\n\n自动创建",
                 "${repo.owner.login}:${currentBranch}",
                 upstreamBranch
             )
@@ -464,7 +491,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         _state.update { it.copy(contentsLoading = true, filesRefreshing = forceRefresh) }
         try {
             val branch = ref ?: _state.value.currentBranch
-            val contents = repository.getContents(owner, repoName, path, branch, forceRefresh)
+            val contents = repository.getContents(owner, currentRepoName, path, branch, forceRefresh)
                 .sortedWith(compareBy({ it.type != "dir" }, { it.name }))
             _state.update { it.copy(contents = contents, currentPath = path, contentsLoading = false, filesRefreshing = false) }
         } catch (e: Exception) {
@@ -484,9 +511,9 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         try {
             val ref = sha ?: _state.value.currentBranch
             val commits = if (forceRefresh) {
-                repository.refreshCommitsIncremental(owner, repoName, ref)
+                repository.refreshCommitsIncremental(owner, currentRepoName, ref)
             } else {
-                repository.getCommits(owner, repoName, ref, path, false)
+                repository.getCommits(owner, currentRepoName, ref, path, false)
             }
             _state.update { it.copy(commits = commits, commitsRefreshing = false) }
         } catch (_: Exception) {
@@ -509,13 +536,13 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         try {
             _state.update { it.copy(prsPage = 1, prsHasMore = false) }
             val prs = if (forceRefresh) {
-                repository.refreshPRsIncremental(owner, repoName, apiState, f.sortBy.sort,
+                repository.refreshPRsIncremental(owner, currentRepoName, apiState, f.sortBy.sort,
                     f.sortBy.direction, f.labelFilter, f.authorFilter, f.reviewerFilter, isMerged)
             } else {
-                repository.getPRs(owner, repoName, apiState, f.sortBy.sort, f.sortBy.direction,
+                repository.getPRs(owner, currentRepoName, apiState, f.sortBy.sort, f.sortBy.direction,
                     1, false, f.labelFilter, f.authorFilter, f.reviewerFilter, isMerged)
             }
-            _state.update { it.copy(prs = prs, prsPage = 1, prsHasMore = prs.size >= 30) }
+            _state.update { it.copy(prs = prs, prsPage = 1, prsHasMore = prs.size >= 30, prsLoaded = true) }
         } catch (_: Exception) {}
     }
 
@@ -532,7 +559,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         }
         _state.update { it.copy(prsLoadingMore = true) }
         try {
-            val more = repository.getPRs(owner, repoName, apiState, f.sortBy.sort,
+            val more = repository.getPRs(owner, currentRepoName, apiState, f.sortBy.sort,
                 f.sortBy.direction, nextPage, false, f.labelFilter, f.authorFilter,
                 f.reviewerFilter, isMerged)
             _state.update { s ->
@@ -589,7 +616,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                 PRStatusFilter.OPEN -> "open"; PRStatusFilter.MERGED, PRStatusFilter.CLOSED -> "closed"
                 PRStatusFilter.ALL -> "all"
             }
-            val prs = repository.refreshPRsIncremental(owner, repoName, apiState,
+            val prs = repository.refreshPRsIncremental(owner, currentRepoName, apiState,
                 f.sortBy.sort, f.sortBy.direction, f.labelFilter, f.authorFilter, f.reviewerFilter, isMerged)
             _state.update { it.copy(prs = prs, prsRefreshing = false) }
         } catch (_: Exception) {
@@ -602,10 +629,10 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun openPRDetail(pr: GHPullRequest) = viewModelScope.launch {
         _state.update { it.copy(selectedPR = pr, prDetailLoading = true, prReviews = emptyList(), prComments = emptyList()) }
         try {
-            val reviews  = repository.getPRReviews(owner, repoName, pr.number)
-            val comments = repository.getPRComments(owner, repoName, pr.number)
+            val reviews  = repository.getPRReviews(owner, currentRepoName, pr.number)
+            val comments = repository.getPRComments(owner, currentRepoName, pr.number)
             // 刷新 PR 本身（获取最新 mergeable 状态）
-            val freshPR  = repository.getPRDetail(owner, repoName, pr.number)
+            val freshPR  = repository.getPRDetail(owner, currentRepoName, pr.number)
             _state.update { it.copy(selectedPR = freshPR, prReviews = reviews, prComments = comments, prDetailLoading = false) }
         } catch (_: Exception) {
             _state.update { it.copy(prDetailLoading = false) }
@@ -623,11 +650,11 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         val pr = _state.value.selectedPR ?: return@launch
         _state.update { it.copy(prOpInProgress = true) }
         try {
-            val resp = repository.mergePR(owner, repoName, pr.number, method.apiValue, commitTitle, commitMessage)
+            val resp = repository.mergePR(owner, currentRepoName, pr.number, method.apiValue, commitTitle, commitMessage)
             if (resp.merged) {
-                repository.invalidatePRCache(owner, repoName)
+                repository.invalidatePRCache(owner, currentRepoName)
                 loadPRsByFilter(forceRefresh = true)
-                val freshPR = repository.getPRDetail(owner, repoName, pr.number)
+                val freshPR = repository.getPRDetail(owner, currentRepoName, pr.number)
                 _state.update { it.copy(selectedPR = freshPR, prOpResult = "✓ 合并成功", prOpInProgress = false) }
             } else {
                 _state.update { it.copy(prOpResult = "合并失败: ${resp.message}", prOpInProgress = false) }
@@ -642,7 +669,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         val pr = _state.value.selectedPR ?: return@launch
         _state.update { it.copy(prOpInProgress = true) }
         try {
-            repository.updatePRBranch(owner, repoName, pr.number)
+            repository.updatePRBranch(owner, currentRepoName, pr.number)
             _state.update { it.copy(prOpResult = "✓ 分支已更新", prOpInProgress = false) }
         } catch (e: Exception) {
             _state.update { it.copy(prOpResult = "更新失败: ${e.message}", prOpInProgress = false) }
@@ -654,7 +681,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         val pr = _state.value.selectedPR ?: return@launch
         _state.update { it.copy(prOpInProgress = true) }
         try {
-            val review = repository.createPRReview(owner, repoName, pr.number, event, body.ifBlank { null })
+            val review = repository.createPRReview(owner, currentRepoName, pr.number, event, body.ifBlank { null })
             val label = when (event) {
                 "APPROVE"          -> "✓ 已批准"
                 "REQUEST_CHANGES"  -> "✓ 已请求修改"
@@ -675,7 +702,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         val pr = _state.value.selectedPR ?: return@launch
         _state.update { it.copy(prOpInProgress = true) }
         try {
-            val updated = repository.requestReviewers(owner, repoName, pr.number, reviewers)
+            val updated = repository.requestReviewers(owner, currentRepoName, pr.number, reviewers)
             _state.update { it.copy(selectedPR = updated, prOpResult = "✓ 审查请求已发送", prOpInProgress = false) }
         } catch (e: Exception) {
             _state.update { it.copy(prOpResult = "请求失败: ${e.message}", prOpInProgress = false) }
@@ -688,7 +715,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         if (body.isBlank()) return@launch
         _state.update { it.copy(prOpInProgress = true) }
         try {
-            val comment = repository.addPRComment(owner, repoName, pr.number, body)
+            val comment = repository.addPRComment(owner, currentRepoName, pr.number, body)
             _state.update { it.copy(
                 prComments    = it.prComments + comment,
                 prOpInProgress = false,
@@ -704,8 +731,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         _state.update { it.copy(prOpInProgress = true) }
         try {
             val newState = if (pr.state == "open") "closed" else "open"
-            val updated = ApiClient.api.updatePullRequest(owner, repoName, pr.number, GHUpdatePullRequestRequest(state = newState))
-            repository.invalidatePRCache(owner, repoName)
+            val updated = ApiClient.api.updatePullRequest(owner, currentRepoName, pr.number, GHUpdatePullRequestRequest(state = newState))
+            repository.invalidatePRCache(owner, currentRepoName)
             loadPRsByFilter(forceRefresh = true)
             _state.update { it.copy(selectedPR = updated, prOpResult = if (newState == "closed") "✓ PR 已关闭" else "✓ PR 已重新打开", prOpInProgress = false) }
         } catch (e: Exception) {
@@ -725,8 +752,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             val token = GitMobApp.instance.tokenStorage.accessToken.first() ?: return@launch
             val ok = GraphQLClient.markPrReadyForReview(token, pr.nodeId)
             if (ok) {
-                val freshPR = repository.getPRDetail(owner, repoName, pr.number)
-                repository.invalidatePRCache(owner, repoName)
+                val freshPR = repository.getPRDetail(owner, currentRepoName, pr.number)
+                repository.invalidatePRCache(owner, currentRepoName)
                 loadPRsByFilter(forceRefresh = true)
                 _state.update { it.copy(selectedPR = freshPR, prOpResult = "✓ 已标记为就绪", prOpInProgress = false) }
             } else {
@@ -742,10 +769,10 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         _state.update { it.copy(prOpInProgress = true) }
         try {
             ApiClient.api.createPullRequest(
-                owner, repoName,
+                owner, _state.value.currentRepoName,
                 GHCreatePullRequestRequest(title, body.ifBlank { null }, head, base, draft),
             )
-            repository.invalidatePRCache(owner, repoName)
+            repository.invalidatePRCache(owner, currentRepoName)
             loadPRsByFilter(forceRefresh = true)
             _state.update { it.copy(prOpResult = "✓ PR 已创建", prOpInProgress = false) }
         } catch (e: Exception) {
@@ -761,7 +788,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             _state.update { it.copy(issuesPage = 1, issuesHasMore = false) }
             val issues = repository.getIssues(
                 owner = owner,
-                repo = repoName,
+                repo = currentRepoName,
                 state = filter.status.apiValue,
                 labels = labelsStr,
                 creator = filter.selectedCreator,
@@ -774,6 +801,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                 issues = issues,
                 issuesPage = 1,
                 issuesHasMore = issues.size >= 30,
+                issuesLoaded = true
             )}
         } catch (_: Exception) {}
     }
@@ -788,7 +816,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         try {
             val more = repository.getIssues(
                 owner = owner,
-                repo = repoName,
+                repo = currentRepoName,
                 state = filter.status.apiValue,
                 labels = labelsStr,
                 creator = filter.selectedCreator,
@@ -811,7 +839,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun refreshBranches() = viewModelScope.launch {
         _state.update { it.copy(branchesRefreshing = true) }
         try {
-            val branches = repository.refreshBranchesIncremental(owner, repoName)
+            val branches = repository.refreshBranchesIncremental(owner, currentRepoName)
             _state.update { it.copy(branches = branches, branchesRefreshing = false) }
         } catch (_: Exception) {
             _state.update { it.copy(branchesRefreshing = false) }
@@ -825,7 +853,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             val f      = _state.value.issueFilterState
             val labels = if (f.selectedLabels.isNotEmpty()) f.selectedLabels.joinToString(",") else null
             val fresh  = repository.refreshIssuesIncremental(
-                owner, repoName, f.status.apiValue, labels, f.selectedCreator, f.sortBy.sort, f.sortBy.direction,
+                owner, _state.value.currentRepoName, f.status.apiValue, labels, f.selectedCreator, f.sortBy.sort, f.sortBy.direction,
             )
             _state.update { it.copy(issues = fresh, issuesPage = 1, issuesHasMore = fresh.size >= 30, issuesRefreshing = false) }
         } catch (_: Exception) {
@@ -835,7 +863,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun deleteIssue(issueNumber: Int) = viewModelScope.launch {
         try {
-            val success = repository.deleteIssue(owner, repoName, issueNumber)
+            val success = repository.deleteIssue(owner, currentRepoName, issueNumber)
             if (success) {
                 _state.update { it.copy(issues = it.issues.filter { issue -> issue.number != issueNumber }, toast = "已删除 Issue #$issueNumber") }
             } else {
@@ -858,7 +886,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
      */
     fun loadLabels() = viewModelScope.launch {
         try {
-            val labels = repository.getLabels(owner, repoName)
+            val labels = repository.getLabels(owner, currentRepoName)
             _state.update { it.copy(labels = labels) }
         } catch (_: Exception) {}
     }
@@ -932,7 +960,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
      */
     fun createIssue(title: String, body: String) = viewModelScope.launch {
         try {
-            val newIssue = repository.createIssue(owner, repoName, title, body.ifBlank { null })
+            val newIssue = repository.createIssue(owner, currentRepoName, title, body.ifBlank { null })
             _state.update {
                 it.copy(
                     issues = listOf(newIssue) + it.issues,
@@ -948,7 +976,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         _state.update { it.copy(currentBranch = branch, currentPath = "") }
         loadContents("", branch)
         loadCommits(branch)
-        loadReadme(owner, repoName, branch)
+        loadReadme(owner, currentRepoName, branch)
     }
 
     /**
@@ -980,16 +1008,17 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun toggleStar() = viewModelScope.launch {
         try {
-            if (_state.value.isStarred) repository.unstarRepo(owner, repoName)
-            else repository.starRepo(owner, repoName)
+            if (_state.value.isStarred) repository.unstarRepo(owner, currentRepoName)
+            else repository.starRepo(owner, currentRepoName)
             _state.update { it.copy(isStarred = !it.isStarred) }
         } catch (_: Exception) {}
     }
 
     fun renameRepo(newName: String, onSuccess: () -> Unit) = viewModelScope.launch {
         try {
-            val updated = repository.updateRepo(owner, repoName, GHUpdateRepoRequest(name = newName))
-            _state.update { it.copy(repo = updated, toast = "已重命名为 $newName") }
+            val currentRepoName = _state.value.currentRepoName
+            val updated = repository.updateRepo(owner, currentRepoName, GHUpdateRepoRequest(name = newName))
+            _state.update { it.copy(repo = updated, currentRepoName = newName, toast = "已重命名为 $newName") }
             onSuccess()
         } catch (e: Exception) {
             _state.update { it.copy(toast = "重命名失败：${e.message}") }
@@ -998,9 +1027,9 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun editRepo(desc: String, website: String, topics: List<String>) = viewModelScope.launch {
         try {
-            repository.updateRepo(owner, repoName, GHUpdateRepoRequest(description = desc, homepage = website))
-            repository.replaceTopics(owner, repoName, topics)
-            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            repository.updateRepo(owner, currentRepoName, GHUpdateRepoRequest(description = desc, homepage = website))
+            repository.replaceTopics(owner, currentRepoName, topics)
+            val updated = repository.getRepo(owner, currentRepoName, forceRefresh = true)
             _state.update { it.copy(repo = updated, toast = "已更新仓库信息") }
         } catch (e: Exception) {
             _state.update { it.copy(toast = "更新失败：${e.message}") }
@@ -1027,8 +1056,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun toggleIssues(enable: Boolean) = viewModelScope.launch {
         try {
-            repository.updateRepo(owner, repoName, GHUpdateRepoRequest(hasIssues = enable))
-            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            repository.updateRepo(owner, currentRepoName, GHUpdateRepoRequest(hasIssues = enable))
+            val updated = repository.getRepo(owner, currentRepoName, forceRefresh = true)
             val currentTab = _state.value.tab
             val validTab = ensureValidTabIndex(updated, currentTab)
             _state.update {
@@ -1045,8 +1074,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun toggleDiscussions(enable: Boolean) = viewModelScope.launch {
         try {
-            repository.updateRepo(owner, repoName, GHUpdateRepoRequest(hasDiscussions = enable))
-            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            repository.updateRepo(owner, currentRepoName, GHUpdateRepoRequest(hasDiscussions = enable))
+            val updated = repository.getRepo(owner, currentRepoName, forceRefresh = true)
             val currentTab = _state.value.tab
             val validTab = ensureValidTabIndex(updated, currentTab)
             _state.update {
@@ -1063,8 +1092,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun updateVisibility(makePrivate: Boolean) = viewModelScope.launch {
         try {
-            repository.updateRepo(owner, repoName, GHUpdateRepoRequest(private = makePrivate))
-            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            repository.updateRepo(owner, currentRepoName, GHUpdateRepoRequest(private = makePrivate))
+            val updated = repository.getRepo(owner, currentRepoName, forceRefresh = true)
             _state.update {
                 it.copy(
                     repo = updated,
@@ -1078,8 +1107,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun deleteRepo(onSuccess: () -> Unit) = viewModelScope.launch {
         try {
-            repository.deleteRepo(owner, repoName)
-            _state.update { it.copy(toast = "已删除仓库 $repoName") }
+            repository.deleteRepo(owner, currentRepoName)
+            _state.update { it.copy(toast = "已删除仓库 $currentRepoName") }
             onSuccess()
         } catch (e: Exception) {
             _state.update { it.copy(toast = "删除失败：${e.message}") }
@@ -1088,7 +1117,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun transferRepo(targetOwner: String, newName: String?, onSuccess: () -> Unit) = viewModelScope.launch {
         try {
-            repository.transferRepo(owner, repoName, newOwner = targetOwner, newName = newName)
+            repository.transferRepo(owner, currentRepoName, newOwner = targetOwner, newName = newName)
             _state.update {
                 it.copy(
                     toast = if (newName.isNullOrBlank())
@@ -1105,12 +1134,12 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun archiveRepo(onSuccess: () -> Unit) = viewModelScope.launch {
         try {
-            repository.archiveRepo(owner, repoName)
-            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            repository.archiveRepo(owner, currentRepoName)
+            val updated = repository.getRepo(owner, currentRepoName, forceRefresh = true)
             _state.update {
                 it.copy(
                     repo = updated,
-                    toast = "已归档仓库 $repoName",
+                    toast = "已归档仓库 $currentRepoName",
                 )
             }
             onSuccess()
@@ -1121,12 +1150,12 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun unarchiveRepo(onSuccess: () -> Unit) = viewModelScope.launch {
         try {
-            repository.unarchiveRepo(owner, repoName)
-            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            repository.unarchiveRepo(owner, currentRepoName)
+            val updated = repository.getRepo(owner, currentRepoName, forceRefresh = true)
             _state.update {
                 it.copy(
                     repo = updated,
-                    toast = "已取消归档仓库 $repoName",
+                    toast = "已取消归档仓库 $currentRepoName",
                 )
             }
             onSuccess()
@@ -1154,8 +1183,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun createBranch(name: String) = viewModelScope.launch {
         try {
             val sha = _state.value.branches.find { it.name == _state.value.currentBranch }?.commit?.sha ?: return@launch
-            repository.createBranch(owner, repoName, name, sha)
-            val branches = repository.getBranches(owner, repoName, forceRefresh = true)
+            repository.createBranch(owner, currentRepoName, name, sha)
+            val branches = repository.getBranches(owner, currentRepoName, forceRefresh = true)
             _state.update { it.copy(branches = branches, toast = "已创建分支 $name") }
         } catch (e: Exception) {
             _state.update { it.copy(toast = "创建失败：${e.message}") }
@@ -1164,8 +1193,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun deleteBranch(branch: String) = viewModelScope.launch {
         try {
-            repository.deleteBranch(owner, repoName, branch)
-            val branches = repository.getBranches(owner, repoName, forceRefresh = true)
+            repository.deleteBranch(owner, currentRepoName, branch)
+            val branches = repository.getBranches(owner, currentRepoName, forceRefresh = true)
             val filteredBranches = branches.filter { it.name != branch }
             val currentBranch = if (_state.value.currentBranch == branch) {
                 filteredBranches.firstOrNull()?.name ?: _state.value.currentBranch
@@ -1178,8 +1207,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun renameBranch(oldName: String, newName: String) = viewModelScope.launch {
         try {
-            repository.renameBranch(owner, repoName, oldName, newName)
-            val branches = repository.getBranches(owner, repoName, forceRefresh = true)
+            repository.renameBranch(owner, currentRepoName, oldName, newName)
+            val branches = repository.getBranches(owner, currentRepoName, forceRefresh = true)
             val filteredBranches = branches.filter { it.name != oldName }
             val currentBranch = if (_state.value.currentBranch == oldName) newName else _state.value.currentBranch
             _state.update { it.copy(branches = filteredBranches, currentBranch = currentBranch, toast = "已重命名为 $newName") }
@@ -1190,8 +1219,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun setDefaultBranch(branch: String) = viewModelScope.launch {
         try {
-            repository.updateRepo(owner, repoName, com.gitmob.android.api.GHUpdateRepoRequest(defaultBranch = branch))
-            val updated = repository.getRepo(owner, repoName, forceRefresh = true)
+            repository.updateRepo(owner, currentRepoName, com.gitmob.android.api.GHUpdateRepoRequest(defaultBranch = branch))
+            val updated = repository.getRepo(owner, currentRepoName, forceRefresh = true)
             _state.update { it.copy(repo = updated, currentBranch = branch, toast = "默认分支已设为 $branch") }
         } catch (e: Exception) {
             _state.update { it.copy(toast = "设置失败：${e.message}") }
@@ -1201,7 +1230,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun loadCommitDetail(sha: String) = viewModelScope.launch {
         _state.update { it.copy(commitDetailLoading = true) }
         try {
-            val detail = repository.getCommitDetail(owner, repoName, sha)
+            val detail = repository.getCommitDetail(owner, currentRepoName, sha)
             _state.update { it.copy(selectedCommit = detail, commitDetailLoading = false) }
         } catch (e: Exception) {
             _state.update { it.copy(commitDetailLoading = false, toast = "加载详情失败") }
@@ -1266,7 +1295,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         try {
             val result = repository.createFork(
                 owner = owner,
-                repo = repoName,
+                repo = currentRepoName,
                 name = name?.ifBlank { null },
                 organization = organization?.ifBlank { null },
                 defaultBranchOnly = defaultBranchOnly
@@ -1292,7 +1321,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun showFileHistory(content: GHContent) = viewModelScope.launch {
         _state.update { it.copy(showFileHistorySheet = true, selectedFileForHistory = content, fileHistoryLoading = true) }
         try {
-            val commits = repository.getCommits(owner, repoName, _state.value.currentBranch, content.path)
+            val commits = repository.getCommits(owner, currentRepoName, _state.value.currentBranch, content.path)
             _state.update { it.copy(fileHistoryCommits = commits, fileHistoryLoading = false) }
         } catch (e: Exception) {
             _state.update { it.copy(fileHistoryCommits = emptyList(), fileHistoryLoading = false) }
@@ -1311,7 +1340,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun loadFileHistoryCommitDetail(sha: String) = viewModelScope.launch {
         _state.update { it.copy(fileHistoryCommitDetailLoading = true) }
         try {
-            val detail = repository.getCommitDetail(owner, repoName, sha)
+            val detail = repository.getCommitDetail(owner, currentRepoName, sha)
             _state.update { it.copy(selectedCommitForFileHistory = detail, fileHistoryCommitDetailLoading = false) }
         } catch (e: Exception) {
             _state.update { it.copy(fileHistoryCommitDetailLoading = false, toast = "加载详情失败") }
@@ -1328,9 +1357,9 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         val branch = _state.value.currentBranch.ifBlank { return@launch }
         _state.update { it.copy(gitOpInProgress = true) }
         try {
-            repository.resetBranchToCommit(owner, repoName, branch, sha)
+            repository.resetBranchToCommit(owner, currentRepoName, branch, sha)
             // 失效缓存，重新加载提交列表
-            repository.invalidateCommitCache(owner, repoName, branch)
+            repository.invalidateCommitCache(owner, currentRepoName, branch)
             loadCommits(branch)
             _state.update {
                 it.copy(
@@ -1362,9 +1391,9 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         _state.update { it.copy(gitOpInProgress = true) }
         try {
             val result = repository.revertCommit(
-                owner, repoName, branch, targetSha, headSha, commitMessage,
+                owner, _state.value.currentRepoName, branch, targetSha, headSha, commitMessage,
             )
-            repository.invalidateCommitCache(owner, repoName, branch)
+            repository.invalidateCommitCache(owner, currentRepoName, branch)
             loadCommits(branch)
             _state.update {
                 it.copy(
@@ -1390,7 +1419,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     // ─── Releases ─────────────────────────────────────────────────────────────
     fun loadReleases() = viewModelScope.launch {
         try {
-            val releases = repository.getReleases(owner, repoName)
+            val releases = repository.getReleases(owner, currentRepoName)
             _state.update { it.copy(releases = releases) }
         } catch (_: Exception) {}
     }
@@ -1399,7 +1428,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun refreshReleases() = viewModelScope.launch {
         _state.update { it.copy(releasesRefreshing = true) }
         try {
-            val releases = repository.refreshReleasesIncremental(owner, repoName)
+            val releases = repository.refreshReleasesIncremental(owner, currentRepoName)
             _state.update { it.copy(releases = releases, releasesRefreshing = false) }
         } catch (_: Exception) {
             _state.update { it.copy(releasesRefreshing = false) }
@@ -1414,7 +1443,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     ) = viewModelScope.launch {
         try {
             ApiClient.api.updateRelease(
-                owner, repoName, releaseId,
+                owner, _state.value.currentRepoName, releaseId,
                 UpdateReleaseRequest(tagName, name, body, draft, prerelease)
             )
             refreshReleases()
@@ -1427,7 +1456,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         releaseId: Long, onSuccess: () -> Unit, onError: (String) -> Unit,
     ) = viewModelScope.launch {
         try {
-            val resp = ApiClient.api.deleteRelease(owner, repoName, releaseId)
+            val resp = ApiClient.api.deleteRelease(owner, currentRepoName, releaseId)
             if (resp.isSuccessful) {
                 _state.update { it.copy(releases = it.releases.filter { r -> r.id != releaseId }) }
                 onSuccess()
@@ -1469,7 +1498,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             // ─ Step 1: 获取分支 HEAD SHA（处理空仓库 409）────────────────────
             var parentSha: String? = null
             try {
-                parentSha = ApiClient.api.getRef(owner, repoName, branch).obj.sha
+                parentSha = ApiClient.api.getRef(owner, currentRepoName, branch).obj.sha
             } catch (e: retrofit2.HttpException) {
                 if (e.code() == 409) {
                     // 仓库为空（无任何 commit），分支不存在
@@ -1479,7 +1508,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                     val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                     _state.update { it.copy(uploadCurrentFile = java.io.File(firstEntry.first).name, uploadBlobProgress = 0) }
                     val resp = ApiClient.api.createOrUpdateFile(
-                        owner, repoName, firstEntry.second,
+                        owner, _state.value.currentRepoName, firstEntry.second,
                         GHCreateFileRequest(
                             message = commitMessage,
                             content = encoded,
@@ -1491,7 +1520,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                         _state.update { it.copy(uploadPhase = UploadPhase.DONE, uploadBlobProgress = 1) }
                         loadContents(_state.value.currentPath, forceRefresh = true)
                         // 刷新仓库信息（分支现在存在了）
-                        repository.getRepo(owner, repoName, forceRefresh = true).let { repo ->
+                        repository.getRepo(owner, currentRepoName, forceRefresh = true).let { repo ->
                             _state.update { s -> s.copy(repo = repo, currentBranch = repo.defaultBranch) }
                         }
                         onSuccess()
@@ -1523,7 +1552,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                             }
                             val bytes   = java.io.File(localPath).readBytes()
                             val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                            val resp    = ApiClient.api.createBlob(owner, repoName, GHCreateBlobRequest(encoded))
+                            val resp    = ApiClient.api.createBlob(owner, currentRepoName, GHCreateBlobRequest(encoded))
                             resp.sha
                         }
                     }
@@ -1539,14 +1568,14 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                 GHTreeItem(path = repoPath, sha = blobShas[idx])
             }
             val treeResp = ApiClient.api.createTree(
-                owner, repoName,
+                owner, _state.value.currentRepoName,
                 GHCreateTreeRequest(tree = treeItems, baseTree = parentSha)
             )
 
             // ─ Step 4: 创建 commit ────────────────────────────────────────────
             _state.update { it.copy(uploadPhase = UploadPhase.COMMIT) }
             val commitResp = ApiClient.api.createCommit(
-                owner, repoName,
+                owner, _state.value.currentRepoName,
                 GHCreateCommitRequest(
                     message = commitMessage,
                     tree    = treeResp.sha,
@@ -1556,7 +1585,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
             // ─ Step 5: 更新分支 ref ───────────────────────────────────────────
             _state.update { it.copy(uploadPhase = UploadPhase.REF) }
-            ApiClient.api.updateRef(owner, repoName, branch, GHUpdateRefRequest(sha = commitResp.sha))
+            ApiClient.api.updateRef(owner, currentRepoName, branch, GHUpdateRefRequest(sha = commitResp.sha))
 
             // ─ 完成 ───────────────────────────────────────────────────────────
             _state.update { it.copy(uploadPhase = UploadPhase.DONE) }
@@ -1588,7 +1617,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                             _state.update { it.copy(uploadCurrentFile = java.io.File(localPath).name, uploadBlobProgress = doneCount + idx) }
                             val bytes = java.io.File(localPath).readBytes()
                             val enc   = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                            ApiClient.api.createBlob(owner, repoName, GHCreateBlobRequest(enc)).sha
+                            ApiClient.api.createBlob(owner, currentRepoName, GHCreateBlobRequest(enc)).sha
                         }
                     }
                 }
@@ -1596,12 +1625,12 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             }
             _state.update { it.copy(uploadBlobProgress = doneCount + remaining.size, uploadPhase = UploadPhase.TREE) }
             val treeItems = remaining.mapIndexed { idx, (_, repoPath) -> GHTreeItem(path = repoPath, sha = blobShas[idx]) }
-            val treeResp = ApiClient.api.createTree(owner, repoName, GHCreateTreeRequest(tree = treeItems, baseTree = parentSha))
+            val treeResp = ApiClient.api.createTree(owner, currentRepoName, GHCreateTreeRequest(tree = treeItems, baseTree = parentSha))
             _state.update { it.copy(uploadPhase = UploadPhase.COMMIT) }
-            val commitResp = ApiClient.api.createCommit(owner, repoName,
+            val commitResp = ApiClient.api.createCommit(owner, currentRepoName,
                 GHCreateCommitRequest(message = commitMessage, tree = treeResp.sha, parents = listOf(parentSha)))
             _state.update { it.copy(uploadPhase = UploadPhase.REF) }
-            ApiClient.api.updateRef(owner, repoName, branch, GHUpdateRefRequest(sha = commitResp.sha))
+            ApiClient.api.updateRef(owner, currentRepoName, branch, GHUpdateRefRequest(sha = commitResp.sha))
             _state.update { it.copy(uploadPhase = UploadPhase.DONE) }
             loadContents(_state.value.currentPath, forceRefresh = true)
             onSuccess()
@@ -1626,7 +1655,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     // ─── GitHub Actions ───────────────────────────────────────────────────────
     fun loadWorkflows() = viewModelScope.launch {
         try {
-            val workflows = repository.getWorkflows(owner, repoName)
+            val workflows = repository.getWorkflows(owner, currentRepoName)
             _state.update { it.copy(workflows = workflows) }
         } catch (_: Exception) {}
     }
@@ -1635,9 +1664,9 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun refreshActions() = viewModelScope.launch {
         _state.update { it.copy(actionsRefreshing = true) }
         try {
-            val workflows = repository.getWorkflows(owner, repoName)
+            val workflows = repository.getWorkflows(owner, currentRepoName)
             val freshRuns = repository.getWorkflowRuns(
-                owner, repoName, _state.value.selectedWorkflow?.id, page = 1
+                owner, _state.value.currentRepoName, _state.value.selectedWorkflow?.id, page = 1
             )
             // 增量合并：新条目优先，按 id 去重
             val cachedRuns = _state.value.allWorkflowRuns
@@ -1659,7 +1688,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun loadWorkflowRuns(workflowId: Long? = null) = viewModelScope.launch {
         try {
-            val runs = repository.getWorkflowRuns(owner, repoName, workflowId, page = 1)
+            val runs = repository.getWorkflowRuns(owner, currentRepoName, workflowId, page = 1)
             _state.update { it.copy(
                 allWorkflowRuns = if (workflowId == null) runs else it.allWorkflowRuns,
                 workflowRuns = runs,
@@ -1674,7 +1703,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         val nextPage = _state.value.workflowRunsPage + 1
         _state.update { it.copy(workflowRunsLoadingMore = true) }
         try {
-            val more = repository.getWorkflowRuns(owner, repoName, _state.value.selectedWorkflow?.id, page = nextPage)
+            val more = repository.getWorkflowRuns(owner, currentRepoName, _state.value.selectedWorkflow?.id, page = nextPage)
             _state.update { s -> s.copy(
                 workflowRuns = s.workflowRuns + more,
                 workflowRunsPage = nextPage,
@@ -1699,8 +1728,8 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun selectWorkflowRun(run: GHWorkflowRun) = viewModelScope.launch {
         _state.update { it.copy(selectedWorkflowRun = run) }
         try {
-            val jobs = repository.getWorkflowJobs(owner, repoName, run.id)
-            val artifacts = repository.getWorkflowRunArtifacts(owner, repoName, run.id)
+            val jobs = repository.getWorkflowJobs(owner, currentRepoName, run.id)
+            val artifacts = repository.getWorkflowRunArtifacts(owner, currentRepoName, run.id)
             _state.update { it.copy(workflowJobs = jobs, workflowArtifacts = artifacts) }
         } catch (_: Exception) {
             _state.update { it.copy(workflowJobs = emptyList(), workflowArtifacts = emptyList()) }
@@ -1713,7 +1742,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun deleteArtifact(artifactId: Long) = viewModelScope.launch {
         try {
-            val success = repository.deleteArtifact(owner, repoName, artifactId)
+            val success = repository.deleteArtifact(owner, currentRepoName, artifactId)
             if (success) {
                 _state.update { it.copy(workflowArtifacts = it.workflowArtifacts.filter { it.id != artifactId }, toast = "已删除产物") }
             } else {
@@ -1762,7 +1791,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         inputs: Map<String, Any>? = null,
     ) = viewModelScope.launch {
         try {
-            val success = repository.dispatchWorkflow(owner, repoName, workflowId, ref, inputs)
+            val success = repository.dispatchWorkflow(owner, currentRepoName, workflowId, ref, inputs)
             if (success) {
                 _state.update { it.copy(toast = "工作流已触发") }
                 kotlinx.coroutines.delay(2000)
@@ -1783,7 +1812,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         )}
         
         try {
-            val success = repository.deleteWorkflowRun(owner, repoName, runId)
+            val success = repository.deleteWorkflowRun(owner, currentRepoName, runId)
             if (success) {
                 _state.update { it.copy(toast = "运行记录已删除") }
             } else {
@@ -1804,7 +1833,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun rerunWorkflow(runId: Long) = viewModelScope.launch {
         try {
-            val success = repository.rerunWorkflow(owner, repoName, runId)
+            val success = repository.rerunWorkflow(owner, currentRepoName, runId)
             if (success) {
                 _state.update { it.copy(toast = "已重新运行") }
                 kotlinx.coroutines.delay(2000)
@@ -1819,7 +1848,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun cancelWorkflow(runId: Long) = viewModelScope.launch {
         try {
-            val success = repository.cancelWorkflow(owner, repoName, runId)
+            val success = repository.cancelWorkflow(owner, currentRepoName, runId)
             if (success) {
                 _state.update { it.copy(toast = "已取消") }
                 kotlinx.coroutines.delay(2000)
@@ -1835,7 +1864,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun loadWorkflowLogs(runId: Long) = viewModelScope.launch {
         _state.update { it.copy(workflowLogsLoading = true, workflowLogs = null) }
         try {
-            val logs = repository.getWorkflowLogs(owner, repoName, runId)
+            val logs = repository.getWorkflowLogs(owner, currentRepoName, runId)
             _state.update { it.copy(workflowLogs = logs, workflowLogsLoading = false) }
         } catch (e: Exception) {
             _state.update { it.copy(workflowLogs = null, workflowLogsLoading = false, toast = "加载日志失败：${e.message}") }
@@ -1849,7 +1878,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun loadWorkflowInputs(workflowPath: String) = viewModelScope.launch {
         _state.update { it.copy(workflowInputsLoading = true, workflowInputs = emptyList()) }
         try {
-            val inputs = repository.getWorkflowInputs(owner, repoName, workflowPath, _state.value.currentBranch)
+            val inputs = repository.getWorkflowInputs(owner, currentRepoName, workflowPath, _state.value.currentBranch)
             _state.update { it.copy(workflowInputs = inputs, workflowInputsLoading = false) }
         } catch (e: Exception) {
             _state.update { it.copy(workflowInputs = emptyList(), workflowInputsLoading = false) }
@@ -1875,7 +1904,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         try {
             repository.createOrUpdateFile(
                 owner = owner,
-                repo = repoName,
+                repo = currentRepoName,
                 path = path,
                 message = message,
                 content = content,
@@ -1887,7 +1916,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             val isReadme = listOf("README.md", "README.MD", "Readme.md", "readme.md", "README")
                 .any { path.equals(it, ignoreCase = true) || path.endsWith("/$it", ignoreCase = true) }
             if (isReadme) {
-                loadReadme(owner, repoName, _state.value.currentBranch)
+                loadReadme(owner, currentRepoName, _state.value.currentBranch)
             }
             _state.update { it.copy(toast = "操作成功") }
             onSuccess()
@@ -1906,14 +1935,14 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         onSuccess: () -> Unit = {},
     ) = viewModelScope.launch {
         try {
-            val oldFile = repository.getFileWithInfo(owner, repoName, oldPath, _state.value.currentBranch)
+            val oldFile = repository.getFileWithInfo(owner, currentRepoName, oldPath, _state.value.currentBranch)
             val contentBase64 = oldFile.info.content ?: ""
             val cleanContentBase64 = contentBase64.replace("\n", "").replace("\r", "")
             val token = GitMobApp.instance.tokenStorage.accessToken.first() ?: return@launch
             repository.renameFileGraphQL(
                 token = token,
                 owner = owner,
-                repo = repoName,
+                repo = currentRepoName,
                 branch = _state.value.currentBranch,
                 oldPath = oldPath,
                 newPath = newPath,
@@ -1940,7 +1969,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         try {
             repository.deleteFile(
                 owner = owner,
-                repo = repoName,
+                repo = currentRepoName,
                 path = path,
                 message = message,
                 sha = sha,
@@ -1963,7 +1992,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         onError: (String) -> Unit = {},
     ) = viewModelScope.launch {
         try {
-            val info = repository.getFileInfo(owner, repoName, path, _state.value.currentBranch)
+            val info = repository.getFileInfo(owner, currentRepoName, path, _state.value.currentBranch)
             onSuccess(info)
         } catch (e: Exception) {
             onError(e.message ?: "获取文件信息失败")
@@ -1974,7 +2003,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
 
     fun loadSubscription() = viewModelScope.launch {
         _state.update { it.copy(subscriptionLoading = true) }
-        val sub = repository.getRepoSubscription(owner, repoName)
+        val sub = repository.getRepoSubscription(owner, currentRepoName)
         _state.update { it.copy(subscription = sub, subscriptionLoading = false) }
     }
 
@@ -1988,10 +2017,10 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         _state.update { it.copy(subscriptionLoading = true) }
         try {
             val sub = when (mode) {
-                WatchMode.ALL_ACTIVITY  -> repository.setRepoSubscription(owner, repoName, true, false)
-                WatchMode.IGNORE        -> repository.setRepoSubscription(owner, repoName, false, true)
+                WatchMode.ALL_ACTIVITY  -> repository.setRepoSubscription(owner, currentRepoName, true, false)
+                WatchMode.IGNORE        -> repository.setRepoSubscription(owner, currentRepoName, false, true)
                 WatchMode.PARTICIPATING -> {
-                    repository.unsubscribeRepo(owner, repoName)
+                    repository.unsubscribeRepo(owner, currentRepoName)
                     null
                 }
             }
@@ -2010,7 +2039,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
             return@launch
         }
         _state.update { it.copy(issueTemplatesLoading = true) }
-        val templates = repository.getIssueTemplates(owner, repoName)
+        val templates = repository.getIssueTemplates(owner, currentRepoName)
         _state.update { it.copy(issueTemplates = templates, issueTemplatesLoading = false) }
         onDone()
     }
@@ -2023,7 +2052,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun loadStargazers() = viewModelScope.launch {
         _state.update { it.copy(stargazersLoading = true, stargazersPage = 1, stargazersHasMore = false, stargazers = emptyList()) }
         try {
-            val stargazers = repository.getStargazers(owner, repoName, page = 1)
+            val stargazers = repository.getStargazers(owner, currentRepoName, page = 1)
             _state.update { it.copy(
                 stargazers = stargazers,
                 stargazersPage = 1,
@@ -2043,7 +2072,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         val nextPage = _state.value.stargazersPage + 1
         _state.update { it.copy(stargazersLoadingMore = true) }
         try {
-            val more = repository.getStargazers(owner, repoName, page = nextPage)
+            val more = repository.getStargazers(owner, currentRepoName, page = nextPage)
             _state.update { s -> s.copy(
                 stargazers = s.stargazers + more,
                 stargazersPage = nextPage,
@@ -2078,7 +2107,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     fun loadForks() = viewModelScope.launch {
         _state.update { it.copy(forksLoading = true, forksPage = 1, forksHasMore = false, forks = emptyList()) }
         try {
-            val forks = repository.getForks(owner, repoName, sort = _state.value.forkSortBy.apiValue, page = 1)
+            val forks = repository.getForks(owner, currentRepoName, sort = _state.value.forkSortBy.apiValue, page = 1)
             _state.update { it.copy(
                 forks = forks,
                 forksPage = 1,
@@ -2098,7 +2127,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         val nextPage = _state.value.forksPage + 1
         _state.update { it.copy(forksLoadingMore = true) }
         try {
-            val more = repository.getForks(owner, repoName, sort = _state.value.forkSortBy.apiValue, page = nextPage)
+            val more = repository.getForks(owner, currentRepoName, sort = _state.value.forkSortBy.apiValue, page = nextPage)
             _state.update { s -> s.copy(
                 forks = s.forks + more,
                 forksPage = nextPage,
@@ -2152,6 +2181,91 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
      * 隐藏同步提交列表
      */
     fun hideForkSyncCommits() = _state.update { it.copy(showForkSyncCommits = false) }
+
+    /**
+     * 处理 PR 更新事件
+     */
+    private fun handlePRUpdated(event: RepoUpdateEvent.PRUpdated) = viewModelScope.launch {
+        LogManager.d("RepoDetailViewModel", "收到 PR 更新事件: owner=${event.owner}, repo=${event.repo}, number=${event.number}, state=${event.state}")
+        try {
+            LogManager.d("RepoDetailViewModel", "当前 owner=$owner, currentRepoName=$currentRepoName")
+            val updatedPR = repository.getPRDetail(owner, currentRepoName, event.number)
+            LogManager.d("RepoDetailViewModel", "获取到更新后的 PR: state=${updatedPR.state}, isOpen=${updatedPR.isOpen}, isMerged=${updatedPR.isMerged}, isClosed=${updatedPR.isClosed}")
+            _state.update { state ->
+                val filterState = state.prFilterState
+                LogManager.d("RepoDetailViewModel", "当前筛选状态: ${filterState.status}")
+                val shouldShow = when (filterState.status) {
+                    com.gitmob.android.api.PRStatusFilter.OPEN -> updatedPR.isOpen
+                    com.gitmob.android.api.PRStatusFilter.MERGED -> updatedPR.isMerged
+                    com.gitmob.android.api.PRStatusFilter.CLOSED -> updatedPR.isClosed
+                    com.gitmob.android.api.PRStatusFilter.ALL -> true
+                }
+                LogManager.d("RepoDetailViewModel", "shouldShow=$shouldShow")
+                
+                val newState = if (shouldShow) {
+                    val newPrs = state.prs.map { pr ->
+                        if (pr.number == event.number) {
+                            LogManager.d("RepoDetailViewModel", "更新列表中的 PR #${event.number}")
+                            updatedPR
+                        } else {
+                            pr
+                        }
+                    }
+                    state.copy(prs = newPrs)
+                } else {
+                    LogManager.d("RepoDetailViewModel", "从列表中移除 PR #${event.number}")
+                    val newPrs = state.prs.filter { pr -> pr.number != event.number }
+                    state.copy(prs = newPrs)
+                }
+                LogManager.d("RepoDetailViewModel", "更新后的 prs 数量: ${newState.prs.size}")
+                newState
+            }
+        } catch (e: Exception) {
+            LogManager.e("RepoDetailViewModel", "更新 PR 失败", e)
+        }
+    }
+
+    /**
+     * 处理 Issue 更新事件
+     */
+    private fun handleIssueUpdated(event: RepoUpdateEvent.IssueUpdated) = viewModelScope.launch {
+        LogManager.d("RepoDetailViewModel", "收到 Issue 更新事件: owner=${event.owner}, repo=${event.repo}, number=${event.number}, state=${event.state}")
+        try {
+            LogManager.d("RepoDetailViewModel", "当前 owner=$owner, currentRepoName=$currentRepoName")
+            val updatedIssue = repository.getIssue(owner, currentRepoName, event.number)
+            LogManager.d("RepoDetailViewModel", "获取到更新后的 Issue: state=${updatedIssue.state}")
+            _state.update { state ->
+                val filterState = state.issueFilterState
+                LogManager.d("RepoDetailViewModel", "当前筛选状态: ${filterState.status}")
+                val shouldShow = when (filterState.status) {
+                    IssueStatusFilter.OPEN -> updatedIssue.state == "open"
+                    IssueStatusFilter.CLOSED -> updatedIssue.state == "closed"
+                    IssueStatusFilter.ALL -> true
+                }
+                LogManager.d("RepoDetailViewModel", "shouldShow=$shouldShow")
+                
+                val newState = if (shouldShow) {
+                    val newIssues = state.issues.map { issue ->
+                        if (issue.number == event.number) {
+                            LogManager.d("RepoDetailViewModel", "更新列表中的 Issue #${event.number}")
+                            updatedIssue
+                        } else {
+                            issue
+                        }
+                    }
+                    state.copy(issues = newIssues)
+                } else {
+                    LogManager.d("RepoDetailViewModel", "从列表中移除 Issue #${event.number}")
+                    val newIssues = state.issues.filter { issue -> issue.number != event.number }
+                    state.copy(issues = newIssues)
+                }
+                LogManager.d("RepoDetailViewModel", "更新后的 issues 数量: ${newState.issues.size}")
+                newState
+            }
+        } catch (e: Exception) {
+            LogManager.e("RepoDetailViewModel", "更新 Issue 失败", e)
+        }
+    }
 
     companion object {
         fun factory(owner: String, repo: String): androidx.lifecycle.ViewModelProvider.Factory =

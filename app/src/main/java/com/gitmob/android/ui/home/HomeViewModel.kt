@@ -9,6 +9,7 @@ import com.gitmob.android.api.GHRepo
 import com.gitmob.android.api.GHUser
 import com.gitmob.android.api.GraphQLClient
 import com.gitmob.android.auth.TokenStorage
+import com.gitmob.android.data.FavGroup
 import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +35,8 @@ data class HomeState(
     val showFollowing: Boolean = false,
     val followersLoading: Boolean = false,
     val followingLoading: Boolean = false,
+    val showFavGroupDetail: FavGroup? = null,
+    val showUngroupedDetail: Boolean = false,
 )
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
@@ -195,5 +198,33 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(followingLoading = false) }
             }
         }
+    }
+
+    /**
+     * 显示收藏夹分组详情
+     */
+    fun showFavGroupDetail(group: FavGroup) {
+        _state.update { it.copy(showFavGroupDetail = group) }
+    }
+
+    /**
+     * 隐藏收藏夹分组详情
+     */
+    fun hideFavGroupDetail() {
+        _state.update { it.copy(showFavGroupDetail = null) }
+    }
+
+    /**
+     * 显示未分组收藏详情
+     */
+    fun showUngroupedDetail() {
+        _state.update { it.copy(showUngroupedDetail = true) }
+    }
+
+    /**
+     * 隐藏未分组收藏详情
+     */
+    fun hideUngroupedDetail() {
+        _state.update { it.copy(showUngroupedDetail = false) }
     }
 }

@@ -1248,10 +1248,7 @@ class RepoRepository {
             }
         }
 
-        // GitHub GraphQL node_id 是 base64 字符串，REST 用 Long；这里用 hashCode 兼容
-        val idLong = node.optString("id").hashCode().toLong().let {
-            if (it < 0) it + Long.MAX_VALUE else it
-        }
+        val idLong = node.optLong("databaseId", 0L)
         val ownerAvatarUrl = node.optString("openGraphImageUrl").ifBlank { null }
         val owner = GHOwner(login = ownerLogin, avatarUrl = ownerAvatarUrl)
 

@@ -137,11 +137,9 @@ fun RepoDetailScreen(
     val isCurrentRepoFavorited = state.repo?.fullName?.let { favVm.isFavorited(it) } ?: false
 
     // 仓库成功加载后：若已收藏则同步最新数据（stars/language/description 等）
-    LaunchedEffect(state.repo?.fullName) {
+    LaunchedEffect(state.repo) {
         val repo = state.repo ?: return@LaunchedEffect
-        if (favVm.isFavorited(repo.fullName)) {
-            favVm.updateFavRepoData(repo)
-        }
+        favVm.updateFavRepoData(repo)
     }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -272,7 +270,7 @@ fun RepoDetailScreen(
                                     modifier = if (onOwnerClick != null) Modifier.clickable { onOwnerClick.invoke(repo.owner.login) } else Modifier,
                                 )
                             }
-                        } ?: Text(vm.repoName, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = c.textPrimary)
+                        } ?: Text(vm.state.value.currentRepoName, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = c.textPrimary)
                     }
                 },
                 navigationIcon = {
@@ -1340,7 +1338,7 @@ fun RepoDetailScreen(
     if (showTransferDialog) {
         RepoTransferDialog(
             owner = vm.owner,
-            repoName = vm.repoName,
+            repoName = vm.state.value.currentRepoName,
             userLogin = state.userLogin,
             userAvatar = state.userAvatar,
             orgs = state.userOrgs,
@@ -1368,7 +1366,7 @@ fun RepoDetailScreen(
         }
         
         var selectedTarget by remember { mutableStateOf(forkTargets.firstOrNull()?.login.orEmpty()) }
-        var forkName by remember { mutableStateOf(vm.repoName) }
+        var forkName by remember { mutableStateOf(vm.state.value.currentRepoName) }
         var forkDefaultBranchOnly by remember { mutableStateOf(false) }
         
         AlertDialog(
@@ -1380,7 +1378,7 @@ fun RepoDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Text(
-                        "将 ${vm.owner}/${vm.repoName} 复刻到",
+                        "将 ${vm.owner}/${vm.state.value.currentRepoName} 复刻到",
                         color = c.textSecondary,
                         fontSize = 14.sp
                     )

@@ -8,6 +8,8 @@ import com.gitmob.android.GitMobApp
 import com.gitmob.android.api.*
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.data.RepoRepository
+import com.gitmob.android.data.RepoUpdateEvent
+import com.gitmob.android.data.RepoUpdateEventBus
 import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -241,6 +243,15 @@ class PRDetailViewModel(
                     opInProgress = false
                 )
             }
+            RepoUpdateEventBus.send(
+                RepoUpdateEvent.PRUpdated(
+                    owner = owner,
+                    repo = repoName,
+                    number = prNumber,
+                    title = updated.title,
+                    state = updated.state
+                )
+            )
         } catch (e: Exception) {
             _state.update {
                 it.copy(
@@ -416,6 +427,15 @@ class PRDetailViewModel(
                         opInProgress = false
                     )
                 }
+                RepoUpdateEventBus.send(
+                    RepoUpdateEvent.PRUpdated(
+                        owner = owner,
+                        repo = repoName,
+                        number = prNumber,
+                        title = pr.title,
+                        state = pr.state
+                    )
+                )
             } else {
                 _state.update {
                     it.copy(

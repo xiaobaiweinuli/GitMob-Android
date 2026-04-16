@@ -87,8 +87,8 @@ fun HomeScreen(
     state.user?.login?.let { login -> LaunchedEffect(login) { favVm.init(login) } }
 
     var showAddGroupDialog by remember { mutableStateOf(false) }
-    var showFavGroupDetail by remember { mutableStateOf<FavGroup?>(null) }
-    var showUngroupedDetail by remember { mutableStateOf(false) }
+    val showFavGroupDetail = state.showFavGroupDetail
+    val showUngroupedDetail = state.showUngroupedDetail
     var showUpdateDialog by remember { mutableStateOf(false) }
     var latestRelease by remember { mutableStateOf<UpdateManager.Release?>(null) }
     val scope = rememberCoroutineScope()
@@ -132,19 +132,19 @@ fun HomeScreen(
 
     // 分组详情页（BackHandler 拦截系统返回键，避免关闭 APP）
     showFavGroupDetail?.let { group ->
-        BackHandler { showFavGroupDetail = null }
+        BackHandler { vm.hideFavGroupDetail() }
         FavGroupDetailScreen(
             group = group, favVm = favVm, c = c,
             onRepoClick = onRepoClick,
-            onBack = { showFavGroupDetail = null },
+            onBack = { vm.hideFavGroupDetail() },
         )
         return
     }
     if (showUngroupedDetail) {
-        BackHandler { showUngroupedDetail = false }
+        BackHandler { vm.hideUngroupedDetail() }
         FavUngroupedDetailScreen(
             favVm = favVm, c = c, onRepoClick = onRepoClick,
-            onBack = { showUngroupedDetail = false },
+            onBack = { vm.hideUngroupedDetail() },
         )
         return
     }
@@ -292,7 +292,7 @@ fun HomeScreen(
                                 name = "未分组", description = null, c = c,
                                 repoCount = favState.ungroupedRepos.size,
                                 onDeleteGroupOnly = null, onDeleteAll = null,
-                                onClick = { showUngroupedDetail = true },
+                                onClick = { vm.showUngroupedDetail() },
                             )
                         }
                     }
@@ -304,7 +304,7 @@ fun HomeScreen(
                             repoCount = group.repoIds.size, c = c,
                             onDeleteGroupOnly = { favVm.deleteGroup(group.id, "group_only") },
                             onDeleteAll = { favVm.deleteGroup(group.id, "all") },
-                            onClick = { showFavGroupDetail = group },
+                            onClick = { vm.showFavGroupDetail(group) },
                         )
                     }
 
@@ -663,7 +663,7 @@ private fun FavRepoCard(
                 .padding(12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (repo.isPrivate) Icons.Default.Lock else Icons.Default.Folder, null,
+                Icon(Icons.Default.Folder, null,
                     tint = c.textTertiary, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(repo.fullName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,

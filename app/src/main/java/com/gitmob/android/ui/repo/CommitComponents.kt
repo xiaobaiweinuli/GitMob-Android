@@ -290,7 +290,7 @@ fun CommitDetailSheet(
                                         parentSha       = commit.parentSha,
                                         previousFilename = file.previousFilename,
                                         owner           = vm.owner,
-                                        repoName        = vm.repoName,
+                                        repoName        = vm.state.value.currentRepoName,
                                         currentSha      = commit.sha,
                                         currentBranch   = state.currentBranch,
                                     ))
