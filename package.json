@@ -1,0 +1,16 @@
+{
+  "name": "gitmob",
+  "version": "1.0.0",
+  "description": "Mobile Git manager for Termux",
+  "main": "server/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "hono": "^4.4.0",
+    "@hono/node-server": "^1.12.0",
+    "simple-git": "^3.25.0"
+  }
+}

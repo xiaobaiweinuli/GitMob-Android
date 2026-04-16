@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <meta name="theme-color" content="#0f1117"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <title>GitMob</title>
+  <link rel="manifest" href="/manifest.json"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root{
+      --bg:#0f1117;--bg2:#161b25;--bg3:#1e2535;--bg4:#252d40;
+      --border:#2a3347;--border2:#3a4560;
+      --accent:#ff6b4a;--accent2:#ff8c70;--accent-dim:rgba(255,107,74,0.15);
+      --green:#4ade80;--green-dim:rgba(74,222,128,0.12);
+      --yellow:#fbbf24;--yellow-dim:rgba(251,191,36,0.12);
+      --red:#f87171;--red-dim:rgba(248,113,113,0.12);
+      --blue:#60a5fa;--blue-dim:rgba(96,165,250,0.12);
+      --purple:#a78bfa;--purple-dim:rgba(167,139,250,0.12);
+      --text:#e8eaf0;--text2:#9ba3ba;--text3:#5c6580;
+      --font-ui:'Sora',sans-serif;--font-code:'JetBrains Mono',monospace;
+      --radius:14px;--radius-sm:8px;
+      --shadow-lg:0 8px 40px rgba(0,0,0,0.6);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:var(--font-ui);overflow:hidden}
+    #app{width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden}
+
+    /* topbar */
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--bg);border-bottom:1px solid var(--border);z-index:10;flex-shrink:0}
+    .topbar-left{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+    .logo{font-family:var(--font-code);font-weight:600;font-size:18px;color:var(--accent)}
+    .logo span{color:var(--text2);font-weight:400}
+    .back-btn{display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--text);font-family:var(--font-ui);font-size:15px;font-weight:500;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+    .back-btn svg{width:18px;height:18px;flex-shrink:0;color:var(--text2)}
+    .topbar-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}
+    .icon-btn{width:34px;height:34px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg2);color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:all 0.15s}
+    .icon-btn:active{background:var(--bg3);color:var(--text);transform:scale(0.94)}
+    .icon-btn svg{width:17px;height:17px}
+
+    /* page */
+    .page{flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+    .page-content{padding:14px;display:flex;flex-direction:column;gap:10px}
+
+    /* card */
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+    .card-header{padding:11px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+    .card-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3)}
+    .card-body{padding:13px 14px}
+
+    /* repo card */
+    .repo-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 14px 14px 18px;cursor:pointer;transition:all 0.15s;position:relative;overflow:hidden}
+    .repo-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border2)}
+    .repo-card.has-changes::before{background:var(--accent)}
+    .repo-card.clean::before{background:var(--green)}
+    .repo-card.error::before{background:var(--red)}
+    .repo-card:active{background:var(--bg3)}
+    .repo-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+    .repo-name{font-weight:600;font-size:14px;color:var(--text);line-height:1.3}
+    .repo-path{font-family:var(--font-code);font-size:10px;color:var(--text3);margin-top:2px;word-break:break-all;line-height:1.4}
+    .repo-delete-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--red-dim);background:none;color:var(--red);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;opacity:0.7}
+    .repo-delete-btn:active{background:var(--red-dim);opacity:1;transform:scale(0.93)}
+    .repo-delete-btn svg{width:14px;height:14px}
+    .repo-status-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+
+    /* badge */
+    .badge{display:inline-flex;align-items:center;gap:3px;padding:3px 7px;border-radius:20px;font-size:10.5px;font-weight:500;font-family:var(--font-code)}
+    .badge svg{width:10px;height:10px}
+    .badge-branch{background:var(--blue-dim);color:var(--blue)}
+    .badge-changes{background:var(--accent-dim);color:var(--accent2)}
+    .badge-clean{background:var(--green-dim);color:var(--green)}
+    .badge-ahead{background:var(--yellow-dim);color:var(--yellow)}
+    .badge-behind{background:var(--red-dim);color:var(--red)}
+    .badge-error{background:var(--red-dim);color:var(--red)}
+    .badge-staged{background:var(--purple-dim);color:var(--purple)}
+
+    /* action grid */
+    .action-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .action-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:14px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all 0.15s;font-family:var(--font-ui)}
+    .action-btn:active{transform:scale(0.96)}
+    .action-btn svg{width:20px;height:20px}
+    .action-btn.primary{background:var(--accent);border-color:var(--accent);color:white}
+    .action-btn.primary:active{background:var(--accent2)}
+    .action-btn-label{font-size:12px;font-weight:500;color:inherit}
+    .action-btn-sub{font-size:9px;color:var(--text3);margin-top:-3px}
+    .action-btn.primary .action-btn-sub{color:rgba(255,255,255,0.55)}
+
+    /* stats */
+    .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+    .stat-item{background:var(--bg3);border-radius:var(--radius-sm);padding:9px 6px;text-align:center}
+    .stat-num{font-family:var(--font-code);font-size:19px;font-weight:600;line-height:1}
+    .stat-label{font-size:9px;color:var(--text3);margin-top:3px}
+
+    /* file list */
+    .file-list{display:flex;flex-direction:column;gap:1px}
+    .file-item{display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--bg3);transition:background 0.1s}
+    .file-item:first-child{border-radius:var(--radius-sm) var(--radius-sm) 0 0}
+    .file-item:last-child{border-radius:0 0 var(--radius-sm) var(--radius-sm)}
+    .file-item:only-child{border-radius:var(--radius-sm)}
+    .file-item:active{background:var(--bg4)}
+    .file-status{width:15px;text-align:center;font-family:var(--font-code);font-size:11px;font-weight:700;flex-shrink:0}
+    .file-status.M{color:var(--yellow)}.file-status.A{color:var(--green)}
+    .file-status.D{color:var(--red)}.file-status.U{color:var(--red)}.file-status.R{color:var(--blue)}
+    .file-name{font-family:var(--font-code);font-size:11px;color:var(--text2);flex:1;word-break:break-all;line-height:1.4;cursor:pointer}
+    .file-cb{width:17px;height:17px;accent-color:var(--accent);flex-shrink:0;cursor:pointer}
+
+    /* log */
+    .log-item{display:flex;gap:10px;padding:11px 13px;background:var(--bg3);cursor:pointer;align-items:flex-start}
+    .log-item:not(:last-child){border-bottom:1px solid var(--border)}
+    .log-item:active{background:var(--bg4)}
+    .log-hash{font-family:var(--font-code);font-size:11px;color:var(--accent);flex-shrink:0;padding-top:1px}
+    .log-info{flex:1;min-width:0}
+    .log-message{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+    .log-meta{font-size:11px;color:var(--text3)}
+    .log-actions{display:flex;gap:5px;flex-shrink:0;align-items:flex-start}
+    .sm-btn{padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--text3);font-size:10.5px;cursor:pointer;font-family:var(--font-ui);white-space:nowrap;display:inline-flex;align-items:center;gap:3px}
+    .sm-btn svg{width:12px;height:12px}
+    .sm-btn:active{background:var(--bg4);color:var(--text)}
+    .sm-btn.danger{border-color:var(--red-dim);color:var(--red)}
+
+    /* commit area */
+    .commit-area{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:11px;display:flex;flex-direction:column;gap:9px}
+    .commit-textarea{background:none;border:none;outline:none;color:var(--text);font-family:var(--font-ui);font-size:14px;line-height:1.6;resize:none;width:100%;min-height:68px}
+    .commit-textarea::placeholder{color:var(--text3)}
+    .commit-actions{display:flex;gap:8px;justify-content:flex-end;align-items:center}
+
+    /* ssh */
+    .ssh-key-card{background:var(--bg3);border-radius:var(--radius-sm);padding:11px 13px;display:flex;align-items:center;gap:10px}
+    .ssh-key-card:active{background:var(--bg4)}
+    .ssh-key-icon{width:34px;height:34px;border-radius:var(--radius-sm);background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--accent)}
+    .ssh-key-icon svg{width:17px;height:17px}
+    .ssh-key-name{font-family:var(--font-code);font-size:12px;color:var(--text);font-weight:500}
+    .ssh-key-type{font-size:10px;color:var(--text3);margin-top:2px}
+
+    /* spinner */
+    .spinner{width:18px;height:18px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .loading-center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:40px;color:var(--text3);font-size:13px}
+
+    /* toast */
+    .toast-container{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:1000;display:flex;flex-direction:column;gap:7px;pointer-events:none;width:calc(100% - 40px);max-width:360px}
+    .toast{padding:11px 16px;border-radius:var(--radius);font-size:13px;font-weight:500;box-shadow:var(--shadow-lg);animation:toastIn 0.2s ease forwards;text-align:center}
+    .toast.success{background:var(--green);color:#071a07}
+    .toast.error{background:var(--red);color:#1a0707}
+    .toast.info{background:var(--bg3);color:var(--text);border:1px solid var(--border2)}
+    .toast.warn{background:var(--yellow);color:#1a0f00}
+    @keyframes toastIn{from{opacity:0;transform:translateY(10px) scale(0.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+    /* modal */
+    .ov{position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);z-index:100;display:flex;align-items:flex-end;animation:fadeIn 0.18s ease}
+    .ov.center{align-items:center;padding:18px}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius) var(--radius) 0 0;width:100%;max-height:88vh;overflow-y:auto;padding:18px;animation:slideUp 0.22s ease}
+    .ov.center .modal{border-radius:var(--radius);max-height:none}
+    @keyframes slideUp{from{transform:translateY(28px);opacity:0}to{transform:translateY(0);opacity:1}}
+    .modal-title{font-size:16px;font-weight:600;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+    .modal-title svg{width:18px!important;height:18px!important;flex-shrink:0;color:var(--accent)}
+
+    /* input / btn */
+    .input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;color:var(--text);font-family:var(--font-ui);font-size:14px;outline:none;transition:border-color 0.15s}
+    .input:focus{border-color:var(--accent)}
+    .input::placeholder{color:var(--text3)}
+    .input-group{display:flex;flex-direction:column;gap:5px}
+    .input-label{font-size:11px;font-weight:500;color:var(--text2)}
+    .btn{padding:10px 16px;border-radius:var(--radius-sm);font-family:var(--font-ui);font-size:13px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:all 0.15s;display:inline-flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap}
+    .btn svg{width:14px;height:14px;flex-shrink:0}
+    /* 防止 card/list 内 SVG 撑大布局 */
+    .card svg,.file-item svg,.log-item svg,.ssh-key-card svg,.branch-item svg,.sm-btn svg{max-width:20px;max-height:20px}
+    .stat-item svg,.action-btn svg{max-width:22px;max-height:22px}
+    .btn:active{transform:scale(0.96)}
+    .btn:disabled{opacity:0.45;pointer-events:none}
+    .btn-primary{background:var(--accent);color:white}.btn-primary:active{background:var(--accent2)}
+    .btn-ghost{background:none;border-color:var(--border);color:var(--text2)}.btn-ghost:active{background:var(--bg3);color:var(--text)}
+    .btn-danger{background:var(--red-dim);border-color:var(--red);color:var(--red)}
+    .btn-warning{background:var(--yellow-dim);border-color:var(--yellow);color:var(--yellow)}
+    .btn-full{width:100%}
+
+    /* toggle */
+    .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0}
+    .toggle-label{font-size:13px;color:var(--text2)}
+    .toggle{position:relative;width:42px;height:23px;background:var(--bg4);border-radius:12px;cursor:pointer;border:1px solid var(--border2);transition:background 0.2s;flex-shrink:0}
+    .toggle.on{background:var(--accent);border-color:var(--accent)}
+    .toggle::after{content:'';position:absolute;top:2px;left:2px;width:17px;height:17px;background:white;border-radius:50%;transition:transform 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.3)}
+    .toggle.on::after{transform:translateX(19px)}
+
+    /* diff */
+    .diff-block{font-family:var(--font-code);font-size:11px;line-height:1.7;overflow-x:auto;padding:11px;background:var(--bg)}
+    .diff-line{white-space:pre}
+    .diff-line.add{color:var(--green)}.diff-line.del{color:var(--red)}.diff-line.hunk{color:var(--blue)}.diff-line.normal{color:var(--text3)}
+
+    .pubkey-box{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px;font-family:var(--font-code);font-size:10px;color:var(--text2);word-break:break-all;line-height:1.6}
+
+    /* empty */
+    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:44px 24px;gap:10px;text-align:center}
+    .empty-icon{width:52px;height:52px;background:var(--bg3);border-radius:14px;display:flex;align-items:center;justify-content:center;color:var(--text3)}
+    .empty-icon svg{width:26px;height:26px}
+    .empty-title{font-size:14px;font-weight:600;color:var(--text2)}
+    .empty-sub{font-size:12px;color:var(--text3);line-height:1.6}
+
+    /* step */
+    .step-list{display:flex;flex-direction:column;gap:11px}
+    .step-item{display:flex;gap:11px;align-items:flex-start}
+    .step-num{width:22px;height:22px;border-radius:50%;background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .step-title{font-size:12px;font-weight:500;color:var(--text);margin-bottom:1px}
+    .step-desc{font-size:11px;color:var(--text3);line-height:1.5}
+
+    /* branch list */
+    .branch-item{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg3);cursor:pointer}
+    .branch-item:not(:last-child){border-bottom:1px solid var(--border)}
+    .branch-item:first-child{border-radius:var(--radius-sm) var(--radius-sm) 0 0}
+    .branch-item:last-child{border-radius:0 0 var(--radius-sm) var(--radius-sm)}
+    .branch-item:only-child{border-radius:var(--radius-sm)}
+    .branch-item:active{background:var(--bg4)}
+    .branch-item svg{width:14px;height:14px;flex-shrink:0;color:var(--text3)}
+    .branch-name{font-family:var(--font-code);font-size:12px;color:var(--text2);flex:1}
+    .branch-name.current{color:var(--accent);font-weight:600}
+
+    .section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);padding:4px 2px 7px}
+    ::-webkit-scrollbar{width:4px;height:4px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+    .safe-bottom{height:env(safe-area-inset-bottom,14px);flex-shrink:0}
+    .row{display:flex;gap:8px;align-items:center}
+    .flex1{flex:1}.mt8{margin-top:8px}.mt10{margin-top:10px}.mt12{margin-top:12px}
+    .text-sm{font-size:13px;color:var(--text2)}.text-xs{font-size:11px;color:var(--text3)}
+    .code{font-family:var(--font-code)}
+    /* 分割线 */
+    .sep{height:1px;background:var(--border);margin:4px 0}
+
+    /* 两列按钮行 */
+    .btn-row{display:flex;gap:8px}
+    .btn-row .btn{flex:1}
+
+    /* 功能区标题块 */
+    .func-group{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+    .func-item{display:flex;align-items:center;gap:12px;padding:13px 14px;cursor:pointer;transition:background 0.12s}
+    .func-item:not(:last-child){border-bottom:1px solid var(--border)}
+    .func-item:active{background:var(--bg3)}
+    .func-icon{width:34px;height:34px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .func-icon svg{width:17px;height:17px}
+    .func-label{font-size:13px;font-weight:500;color:var(--text)}
+    .func-sub{font-size:11px;color:var(--text3);margin-top:1px}
+    .func-arrow{color:var(--text3);margin-left:auto}
+    .func-arrow svg{width:16px;height:16px}
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast-container" id="toasts"></div>
+<script>
+// ── API ──
+const API = async (method, path, body) => {
+  const opts = { method, headers: {'Content-Type':'application/json'} }
+  if (body !== undefined) opts.body = JSON.stringify(body)
+  const res = await fetch('/api' + path, opts)
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || res.statusText)
+  return data
+}
+const $get = p => API('GET', p)
+const $post = (p,b) => API('POST', p, b)
+const $del = p => API('DELETE', p)
+
+// ── Toast ──
+function toast(msg, type='info', dur=2800) {
+  const el = document.createElement('div')
+  el.className = `toast ${type}`
+  el.textContent = msg
+  document.getElementById('toasts').appendChild(el)
+  setTimeout(() => { el.style.transition='all 0.2s'; el.style.opacity='0'; el.style.transform='translateY(8px)'; setTimeout(()=>el.remove(),200) }, dur)
+  return el
+}
+function clearToasts() { document.querySelectorAll('.toast').forEach(t=>t.remove()) }
+
+// ── Icons ──
+const I = {
+  git:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9"/><line x1="12" y1="12" x2="12" y2="15"/></svg>`,
+  plus:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  back:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>`,
+  up:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>`,
+  down:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>`,
+  commit:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="3" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="21" y2="12"/></svg>`,
+  log:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,
+  key:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>`,
+  refresh:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`,
+  check:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
+  copy:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+  trash:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+  branch:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>`,
+  warning:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+  revert:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>`,
+  init:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>`,
+  github:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>`,
+  eye:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  arrow:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>`,
+  folder:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
+  cloud:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>`,
+}
+
+// ── State ──
+const S = {
+  view:'repos', repos:[], loading:false,
+  currentRepo:null, currentStatus:null, repoError:null,
+  logEntries:[], commitDetail:null,
+  diffContent:'', diffTitle:'',
+  sshKeys:[], githubUser:null,
+  selectedFiles:new Set(),
+  _commitMsg:'', _commitStaged:false,
+  _privateToggle:false,
+}
+
+// ── Render ──
+function render() {
+  document.getElementById('app').innerHTML =
+    buildTopbar() + `<div class="page" id="pg"><div class="page-content">${buildView()}</div><div class="safe-bottom"></div></div>`
+  attachEvents()
+}
+
+function buildTopbar() {
+  const L = {
+    repos:`<span class="logo">git<span>mob</span></span>`,
+    repo:`<button class="back-btn" id="bb">${I.back}${esc(S.currentRepo?.name||'')}</button>`,
+    ssh:`<button class="back-btn" id="bb">${I.back}SSH 管理</button>`,
+    log:`<button class="back-btn" id="bb">${I.back}提交历史</button>`,
+    commitDetail:`<button class="back-btn" id="bb">${I.back}提交详情</button>`,
+    diff:`<button class="back-btn" id="bb">${I.back}${esc(S.diffTitle||'变更详情')}</button>`,
+    github:`<button class="back-btn" id="bb">${I.back}GitHub</button>`,
+    branches:`<button class="back-btn" id="bb">${I.back}分支管理</button>`,
+  }
+  const R = {
+    repos:`<div class="topbar-actions">
+      <button class="icon-btn" id="btn-refresh">${I.refresh}</button>
+      <button class="icon-btn" id="btn-ssh">${I.key}</button>
+      <button class="icon-btn" id="btn-gh">${I.github}</button>
+      <button class="icon-btn" id="btn-clone">${I.down}</button>
+      <button class="icon-btn" id="btn-add" style="background:var(--accent);border-color:var(--accent);color:white">${I.plus}</button>
+    </div>`,
+    repo:`<div class="topbar-actions"><button class="icon-btn" id="btn-refresh-repo">${I.refresh}</button></div>`,
+    branches:`<div class="topbar-actions"><button class="icon-btn" id="btn-new-branch" style="background:var(--accent);border-color:var(--accent);color:white">${I.plus}</button></div>`,
+  }
+  return `<div class="topbar"><div class="topbar-left">${L[S.view]||''}</div>${R[S.view]||''}</div>`
+}
+
+function buildView() {
+  if (S.loading) return `<div class="loading-center"><div class="spinner"></div><span>加载中...</span></div>`
+  const map = {repos:vRepos,repo:vRepo,ssh:vSsh,log:vLog,commitDetail:vCommitDetail,diff:vDiff,github:vGithub,branches:vBranches}
+  return (map[S.view]||(() => ''))()
+}
+
+// ═══════ 仓库列表 ═══════
+function vRepos() {
+  if (!S.repos.length) return `
+    <div class="empty-state">
+      <div class="empty-icon">${I.git}</div>
+      <div class="empty-title">暂无仓库</div>
+      <div class="empty-sub">添加本地仓库，或克隆 / 初始化推送到 GitHub</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-primary btn-full" id="btn-add-e" style="padding:13px;font-size:14px">${I.folder} 添加已有本地仓库</button>
+      <button class="btn btn-ghost btn-full" id="btn-clone-e" style="padding:13px;font-size:14px">${I.down} 克隆 GitHub 仓库到本地</button>
+      <button class="btn btn-ghost btn-full" id="btn-init-e" style="padding:13px;font-size:14px">${I.init} 初始化本地目录并推送</button>
+    </div>`
+
+  return S.repos.map(r => {
+    const s = r.status, err = r.error
+    let cls='', badges=''
+    if (err) {
+      cls='error'
+      badges=`<span class="badge badge-error">${I.warning}${err==='NOT_GIT_REPO'?'未初始化':'错误'}</span>`
+    } else if (s) {
+      cls = s.totalChanges>0 ? 'has-changes' : 'clean'
+      badges += `<span class="badge badge-branch">${I.branch}${s.branch||'main'}</span>`
+      if (s.totalChanges>0) badges += `<span class="badge badge-changes">${s.totalChanges} 变更</span>`
+      else badges += `<span class="badge badge-clean">${I.check}干净</span>`
+      if (s.staged>0) badges += `<span class="badge badge-staged">${s.staged} 已暂存</span>`
+      if (s.ahead>0) badges += `<span class="badge badge-ahead">↑${s.ahead}</span>`
+      if (s.behind>0) badges += `<span class="badge badge-behind">↓${s.behind}</span>`
+    }
+    const lc = s?.lastCommit
+    return `<div class="repo-card ${cls}" data-id="${r.id}">
+      <div class="repo-card-top">
+        <div style="flex:1;min-width:0">
+          <div class="repo-name">${esc(r.name)}</div>
+          <div class="repo-path">${esc(r.path)}</div>
+        </div>
+        <button class="repo-delete-btn" data-del="${r.id}" onclick="event.stopPropagation()">${I.trash}</button>
+      </div>
+      ${lc?`<div class="text-xs code" style="margin-top:5px;color:var(--text3)">${esc(lc.shortHash)} ${esc((lc.message||'').slice(0,48))}</div>`:''}
+      <div class="repo-status-row">${badges}</div>
+    </div>`
+  }).join('')
+}
+
+// ═══════ 单仓库 ═══════
+function vRepo() {
+  const s = S.currentStatus
+  if (!s || S.repoError==='NOT_GIT_REPO') return vInitGuide()
+
+  const statusCard = `<div class="card">
+    <div class="card-header">
+      <span class="card-title">仓库状态</span>
+      <div class="row" style="gap:6px">
+        <span class="badge badge-branch code" id="branch-badge" style="cursor:pointer">${I.branch}${esc(s.branch||'main')}</span>
+        ${s.ahead>0?`<span class="badge badge-ahead">↑${s.ahead}</span>`:''}
+        ${s.behind>0?`<span class="badge badge-behind">↓${s.behind}</span>`:''}
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="stat-grid">
+        <div class="stat-item"><div class="stat-num" style="color:var(--yellow)">${s.modified}</div><div class="stat-label">修改</div></div>
+        <div class="stat-item"><div class="stat-num" style="color:var(--green)">${s.notAdded}</div><div class="stat-label">新增</div></div>
+        <div class="stat-item"><div class="stat-num" style="color:var(--red)">${s.deleted}</div><div class="stat-label">删除</div></div>
+        <div class="stat-item"><div class="stat-num" style="color:var(--purple)">${s.staged}</div><div class="stat-label">已暂存</div></div>
+      </div>
+      ${s.remoteUrl
+        ?`<div class="row" style="margin-top:9px;gap:6px">
+            <div class="text-xs code flex1" style="word-break:break-all;color:var(--text3)">${esc(s.remoteUrl)}</div>
+            <button class="sm-btn" id="btn-change-remote" style="flex-shrink:0;font-size:10px">${I.branch}换绑</button>
+          </div>`
+        :`<div class="row" style="margin-top:9px;gap:8px">
+            <span class="text-xs" style="color:var(--red);flex:1">⚠ 未配置远程仓库</span>
+            <button class="sm-btn" id="btn-set-remote" style="color:var(--accent);border-color:var(--accent-dim)">${I.branch}设置远程</button>
+          </div>`}
+    </div>
+  </div>`
+
+  // 文件列表
+  let filesCard = ''
+  if (s.files && s.files.length > 0) {
+    const items = s.files.slice(0,60).map(f => {
+      const wi = f.working_dir||'?', idx = f.index||' '
+      const isStaged = idx !== ' ' && idx !== '?'
+      const st = isStaged ? idx : wi
+      return `<div class="file-item">
+        <input type="checkbox" class="file-cb" data-path="${esc(f.path)}" ${S.selectedFiles.has(f.path)?'checked':''}>
+        <span class="file-status ${st==='?'?'q':st}">${st==='?'?'?':st}</span>
+        <span class="file-name" data-diff-file="${esc(f.path)}">${esc(f.path)}</span>
+        ${isStaged?`<span class="badge badge-staged" style="font-size:9px;padding:2px 5px">暂存</span>`:''}
+      </div>`
+    }).join('')
+    filesCard = `<div class="card">
+      <div class="card-header">
+        <span class="card-title">变更文件 (${s.files.length})</span>
+        <div class="row" style="gap:5px">
+          <button class="sm-btn" id="sel-all">全选</button>
+          <button class="sm-btn" id="sel-none">清除</button>
+        </div>
+      </div>
+      <div style="padding:7px"><div class="file-list">${items}</div></div>
+      <div style="padding:0 10px 10px;display:flex;gap:6px">
+        <button class="btn btn-ghost flex1" id="btn-stage-sel" style="font-size:11px;padding:7px">${I.plus}暂存所选</button>
+        <button class="btn btn-ghost flex1" id="btn-unstage-sel" style="font-size:11px;padding:7px">${I.revert}取消暂存</button>
+        <button class="btn btn-ghost flex1" id="btn-stage-all" style="font-size:11px;padding:7px">全部暂存</button>
+      </div>
+    </div>`
+  }
+
+  // 提交区
+  const commitCard = `<div class="card">
+    <div class="card-header">
+      <span class="card-title">提交</span>
+      <div class="row" style="gap:7px">
+        <span class="text-xs">仅已暂存</span>
+        <div class="toggle ${S._commitStaged?'on':''}" id="tog-staged"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="commit-area">
+        <textarea class="commit-textarea" id="commit-msg" placeholder="输入提交信息..." rows="3">${esc(S._commitMsg||'')}</textarea>
+        <div class="commit-actions">
+          <button class="sm-btn" id="btn-view-diff">${I.eye}查看 Diff</button>
+          <button class="btn btn-primary" id="btn-do-commit">${I.commit}提交</button>
+        </div>
+      </div>
+    </div>
+  </div>`
+
+  // 远程操作
+  const remoteCard = `<div class="card">
+    <div class="card-header"><span class="card-title">远程操作</span></div>
+    <div class="card-body">
+      <div class="action-grid">
+        <button class="action-btn primary" id="btn-push">${I.up}<span class="action-btn-label">推送</span><span class="action-btn-sub">push origin</span></button>
+        <button class="action-btn" id="btn-pull">${I.down}<span class="action-btn-label">拉取</span><span class="action-btn-sub">pull --rebase</span></button>
+        <button class="action-btn" id="btn-fpush" style="border-color:var(--yellow-dim)">${I.up}<span class="action-btn-label" style="color:var(--yellow)">强制推送</span><span class="action-btn-sub">--force</span></button>
+        <button class="action-btn" id="btn-fpull" style="border-color:var(--red-dim)">${I.down}<span class="action-btn-label" style="color:var(--red)">强制拉取</span><span class="action-btn-sub">reset --hard</span></button>
+      </div>
+    </div>
+  </div>`
+
+  // 历史 & 分支
+  const lc = s.lastCommit
+  const bottomCards = `
+    <div class="card" id="btn-view-log" style="cursor:pointer">
+      <div class="card-header"><span class="card-title">提交历史</span><span class="text-xs" style="color:var(--accent)">查看全部 →</span></div>
+      ${lc?`<div class="card-body">
+        <div class="row"><span class="badge badge-branch code">${esc(lc.shortHash)}</span>
+        <span class="text-sm flex1" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(lc.message||'')}</span></div>
+        <div class="text-xs mt8">${esc(lc.author||'')} · ${fmtDate(lc.date)}</div>
+      </div>`:`<div class="card-body text-xs">暂无提交</div>`}
+    </div>
+    <div class="card" id="btn-view-branches" style="cursor:pointer">
+      <div class="card-header"><span class="card-title">分支管理</span><span class="text-xs" style="color:var(--accent)">管理 →</span></div>
+      <div class="card-body row">
+        <span class="badge badge-branch code">${I.branch}${esc(s.branch||'main')}</span>
+        <span class="text-xs flex1">共 ${(s.branches||[]).filter(b=>!b.startsWith('remotes/')).length} 个本地分支</span>
+      </div>
+    </div>`
+
+  return statusCard + filesCard + commitCard + remoteCard + bottomCards
+}
+
+function vInitGuide() {
+  return `<div class="card">
+    <div class="card-header"><span class="card-title">初始化并推送到 GitHub</span></div>
+    <div class="card-body">
+      <div class="text-sm" style="margin-bottom:12px;color:var(--text2);line-height:1.6">
+        此目录尚未初始化 Git。<br>将执行：<span class="code" style="color:var(--accent)">init → add → commit → push</span>
+      </div>
+      <div class="text-xs code" style="margin-bottom:12px;background:var(--bg3);padding:8px;border-radius:var(--radius-sm);word-break:break-all">${esc(S.currentRepo?.path||'')}</div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="input-group"><label class="input-label">GitHub 仓库 SSH 地址</label>
+          <input class="input code" id="init-url" placeholder="git@github.com:username/repo.git"/></div>
+        <div class="input-group"><label class="input-label">默认分支名</label>
+          <input class="input code" id="init-branch" value="main"/></div>
+        <div class="input-group"><label class="input-label">初始提交信息</label>
+          <input class="input" id="init-msg" value="Initial commit"/></div>
+        <div class="text-xs" style="color:var(--text3)">还没有 GitHub 仓库？
+          <button id="btn-goto-gh" style="background:none;border:none;color:var(--accent);font-size:11px;cursor:pointer;font-family:var(--font-ui);padding:0">前往创建 →</button>
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-do-init-push">${I.init}初始化并推送</button>
+      </div>
+    </div>
+  </div>`
+}
+
+// ═══════ 分支管理 ═══════
+function vBranches() {
+  const s = S.currentStatus
+  if (!s) return ''
+  const branchIcon = '<span style="width:14px;height:14px;display:inline-flex;flex-shrink:0;color:var(--text3)">' + I.branch + '</span>'
+  // 收集本地分支名列表，用于去重远程分支
+  const localBranches = (s.branches||[]).filter(b => !b.startsWith('remotes/')).map(b => b.replace(/^\*?\s*/,'').trim())
+  const items = (s.branches||[]).map(b => {
+    const isRemote = b.startsWith('remotes/')
+    const display = b.replace(/^remotes\/origin\//, '').replace(/^\*?\s*/,'').trim()
+    // 跳过 HEAD 指针
+    if (display.includes('HEAD')) return ''
+    // 跳过 remote 中与本地同名的分支（避免重复）
+    if (isRemote && localBranches.includes(display)) return ''
+    const isCur = display === s.branch
+    return `<div class="branch-item">
+      ${branchIcon}
+      <span class="branch-name ${isCur?'current':''}">${esc(display)}${isRemote?' <span style="font-size:9px;color:var(--text3)">(remote)</span>':''}</span>
+      ${isCur
+        ? '<span class="badge badge-clean" style="font-size:9px;padding:2px 6px">当前</span>'
+        : `<button class="sm-btn" data-checkout="${esc(display)}" style="font-size:11px">切换</button>`}
+    </div>`
+  }).filter(Boolean).join('')
+  return `<div class="card"><div style="overflow:hidden;border-radius:var(--radius)">${items||'<div class="text-xs" style="padding:14px;text-align:center">暂无分支</div>'}</div></div>`
+}
+
+// ═══════ SSH ═══════
+function vSsh() {
+  const keys = S.sshKeys
+  const kHtml = keys.length ? keys.map(k=>`
+    <div class="ssh-key-card">
+      <div class="ssh-key-icon">${I.key}</div>
+      <div class="flex1"><div class="ssh-key-name">${esc(k.name)}</div><div class="ssh-key-type">${esc(k.keyType)}</div></div>
+      <button class="icon-btn" data-copy-key="${k.name}">${I.copy}</button>
+    </div>`).join('') :
+    `<div class="empty-state" style="padding:22px"><div class="empty-icon">${I.key}</div><div class="empty-title">未找到 SSH Key</div><div class="empty-sub">~/.ssh/ 下无密钥对</div></div>`
+
+  return `
+    <div class="card">
+      <div class="card-header"><span class="card-title">GitHub SSH 连接</span>
+        <button class="btn btn-ghost" id="btn-test-ssh" style="padding:5px 11px;font-size:12px">测试</button></div>
+      <div class="card-body"><div id="ssh-result" class="text-sm" style="color:var(--text3)">点击测试</div></div>
+    </div>
+    <div class="section-title">密钥列表</div>
+    <div style="display:flex;flex-direction:column;gap:7px">${kHtml}</div>
+    ${!keys.length?`<div class="card"><div class="card-header"><span class="card-title">配置引导</span></div><div class="card-body">
+      <div class="step-list">
+        <div class="step-item"><div class="step-num">1</div><div><div class="step-title">生成密钥</div><div class="step-desc">使用下方表单</div></div></div>
+        <div class="step-item"><div class="step-num">2</div><div><div class="step-title">复制公钥到 GitHub</div><div class="step-desc">Settings → SSH keys → New SSH key</div></div></div>
+        <div class="step-item"><div class="step-num">3</div><div><div class="step-title">测试连接</div><div class="step-desc">点击上方测试按钮</div></div></div>
+      </div>
+    </div></div>`:''}
+    <div class="card">
+      <div class="card-header"><span class="card-title">生成新密钥</span></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:9px">
+        <div class="input-group"><label class="input-label">密钥名称</label><input class="input code" id="ssh-name" placeholder="id_ed25519_github"/></div>
+        <div class="input-group"><label class="input-label">邮箱（注释）</label><input class="input" id="ssh-email" placeholder="you@example.com"/></div>
+        <button class="btn btn-primary" id="btn-gen-key">${I.key}生成密钥</button>
+      </div>
+    </div>`
+}
+
+// ═══════ Log ═══════
+function vLog() {
+  if (!S.logEntries.length) return `<div class="empty-state"><div class="empty-icon">${I.log}</div><div class="empty-title">暂无提交</div></div>`
+  return `<div class="card"><div style="overflow:hidden;border-radius:var(--radius)">${
+    S.logEntries.map(c=>`<div class="log-item">
+      <span class="log-hash">${esc(c.shortHash)}</span>
+      <div class="log-info">
+        <div class="log-message">${esc(c.message||'')}</div>
+        <div class="log-meta">${esc(c.author||'')} · ${fmtDate(c.date)}</div>
+      </div>
+      <div class="log-actions">
+        <button class="sm-btn" data-detail="${c.hash}">${I.eye}</button>
+        <button class="sm-btn" data-revert="${c.hash}">${I.revert}</button>
+        <button class="sm-btn danger" data-reset="${c.hash}">Reset</button>
+      </div>
+    </div>`).join('')
+  }</div></div>`
+}
+
+// ═══════ 提交详情 ═══════
+function vCommitDetail() {
+  const d = S.commitDetail
+  if (!d) return `<div class="loading-center"><div class="spinner"></div></div>`
+  const stat = (d.stat||'').split('\n').map(l=>`<div class="diff-line normal">${esc(l)}</div>`).join('')
+  const diff = (d.diff||'').split('\n').map(l=>{
+    let c='normal'
+    if(l.startsWith('+')&&!l.startsWith('+++'))c='add'
+    else if(l.startsWith('-')&&!l.startsWith('---'))c='del'
+    else if(l.startsWith('@@'))c='hunk'
+    return `<div class="diff-line ${c}">${esc(l)}</div>`
+  }).join('')
+  return `<div class="card"><div class="card-body" style="padding:0"><div class="diff-block">${stat}</div></div></div>
+    <div class="section-title">Diff</div>
+    <div class="card"><div class="card-body" style="padding:0"><div class="diff-block">${diff||'<span style="color:var(--text3)">无变更</span>'}</div></div></div>`
+}
+
+// ═══════ Diff ═══════
+function vDiff() {
+  if (!S.diffContent) return `<div class="empty-state"><div class="empty-title">无变更</div></div>`
+  const lines = S.diffContent.split('\n').map(l=>{
+    let c='normal'
+    if(l.startsWith('+')&&!l.startsWith('+++'))c='add'
+    else if(l.startsWith('-')&&!l.startsWith('---'))c='del'
+    else if(l.startsWith('@@'))c='hunk'
+    return `<div class="diff-line ${c}">${esc(l)}</div>`
+  }).join('')
+  return `<div class="card"><div class="card-body" style="padding:0"><div class="diff-block">${lines}</div></div></div>`
+}
+
+// ═══════ GitHub ═══════
+function vGithub() {
+  const u = S.githubUser
+  const auth = u ? `<div class="card">
+    <div class="card-header"><span class="card-title">已登录</span>
+      <button class="btn btn-ghost" id="btn-logout" style="padding:5px 11px;font-size:12px;color:var(--red)">退出</button></div>
+    <div class="card-body row"><div class="ssh-key-icon">${I.github}</div>
+      <div><div class="ssh-key-name">@${esc(u.username)}</div><div class="ssh-key-type">已授权</div></div>
+    </div>
+  </div>` : `<div class="card">
+    <div class="card-header"><span class="card-title">GitHub PAT 认证</span></div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:9px">
+      <div class="text-sm" style="color:var(--text2)">需要 Personal Access Token 才能创建仓库</div>
+      <div class="input-group"><label class="input-label">PAT（repo 权限）</label>
+        <input class="input code" id="gh-pat" type="password" placeholder="ghp_xxxxxxxxxxxx"/></div>
+      <button class="btn btn-primary" id="btn-save-pat">${I.github}验证并保存</button>
+      <div class="text-xs" style="color:var(--text3);line-height:1.5">GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → repo 权限</div>
+    </div>
+  </div>`
+
+  const create = u ? `
+    <div class="section-title">在 GitHub 上新建远程仓库</div>
+    <div class="card">
+      <div class="card-body" style="display:flex;flex-direction:column;gap:9px">
+        <div class="text-xs" style="color:var(--text3);line-height:1.5;margin-bottom:2px">在你的 GitHub 账号下创建一个新仓库（需要 PAT）</div>
+        <div class="input-group"><label class="input-label">仓库名称</label><input class="input code" id="gh-name" placeholder="my-project"/></div>
+        <div class="input-group"><label class="input-label">描述（可选）</label><input class="input" id="gh-desc" placeholder="..."/></div>
+        <div class="toggle-row"><span class="toggle-label">私有仓库</span><div class="toggle ${S._privateToggle?'on':''}" id="tog-private"></div></div>
+        <button class="btn btn-primary btn-full" id="btn-create-repo">${I.github}创建 GitHub 仓库</button>
+        <div id="create-result"></div>
+      </div>
+    </div>
+    <div class="section-title">初始化本地仓库</div>
+    <div class="card">
+      <div class="card-body" style="display:flex;flex-direction:column;gap:9px">
+        <div class="text-xs" style="color:var(--text3);line-height:1.5;margin-bottom:2px">在指定目录执行 <span class="code" style="color:var(--accent)">git init</span>，不涉及 GitHub</div>
+        <div class="input-group"><label class="input-label">本地目录路径</label>
+          <input class="input code" id="local-init-path" placeholder="~/projects/myapp"/></div>
+        <button class="btn btn-ghost btn-full" id="btn-local-init">${I.init}仅本地 git init</button>
+        <div id="local-init-result"></div>
+      </div>
+    </div>` : `
+    <div class="section-title">初始化本地仓库</div>
+    <div class="card">
+      <div class="card-body" style="display:flex;flex-direction:column;gap:9px">
+        <div class="text-xs" style="color:var(--text3);line-height:1.5;margin-bottom:2px">在指定目录执行 <span class="code" style="color:var(--accent)">git init</span>，不涉及 GitHub</div>
+        <div class="input-group"><label class="input-label">本地目录路径</label>
+          <input class="input code" id="local-init-path" placeholder="~/projects/myapp"/></div>
+        <button class="btn btn-ghost btn-full" id="btn-local-init">${I.init}仅本地 git init</button>
+        <div id="local-init-result"></div>
+      </div>
+    </div>`
+
+  return auth + create
+}
+
+// ═══════ 事件绑定 ═══════
+function attachEvents() {
+  document.getElementById('bb')?.addEventListener('click', () => {
+    if (['log','diff','commitDetail','branches'].includes(S.view)) navTo('repo')
+    else { navTo('repos'); loadRepos() }
+  })
+
+  if (S.view === 'repos') {
+    document.getElementById('btn-refresh')?.addEventListener('click', loadRepos)
+    document.getElementById('btn-ssh')?.addEventListener('click', ()=>{ navTo('ssh'); loadSsh() })
+    document.getElementById('btn-gh')?.addEventListener('click', ()=>{ navTo('github'); loadGhUser() })
+    document.getElementById('btn-clone')?.addEventListener('click', showCloneModal)
+    document.getElementById('btn-add')?.addEventListener('click', ()=>showAddModal())
+    document.getElementById('btn-add-e')?.addEventListener('click', ()=>showAddModal())
+    document.getElementById('btn-clone-e')?.addEventListener('click', showCloneModal)
+    document.getElementById('btn-init-e')?.addEventListener('click', showInitModal)
+    // 仓库卡片点击（排除删除按钮）
+    document.querySelectorAll('.repo-card').forEach(c => {
+      c.addEventListener('click', e => { if (!e.target.closest('[data-del]')) openRepo(c.dataset.id) })
+    })
+    // 删除仓库
+    document.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const id = btn.dataset.del
+        const repo = S.repos.find(r=>r.id===id)
+        showConfirm('移除仓库', `从列表移除「${repo?.name||''}」？\n（不会删除本地文件）`, async ()=>{
+          await $del(`/repos/${id}`).catch(()=>{})
+          S.repos = S.repos.filter(r=>r.id!==id)
+          render()
+          toast('已移除', 'info')
+        })
+      })
+    })
+  }
+
+  if (S.view === 'repo') {
+    document.getElementById('btn-refresh-repo')?.addEventListener('click', refreshRepo)
+    document.getElementById('branch-badge')?.addEventListener('click', ()=>{ navTo('branches') })
+    document.getElementById('btn-view-branches')?.addEventListener('click', ()=>{ navTo('branches') })
+
+    // 文件勾选
+    document.getElementById('sel-all')?.addEventListener('click', ()=>{
+      S.currentStatus?.files?.forEach(f=>S.selectedFiles.add(f.path)); render()
+    })
+    document.getElementById('sel-none')?.addEventListener('click', ()=>{ S.selectedFiles.clear(); render() })
+    document.querySelectorAll('.file-cb').forEach(cb => cb.addEventListener('change', ()=>{
+      cb.checked ? S.selectedFiles.add(cb.dataset.path) : S.selectedFiles.delete(cb.dataset.path)
+    }))
+    document.querySelectorAll('[data-diff-file]').forEach(el => el.addEventListener('click', async ()=>{
+      await loadFileDiff(el.dataset.diffFile); navTo('diff')
+    }))
+
+    document.getElementById('btn-stage-sel')?.addEventListener('click', ()=>{ const f=[...S.selectedFiles]; if(!f.length){toast('请先勾选文件','warn');return}; runOp('stage',{files:f}) })
+    document.getElementById('btn-unstage-sel')?.addEventListener('click', ()=>{ runOp('unstage',{files:[...S.selectedFiles]}) })
+    document.getElementById('btn-stage-all')?.addEventListener('click', ()=>runOp('stage',{files:[]}))
+
+    document.getElementById('tog-staged')?.addEventListener('click', e=>{ S._commitStaged=!S._commitStaged; e.target.classList.toggle('on',S._commitStaged) })
+    document.getElementById('commit-msg')?.addEventListener('input', e=>{ S._commitMsg=e.target.value })
+
+    document.getElementById('btn-do-commit')?.addEventListener('click', async ()=>{
+      const msg = document.getElementById('commit-msg')?.value?.trim()
+      if (!msg) { toast('请输入提交信息','warn'); return }
+      await runOp('commit', { message:msg, stageAll:!S._commitStaged })
+      S._commitMsg=''
+    })
+    document.getElementById('btn-view-diff')?.addEventListener('click', async ()=>{ await loadDiff(); S.diffTitle='工作区变更'; navTo('diff') })
+
+    document.getElementById('btn-set-remote')?.addEventListener('click', showSetRemoteModal)
+    document.getElementById('btn-change-remote')?.addEventListener('click', showSetRemoteModal)
+    document.getElementById('btn-push')?.addEventListener('click', ()=>runOp('push',{}))
+    document.getElementById('btn-pull')?.addEventListener('click', ()=>runOp('pull',{}))
+    document.getElementById('btn-fpush')?.addEventListener('click', ()=>
+      showConfirm('强制推送','将覆盖远程历史，不可逆，确认？',()=>runOp('push',{force:true}),'danger'))
+    document.getElementById('btn-fpull')?.addEventListener('click', ()=>
+      showConfirm('强制拉取','将丢弃本地所有未提交变更，确认？',()=>runOp('pull',{force:true}),'danger'))
+
+    document.getElementById('btn-view-log')?.addEventListener('click', async ()=>{ await loadLog(); navTo('log') })
+    document.getElementById('btn-do-init-push')?.addEventListener('click', async ()=>{
+      const url=document.getElementById('init-url')?.value?.trim()
+      const branch=document.getElementById('init-branch')?.value?.trim()||'main'
+      const msg=document.getElementById('init-msg')?.value?.trim()||'Initial commit'
+      if (!url){toast('请输入远程仓库地址','warn');return}
+      await runOp('init-push',{remoteUrl:url,branch,message:msg})
+    })
+    document.getElementById('btn-goto-gh')?.addEventListener('click', ()=>{ navTo('github'); loadGhUser() })
+  }
+
+  if (S.view === 'branches') {
+    document.getElementById('btn-new-branch')?.addEventListener('click', showNewBranchModal)
+    document.querySelectorAll('[data-checkout]').forEach(btn=>btn.addEventListener('click', async e=>{
+      e.stopPropagation()
+      await runOp('checkout',{branch:btn.dataset.checkout})
+    }))
+  }
+
+  if (S.view === 'log') {
+    document.querySelectorAll('[data-detail]').forEach(btn=>btn.addEventListener('click', async ()=>{
+      S.commitDetail=null; navTo('commitDetail')
+      S.commitDetail = await $get(`/git/${S.currentRepo.id}/log/${btn.dataset.detail}`).catch(()=>null)
+      render()
+    }))
+    document.querySelectorAll('[data-revert]').forEach(btn=>btn.addEventListener('click', ()=>
+      showConfirm('Revert 提交',`创建新提交撤销 ${btn.dataset.revert.slice(0,7)}，确认？`,()=>runOp('revert',{hash:btn.dataset.revert}))))
+    document.querySelectorAll('[data-reset]').forEach(btn=>btn.addEventListener('click',()=>showResetModal(btn.dataset.reset)))
+  }
+
+  if (S.view === 'ssh') {
+    document.getElementById('btn-test-ssh')?.addEventListener('click', testSsh)
+    document.getElementById('btn-gen-key')?.addEventListener('click', genKey)
+    document.querySelectorAll('[data-copy-key]').forEach(btn=>btn.addEventListener('click', async ()=>{
+      const r=await $get(`/ssh/pubkey/${btn.dataset.copyKey}`).catch(()=>null)
+      if(r?.pubKey) showPubKeyModal(r.pubKey,btn.dataset.copyKey)
+    }))
+  }
+
+  if (S.view === 'github') {
+    document.getElementById('btn-save-pat')?.addEventListener('click', savePat)
+    document.getElementById('btn-logout')?.addEventListener('click', async ()=>{
+      await $del('/github/pat').catch(()=>{})
+      S.githubUser=null; render()
+    })
+    document.getElementById('tog-private')?.addEventListener('click', e=>{
+      S._privateToggle=!S._privateToggle; e.target.classList.toggle('on',S._privateToggle)
+    })
+    document.getElementById('btn-create-repo')?.addEventListener('click', createRepo)
+    document.getElementById('btn-local-init')?.addEventListener('click', doLocalInit)
+  }
+}
+
+// ═══════ 数据加载 ═══════
+async function loadRepos() {
+  S.loading=true; render()
+  S.repos = await $get('/repos').catch(()=>[])
+  S.loading=false; render()
+}
+
+async function openRepo(id) {
+  const r = S.repos.find(r=>r.id===id)
+  S.currentRepo=r; S.repoError=r.error; S.currentStatus=r.status
+  S.selectedFiles.clear(); S._commitMsg=''; S._commitStaged=false
+  navTo('repo')
+}
+
+async function refreshRepo() {
+  if (!S.currentRepo) return
+  try {
+    S.currentStatus = await $get(`/repos/${S.currentRepo.id}/status`)
+    S.repoError=null
+  } catch(e) { S.repoError=e.message; S.currentStatus=null }
+  render()
+}
+
+async function loadSsh() {
+  const [keys] = await Promise.all([$get('/ssh/keys')]).catch(()=>[[]])
+  S.sshKeys = Array.isArray(keys)?keys:[]
+  render()
+}
+
+async function loadLog() {
+  S.logEntries = await $get(`/git/${S.currentRepo.id}/log`).catch(()=>[])
+}
+
+async function loadDiff() {
+  const r = await $get(`/git/${S.currentRepo.id}/diff`).catch(()=>({diff:''}))
+  S.diffContent = r.diff||''
+}
+
+async function loadFileDiff(path) {
+  const r = await $get(`/git/${S.currentRepo.id}/diff/file?path=${encodeURIComponent(path)}`).catch(()=>({diff:''}))
+  S.diffContent=r.diff||''; S.diffTitle=path.split('/').pop()
+}
+
+async function loadGhUser() {
+  const r = await $get('/github/pat').catch(()=>null)
+  S.githubUser = r?.hasPat ? {username:r.username} : null
+  render()
+}
+
+async function testSsh() {
+  const el=document.getElementById('ssh-result')
+  if(el) el.innerHTML='<span style="color:var(--text3)">测试中...</span>'
+  const r = await $get('/ssh/test').catch(e=>({success:false,message:e.message}))
+  if(el) el.innerHTML = r.success
+    ? `<span style="color:var(--green)">✓ 已连接：<b>@${esc(r.username)}</b></span>`
+    : `<span style="color:var(--red)">✗ 连接失败<br><span class="code" style="font-size:10px">${esc(r.message)}</span></span>`
+}
+
+async function genKey() {
+  const name=document.getElementById('ssh-name')?.value?.trim()||'id_ed25519_gitmob'
+  const email=document.getElementById('ssh-email')?.value?.trim()||''
+  const btn=document.getElementById('btn-gen-key')
+  btn.disabled=true; btn.textContent='生成中...'
+  try {
+    const r=await $post('/ssh/generate',{name,email})
+    showPubKeyModal(r.pubKey,r.name)
+    await loadSsh()
+  } catch(e) { toast(e.message==='KEY_EXISTS'?'密钥已存在':e.message,'error') }
+  finally { btn.disabled=false; btn.innerHTML=I.key+'生成密钥' }
+}
+
+async function savePat() {
+  const pat=document.getElementById('gh-pat')?.value?.trim()
+  if(!pat){toast('请输入 PAT','warn');return}
+  const btn=document.getElementById('btn-save-pat')
+  btn.disabled=true; btn.textContent='验证中...'
+  try {
+    const r=await $post('/github/pat',{pat})
+    S.githubUser={username:r.username}; render(); toast(`已登录 @${r.username}`,'success')
+  } catch(e) { toast(e.message==='INVALID_PAT'?'PAT 无效或权限不足':e.message,'error') }
+  finally { btn.disabled=false; btn.innerHTML=I.github+'验证并保存' }
+}
+
+async function createRepo() {
+  const name=document.getElementById('gh-name')?.value?.trim()
+  const desc=document.getElementById('gh-desc')?.value?.trim()
+  if(!name){toast('请输入仓库名称','warn');return}
+  const btn=document.getElementById('btn-create-repo')
+  btn.disabled=true; btn.textContent='创建中...'
+  try {
+    const r=await $post('/github/repos',{name,description:desc,isPrivate:S._privateToggle})
+    const el=document.getElementById('create-result')
+    if(el) el.innerHTML=`<div style="margin-top:8px;background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:11px">
+      <div style="color:var(--green);font-weight:600;margin-bottom:5px">✓ 仓库创建成功</div>
+      <div class="text-xs code" style="word-break:break-all;margin-bottom:7px">${esc(r.sshUrl)}</div>
+      <button class="btn btn-ghost btn-full" style="font-size:11px" id="copy-ssh" data-url="${esc(r.sshUrl)}">${I.copy}复制 SSH 地址</button>
+    </div>`
+    document.getElementById('copy-ssh')?.addEventListener('click', async e=>{
+      await navigator.clipboard.writeText(e.currentTarget.dataset.url).catch(()=>{})
+      toast('已复制','success')
+    })
+    toast(`${r.name} 创建成功`,'success')
+  } catch(e) { toast(e.message,'error') }
+  finally { btn.disabled=false; btn.innerHTML=I.plus+'创建仓库' }
+}
+
+// ═══════ Git 操作执行 ═══════
+async function runOp(op, params) {
+  const id = S.currentRepo?.id
+  if (!id && op!=='clone') return
+  const names={push:'推送',pull:'拉取',commit:'提交','init-push':'初始化推送',stage:'暂存',unstage:'取消暂存',revert:'Revert',reset:'Reset',checkout:'切换分支',branch:'创建分支'}
+  const t=toast(`${names[op]||op}中...`,'info',99999)
+  try {
+    let r
+    if(op==='push') r=await $post(`/git/${id}/push`,params)
+    else if(op==='pull') r=await $post(`/git/${id}/pull`,params)
+    else if(op==='commit') r=await $post(`/git/${id}/commit`,params)
+    else if(op==='init-push') r=await $post(`/git/${id}/init-push`,params)
+    else if(op==='stage') r=await $post(`/git/${id}/stage`,params)
+    else if(op==='unstage') r=await $post(`/git/${id}/unstage`,params)
+    else if(op==='revert') r=await $post(`/git/${id}/revert/${params.hash}`,{})
+    else if(op==='reset') r=await $post(`/git/${id}/reset`,params)
+    else if(op==='checkout') r=await $post(`/git/${id}/checkout`,params)
+    else if(op==='branch') r=await $post(`/git/${id}/branch`,params)
+
+    t.remove()
+    if(r?.skipped) {
+      toast(r.reason==='nothing_to_push'?'已是最新，无需推送（本地与远程一致）'
+        :r.reason==='already_up_to_date'?'已是最新，无需拉取'
+        :'已跳过','info')
+    } else {
+      toast(`${names[op]||op}成功`,'success')
+    }
+    S.selectedFiles.clear()
+    await refreshRepo()
+    if(op==='init-push') S.repoError=null
+  } catch(e) {
+    t.remove()
+    // 推送时 no upstream branch → 弹出设置远程对话框
+    if (op === 'push' && (e.message.includes('no upstream') || e.message.includes('set-upstream') || e.message.includes('has no upstream'))) {
+      showSetRemoteModal()
+    } else {
+      toast(parseGitErr(e.message),'error',4500)
+    }
+  }
+}
+
+// ═══════ Modals ═══════
+function showAddModal() {
+  const ov=mkOv('center')
+  ov.innerHTML=`<div class="modal">
+    <div class="modal-title">${I.folder}添加已有本地仓库</div>
+    <div class="text-sm" style="color:var(--text2);margin-bottom:12px;line-height:1.5">将一个本地目录加入 GitMob 管理列表<br>（目录必须已存在，可以是未 git init 的）</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group"><label class="input-label">目录路径</label>
+        <input class="input code" id="add-path" placeholder="~/projects/myapp"/></div>
+      <div class="input-group"><label class="input-label">显示名称（可选）</label>
+        <input class="input" id="add-name" placeholder="自动使用目录名"/></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="add-cancel">取消</button>
+        <button class="btn btn-primary flex1" id="add-ok">${I.plus}添加</button>
+      </div>
+    </div>
+  </div>`
+  ov.querySelector('#add-cancel').onclick=()=>ov.remove()
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove()})
+  ov.querySelector('#add-ok').onclick=async()=>{
+    const path=ov.querySelector('#add-path').value.trim()
+    const name=ov.querySelector('#add-name').value.trim()
+    if(!path){toast('请输入路径','warn');return}
+    const btn=ov.querySelector('#add-ok'); btn.disabled=true; btn.textContent='添加中...'
+    try {
+      const r=await $post('/repos',{path,name})
+      S.repos.push(r); ov.remove(); render(); toast('仓库已添加','success')
+    } catch(e) {
+      const m={PATH_NOT_FOUND:'路径不存在',NOT_A_DIRECTORY:'不是目录',ALREADY_ADDED:'已添加过'}
+      toast(m[e.message]||e.message,'error')
+      btn.disabled=false; btn.innerHTML=I.plus+'添加'
+    }
+  }
+  setTimeout(()=>ov.querySelector('#add-path').focus(),80)
+}
+
+function showInitModal() {
+  const ov=mkOv('center')
+  ov.innerHTML=`<div class="modal">
+    <div class="modal-title">${I.init}初始化本地目录并推送到 GitHub</div>
+    <div class="text-sm" style="color:var(--text2);margin-bottom:12px;line-height:1.5">填写本地路径 + GitHub 仓库地址，自动完成<br><span class="code" style="color:var(--accent)">init → add → commit → push</span></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group"><label class="input-label">本地目录路径</label>
+        <input class="input code" id="ii-path" placeholder="~/projects/myapp"/></div>
+      <div class="input-group"><label class="input-label">GitHub SSH 地址（已在 GitHub 建好仓库）</label>
+        <input class="input code" id="ii-url" placeholder="git@github.com:user/repo.git"/></div>
+      <div class="input-group"><label class="input-label">默认分支</label>
+        <input class="input code" id="ii-branch" value="main"/></div>
+      <div class="input-group"><label class="input-label">初始提交信息</label>
+        <input class="input" id="ii-msg" value="Initial commit"/></div>
+      <div class="text-xs" style="color:var(--text3)">还没创建 GitHub 仓库？先去
+        <button id="ii-gh" style="background:none;border:none;color:var(--accent);font-size:11px;cursor:pointer;font-family:var(--font-ui);padding:0">GitHub 页面创建 →</button></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="ii-cancel">取消</button>
+        <button class="btn btn-primary flex1" id="ii-ok">${I.init}开始初始化</button>
+      </div>
+    </div>
+  </div>`
+  ov.querySelector('#ii-cancel').onclick=()=>ov.remove()
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove()})
+  ov.querySelector('#ii-gh').onclick=()=>{ ov.remove(); navTo('github'); loadGhUser() }
+  ov.querySelector('#ii-ok').onclick=async()=>{
+    const path=ov.querySelector('#ii-path').value.trim()
+    const url=ov.querySelector('#ii-url').value.trim()
+    const branch=ov.querySelector('#ii-branch').value.trim()||'main'
+    const msg=ov.querySelector('#ii-msg').value.trim()||'Initial commit'
+    if(!path||!url){toast('请填写路径和远程地址','warn');return}
+    const btn=ov.querySelector('#ii-ok'); btn.disabled=true; btn.textContent='初始化中...'
+    try {
+      // 先添加到列表
+      const repo = await $post('/repos',{path,name:path.split('/').pop()}).catch(async ()=>{
+        // 如果已经在列表，查找
+        const repos = await $get('/repos'); return repos.find(r=>r.path===path||r.path.endsWith(path.replace('~','').replace(/^\/+/,'')))
+      })
+      if(repo) { S.currentRepo=repo; S.repoError=null }
+      const r = await $post(`/git/${repo.id}/init-push`,{remoteUrl:url,branch,message:msg})
+      ov.remove()
+      if(!S.repos.find(r=>r.id===repo.id)) S.repos.push(repo)
+      render(); toast('初始化推送成功','success')
+    } catch(e) { toast(parseGitErr(e.message),'error',4000); btn.disabled=false; btn.innerHTML=I.init+'开始初始化' }
+  }
+  setTimeout(()=>ov.querySelector('#ii-path').focus(),80)
+}
+
+function showCloneModal() {
+  const ov=mkOv('center')
+  ov.innerHTML=`<div class="modal">
+    <div class="modal-title">${I.down}克隆 GitHub 仓库到本地</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group"><label class="input-label">远程仓库 URL（SSH）</label>
+        <input class="input code" id="cl-url" placeholder="git@github.com:user/repo.git"/></div>
+      <div class="input-group"><label class="input-label">本地保存路径</label>
+        <input class="input code" id="cl-path" placeholder="~/projects/repo"/></div>
+      <div class="input-group"><label class="input-label">分支（留空用默认）</label>
+        <input class="input code" id="cl-branch" placeholder="main"/></div>
+      <div id="cl-prog" style="display:none;font-size:12px;color:var(--text3)">克隆中，请稍候...</div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="cl-cancel">取消</button>
+        <button class="btn btn-primary flex1" id="cl-ok">${I.down}克隆</button>
+      </div>
+    </div>
+  </div>`
+  ov.querySelector('#cl-cancel').onclick=()=>ov.remove()
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove()})
+  ov.querySelector('#cl-url').addEventListener('blur',e=>{
+    const pi=ov.querySelector('#cl-path')
+    if(!pi.value){ const n=e.target.value.trim().split('/').pop().replace(/\.git$/,''); if(n) pi.value=`~/projects/${n}` }
+  })
+  ov.querySelector('#cl-ok').onclick=async()=>{
+    const url=ov.querySelector('#cl-url').value.trim()
+    const path=ov.querySelector('#cl-path').value.trim()
+    const branch=ov.querySelector('#cl-branch').value.trim()||null
+    if(!url||!path){toast('请填写完整信息','warn');return}
+    const btn=ov.querySelector('#cl-ok'); btn.disabled=true
+    btn.innerHTML='<span class="spinner" style="width:13px;height:13px;border-width:2px"></span>克隆中...'
+    ov.querySelector('#cl-prog').style.display='block'
+    try {
+      const r=await $post('/git/clone',{remoteUrl:url,localPath:path,branch})
+      const name=url.split('/').pop().replace(/\.git$/,'')
+      const repo=await $post('/repos',{path:r.path,name}).catch(()=>null)
+      if(repo) S.repos.push(repo)
+      ov.remove(); render(); toast('克隆成功','success')
+    } catch(e) {
+      ov.querySelector('#cl-prog').style.display='none'
+      btn.disabled=false; btn.innerHTML=I.down+'克隆'
+      toast(parseGitErr(e.message),'error',4000)
+    }
+  }
+  setTimeout(()=>ov.querySelector('#cl-url').focus(),80)
+}
+
+function showNewBranchModal() {
+  const ov=mkOv('center')
+  ov.innerHTML=`<div class="modal">
+    <div class="modal-title">${I.branch}新建分支</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group"><label class="input-label">分支名称</label>
+        <input class="input code" id="nb-name" placeholder="feature/my-feature"/></div>
+      <div class="toggle-row"><span class="toggle-label">创建后立即切换</span><div class="toggle on" id="nb-checkout"></div></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="nb-cancel">取消</button>
+        <button class="btn btn-primary flex1" id="nb-ok">${I.branch}创建</button>
+      </div>
+    </div>
+  </div>`
+  let doCheckout=true
+  ov.querySelector('#nb-checkout').addEventListener('click',e=>{ doCheckout=!doCheckout; e.target.classList.toggle('on',doCheckout) })
+  ov.querySelector('#nb-cancel').onclick=()=>ov.remove()
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove()})
+  ov.querySelector('#nb-ok').onclick=async()=>{
+    const name=ov.querySelector('#nb-name').value.trim()
+    if(!name){toast('请输入分支名','warn');return}
+    await runOp('branch',{name,checkout:doCheckout})
+    ov.remove()
+  }
+  setTimeout(()=>ov.querySelector('#nb-name').focus(),80)
+}
+
+function showConfirm(title,msg,onOk,type='default') {
+  const ov=mkOv('center')
+  ov.innerHTML=`<div class="modal">
+    <div class="row" style="margin-bottom:9px"><span style="color:var(--${type==='danger'?'red':'accent'})">${I.warning}</span>
+    <div class="modal-title" style="margin:0">${esc(title)}</div></div>
+    <div class="text-sm" style="margin-bottom:16px;line-height:1.6;color:var(--text2)">${esc(msg)}</div>
+    <div class="btn-row"><button class="btn btn-ghost flex1" id="cn">取消</button>
+    <button class="btn ${type==='danger'?'btn-danger':'btn-primary'} flex1" id="cy">确认</button></div>
+  </div>`
+  ov.querySelector('#cn').onclick=()=>ov.remove()
+  ov.querySelector('#cy').onclick=()=>{ov.remove();onOk()}
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove()})
+}
+
+function showResetModal(hash) {
+  const ov=mkOv('center')
+  ov.innerHTML=`<div class="modal">
+    <div class="modal-title">Reset 到 ${esc(hash.slice(0,7))}</div>
+    <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:14px">
+      ${[['soft','Soft','保留工作区 + 暂存区'],['mixed','Mixed（默认）','保留工作区，清空暂存区'],['hard','Hard ⚠','丢弃所有变更（不可逆）']].map(([v,l,d])=>`
+        <label class="row" style="gap:10px;padding:10px;background:var(--bg3);border-radius:var(--radius-sm);cursor:pointer">
+          <input type="radio" name="rm" value="${v}" ${v==='mixed'?'checked':''} style="accent-color:var(--${v==='hard'?'red':'accent'})">
+          <div><div class="text-sm" style="${v==='hard'?'color:var(--red)':''}">${l}</div><div class="text-xs">${d}</div></div>
+        </label>`).join('')}
+    </div>
+    <div class="btn-row"><button class="btn btn-ghost flex1" id="rs-no">取消</button>
+    <button class="btn btn-warning flex1" id="rs-yes">确认 Reset</button></div>
+  </div>`
+  ov.querySelector('#rs-no').onclick=()=>ov.remove()
+  ov.querySelector('#rs-yes').onclick=()=>{
+    const mode=ov.querySelector('[name=rm]:checked')?.value||'mixed'
+    ov.remove()
+    if(mode==='hard') showConfirm('确认 Hard Reset','将永久丢弃所有未提交变更！',()=>runOp('reset',{hash,mode}),'danger')
+    else runOp('reset',{hash,mode})
+  }
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove()})
+}
+
+function showSetRemoteModal() {
+  const repo = S.currentRepo
+  const ov = mkOv('center')
+  const current = S.currentStatus?.remoteUrl || ''
+  ov.innerHTML = `<div class="modal">
+    <div class="modal-title">${I.branch}设置远程仓库地址</div>
+    <div class="text-sm" style="color:var(--text2);margin-bottom:12px;line-height:1.5">
+      设置后将自动建立 upstream 追踪，下次推送/拉取不再需要手动指定
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="input-group"><label class="input-label">远程仓库 SSH 地址</label>
+        <input class="input code" id="sr-url" value="${esc(current)}" placeholder="git@github.com:user/repo.git"/></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="sr-cancel">取消</button>
+        <button class="btn btn-primary flex1" id="sr-ok">${I.branch}确认设置</button>
+      </div>
+    </div>
+  </div>`
+  ov.querySelector('#sr-cancel').onclick = () => ov.remove()
+  ov.addEventListener('click', e => { if(e.target===ov) ov.remove() })
+  ov.querySelector('#sr-ok').onclick = async () => {
+    const url = ov.querySelector('#sr-url').value.trim()
+    if (!url) { toast('请输入地址','warn'); return }
+    const btn = ov.querySelector('#sr-ok'); btn.disabled=true; btn.textContent='设置中...'
+    try {
+      await $post(`/git/${repo.id}/remote`, { url })
+      ov.remove()
+      toast('远程地址已设置，现在可以推送了','success')
+      await refreshRepo()
+    } catch(e) { toast(e.message,'error'); btn.disabled=false; btn.innerHTML=I.branch+'确认设置' }
+  }
+  setTimeout(() => { const inp=ov.querySelector('#sr-url'); inp.focus(); inp.select() }, 80)
+}
+
+async function doLocalInit() {
+  const path = document.getElementById('local-init-path')?.value?.trim()
+  if (!path) { toast('请输入目录路径','warn'); return }
+  const btn = document.getElementById('btn-local-init')
+  btn.disabled=true; btn.textContent='初始化中...'
+  try {
+    // 先添加到仓库列表
+    const name = path.split('/').pop()
+    let repo = S.repos.find(r => r.path === path || r.path.endsWith(path.replace(/^~\//, '/')))
+    if (!repo) {
+      repo = await $post('/repos', { path, name }).catch(() => null)
+      if (repo) S.repos.push(repo)
+    }
+    if (!repo) throw new Error('无法添加仓库，请检查路径')
+    const r = await $post(`/git/${repo.id}/init-local`, {})
+    const el = document.getElementById('local-init-result')
+    if (el) el.innerHTML = `<div style="margin-top:6px;background:var(--green-dim);border:1px solid var(--green);border-radius:var(--radius-sm);padding:10px">
+      <div style="color:var(--green);font-weight:600;margin-bottom:4px">✓ ${r.alreadyInit?'已是 Git 仓库':'git init 成功'}</div>
+      <div class="text-xs code" style="word-break:break-all;margin-bottom:6px">${esc(path)}</div>
+      <button class="btn btn-ghost btn-full" style="font-size:11px" id="btn-goto-repo-after-init">前往管理该仓库 →</button>
+    </div>`
+    document.getElementById('btn-goto-repo-after-init')?.addEventListener('click', () => {
+      openRepo(repo.id)
+    })
+    toast(r.alreadyInit ? '目录已是 Git 仓库' : 'git init 成功','success')
+  } catch(e) { toast(e.message,'error') }
+  finally { btn.disabled=false; btn.innerHTML=I.init+'仅本地 git init' }
+}
+
+function showPubKeyModal(pubKey,keyName) {
+  const ov=mkOv()
+  ov.innerHTML=`<div class="modal">
+    <div class="modal-title">公钥：${esc(keyName)}</div>
+    <div class="text-sm" style="margin-bottom:9px;color:var(--text2)">复制到 GitHub → Settings → SSH keys → New SSH key</div>
+    <div class="pubkey-box">${esc(pubKey)}</div>
+    <div class="btn-row mt10"><button class="btn btn-ghost flex1" id="pk-cl">关闭</button>
+    <button class="btn btn-primary flex1" id="pk-cp">${I.copy}复制公钥</button></div>
+  </div>`
+  ov.querySelector('#pk-cl').onclick=()=>ov.remove()
+  ov.querySelector('#pk-cp').onclick=async()=>{
+    await navigator.clipboard.writeText(pubKey).catch(()=>{})
+    toast('已复制公钥','success')
+  }
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove()})
+}
+
+function mkOv(cls='') {
+  const ov=document.createElement('div'); ov.className=`ov ${cls}`
+  document.body.appendChild(ov); return ov
+}
+
+// ═══════ 工具 ═══════
+function navTo(view){ S.view=view; render(); document.getElementById('pg')?.scrollTo(0,0) }
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+function fmtDate(d){
+  if(!d) return ''
+  const ms=Date.now()-new Date(d)
+  if(ms<60000) return '刚刚'
+  if(ms<3600000) return Math.floor(ms/60000)+'分钟前'
+  if(ms<86400000) return Math.floor(ms/3600000)+'小时前'
+  if(ms<604800000) return Math.floor(ms/86400000)+'天前'
+  return new Date(d).toLocaleDateString('zh-CN',{month:'short',day:'numeric'})
+}
+function parseGitErr(msg){
+  if(!msg) return '操作失败'
+  if(msg.includes('Permission denied')||msg.includes('publickey')) return 'SSH 认证失败，请检查 SSH Key 配置'
+  if(msg.includes('rejected')||msg.includes('non-fast-forward')) return '推送被拒绝，远程有新提交，请先拉取'
+  if(msg.includes('no upstream')||msg.includes('has no upstream')||msg.includes('set-upstream')) return '未设置上游分支，请先配置远程地址'
+  if(msg.includes('No remote')||msg.includes('no remote')) return '未配置远程仓库，请先设置远程地址'
+  if(msg.includes('CONFLICT')) return '存在冲突，请手动解决'
+  if(msg.includes('nothing to commit')) return '没有可提交的变更，请先暂存文件'
+  if(msg.includes('NO_PAT')) return '未配置 GitHub PAT，请前往 GitHub 页面设置'
+  return msg.slice(0,100)
+}
+
+// 启动
+loadRepos()
+</script>
+</body>
+</html>
