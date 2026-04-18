@@ -100,7 +100,7 @@ fun RepoDetailScreen(
     onDiscussionClick: (Int) -> Unit = {},
     onForkedRepoClick: ((String, String) -> Unit)? = null,
     onOwnerClick: ((String) -> Unit)? = null,
-    onEditFile: (path: String, mode: String, branch: String) -> Unit = { _, _, _ -> },
+    onEditFile: (String, String, String, Boolean, Boolean) -> Unit = { _, _, _, _, _ -> },
     vm: RepoDetailViewModel = viewModel {
         val app = checkNotNull(this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY])
         val handle = androidx.lifecycle.SavedStateHandle(mapOf("owner" to owner, "repo" to repoName))
@@ -147,6 +147,7 @@ fun RepoDetailScreen(
     var showVisibilityDialog by remember { mutableStateOf(false) }
     var showTransferDialog by remember { mutableStateOf(false) }
     var showCreateFileDialog by remember { mutableStateOf(false) }
+    var showCreateFileTypeMenu by remember { mutableStateOf(false) }
     var showWatchSheet by remember { mutableStateOf(false) }
     var showToggleIssuesDialog by remember { mutableStateOf(false) }
     var showToggleDiscussionsDialog by remember { mutableStateOf(false) }
@@ -719,12 +720,7 @@ fun RepoDetailScreen(
                             context.startActivity(Intent.createChooser(intent, "分享"))
                         },
                         onAddFile = {
-                            val fullPath = if (state.currentPath.isNotEmpty()) {
-                                "${state.currentPath}/"
-                            } else {
-                                ""
-                            }
-                            onEditFile(fullPath, "NEW", state.currentBranch)
+                            showCreateFileTypeMenu = true
                         },
                         onHistory = {
                             vm.setTab(1)
@@ -1499,6 +1495,80 @@ fun RepoDetailScreen(
         }
     }
 
+    if (showCreateFileTypeMenu) {
+        AlertDialog(
+            onDismissRequest = { showCreateFileTypeMenu = false },
+            containerColor = c.bgCard,
+            title = { Text("创建", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("请选择要创建的类型", fontSize = 14.sp, color = c.textSecondary)
+                }
+            },
+            confirmButton = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            showCreateFileTypeMenu = false
+                            val fullPath = if (state.currentPath.isNotEmpty()) {
+                                "${state.currentPath}/"
+                            } else {
+                                ""
+                            }
+                            onEditFile(fullPath, "NEW", state.currentBranch, false, false)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Coral)
+                    ) {
+                        Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("普通文件")
+                    }
+                    Button(
+                        onClick = {
+                            showCreateFileTypeMenu = false
+                            val fullPath = if (state.currentPath.isNotEmpty()) {
+                                "${state.currentPath}/"
+                            } else {
+                                ""
+                            }
+                            onEditFile(fullPath, "NEW", state.currentBranch, true, false)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = BlueColor)
+                    ) {
+                        Icon(Icons.Default.Link, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("符号链接")
+                    }
+                    Button(
+                        onClick = {
+                            showCreateFileTypeMenu = false
+                            val fullPath = if (state.currentPath.isNotEmpty()) {
+                                "${state.currentPath}/"
+                            } else {
+                                ""
+                            }
+                            onEditFile(fullPath, "NEW", state.currentBranch, false, true)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Green)
+                    ) {
+                        Icon(Icons.Default.AccountTree, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Git 子模块")
+                    }
+                    TextButton(
+                        onClick = { showCreateFileTypeMenu = false },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("取消", color = c.textSecondary)
+                    }
+                }
+            },
+        )
+    }
+
     if (showCreateFileDialog) {
         CreateFileDialog(
             currentPath = state.currentPath,
@@ -2204,6 +2274,8 @@ fun FilesTab(
             } else if (!state.contentsLoading) {
                 items(state.contents, key = { it.path }) { content ->
                     val isDir = content.type == "dir"
+                    val isSymlink = content.type == "symlink"
+                    val isSubmodule = content.submoduleGitUrl != null
                     var showMenu by remember { mutableStateOf(false) }
                     
                     Row(
@@ -2215,14 +2287,31 @@ fun FilesTab(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Icon(
-                            if (isDir) Icons.Default.Folder else Icons.Default.Description,
+                            when {
+                                isDir -> Icons.Default.Folder
+                                isSymlink -> Icons.Default.Link
+                                isSubmodule -> Icons.Default.AccountTree
+                                else -> Icons.Default.Description
+                            },
                             null,
-                            tint     = if (isDir) Yellow else c.textSecondary,
+                            tint = when {
+                                isDir -> Yellow
+                                isSymlink -> BlueColor
+                                isSubmodule -> Green
+                                else -> c.textSecondary
+                            },
                             modifier = Modifier.size(17.dp),
                         )
-                        Text(content.name, fontSize = 13.sp, color = c.textPrimary,
-                            modifier = Modifier.weight(1f))
-                        if (!isDir) Text(formatSize(content.size), fontSize = 11.sp, color = c.textTertiary)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(content.name, fontSize = 13.sp, color = c.textPrimary)
+                            if (isSymlink) {
+                                Text("符号链接", fontSize = 10.sp, color = c.textTertiary)
+                            }
+                            if (isSubmodule) {
+                                Text("子模块", fontSize = 10.sp, color = c.textTertiary)
+                            }
+                        }
+                        if (!isDir && !isSubmodule) Text(formatSize(content.size), fontSize = 11.sp, color = c.textTertiary)
                         
                         Box {
                             IconButton(

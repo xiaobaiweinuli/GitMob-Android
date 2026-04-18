@@ -82,15 +82,16 @@ data class GHCommitAuthor(
 )
 
 data class GHContent(
-    val type: String,   // file | dir | symlink
+    val type: String,   // file | dir | symlink | submodule
     val name: String,
     val path: String,
     val sha: String,
     val size: Long = 0,
-    val content: String? = null,   // base64, only when type==file
+    val content: String? = null,   // base64, only when type==file or symlink
     val encoding: String? = null,
     @SerializedName("download_url") val downloadUrl: String?,
     @SerializedName("html_url") val htmlUrl: String?,
+    @SerializedName("submodule_git_url") val submoduleGitUrl: String? = null,
 )
 
 data class GHCreateRepoRequest(
@@ -851,7 +852,8 @@ data class GHTreeItem(
     val path: String,
     val mode: String = "100644",   // 普通文件
     val type: String = "blob",
-    val sha: String,
+    val sha: String? = null,        // 子模块用
+    val content: String? = null,     // 普通文件/符号链接/.gitmodules用（原始内容，非Base64）
 )
 data class GHCreateTreeRequest(
     val tree: List<GHTreeItem>,

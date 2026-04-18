@@ -1524,5 +1524,294 @@ class RepoRepository {
         } catch (_: Exception) { null }
     }
 
+    // ─── Git Tree 操作（用于创建子模块、符号链接等复杂操作）───────────────────────────────────────────
 
+    /**
+     * 使用 Git Tree API 进行文件操作（支持符号链接、子模块等）
+     *
+     * @param owner 仓库所有者
+     * @param repo 仓库名
+     * @param branch 分支名
+     * @param message 提交信息
+     * @param treeItems 要操作的文件列表（TreeItem）
+     */
+    suspend fun createCommitWithGitTree(
+        owner: String,
+        repo: String,
+        branch: String,
+        message: String,
+        treeItems: List<com.gitmob.android.api.GHTreeItem>
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            LogManager.d("GitTree", "开始 Git Tree 操作: $owner/$repo@$branch")
+
+            // 第 1 步：获取分支最新 commit SHA
+            val ref = api.getRef(owner, repo, branch)
+            val currentCommitSha = ref.obj.sha
+            LogManager.d("GitTree", "当前 commit SHA: $currentCommitSha")
+
+            // 第 2 步：获取该 commit 的 tree SHA 作为 base_tree
+            val currentCommit = api.getGitCommit(owner, repo, currentCommitSha)
+            val baseTreeSha = currentCommit.tree.sha
+            LogManager.d("GitTree", "当前 tree SHA: $baseTreeSha")
+
+            // 第 3 步：创建新 tree
+            val newTree = api.createTree(
+                owner, repo,
+                com.gitmob.android.api.GHCreateTreeRequest(
+                    tree = treeItems,
+                    baseTree = baseTreeSha
+                )
+            )
+            LogManager.d("GitTree", "新 tree SHA: ${newTree.sha}")
+
+            // 第 4 步：创建 commit
+            val newCommit = api.createCommit(
+                owner, repo,
+                com.gitmob.android.api.GHCreateCommitRequest(
+                    message = message,
+                    tree = newTree.sha,
+                    parents = listOf(currentCommitSha)
+                )
+            )
+            LogManager.d("GitTree", "新 commit SHA: ${newCommit.sha}")
+
+            // 第 5 步：更新分支 ref
+            api.updateRef(
+                owner, repo, branch,
+                com.gitmob.android.api.GHUpdateRefRequest(newCommit.sha, force = false)
+            )
+            LogManager.d("GitTree", "分支 $branch 更新成功")
+
+            invalidateContentsCache(owner, repo)
+            fileContentCache.clear()
+            fileWithInfoCache.clear()
+
+            true
+        } catch (e: Exception) {
+            LogManager.e("GitTree", "Git Tree 操作失败", e)
+            false
+        }
+    }
+
+    /**
+     * 辅助函数：创建符号链接
+     */
+    suspend fun createSymlink(
+        owner: String,
+        repo: String,
+        branch: String,
+        path: String,
+        targetPath: String,
+        message: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val treeItem = com.gitmob.android.api.GHTreeItem(
+            path = path,
+            mode = "120000",
+            type = "blob",
+            content = targetPath
+        )
+        createCommitWithGitTree(owner, repo, branch, message, listOf(treeItem))
+    }
+
+    /**
+     * 辅助函数：创建子模块（同时创建/更新 .gitmodules）
+     */
+    suspend fun createSubmodule(
+        owner: String,
+        repo: String,
+        branch: String,
+        submodulePath: String,
+        submoduleUrl: String,
+        submoduleCommitSha: String,
+        message: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val treeItems = mutableListOf<com.gitmob.android.api.GHTreeItem>()
+
+        // 1. 添加子模块条目
+        treeItems.add(
+            com.gitmob.android.api.GHTreeItem(
+                path = submodulePath,
+                mode = "160000",
+                type = "commit",
+                sha = submoduleCommitSha
+            )
+        )
+
+        // 2. 处理 .gitmodules 文件
+        try {
+            val existingGitmodules = try {
+                getFileContent(owner, repo, ".gitmodules", branch, forceRefresh = true)
+            } catch (e: Exception) {
+                null
+            }
+
+            val newGitmodulesContent = if (existingGitmodules != null) {
+                // .gitmodules 已存在，检查是否已有该子模块的配置
+                val submoduleSection = """\[submodule "$submodulePath"\]"""
+                if (existingGitmodules.contains(submoduleSection)) {
+                    // 已存在，更新（保持原有内容，只修改需要的部分，这里简化处理为完全重写）
+                    buildGitmodulesContent(existingGitmodules, submodulePath, submoduleUrl)
+                } else {
+                    // 不存在，追加新配置
+                    existingGitmodules + "\n\n" + buildSingleSubmoduleConfig(submodulePath, submoduleUrl)
+                }
+            } else {
+                // .gitmodules 不存在，创建新的
+                buildSingleSubmoduleConfig(submodulePath, submoduleUrl)
+            }
+
+            treeItems.add(
+                com.gitmob.android.api.GHTreeItem(
+                    path = ".gitmodules",
+                    mode = "100644",
+                    type = "blob",
+                    content = newGitmodulesContent
+                )
+            )
+        } catch (e: Exception) {
+            LogManager.e("GitTree", "处理 .gitmodules 时出错", e)
+            // 即使出错也继续，至少尝试添加子模块条目
+        }
+
+        createCommitWithGitTree(owner, repo, branch, message, treeItems)
+    }
+
+    /**
+     * 辅助函数：更新已有子模块（只更新 commit SHA，不修改 .gitmodules）
+     */
+    suspend fun updateSubmoduleCommit(
+        owner: String,
+        repo: String,
+        branch: String,
+        submodulePath: String,
+        newCommitSha: String,
+        message: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val treeItem = com.gitmob.android.api.GHTreeItem(
+            path = submodulePath,
+            mode = "160000",
+            type = "commit",
+            sha = newCommitSha
+        )
+        createCommitWithGitTree(owner, repo, branch, message, listOf(treeItem))
+    }
+
+    /**
+     * 构建 .gitmodules 配置内容（单个子模块）
+     */
+    private fun buildSingleSubmoduleConfig(path: String, url: String): String {
+        return """[submodule "$path"]
+	path = $path
+	url = $url"""
+    }
+
+    /**
+     * 更新 .gitmodules 内容（保留其他子模块配置）
+     */
+    private fun buildGitmodulesContent(existing: String, targetPath: String, targetUrl: String): String {
+        val lines = existing.lines().toMutableList()
+        val result = mutableListOf<String>()
+        var i = 0
+        var inTargetSection = false
+        var replaced = false
+
+        while (i < lines.size) {
+            val line = lines[i]
+            if (line.trim().startsWith("[submodule")) {
+                val sectionPath = line.substringAfter("[submodule \"").substringBefore("\"]")
+                if (sectionPath == targetPath) {
+                    // 找到目标子模块，替换配置
+                    inTargetSection = true
+                    replaced = true
+                    result.addAll(buildSingleSubmoduleConfig(targetPath, targetUrl).lines())
+                    // 跳过原有的配置行，直到下一个 section 或结束
+                    i++
+                    while (i < lines.size && !lines[i].trim().startsWith("[")) {
+                        i++
+                    }
+                    continue
+                } else {
+                    inTargetSection = false
+                }
+            }
+            result.add(line)
+            i++
+        }
+
+        // 如果没找到目标子模块，追加到末尾
+        if (!replaced) {
+            if (result.isNotEmpty() && result.last().isNotBlank()) {
+                result.add("")
+            }
+            result.addAll(buildSingleSubmoduleConfig(targetPath, targetUrl).lines())
+        }
+
+        return result.joinToString("\n")
+    }
+
+    // ─── 子模块辅助工具 ──────────────────────────────────────────────────────────
+
+    /**
+     * 解析 GitHub 仓库 URL，提取 owner 和 repo
+     *
+     * 支持的 URL 格式：
+     * - https://github.com/owner/repo.git
+     * - https://github.com/owner/repo
+     * - git@github.com:owner/repo.git
+     * - owner/repo
+     */
+    fun parseRepoUrl(url: String): Pair<String, String>? {
+        val trimmed = url.trim()
+        if (trimmed.isEmpty()) return null
+
+        // 尝试各种格式
+        val patterns = listOf(
+            // HTTPS 格式: https://github.com/owner/repo.git 或 https://github.com/owner/repo
+            Regex("""^https?://github\.com/([^/]+)/([^/.]+)(\.git)?$"""),
+            // SSH 格式: git@github.com:owner/repo.git
+            Regex("""^git@github\.com:([^/]+)/([^/.]+)(\.git)?$"""),
+            // 简单格式: owner/repo
+            Regex("""^([^/]+)/([^/.]+)$""")
+        )
+
+        for (pattern in patterns) {
+            val match = pattern.matchEntire(trimmed)
+            if (match != null) {
+                val owner = match.groupValues[1]
+                val repo = match.groupValues[2]
+                if (owner.isNotEmpty() && repo.isNotEmpty()) {
+                    return Pair(owner, repo)
+                }
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * 获取指定仓库的最新 commit SHA（使用默认分支）
+     */
+    suspend fun getLatestCommitSha(repoOwner: String, repoName: String): String? = withContext(Dispatchers.IO) {
+        try {
+            // 1. 首先获取仓库信息，找到默认分支
+            val repo = api.getRepo(repoOwner, repoName)
+            val defaultBranch = repo.defaultBranch
+
+            // 2. 获取该分支的 ref，找到最新 commit SHA
+            val ref = api.getRef(repoOwner, repoName, defaultBranch)
+            ref.obj.sha
+        } catch (e: Exception) {
+            LogManager.e("Submodule", "获取子模块最新 commit SHA 失败: $repoOwner/$repoName", e)
+            null
+        }
+    }
+
+    /**
+     * 快捷方法：通过仓库 URL 获取最新 commit SHA
+     */
+    suspend fun getLatestCommitShaFromUrl(repoUrl: String): String? {
+        val parsed = parseRepoUrl(repoUrl) ?: return null
+        return getLatestCommitSha(parsed.first, parsed.second)
+    }
 }

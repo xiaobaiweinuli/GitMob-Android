@@ -28,6 +28,7 @@ import com.gitmob.android.auth.ThemeMode
 import com.gitmob.android.api.ApiClient
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.data.RepoRepository
+import kotlinx.coroutines.runBlocking
 import com.gitmob.android.ui.common.ErrorBox
 import com.gitmob.android.ui.common.LoadingBox
 import com.gitmob.android.ui.create.CreateRepoScreen
@@ -50,6 +51,7 @@ import com.gitmob.android.ui.home.HomeViewModel
 import com.gitmob.android.ui.repos.RepoListScreen
 import com.gitmob.android.ui.search.SearchScreen
 import com.gitmob.android.ui.settings.SettingsScreen
+import com.gitmob.android.ui.theme.BlueColor
 import com.gitmob.android.ui.theme.Coral
 import com.gitmob.android.ui.theme.CoralDim
 import com.gitmob.android.ui.theme.LocalGmColors
@@ -101,9 +103,9 @@ sealed class Route(val path: String) {
     object DiscussionDetail : Route("discussion/{owner}/{repo}/{discussionNumber}") {
         fun go(owner: String, repo: String, discussionNumber: Int) = "discussion/$owner/$repo/$discussionNumber"
     }
-    object EditFile : Route("edit_file/{owner}/{repo}/{branch}?path={path}&mode={mode}") {
-        fun go(owner: String, repo: String, path: String, branch: String, mode: String) =
-            "edit_file/$owner/$repo/$branch?path=${URLEncoder.encode(path, "UTF-8")}&mode=$mode"
+    object EditFile : Route("edit_file/{owner}/{repo}/{branch}?path={path}&mode={mode}&isSymlink={isSymlink}&isSubmodule={isSubmodule}") {
+        fun go(owner: String, repo: String, path: String, branch: String, mode: String, isSymlink: Boolean = false, isSubmodule: Boolean = false) =
+            "edit_file/$owner/$repo/$branch?path=${URLEncoder.encode(path, "UTF-8")}&mode=$mode&isSymlink=$isSymlink&isSubmodule=$isSubmodule"
     }
     object Search : Route("search")
     object UserNavGraph : Route("user_graph") {
@@ -396,13 +398,13 @@ fun AppNavGraph(
                 onOwnerClick = { login ->
                     navController.navigate(Route.UserProfile.go(login))
                 },
-                onEditFile = { path, mode, branch ->
+                onEditFile = { path, mode, branch, isSymlink, isSubmodule ->
                     val fullPath = if (mode == "NEW" && path.isNotEmpty()) {
                         "$path/"
                     } else {
                         path
                     }
-                    navController.navigate(Route.EditFile.go(owner, repo, fullPath, branch, mode))
+                    navController.navigate(Route.EditFile.go(owner, repo, fullPath, branch, mode, isSymlink, isSubmodule))
                 },
                 vm = viewModel {
                         val app = checkNotNull(this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY])
@@ -499,6 +501,8 @@ fun AppNavGraph(
                 navArgument("branch") { type = NavType.StringType },
                 navArgument("path") { type = NavType.StringType; defaultValue = "" },
                 navArgument("mode") { type = NavType.StringType; defaultValue = "EDIT" },
+                navArgument("isSymlink") { type = NavType.StringType; defaultValue = "false" },
+                navArgument("isSubmodule") { type = NavType.StringType; defaultValue = "false" },
             ),
         ) { back ->
             val owner = back.arguments?.getString("owner") ?: ""
@@ -507,6 +511,8 @@ fun AppNavGraph(
             val path = URLDecoder.decode(back.arguments?.getString("path") ?: "", "UTF-8")
             val modeStr = back.arguments?.getString("mode") ?: "EDIT"
             val mode = try { EditFileMode.valueOf(modeStr) } catch (e: Exception) { EditFileMode.EDIT }
+            val isSymlinkParam = back.arguments?.getString("isSymlink")?.toBoolean() ?: false
+            val isSubmoduleParam = back.arguments?.getString("isSubmodule")?.toBoolean() ?: false
             val repository = remember { com.gitmob.android.data.RepoRepository() }
             
             val context = androidx.compose.ui.platform.LocalContext.current
@@ -516,11 +522,27 @@ fun AppNavGraph(
             var initialFileName by remember { mutableStateOf(path.substringAfterLast("/")) }
             var loading by remember { mutableStateOf(mode == EditFileMode.EDIT) }
             var sha by remember { mutableStateOf<String?>(null) }
+            var isSymlink by remember { mutableStateOf(isSymlinkParam) }
+            var isSubmodule by remember { mutableStateOf(isSubmoduleParam) }
+            var submoduleGitUrl by remember { mutableStateOf<String?>(null) }
             var showCommitDialog by remember { mutableStateOf(false) }
             var pendingFileName by remember { mutableStateOf("") }
             var pendingContent by remember { mutableStateOf("") }
             var pendingCommitMsg by remember { mutableStateOf("") }
             var pendingFullPath by remember { mutableStateOf("") }
+            var pendingSubmoduleUrl by remember { mutableStateOf<String?>(null) }
+            
+            // 获取最新 SHA 的回调函数
+            val fetchLatestSha: (String, (String?) -> Unit) -> Unit = { repoUrl, callback ->
+                scope.launch {
+                    try {
+                        val sha = repository.getLatestCommitShaFromUrl(repoUrl)
+                        callback(sha)
+                    } catch (e: Exception) {
+                        callback(null)
+                    }
+                }
+            }
             
             LaunchedEffect(Unit) {
                 if (mode == EditFileMode.EDIT) {
@@ -528,6 +550,11 @@ fun AppNavGraph(
                         val fileWithInfo = repository.getFileWithInfo(owner, repo, path, branch)
                         initialContent = fileWithInfo.content
                         sha = fileWithInfo.info.sha
+                        isSymlink = fileWithInfo.info.type == "symlink"
+                        isSubmodule = fileWithInfo.info.submoduleGitUrl != null
+                        submoduleGitUrl = fileWithInfo.info.submoduleGitUrl
+                        // 编辑模式下，pendingSubmoduleUrl 初始化为原有值
+                        pendingSubmoduleUrl = submoduleGitUrl
                         loading = false
                     } catch (e: Exception) {
                         loading = false
@@ -544,22 +571,34 @@ fun AppNavGraph(
                     mode = mode,
                     fileName = initialFileName,
                     initialContent = initialContent,
+                    isSymlink = isSymlink,
+                    isSubmodule = isSubmodule,
+                    submoduleGitUrl = submoduleGitUrl,
                     onBack = { navController.popBackStack() },
-                    onSave = { newFileName, newContent ->
+                    onSave = { newFileName, newContent, submoduleUrl ->
                         val fullPath = if (path.contains("/")) {
                             val parentPath = path.substringBeforeLast("/")
                             "$parentPath/$newFileName"
                         } else {
                             newFileName
                         }
-                        val commitMsg = if (mode == EditFileMode.EDIT) "Update $fullPath" else "Create $fullPath"
+                        val commitMsg = when {
+                            isSymlink && mode == EditFileMode.EDIT -> "Update symlink $fullPath"
+                            isSymlink && mode == EditFileMode.NEW -> "Create symlink $fullPath"
+                            isSubmodule && mode == EditFileMode.EDIT -> "Update submodule $fullPath"
+                            isSubmodule && mode == EditFileMode.NEW -> "Create submodule $fullPath"
+                            mode == EditFileMode.EDIT -> "Update $fullPath"
+                            else -> "Create $fullPath"
+                        }
                         
                         pendingFileName = newFileName
                         pendingContent = newContent
                         pendingCommitMsg = commitMsg
                         pendingFullPath = fullPath
+                        pendingSubmoduleUrl = submoduleUrl
                         showCommitDialog = true
-                    }
+                    },
+                    onFetchLatestSha = if (isSubmodule) fetchLatestSha else null
                 )
             }
             
@@ -571,16 +610,83 @@ fun AppNavGraph(
                         showCommitDialog = false
                         scope.launch {
                             try {
-                                repository.createOrUpdateFile(
-                                    owner = owner,
-                                    repo = repo,
-                                    path = pendingFullPath,
-                                    message = msg,
-                                    content = pendingContent,
-                                    sha = sha,
-                                    branch = branch,
-                                )
-                                navController.popBackStack()
+                                when {
+                                    isSymlink && mode == EditFileMode.NEW -> {
+                                        repository.createSymlink(
+                                            owner = owner,
+                                            repo = repo,
+                                            branch = branch,
+                                            path = pendingFullPath,
+                                            targetPath = pendingContent,
+                                            message = msg
+                                        )
+                                        navController.popBackStack()
+                                    }
+                                    isSymlink && mode == EditFileMode.EDIT -> {
+                                        repository.createSymlink(
+                                            owner = owner,
+                                            repo = repo,
+                                            branch = branch,
+                                            path = pendingFullPath,
+                                            targetPath = pendingContent,
+                                            message = msg
+                                        )
+                                        navController.popBackStack()
+                                    }
+                                    isSubmodule && mode == EditFileMode.NEW -> {
+                                        val submoduleUrl = pendingSubmoduleUrl ?: throw IllegalArgumentException("子模块仓库地址不能为空")
+                                        repository.createSubmodule(
+                                            owner = owner,
+                                            repo = repo,
+                                            branch = branch,
+                                            submodulePath = pendingFullPath,
+                                            submoduleUrl = submoduleUrl,
+                                            submoduleCommitSha = pendingContent,
+                                            message = msg
+                                        )
+                                        navController.popBackStack()
+                                    }
+                                    isSubmodule && mode == EditFileMode.EDIT -> {
+                                        // 编辑时：如果 URL 变了，需要同时更新 .gitmodules 和子模块 commit
+                                        val hasUrlChanged = pendingSubmoduleUrl != null && pendingSubmoduleUrl != submoduleGitUrl
+                                        if (hasUrlChanged) {
+                                            // URL 变了，使用 createSubmodule 来更新（会同时更新 .gitmodules）
+                                            val submoduleUrl = pendingSubmoduleUrl ?: throw IllegalArgumentException("子模块仓库地址不能为空")
+                                            repository.createSubmodule(
+                                                owner = owner,
+                                                repo = repo,
+                                                branch = branch,
+                                                submodulePath = pendingFullPath,
+                                                submoduleUrl = submoduleUrl,
+                                                submoduleCommitSha = pendingContent,
+                                                message = msg
+                                            )
+                                        } else {
+                                            // URL 没变，只更新 commit
+                                            repository.updateSubmoduleCommit(
+                                                owner = owner,
+                                                repo = repo,
+                                                branch = branch,
+                                                submodulePath = pendingFullPath,
+                                                newCommitSha = pendingContent,
+                                                message = msg
+                                            )
+                                        }
+                                        navController.popBackStack()
+                                    }
+                                    else -> {
+                                        repository.createOrUpdateFile(
+                                            owner = owner,
+                                            repo = repo,
+                                            path = pendingFullPath,
+                                            message = msg,
+                                            content = pendingContent,
+                                            sha = sha,
+                                            branch = branch,
+                                        )
+                                        navController.popBackStack()
+                                    }
+                                }
                             } catch (e: Exception) {
                                 android.widget.Toast.makeText(context, "保存失败: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                             }
@@ -1269,10 +1375,93 @@ fun FileViewerScreen(
             )
         },
     ) { padding ->
+        val isSymlink = fileInfo?.type == "symlink"
+        val isSubmodule = fileInfo?.submoduleGitUrl != null
         val isMd = path.lowercase().let { it.endsWith(".md") || it.endsWith(".markdown") }
         when {
             loading       -> LoadingBox(Modifier.padding(padding))
             error != null -> ErrorBox(error!!) {}
+            isSymlink     -> LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                modifier = Modifier.padding(padding),
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(BlueColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Link,
+                                null,
+                                tint = BlueColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column {
+                                Text("符号链接", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = c.textPrimary)
+                                Text("指向路径", fontSize = 11.sp, color = c.textTertiary)
+                            }
+                        }
+                        Text("目标路径：", fontSize = 12.sp, color = c.textSecondary)
+                        Text(content, fontSize = 13.sp, fontFamily = FontFamily.Monospace,
+                            color = c.textPrimary, lineHeight = 18.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(c.bgItem, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        )
+                    }
+                }
+            }
+            isSubmodule   -> LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                modifier = Modifier.padding(padding),
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Green.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.AccountTree,
+                                null,
+                                tint = Green,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column {
+                                Text("Git 子模块", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = c.textPrimary)
+                                Text("Submodule", fontSize = 11.sp, color = c.textTertiary)
+                            }
+                        }
+                        Text("仓库地址：", fontSize = 12.sp, color = c.textSecondary)
+                        Text(fileInfo?.submoduleGitUrl ?: "", fontSize = 13.sp, fontFamily = FontFamily.Monospace,
+                            color = c.textPrimary, lineHeight = 18.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(c.bgItem, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text("Commit SHA：", fontSize = 12.sp, color = c.textSecondary)
+                        Text(fileInfo?.sha ?: "", fontSize = 13.sp, fontFamily = FontFamily.Monospace,
+                            color = Coral, lineHeight = 18.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(CoralDim, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        )
+                    }
+                }
+            }
             isMd          -> com.gitmob.android.ui.common.GmMarkdownWebView(
                 markdown = content,
                 modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),

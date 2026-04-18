@@ -1926,6 +1926,98 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
     }
 
     /**
+     * 使用 Git Tree API 创建符号链接
+     */
+    fun createSymlinkWithGitTree(
+        path: String,
+        targetPath: String,
+        message: String,
+        onSuccess: () -> Unit = {},
+    ) = viewModelScope.launch {
+        try {
+            val success = repository.createSymlink(
+                owner = owner,
+                repo = currentRepoName,
+                branch = _state.value.currentBranch,
+                path = path,
+                targetPath = targetPath,
+                message = message
+            )
+            if (success) {
+                loadContents(_state.value.currentPath, forceRefresh = true)
+                _state.update { it.copy(toast = "符号链接创建成功") }
+                onSuccess()
+            } else {
+                _state.update { it.copy(toast = "符号链接创建失败") }
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(toast = "操作失败：${e.message}") }
+        }
+    }
+
+    /**
+     * 使用 Git Tree API 创建子模块
+     */
+    fun createSubmoduleWithGitTree(
+        submodulePath: String,
+        submoduleUrl: String,
+        submoduleCommitSha: String,
+        message: String,
+        onSuccess: () -> Unit = {},
+    ) = viewModelScope.launch {
+        try {
+            val success = repository.createSubmodule(
+                owner = owner,
+                repo = currentRepoName,
+                branch = _state.value.currentBranch,
+                submodulePath = submodulePath,
+                submoduleUrl = submoduleUrl,
+                submoduleCommitSha = submoduleCommitSha,
+                message = message
+            )
+            if (success) {
+                loadContents(_state.value.currentPath, forceRefresh = true)
+                _state.update { it.copy(toast = "子模块创建成功") }
+                onSuccess()
+            } else {
+                _state.update { it.copy(toast = "子模块创建失败") }
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(toast = "操作失败：${e.message}") }
+        }
+    }
+
+    /**
+     * 使用 Git Tree API 更新子模块 commit SHA
+     */
+    fun updateSubmoduleCommitWithGitTree(
+        submodulePath: String,
+        newCommitSha: String,
+        message: String,
+        onSuccess: () -> Unit = {},
+    ) = viewModelScope.launch {
+        try {
+            val success = repository.updateSubmoduleCommit(
+                owner = owner,
+                repo = currentRepoName,
+                branch = _state.value.currentBranch,
+                submodulePath = submodulePath,
+                newCommitSha = newCommitSha,
+                message = message
+            )
+            if (success) {
+                loadContents(_state.value.currentPath, forceRefresh = true)
+                _state.update { it.copy(toast = "子模块 commit 已更新") }
+                onSuccess()
+            } else {
+                _state.update { it.copy(toast = "更新失败") }
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(toast = "操作失败：${e.message}") }
+        }
+    }
+
+    /**
      * 重命名文件
      */
     fun renameFile(
