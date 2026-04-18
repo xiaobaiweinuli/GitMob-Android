@@ -29,15 +29,20 @@ object UpdateManager {
         val name: String,
         val body: String,
         val publishedAt: String,
-        val apkUrl: String?,
-        val versionCode: Int
+        val apkUrl: String?
     )
 
     /**
      * 检测是否有新版本
+     * @param token 用户认证token，如果为null则不进行检测
      */
-    suspend fun checkForUpdate(): Result<Release?> = withContext(Dispatchers.IO) {
+    suspend fun checkForUpdate(token: String?): Result<Release?> = withContext(Dispatchers.IO) {
         try {
+            if (token.isNullOrBlank()) {
+                LogManager.d(TAG, "未提供认证token，跳过更新检测")
+                return@withContext Result.success(null)
+            }
+
             val url = "$GITHUB_API_BASE/repos/$REPO_OWNER/$REPO_NAME/releases/latest"
 
             val client = OkHttpClient.Builder()
@@ -45,11 +50,18 @@ object UpdateManager {
                 .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
 
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url(url)
                 .header("Accept", "application/vnd.github.v3+json")
                 .header("User-Agent", "GitMob-Android")
-                .build()
+
+            if (!token.isNullOrBlank()) {
+                requestBuilder.header("Authorization", "Bearer $token")
+            }
+
+            val request = requestBuilder.build()
+
+            LogManager.d(TAG, "开始检测更新，当前版本: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
 
             val response = client.newCall(request).execute()
 
@@ -59,18 +71,13 @@ object UpdateManager {
             }
 
             val responseBody = response.body?.string() ?: return@withContext Result.success(null)
+            
             val json = JSONObject(responseBody)
 
             val tagName = json.getString("tag_name")
             val name = json.optString("name", tagName)
             val body = json.optString("body", "")
             val publishedAt = json.optString("published_at", "")
-
-            val versionCode = try {
-                tagName.substringAfter("v").replace(".", "").toIntOrNull() ?: 0
-            } catch (e: Exception) {
-                0
-            }
 
             val assets = json.optJSONArray("assets")
             var apkUrl: String? = null
@@ -91,8 +98,7 @@ object UpdateManager {
                 name = name,
                 body = body,
                 publishedAt = publishedAt,
-                apkUrl = apkUrl,
-                versionCode = versionCode
+                apkUrl = apkUrl
             )
 
             LogManager.i(TAG, "检测到最新版本: ${release.tagName}")
@@ -115,15 +121,13 @@ object UpdateManager {
      */
     fun isNewerVersion(release: Release): Boolean {
         val currentVersion = BuildConfig.VERSION_NAME
-        val currentCode = BuildConfig.VERSION_CODE
-
         val releaseVersion = release.tagName.removePrefix("v")
 
-        return try {
-            release.versionCode > currentCode
-        } catch (e: Exception) {
-            compareVersionStrings(releaseVersion, currentVersion) > 0
-        }
+        LogManager.d(TAG, "版本比较 - 当前版本: $currentVersion, 最新版本: $releaseVersion")
+        val result = compareVersionStrings(releaseVersion, currentVersion) > 0
+        
+        LogManager.d(TAG, "版本比较结果: ${if (result) "有新版本" else "已是最新"}")
+        return result
     }
 
     /**
@@ -171,6 +175,30 @@ object UpdateManager {
      */
     fun shouldShowUpdateDialog(context: Context, release: Release): Boolean {
         val ignored = getIgnoredVersion(context)
+        
+        if (ignored == null) {
+            return true
+        }
+        
+        val ignoredVersion = ignored.removePrefix("v")
+        val releaseVersion = release.tagName.removePrefix("v")
+        val isIgnoredVersionOlder = compareVersionStrings(releaseVersion, ignoredVersion) > 0
+        
+        if (isIgnoredVersionOlder) {
+            LogManager.i(TAG, "检测到新版本比忽略版本新，清除忽略版本 - 忽略版本: $ignored, 新版本: ${release.tagName}")
+            clearIgnoredVersion(context)
+            return true
+        }
+        
         return ignored != release.tagName
+    }
+    
+    /**
+     * 清除被忽略的版本
+     */
+    fun clearIgnoredVersion(context: Context) {
+        val prefs = context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE)
+        prefs.edit().remove("ignored_version").apply()
+        LogManager.i(TAG, "已清除忽略版本")
     }
 }

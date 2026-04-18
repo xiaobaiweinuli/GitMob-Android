@@ -111,20 +111,24 @@ fun HomeScreen(
             LogManager.i("Home", "显示更新弹窗: ${pendingUpdate!!.tagName}")
             latestRelease = pendingUpdate
             showUpdateDialog = true
-            app.markUpdateShown()
         }
     }
 
     if (showUpdateDialog && latestRelease != null) {
         UpdateDialog(
             release = latestRelease!!,
-            onDismiss = { showUpdateDialog = false },
+            onDismiss = { 
+                showUpdateDialog = false
+                app.markUpdateShown()
+            },
             onIgnore = {
                 UpdateManager.ignoreVersion(ctx, latestRelease!!.tagName)
                 showUpdateDialog = false
+                app.markUpdateShown()
             },
             onUpdate = {
                 showUpdateDialog = false
+                app.markUpdateShown()
                 downloadAndInstall(latestRelease!!)
             }
         )

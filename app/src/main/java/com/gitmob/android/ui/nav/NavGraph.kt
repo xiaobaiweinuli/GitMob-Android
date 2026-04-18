@@ -288,6 +288,7 @@ fun AppNavGraph(
                 onTokenConsumed = onTokenConsumed,
                 onSuccess = {
                     isReauth = false
+                    com.gitmob.android.GitMobApp.instance.checkForUpdate()
                     val mainInBackStack = navController.previousBackStackEntry?.destination?.route == Route.Main.path
                     if (mainInBackStack) {
                         navController.popBackStack(Route.Main.path, inclusive = false)

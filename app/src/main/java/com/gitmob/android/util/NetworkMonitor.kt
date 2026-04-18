@@ -31,7 +31,7 @@ class NetworkMonitor private constructor(
 
     companion object {
         private const val TAG = "NetworkMonitor"
-        private const val DEBOUNCE_DELAY_MS = 500L
+        private const val DEBOUNCE_DELAY_MS = 2000L
 
         @Volatile
         private var instance: NetworkMonitor? = null
@@ -94,16 +94,9 @@ class NetworkMonitor private constructor(
 
         LogManager.i(TAG, "初始网络状态: ${getNetworkTypeName(initialType)}")
 
-        // 要求 INTERNET + VALIDATED（系统已确认能真正上网）
-        val networkRequest = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-            .build()
-
         val networkCallback = object : ConnectivityManager.NetworkCallback() {
 
             override fun onAvailable(network: Network) {
-                // onAvailable 不代表真正可用，等 onCapabilitiesChanged 处理
             }
 
             override fun onLost(network: Network) {
@@ -160,8 +153,8 @@ class NetworkMonitor private constructor(
             }
         }
 
-        connectivityManager.registerNetworkCallback(networkRequest, networkCallback)
-        LogManager.i(TAG, "网络状态监听已启动（VALIDATED 模式）")
+        connectivityManager.registerDefaultNetworkCallback(networkCallback)
+        LogManager.i(TAG, "网络状态监听已启动（默认网络模式）")
     }
 
     /**

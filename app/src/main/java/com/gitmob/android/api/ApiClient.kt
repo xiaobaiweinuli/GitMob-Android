@@ -125,17 +125,23 @@ object ApiClient {
 
         val authInterceptor = Interceptor { chain ->
             val token = runBlocking { tokenStorage.accessToken.first() }
-            val request = chain.request().newBuilder()
-                .header("Authorization", "Bearer $token")
+            val requestBuilder = chain.request().newBuilder()
                 .header("Accept", "application/vnd.github+json")
                 .header("X-GitHub-Api-Version", "2026-03-10")
-                .build()
+            
+            if (!token.isNullOrBlank()) {
+                requestBuilder.header("Authorization", "Bearer $token")
+            }
+            
+            val request = requestBuilder.build()
             val response = chain.proceed(request)
-            if (response.code == 401) {
+            
+            if (response.code == 401 && !token.isNullOrBlank()) {
                 LogManager.w(TAG, "收到 401，token 已失效，清除本地授权并触发重新登录")
                 runBlocking { tokenStorage.clear() }
                 _tokenExpired.tryEmit(Unit)
             }
+            
             response
         }
 

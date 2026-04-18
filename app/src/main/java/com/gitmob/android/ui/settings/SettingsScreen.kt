@@ -47,6 +47,7 @@ import com.gitmob.android.util.LanguageManager
 import com.gitmob.android.util.LogLevel
 import com.gitmob.android.util.LogManager
 import com.gitmob.android.util.UpdateManager
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -219,7 +220,8 @@ fun SettingsScreen(
         scope.launch {
             checkingForUpdate = true
             LogManager.d("Settings", "开始检测更新...")
-            val result = UpdateManager.checkForUpdate()
+            val token = com.gitmob.android.GitMobApp.instance.tokenStorage.accessToken.first()
+            val result = UpdateManager.checkForUpdate(token)
             checkingForUpdate = false
             result.onSuccess { release ->
                 if (release != null) {

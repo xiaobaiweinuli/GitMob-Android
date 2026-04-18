@@ -54,6 +54,35 @@ class GitMobApp : Application() {
         _pendingUpdate.value = null
     }
 
+    /**
+     * 检测应用更新
+     * 只在用户已登录时调用
+     */
+    fun checkForUpdate() {
+        appScope.launch {
+            val token = tokenStorage.accessToken.first()
+            if (token.isNullOrBlank()) {
+                LogManager.d("App", "未登录，跳过更新检测")
+                return@launch
+            }
+
+            if (!updateChecked) {
+                updateChecked = true
+                LogManager.d("App", "开始检测更新...")
+                UpdateManager.checkForUpdate(token).onSuccess { release ->
+                    if (release != null) {
+                        LogManager.i("App", "检测到新版本: ${release.tagName}")
+                        _pendingUpdate.value = release
+                    } else {
+                        LogManager.i("App", "未检测到新版本")
+                    }
+                }.onFailure { e ->
+                    LogManager.e("App", "检测更新失败", e)
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -128,21 +157,11 @@ class GitMobApp : Application() {
                 LogManager.i("App", "OkHttp 客户端已重建（从后台进入前台）")
             }
         })
-        // 8. 启动时检测更新
+        // 8. 如果已登录，启动时检测更新
         appScope.launch {
-            if (!updateChecked) {
-                updateChecked = true
-                LogManager.d("App", "APP 启动，检测更新...")
-                UpdateManager.checkForUpdate().onSuccess { release ->
-                    if (release != null) {
-                        LogManager.i("App", "检测到新版本: ${release.tagName}")
-                        _pendingUpdate.value = release
-                    } else {
-                        LogManager.i("App", "未检测到新版本")
-                    }
-                }.onFailure { e ->
-                    LogManager.e("App", "检测更新失败", e)
-                }
+            val token = tokenStorage.accessToken.first()
+            if (!token.isNullOrBlank()) {
+                checkForUpdate()
             }
         }
         LogManager.i("App", "GitMob 启动")
