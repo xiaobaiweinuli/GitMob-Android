@@ -851,10 +851,11 @@ object GraphQLClient {
                         val labelNode = labelsNodes.getJSONObject(j)
                         labelsList.add(
                             com.gitmob.android.api.GHLabel(
-                                id = labelNode.optLong("id", 0),
+                                id = 0,
                                 name = labelNode.optString("name"),
                                 color = labelNode.optString("color"),
-                                description = labelNode.optString("description").ifBlank { null }
+                                description = labelNode.optString("description").ifBlank { null },
+                                nodeId = labelNode.optString("id")
                             )
                         )
                     }
@@ -1021,6 +1022,7 @@ object GraphQLClient {
                         totalCount
                         nodes {
                           id
+                          databaseId
                           body
                           createdAt
                           updatedAt
@@ -1049,7 +1051,7 @@ object GraphQLClient {
                     val c = commentsJson.getJSONObject(i)
                     val cAuthorObj = c.optJSONObject("author")
                     com.gitmob.android.api.GHComment(
-                        id = c.optString("id").hashCode().toLong(),
+                        id = c.optLong("databaseId"),
                         body = c.optString("body"),
                         user = if (cAuthorObj != null) com.gitmob.android.api.GHOwner(
                             cAuthorObj.optString("login"), cAuthorObj.optString("avatarUrl")) else com.gitmob.android.api.GHOwner("", ""),
@@ -1068,10 +1070,11 @@ object GraphQLClient {
                 (0 until labelsJson.length()).map { i ->
                     val l = labelsJson.getJSONObject(i)
                     com.gitmob.android.api.GHLabel(
-                        id = l.optString("id").hashCode().toLong(),
+                        id = 0,
                         name = l.optString("name"),
                         color = l.optString("color"),
                         description = l.optString("description").ifBlank { null },
+                        nodeId = l.optString("id")
                     )
                 }
             } else emptyList()
@@ -1141,6 +1144,7 @@ object GraphQLClient {
                         totalCount
                         nodes {
                           id
+                          databaseId
                           body
                           createdAt
                           updatedAt
@@ -1156,6 +1160,7 @@ object GraphQLClient {
                       reviews(first: 100) {
                         nodes {
                           id
+                          databaseId
                           state
                           body
                           submittedAt
@@ -1182,7 +1187,7 @@ object GraphQLClient {
                     val c = commentsJson.getJSONObject(i)
                     val cAuthorObj = c.optJSONObject("author")
                     com.gitmob.android.api.GHComment(
-                        id = c.optString("id").hashCode().toLong(),
+                        id = c.optLong("databaseId"),
                         body = c.optString("body"),
                         user = if (cAuthorObj != null) com.gitmob.android.api.GHOwner(
                             cAuthorObj.optString("login"), cAuthorObj.optString("avatarUrl")) else com.gitmob.android.api.GHOwner("", ""),
@@ -1202,7 +1207,7 @@ object GraphQLClient {
                     val r = reviewsJson.getJSONObject(i)
                     val rAuthorObj = r.optJSONObject("author")
                     com.gitmob.android.api.GHReview(
-                        id = r.optString("id").hashCode().toLong(),
+                        id = r.optLong("databaseId"),
                         user = if (rAuthorObj != null) com.gitmob.android.api.GHOwner(
                             rAuthorObj.optString("login"), rAuthorObj.optString("avatarUrl")) else com.gitmob.android.api.GHOwner("", ""),
                         body = r.optString("body").ifBlank { null },
@@ -1218,10 +1223,11 @@ object GraphQLClient {
                 (0 until labelsJson.length()).map { i ->
                     val l = labelsJson.getJSONObject(i)
                     com.gitmob.android.api.GHLabel(
-                        id = l.optString("id").hashCode().toLong(),
+                        id = 0,
                         name = l.optString("name"),
                         color = l.optString("color"),
                         description = l.optString("description").ifBlank { null },
+                        nodeId = l.optString("id")
                     )
                 }
             } else emptyList()
@@ -1655,10 +1661,11 @@ object GraphQLClient {
                         val labelNode = labelsNodes.optJSONObject(j)
                         labelsList.add(
                             com.gitmob.android.api.GHLabel(
-                                id = labelNode.optLong("id", 0),
+                                id = 0,
                                 name = labelNode.optString("name"),
                                 color = labelNode.optString("color"),
-                                description = labelNode.optString("description").ifBlank { null }
+                                description = labelNode.optString("description").ifBlank { null },
+                                nodeId = labelNode.optString("id")
                             )
                         )
                     }
@@ -1854,10 +1861,11 @@ object GraphQLClient {
                         val labelNode = labelsNodes.optJSONObject(j)
                         labelsList.add(
                             com.gitmob.android.api.GHLabel(
-                                id = labelNode.optLong("id", 0),
+                                id = 0,
                                 name = labelNode.optString("name"),
                                 color = labelNode.optString("color"),
-                                description = labelNode.optString("description").ifBlank { null }
+                                description = labelNode.optString("description").ifBlank { null },
+                                nodeId = labelNode.optString("id")
                             )
                         )
                     }

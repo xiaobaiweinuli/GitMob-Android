@@ -79,6 +79,7 @@ class NetworkMonitor private constructor(
     private var debounceJob: kotlinx.coroutines.Job? = null
     private var onNetworkChangedCallback: (() -> Unit)? = null
     private var previousNetworkType: NetworkType = NetworkType.NONE
+    private var lastHandledCapabilitiesHash: Int = 0
 
     /**
      * 开始监听网络状态
@@ -116,21 +117,27 @@ class NetworkMonitor private constructor(
                 network: Network,
                 networkCapabilities: NetworkCapabilities,
             ) {
+                val isValidated = networkCapabilities.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_VALIDATED
+                )
+                if (!isValidated) return
+
+                val currentType = when {
+                    networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)     -> NetworkType.WIFI
+                    networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkType.CELLULAR
+                    networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> NetworkType.ETHERNET
+                    else -> NetworkType.NONE
+                }
+
+                val capabilitiesHash = currentType.hashCode()
+                if (capabilitiesHash == lastHandledCapabilitiesHash) {
+                    return
+                }
+
+                lastHandledCapabilitiesHash = capabilitiesHash
                 debounceJob?.cancel()
                 debounceJob = scope.launch {
                     delay(DEBOUNCE_DELAY_MS)
-
-                    val isValidated = networkCapabilities.hasCapability(
-                        NetworkCapabilities.NET_CAPABILITY_VALIDATED
-                    )
-                    if (!isValidated) return@launch
-
-                    val currentType = when {
-                        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)     -> NetworkType.WIFI
-                        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkType.CELLULAR
-                        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> NetworkType.ETHERNET
-                        else -> NetworkType.NONE
-                    }
 
                     if (currentType == _networkType.value) return@launch
 

@@ -321,6 +321,7 @@ data class GHLabel(
     val name: String,
     val color: String,
     val description: String?,
+    val nodeId: String = "",
 )
 
 data class GHComment(
