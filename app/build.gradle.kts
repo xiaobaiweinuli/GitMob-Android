@@ -128,6 +128,7 @@ dependencies {
     implementation(libs.jackson.dataformat.yaml)
     implementation(libs.jackson.module.kotlin)
     // Markdown 渲染：Flexmark + WebView + github-markdown-css
-    implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
+    // 只使用核心和 autolink 扩展，移除不必要的 PDF 等功能以减小 APK 体积
+    implementation("com.vladsch.flexmark:flexmark-ext-autolink:0.64.8")
     debugImplementation(libs.androidx.ui.tooling)
 }
