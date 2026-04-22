@@ -35,6 +35,7 @@ import com.gitmob.android.api.GHRepo
 import com.gitmob.android.api.GHSearchUser
 import com.gitmob.android.ui.common.GmBadge
 import com.gitmob.android.ui.theme.*
+import com.gitmob.android.util.EmojiManager
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 
@@ -355,6 +356,7 @@ fun SearchIssueCard(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalGmColors.current
+    val ctx = LocalContext.current
 
     if (issue.isPR) {
         // PR 样式
@@ -413,7 +415,7 @@ fun SearchIssueCard(
                         val bg = try { Color(android.graphics.Color.parseColor("#${label.color}")) } catch (_: Exception) { c.bgItem }
                         val fg = if (isColorLight(bg)) Color(0xFF24292F) else Color.White
                         Text(
-                            label.name,
+                            EmojiManager.replaceEmojiMarkdown(label.name, ctx),
                             fontSize = 10.sp, color = fg, fontWeight = FontWeight.Medium,
                             modifier = Modifier.background(bg, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
                         )
@@ -522,7 +524,7 @@ fun SearchIssueCard(
                             shape = RoundedCornerShape(12.dp),
                         ) {
                             Text(
-                                label.name,
+                                EmojiManager.replaceEmojiMarkdown(label.name, ctx),
                                 fontSize = 10.sp,
                                 color = textColor,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),

@@ -43,6 +43,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.gitmob.android.api.*
 import com.gitmob.android.ui.common.*
 import com.gitmob.android.ui.theme.*
+import com.gitmob.android.util.EmojiManager
 import com.gitmob.android.util.LogManager
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.RadioButton
@@ -963,6 +964,7 @@ fun SwipeableIssueCard(
 
 @Composable
 fun IssueCardContent(issue: GHIssue, c: GmColors, onClick: () -> Unit = {}) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1007,7 +1009,7 @@ fun IssueCardContent(issue: GHIssue, c: GmColors, onClick: () -> Unit = {}) {
                         shape = RoundedCornerShape(12.dp),
                     ) {
                         Text(
-                            label.name,
+                            EmojiManager.replaceEmojiMarkdown(label.name, context),
                             fontSize = 10.sp,
                             color = textColor,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),

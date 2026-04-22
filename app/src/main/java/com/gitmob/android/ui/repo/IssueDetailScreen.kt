@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +37,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.gitmob.android.api.*
 import com.gitmob.android.ui.common.*
 import com.gitmob.android.ui.theme.*
+import com.gitmob.android.util.EmojiManager
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 
@@ -464,6 +466,7 @@ private fun IssueHeader(
     issue: GHIssue,
     c: GmColors,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             issue.title,
@@ -504,6 +507,34 @@ private fun IssueHeader(
                 fontSize = 12.sp,
                 color = c.textTertiary,
             )
+        }
+        // 标签显示
+        if (issue.labels.isNotEmpty()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            ) {
+                issue.labels.forEach { label ->
+                    val bg = try {
+                        Color(android.graphics.Color.parseColor("#${label.color}"))
+                    } catch (_: Exception) {
+                        c.bgItem
+                    }
+                    val fg = if (isColorLight(bg)) Color(0xFF24292F) else Color.White
+                    Surface(
+                        color = bg,
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text(
+                            EmojiManager.replaceEmojiMarkdown(label.name, context),
+                            fontSize = 11.sp,
+                            color = fg,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }

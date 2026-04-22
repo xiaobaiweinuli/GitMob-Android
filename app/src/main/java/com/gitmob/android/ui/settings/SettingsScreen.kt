@@ -42,6 +42,7 @@ import com.gitmob.android.auth.ThemeMode
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.ui.theme.*
 import com.gitmob.android.ui.update.UpdateDialog
+import com.gitmob.android.util.EmojiManager
 import com.gitmob.android.util.GmDownloadManager
 import com.gitmob.android.util.LanguageManager
 import com.gitmob.android.util.LogLevel
@@ -871,6 +872,66 @@ fun SettingsScreen(
                             Text(
                                 if (hasLangData.value) "更新语言数据" else "获取语言数据",
                                 color = BlueColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                }
+
+                SDivider(c)
+
+                // ── Emoji 数据 ──────────────────────────────────────────────
+                val hasEmojiData = remember { mutableStateOf(EmojiManager.hasEmojiData(context)) }
+                var emojiFetching by remember { mutableStateOf(false) }
+                var emojiResult by remember { mutableStateOf<String?>(null) }
+                emojiResult?.let { msg ->
+                    LaunchedEffect(msg) { kotlinx.coroutines.delay(3000); emojiResult = null }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SIconBox(
+                        color = if (hasEmojiData.value) PurpleDim else c.bgItem,
+                        icon = Icons.Default.EmojiEmotions,
+                        tint = if (hasEmojiData.value) PurpleColor else c.textTertiary,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (hasEmojiData.value) "Emoji 数据" else "Emoji 数据（未获取）",
+                            fontSize = 15.sp, color = c.textPrimary, fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            if (hasEmojiData.value) "已获取 · 标签中的 emoji 标记将转换为字符"
+                            else "未获取 · 标签中的 emoji 标记将原样显示",
+                            fontSize = 12.sp, color = c.textSecondary,
+                        )
+                        emojiResult?.let { msg ->
+                            Text(msg, fontSize = 12.sp,
+                                color = if (msg.startsWith("✓")) Green else Color(0xFFF85149),
+                                modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                    if (emojiFetching) {
+                        CircularProgressIndicator(color = PurpleColor,
+                            modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        TextButton(onClick = {
+                            emojiFetching = true
+                            scope.launch {
+                                val res = EmojiManager.fetchAndSave(context)
+                                emojiFetching = false
+                                if (res.isSuccess) {
+                                    hasEmojiData.value = true
+                                    emojiResult = "✓ 已获取 ${res.getOrDefault(0)} 个 emoji"
+                                } else {
+                                    emojiResult = "✗ ${res.exceptionOrNull()?.message ?: "获取失败"}"
+                                }
+                            }
+                        }) {
+                            Text(
+                                if (hasEmojiData.value) "更新 Emoji 数据" else "获取 Emoji 数据",
+                                color = PurpleColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                             )
                         }
                     }

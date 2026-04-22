@@ -16,11 +16,13 @@ import java.io.File
  * @param id   小写 + 空格转连字符（与 GitHub Search API language 参数一致，用于筛选查询）
  * @param name 原始语言名称（与仓库 API 返回的 `language` 字段一致，用于本地过滤匹配）
  * @param color 十六进制颜色字符串，可为 null（无色用透明/默认色显示）
+ * @param extensions 该语言的文件扩展名列表，可为 null
  */
 data class LanguageEntry(
     val id: String,
     val name: String,
     val color: String?,
+    val extensions: List<String>? = null,
 )
 
 object LanguageManager {
@@ -53,10 +55,17 @@ object LanguageManager {
             val arr = JSONArray(file.readText())
             val list = (0 until arr.length()).map { i ->
                 val obj = arr.getJSONObject(i)
+                val extensions = if (obj.has("extensions")) {
+                    val extArr = obj.getJSONArray("extensions")
+                    (0 until extArr.length()).map { j -> extArr.getString(j) }
+                } else {
+                    null
+                }
                 LanguageEntry(
                     id    = obj.getString("id"),
                     name  = obj.getString("name"),
                     color = obj.optString("color").ifBlank { null },
+                    extensions = extensions,
                 )
             }
             cache = list
@@ -158,8 +167,10 @@ object LanguageManager {
             val entries = root.entries.mapNotNull { (rawName, value) ->
                 val attrs = value as? Map<*, *> ?: return@mapNotNull null
                 val color = attrs["color"] as? String
+                @Suppress("UNCHECKED_CAST")
+                val extensions = attrs["extensions"] as? List<String>
                 val id = toLanguageId(rawName)
-                LanguageEntry(id = id, name = rawName, color = color)
+                LanguageEntry(id = id, name = rawName, color = color, extensions = extensions)
             }
 
             LogManager.d(TAG, "转换后条目数量: ${entries.size}")
@@ -180,6 +191,11 @@ object LanguageManager {
                 obj.put("id", entry.id)
                 obj.put("name", entry.name)
                 if (entry.color != null) obj.put("color", entry.color) else obj.put("color", JSONObject.NULL)
+                if (entry.extensions != null) {
+                    val extArr = JSONArray()
+                    entry.extensions.forEach { extArr.put(it) }
+                    obj.put("extensions", extArr)
+                }
                 jsonArr.put(obj)
             }
             val jsonText = jsonArr.toString()

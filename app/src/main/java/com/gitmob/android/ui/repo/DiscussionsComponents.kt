@@ -35,6 +35,7 @@ import com.gitmob.android.ui.common.LoadingBox
 import com.gitmob.android.ui.repos.FilterOptionItem
 import com.gitmob.android.ui.repos.RepoFilterBottomSheet
 import com.gitmob.android.ui.theme.*
+import com.gitmob.android.util.EmojiManager
 import kotlinx.coroutines.launch
 
 // ─── Discussions Tab 入口 ─────────────────────────────────────────────────────
@@ -534,6 +535,7 @@ fun SwipeableDiscussionCard(
 
 @Composable
 fun DiscussionCardContent(discussion: GHDiscussion, c: GmColors, onClick: () -> Unit = {}) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -594,6 +596,35 @@ fun DiscussionCardContent(discussion: GHDiscussion, c: GmColors, onClick: () -> 
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         maxLines = 1,
                     )
+                }
+            }
+        }
+
+        if (discussion.labels.isNotEmpty()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            ) {
+                discussion.labels.forEach { label ->
+                    val labelColor = try {
+                        Color(android.graphics.Color.parseColor("#${label.color}"))
+                    } catch (_: Exception) {
+                        Coral
+                    }
+                    val textColor = if (isColorLight(labelColor)) Color.Black else Color.White
+
+                    Surface(
+                        color = labelColor,
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text(
+                            EmojiManager.replaceEmojiMarkdown(label.name, context),
+                            fontSize = 10.sp,
+                            color = textColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }

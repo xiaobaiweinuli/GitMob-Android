@@ -42,6 +42,7 @@ import coil3.compose.AsyncImage
 import com.gitmob.android.api.*
 import com.gitmob.android.ui.common.*
 import com.gitmob.android.ui.theme.*
+import com.gitmob.android.util.EmojiManager
 import com.gitmob.android.util.LogManager
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -468,6 +469,7 @@ private fun prTextFieldColors(c: GmColors) = OutlinedTextFieldDefaults.colors(
 
 @Composable
 fun PRCard(pr: GHPullRequest, c: GmColors, onClick: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val (statusColor, statusBg, statusIcon, statusLabel) = when {
         pr.isMerged -> Quadruple(MergedColor, PurpleDim, Icons.AutoMirrored.Filled.MergeType, "已合并")
         pr.isClosed -> Quadruple(c.textTertiary, c.bgItem,  Icons.Default.Cancel,              "已关闭")
@@ -534,11 +536,27 @@ fun PRCard(pr: GHPullRequest, c: GmColors, onClick: () -> Unit) {
                              catch (_: Exception) { c.bgItem }
                     val fg = if (isColorLight(bg)) Color(0xFF24292F) else Color.White
                     Text(
-                        label.name,
+                        EmojiManager.replaceEmojiMarkdown(label.name, context),
                         fontSize = 10.sp, color = fg, fontWeight = FontWeight.Medium,
                         modifier = Modifier.background(bg, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
                     )
                 }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // mergeable 状态提示
+        if (pr.isOpen && !pr.isDraft) {
+            val (mergeStatusColor, mergeStatusText) = when (pr.mergeableState) {
+                "clean", "MERGEABLE" -> Pair(Green, "✓ 可以合并")
+                "unstable" -> Pair(Color(0xFFD29922), "⚠ 检查未通过")
+                "dirty", "CONFLICTING" -> Pair(Color(0xFFF85149), "✗ 存在合并冲突")
+                "blocked" -> Pair(Color(0xFFD29922), "⚠ 合并被阻止")
+                else -> Pair(c.textTertiary, "检查合并状态中…")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.Info, null, tint = mergeStatusColor, modifier = Modifier.size(14.dp))
+                Text(mergeStatusText, fontSize = 11.sp, color = mergeStatusColor)
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -902,10 +920,8 @@ fun PRDetailScreen(
                             permission = permission,
                             isArchived = state.isArchived,
                             onMergeClick        = { showMergeDialog = true },
-                            onReviewClick       = { showReviewDialog = true },
-                            onReviewerClick     = { showReviewerDialog = true },
-                            onUpdateBranchClick = { vm.updatePRBranch() },
                             onMarkReadyClick    = { vm.markPRReadyForReview() },
+                            onUpdateBranchClick = { vm.updatePRBranch() },
                             onToggleStateClick  = { showCloseConfirm = true },
                         )
                     }
@@ -1330,6 +1346,7 @@ fun PRDetailScreen(
 
 @Composable
 private fun PRHeader(pr: GHPullRequest, c: GmColors) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val (statusColor, statusBg, statusIcon, statusLabel) = when {
         pr.isMerged -> Quadruple(MergedColor, PurpleDim, Icons.AutoMirrored.Filled.MergeType, "已合并")
         pr.isClosed -> Quadruple(c.textTertiary, c.bgItem,  Icons.Default.Cancel,              "已关闭")
@@ -1411,7 +1428,7 @@ private fun PRHeader(pr: GHPullRequest, c: GmColors) {
                              catch (_: Exception) { c.bgItem }
                     val fg = if (isColorLight(bg)) Color(0xFF24292F) else Color.White
                     Text(
-                        label.name,
+                        EmojiManager.replaceEmojiMarkdown(label.name, context),
                         fontSize = 11.sp, color = fg, fontWeight = FontWeight.Medium,
                         modifier = Modifier.background(bg, RoundedCornerShape(12.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
                     )
@@ -1594,12 +1611,13 @@ private fun PRActionPanel(
     permission: RepoPermission,
     isArchived: Boolean = false,
     onMergeClick: () -> Unit,
-    onReviewClick: () -> Unit,
-    onReviewerClick: () -> Unit,
-    onUpdateBranchClick: () -> Unit,
     onMarkReadyClick: () -> Unit,
+    onUpdateBranchClick: () -> Unit,
     onToggleStateClick: () -> Unit,
 ) {
+    // 只有有写权限时才显示整个操作面板
+    if (!permission.canWrite || isArchived) return
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1609,58 +1627,33 @@ private fun PRActionPanel(
     ) {
         Text("操作", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = c.textSecondary)
 
-        // 合并按钮（只在可合并时显示）
-        if (pr.isOpen && !pr.isDraft && permission.canWrite && pr.mergeableState != "dirty") {
+        // 合并按钮
+        if (pr.isOpen && !pr.isDraft && pr.mergeableState != "dirty") {
             PRActionButton(
                 label = "合并 PR",
                 icon = Icons.AutoMirrored.Filled.MergeType,
                 color = PurpleColor,
                 onClick = onMergeClick,
-                enabled = !isArchived,
             )
         }
 
-        // 草稿 → 就绪（只有 PR 作者或管理员才能操作）
+        // 草稿 → 就绪
         if (pr.isOpen && pr.isDraft) {
             PRActionButton(
                 label = "标记为就绪以供审查",
                 icon = Icons.Default.CheckCircle,
                 color = Green,
                 onClick = onMarkReadyClick,
-                enabled = !isArchived,
             )
         }
 
-        // 提交审查（有权限的人可以审查）
-        if (pr.isOpen && !pr.isDraft) {
-            PRActionButton(
-                label = "提交审查（批准 / 请求修改 / 评论）",
-                icon = Icons.Default.RateReview,
-                color = Coral,
-                onClick = onReviewClick,
-                enabled = !isArchived,
-            )
-        }
-
-        // 管理审查请求
-        if (pr.isOpen && permission.canWrite) {
-            PRActionButton(
-                label = "管理审查请求",
-                icon = Icons.Default.PersonAdd,
-                color = c.textSecondary,
-                onClick = onReviewerClick,
-                enabled = !isArchived,
-            )
-        }
-
-        // 更新分支（只在 head 落后于 base 时才有意义）
-        if (pr.isOpen && permission.canWrite && pr.mergeableState == "behind") {
+        // 更新分支
+        if (pr.isOpen && pr.mergeableState == "behind") {
             PRActionButton(
                 label = "更新分支",
                 icon = Icons.Default.Sync,
                 color = BlueColor,
                 onClick = onUpdateBranchClick,
-                enabled = !isArchived,
             )
         }
 
@@ -1671,7 +1664,6 @@ private fun PRActionPanel(
                 icon = if (pr.state == "open") Icons.Default.Cancel else Icons.Default.Refresh,
                 color = if (pr.state == "open") Color(0xFFF85149) else Green,
                 onClick = onToggleStateClick,
-                enabled = !isArchived,
             )
         }
     }

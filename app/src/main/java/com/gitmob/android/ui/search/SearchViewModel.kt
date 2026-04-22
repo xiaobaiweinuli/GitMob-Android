@@ -99,6 +99,23 @@ class SearchViewModel : ViewModel() {
      */
     fun searchSingleCategory(query: String, category: SearchCategory) {
         val q = query.trim(); if (q.isBlank()) return
+
+        // 如果已有该分类的搜索结果，就不重新搜索
+        if (state.value.query == q && state.value.hasSearched) {
+            val hasResults = when (category) {
+                SearchCategory.REPOS -> state.value.repoResults.isNotEmpty()
+                SearchCategory.CODE -> state.value.codeResults.isNotEmpty()
+                SearchCategory.ISSUES -> state.value.issueResults.isNotEmpty()
+                SearchCategory.PRS -> state.value.prResults.isNotEmpty()
+                SearchCategory.USERS -> state.value.userResults.isNotEmpty()
+                SearchCategory.ORGS -> state.value.orgResults.isNotEmpty()
+                SearchCategory.ALL -> false
+            }
+            if (hasResults) {
+                state.update { it.copy(category = category) }
+                return
+            }
+        }
         
         searchJob?.cancel()
         

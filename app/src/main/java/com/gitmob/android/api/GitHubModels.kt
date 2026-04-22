@@ -312,6 +312,8 @@ data class GHIssue(
     @SerializedName("node_id") val nodeId: String = "",
     val locked: Boolean = false,
     val viewerSubscription: String? = null,
+    val draft: Boolean = false,
+    @SerializedName("mergeable_state") val mergeableState: String? = null,
 ) {
     val isPR get() = pullRequest != null
 }

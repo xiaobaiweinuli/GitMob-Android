@@ -128,99 +128,104 @@ fun SearchResultsScreen(
             SearchCategory.ALL -> 0
         }
 
-        LazyColumn(
-        state = listState,
-        contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(padding)
-    ) {
-        if (total > 0) {
-            item {
-                Text(
-                    text = "共找到 $total 个结果",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = c.textSecondary
-                )
+        if (isLoading && items.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                LoadingBox()
             }
-        }
-
-        if (category == SearchCategory.REPOS) {
-            items(state.repoResults) { repo ->
-                    SearchRepoCard(
-                        repo = repo,
-                        onClick = { onRepoClick(repo.owner.login, repo.name) }
-                    )
+        } else {
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(padding)
+            ) {
+                if (total > 0) {
+                    item {
+                        Text(
+                            text = "共找到 $total 个结果",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = c.textSecondary
+                        )
+                    }
                 }
-            } else if (category == SearchCategory.CODE) {
-                items(state.codeResults) { code ->
-                    SearchCodeCard(
-                        code = code,
-                        onClick = {
-                            val uri = Uri.parse(code.htmlUrl)
-                            val dest = GitHubUrlParser.parse(uri)
-                            if (dest is GitHubDestination.FileView) {
-                                onCodeClick(dest.owner, dest.repo, dest.path, dest.branch)
+
+                if (category == SearchCategory.REPOS) {
+                    items(state.repoResults) { repo ->
+                        SearchRepoCard(
+                            repo = repo,
+                            onClick = { onRepoClick(repo.owner.login, repo.name) }
+                        )
+                    }
+                } else if (category == SearchCategory.CODE) {
+                    items(state.codeResults) { code ->
+                        SearchCodeCard(
+                            code = code,
+                            onClick = {
+                                val uri = Uri.parse(code.htmlUrl)
+                                val dest = GitHubUrlParser.parse(uri)
+                                if (dest is GitHubDestination.FileView) {
+                                    onCodeClick(dest.owner, dest.repo, dest.path, dest.branch)
+                                }
                             }
-                        }
-                    )
-                }
-            } else if (category == SearchCategory.ISSUES) {
-            items(state.issueResults) { issue ->
-                    SearchIssueCard(
-                        issue = issue,
-                        onClick = {
-                            val uri = Uri.parse(issue.htmlUrl)
-                            val dest = GitHubUrlParser.parse(uri)
-                            if (dest is GitHubDestination.Issue) {
-                                onIssueClick(dest.owner, dest.repo, dest.number)
+                        )
+                    }
+                } else if (category == SearchCategory.ISSUES) {
+                    items(state.issueResults) { issue ->
+                        SearchIssueCard(
+                            issue = issue,
+                            onClick = {
+                                val uri = Uri.parse(issue.htmlUrl)
+                                val dest = GitHubUrlParser.parse(uri)
+                                if (dest is GitHubDestination.Issue) {
+                                    onIssueClick(dest.owner, dest.repo, dest.number)
+                                }
                             }
-                        }
-                    )
-            }
-        } else if (category == SearchCategory.PRS) {
-            items(state.prResults) { issue ->
-                    SearchIssueCard(
-                        issue = issue,
-                        onClick = {
-                            val uri = Uri.parse(issue.htmlUrl)
-                            val dest = GitHubUrlParser.parse(uri)
-                            if (dest is GitHubDestination.PR) {
-                                onPRClick(dest.owner, dest.repo, dest.number)
+                        )
+                    }
+                } else if (category == SearchCategory.PRS) {
+                    items(state.prResults) { issue ->
+                        SearchIssueCard(
+                            issue = issue,
+                            onClick = {
+                                val uri = Uri.parse(issue.htmlUrl)
+                                val dest = GitHubUrlParser.parse(uri)
+                                if (dest is GitHubDestination.PR) {
+                                    onPRClick(dest.owner, dest.repo, dest.number)
+                                }
                             }
+                        )
+                    }
+                } else if (category == SearchCategory.USERS) {
+                    items(state.userResults) { user ->
+                        SearchUserCard(
+                            user = user,
+                            onClick = { onUserClick(user.login) }
+                        )
+                    }
+                } else if (category == SearchCategory.ORGS) {
+                    items(state.orgResults) { org ->
+                        SearchUserCard(
+                            user = org,
+                            onClick = { onUserClick(org.login) }
+                        )
+                    }
+                }
+
+                if (isLoadingMore) {
+                    item { LoadingBox(modifier = Modifier.fillMaxWidth()) }
+                }
+
+                if (!isLoading && items.isEmpty() && state.hasSearched) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("未找到相关结果", style = MaterialTheme.typography.bodyMedium, color = c.textSecondary)
                         }
-                    )
-            }
-            } else if (category == SearchCategory.USERS) {
-                items(state.userResults) { user ->
-                    SearchUserCard(
-                        user = user,
-                        onClick = { onUserClick(user.login) }
-                    )
-                }
-            } else if (category == SearchCategory.ORGS) {
-                items(state.orgResults) { org ->
-                    SearchUserCard(
-                        user = org,
-                        onClick = { onUserClick(org.login) }
-                    )
-                }
-            }
-
-            if (isLoading) {
-                item { LoadingBox(modifier = Modifier.fillMaxWidth()) }
-            }
-
-            if (isLoadingMore) {
-                item { LoadingBox(modifier = Modifier.fillMaxWidth()) }
-            }
-
-            if (!isLoading && items.isEmpty() && state.hasSearched) {
-                item {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("未找到相关结果", style = MaterialTheme.typography.bodyMedium, color = c.textSecondary)
                     }
                 }
             }
