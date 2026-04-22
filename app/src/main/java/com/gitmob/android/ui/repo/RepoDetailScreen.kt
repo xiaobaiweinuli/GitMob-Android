@@ -573,9 +573,10 @@ fun RepoDetailScreen(
                     )
                     Spacer(Modifier.height(10.dp))
                 }
-                if (!repo.homepage.isNullOrBlank()) {
-                    val urlToOpen = remember(repo.homepage) {
-                        val url = repo.homepage
+                val homepageUrl = repo.homepage?.takeIf { it.isNotBlank() && it != "null" }
+                if (!homepageUrl.isNullOrBlank()) {
+                    val urlToOpen = remember(homepageUrl) {
+                        val url = homepageUrl
                         if (!url.startsWith("http://") && !url.startsWith("https://")) {
                             "https://$url"
                         } else {
@@ -591,7 +592,7 @@ fun RepoDetailScreen(
                         }
                     ) {
                         Icon(Icons.Default.Link, null, tint = BlueColor, modifier = Modifier.size(14.dp))
-                        Text(repo.homepage, fontSize = 12.sp, color = BlueColor)
+                        Text(homepageUrl, fontSize = 12.sp, color = BlueColor)
                     }
                     Spacer(Modifier.height(8.dp))
                 }

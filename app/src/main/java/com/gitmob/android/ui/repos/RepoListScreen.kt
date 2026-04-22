@@ -641,7 +641,8 @@ private fun StarredRepoCard(
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
-                if (!repo.homepage.isNullOrBlank()) {
+                val homepageUrl = repo.homepage?.takeIf { it.isNotBlank() && it != "null" }
+                if (!homepageUrl.isNullOrBlank()) {
                     val context = LocalContext.current
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -649,14 +650,14 @@ private fun StarredRepoCard(
                         modifier = Modifier
                             .padding(top = 4.dp)
                             .clickable {
-                                val url = if (repo.homepage.startsWith("http")) repo.homepage else "https://${repo.homepage}"
+                                val url = if (homepageUrl.startsWith("http")) homepageUrl else "https://${homepageUrl}"
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                 context.startActivity(intent)
                             }
                     ) {
                         Icon(Icons.Default.Link, null, tint = BlueColor, modifier = Modifier.size(12.dp))
-                        Text(repo.homepage, fontSize = 11.sp, color = BlueColor, maxLines = 1)
+                        Text(homepageUrl, fontSize = 11.sp, color = BlueColor, maxLines = 1)
                     }
                 }
             }
@@ -676,24 +677,63 @@ private fun StarredRepoCard(
         }
         // 底部信息行
         Spacer(Modifier.height(8.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // 语言
-            if (!repo.language.isNullOrBlank()) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.size(10.dp).background(Yellow, androidx.compose.foundation.shape.CircleShape))
-                    Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 语言
+                if (!repo.language.isNullOrBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(Modifier.size(8.dp).background(Yellow, androidx.compose.foundation.shape.CircleShape))
+                        Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+                    }
+                }
+                // 星标数
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(12.dp))
+                    Text(repo.stars.toString(), fontSize = 11.sp, color = c.textTertiary)
+                }
+                // forks数
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
+                    Text(repo.forks.toString(), fontSize = 11.sp, color = c.textTertiary)
+                }
+                // 所属列表数量提示
+                if (repo.listIds.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.Bookmark, null, tint = Yellow.copy(alpha = 0.7f), modifier = Modifier.size(11.dp))
+                        Text("${repo.listIds.size}个列表", fontSize = 10.sp, color = c.textTertiary)
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                // 打开的 Issues 数（> 0 才显示，与远程仓库卡片一致）
+                if (repo.openIssues > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
+                        Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
+                    }
+                }
+                // 默认分支标签（与远程仓库卡片一致）
+                if (repo.defaultBranch.isNotBlank()) {
+                    Text(
+                        text = repo.defaultBranch,
+                        fontSize = 10.5.sp, color = BlueColor,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .background(BlueDim, RoundedCornerShape(20.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
                 }
             }
             // topics
             if (repo.topics.isNotEmpty()) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
                 ) {
-                    repo.topics.take(3).forEach { topic ->
+                    repo.topics.forEach { topic ->
                         Text(
                             text = topic,
                             fontSize = 9.sp,
@@ -704,52 +744,7 @@ private fun StarredRepoCard(
                             maxLines = 1
                         )
                     }
-                    if (repo.topics.size > 3) {
-                        Text(
-                            text = "+${repo.topics.size - 3}",
-                            fontSize = 9.sp,
-                            color = c.textTertiary
-                        )
-                    }
                 }
-            }
-            // 星标数
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(12.dp))
-                Text(repo.stars.toString(), fontSize = 11.sp, color = c.textTertiary)
-            }
-            // forks数
-            if (repo.forks > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
-                    Text(repo.forks.toString(), fontSize = 11.sp, color = c.textTertiary)
-                }
-            }
-            // 所属列表数量提示
-            if (repo.listIds.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.Bookmark, null, tint = Yellow.copy(alpha = 0.7f), modifier = Modifier.size(11.dp))
-                    Text("${repo.listIds.size}个列表", fontSize = 10.sp, color = c.textTertiary)
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            // 打开的 Issues 数（> 0 才显示，与远程仓库卡片一致）
-            if (repo.openIssues > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
-                    Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
-                }
-            }
-            // 默认分支标签（与远程仓库卡片一致）
-            if (repo.defaultBranch.isNotBlank()) {
-                Text(
-                    text = repo.defaultBranch,
-                    fontSize = 10.5.sp, color = BlueColor,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier
-                        .background(BlueDim, RoundedCornerShape(20.dp))
-                        .padding(horizontal = 7.dp, vertical = 2.dp),
-                )
             }
         }
     }
@@ -909,20 +904,21 @@ private fun RepoCardContent(
                     Text(repo.description, fontSize = 12.sp, color = c.textSecondary, maxLines = 2,
                         modifier = Modifier.padding(top = 3.dp))
                 }
-                if (!repo.homepage.isNullOrBlank()) {
+                val homepageUrl = repo.homepage?.takeIf { it.isNotBlank() && it != "null" }
+                if (!homepageUrl.isNullOrBlank()) {
                     val context = LocalContext.current
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
                             .padding(top = 4.dp)
                             .clickable {
                                 // 打开website链接
-                                val url = if (repo.homepage.startsWith("http")) repo.homepage else "https://${repo.homepage}"
+                                val url = if (homepageUrl.startsWith("http")) homepageUrl else "https://${homepageUrl}"
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                 context.startActivity(intent)
                             }) {
                         Icon(Icons.Default.Link, null, tint = BlueColor, modifier = Modifier.size(12.dp))
-                        Text(repo.homepage, fontSize = 11.sp, color = BlueColor, maxLines = 1)
+                        Text(homepageUrl, fontSize = 11.sp, color = BlueColor, maxLines = 1)
                     }
                 }
             }

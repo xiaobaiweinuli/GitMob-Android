@@ -677,10 +677,11 @@ private fun FavRepoCard(
                 Spacer(Modifier.height(4.dp))
                 Text(repo.description, fontSize = 12.sp, color = c.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            if (!repo.website.isNullOrBlank()) {
+            val websiteUrl = repo.website?.takeIf { it.isNotBlank() && it != "null" }
+            if (!websiteUrl.isNullOrBlank()) {
                 Spacer(Modifier.height(4.dp))
-                val urlToOpen = remember(repo.website) {
-                    val url = repo.website
+                val urlToOpen = remember(websiteUrl) {
+                    val url = websiteUrl
                     if (!url.startsWith("http://") && !url.startsWith("https://")) {
                         "https://$url"
                     } else {
@@ -696,7 +697,7 @@ private fun FavRepoCard(
                     }
                 ) {
                     Icon(Icons.Default.Link, null, tint = BlueColor, modifier = Modifier.size(12.dp))
-                    Text(repo.website, fontSize = 11.sp, color = BlueColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(websiteUrl, fontSize = 11.sp, color = BlueColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -704,7 +705,7 @@ private fun FavRepoCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (!repo.language.isNullOrBlank()) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Box(Modifier.size(10.dp).background(Coral, CircleShape))
+                            Box(Modifier.size(8.dp).background(Coral, CircleShape))
                             Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
                         }
                     }
@@ -712,6 +713,18 @@ private fun FavRepoCard(
                         Icon(Icons.Default.StarBorder, null, tint = Yellow, modifier = Modifier.size(13.dp))
                         Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
+                        Text("${repo.forks}", fontSize = 11.sp, color = c.textTertiary)
+                    }
+                    Text(
+                        text = repo.defaultBranch,
+                        fontSize = 10.5.sp, color = BlueColor,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .background(BlueDim, RoundedCornerShape(20.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
                     if (repo.isPrivate) {
                         GmBadge("私有", RedDim, RedColor)
                     }
@@ -959,12 +972,18 @@ private fun PinnedRepoCard(repo: GHRepo, c: GmColors, onClick: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             if (!repo.language.isNullOrBlank()) Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(10.dp).background(Coral, CircleShape)); Spacer(Modifier.width(4.dp))
+                Box(Modifier.size(8.dp).background(Coral, CircleShape)); Spacer(Modifier.width(4.dp))
                 Text(repo.language, fontSize = 11.sp, color = c.textTertiary, maxLines = 1)
             } else Spacer(Modifier.weight(1f))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.StarBorder, null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
-                Spacer(Modifier.width(3.dp)); Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.StarBorder, null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(3.dp)); Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(3.dp)); Text("${repo.forks}", fontSize = 11.sp, color = c.textTertiary)
+                }
             }
         }
     }

@@ -28,6 +28,8 @@ data class FavRepo(
     val description: String?,
     val language: String?,
     val stars: Int,
+    val forks: Int,
+    val defaultBranch: String,
     val isPrivate: Boolean,
     val archived: Boolean,
     val htmlUrl: String,
@@ -50,7 +52,8 @@ data class FavoritesState(
 private fun FavRepo.toJson() = JSONObject().apply {
     put("id", id); put("fullName", fullName); put("name", name); put("ownerLogin", ownerLogin)
     put("description", description ?: ""); put("language", language ?: "")
-    put("stars", stars); put("isPrivate", isPrivate); put("archived", archived); put("htmlUrl", htmlUrl)
+    put("stars", stars); put("forks", forks); put("defaultBranch", defaultBranch)
+    put("isPrivate", isPrivate); put("archived", archived); put("htmlUrl", htmlUrl)
     put("website", website ?: "")
     put("topics", JSONArray(topics))
     put("groupId", groupId ?: "")
@@ -62,21 +65,23 @@ private fun FavGroup.toJson() = JSONObject().apply {
 }
 
 private fun JSONObject.toFavRepo() = FavRepo(
-    id          = optLong("id", 0L), // 向后兼容：旧数据没有 id 时默认为 0
-    fullName    = optString("fullName"),
-    name        = optString("name"),
-    ownerLogin  = optString("ownerLogin"),
-    description = optString("description").ifBlank { null },
-    language    = optString("language").ifBlank { null },
-    stars       = optInt("stars"),
-    isPrivate   = optBoolean("isPrivate"),
-    archived    = optBoolean("archived"),
-    htmlUrl     = optString("htmlUrl"),
-    website     = optString("website").ifBlank { null },
-    topics      = (0 until (optJSONArray("topics")?.length() ?: 0)).map {
+    id            = optLong("id", 0L), // 向后兼容：旧数据没有 id 时默认为 0
+    fullName      = optString("fullName"),
+    name          = optString("name"),
+    ownerLogin    = optString("ownerLogin"),
+    description   = optString("description").ifBlank { null },
+    language      = optString("language").ifBlank { null },
+    stars         = optInt("stars"),
+    forks         = optInt("forks", 0), // 向后兼容：旧数据没有 forks 时默认为 0
+    defaultBranch = optString("defaultBranch", "main"), // 向后兼容：旧数据没有 defaultBranch 时默认为 main
+    isPrivate     = optBoolean("isPrivate"),
+    archived      = optBoolean("archived"),
+    htmlUrl       = optString("htmlUrl"),
+    website       = optString("website").ifBlank { null },
+    topics        = (0 until (optJSONArray("topics")?.length() ?: 0)).map {
         optJSONArray("topics")!!.optString(it)
     },
-    groupId     = optString("groupId").ifBlank { null },
+    groupId       = optString("groupId").ifBlank { null },
 )
 
 private fun JSONObject.toFavGroup() = FavGroup(
@@ -89,19 +94,21 @@ private fun JSONObject.toFavGroup() = FavGroup(
 )
 
 private fun GHRepo.toFavRepo(groupId: String?) = FavRepo(
-    id          = id,
-    fullName    = fullName,
-    name        = name,
-    ownerLogin  = owner.login,
-    description = description,
-    language    = language,
-    stars       = stars,
-    isPrivate   = private,
-    archived    = archived,
-    htmlUrl     = htmlUrl,
-    website     = homepage,
-    topics      = topics,
-    groupId     = groupId,
+    id            = id,
+    fullName      = fullName,
+    name          = name,
+    ownerLogin    = owner.login,
+    description   = description,
+    language      = language,
+    stars         = stars,
+    forks         = forks,
+    defaultBranch = defaultBranch,
+    isPrivate     = private,
+    archived      = archived,
+    htmlUrl       = htmlUrl,
+    website       = homepage,
+    topics        = topics,
+    groupId       = groupId,
 )
 
 // ─── Manager ─────────────────────────────────────────────────────────────────
@@ -273,17 +280,19 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
         val old = s.allReposById[repo.id] ?: return
         
         val updated = old.copy(
-            id          = repo.id,
-            name        = repo.name,
-            fullName    = repo.fullName,
-            description = repo.description,
-            language    = repo.language,
-            stars       = repo.stars,
-            isPrivate   = repo.private,
-            archived    = repo.archived,
-            htmlUrl     = repo.htmlUrl,
-            website     = repo.homepage,
-            topics      = repo.topics,
+            id            = repo.id,
+            name          = repo.name,
+            fullName      = repo.fullName,
+            description   = repo.description,
+            language      = repo.language,
+            stars         = repo.stars,
+            forks         = repo.forks,
+            defaultBranch = repo.defaultBranch,
+            isPrivate     = repo.private,
+            archived      = repo.archived,
+            htmlUrl       = repo.htmlUrl,
+            website       = repo.homepage,
+            topics        = repo.topics,
         )
         
         if (updated == old) {
