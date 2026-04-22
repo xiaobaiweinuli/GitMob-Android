@@ -18,14 +18,19 @@ import androidx.compose.material.icons.automirrored.filled.MergeType
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -294,54 +299,130 @@ fun SearchUserCard(
 @Composable
 fun SearchCodeCard(
     code: GHCodeResult,
+    query: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalGmColors.current
+    val fragment = code.textMatches.firstOrNull()?.fragment
 
-    Card(
+    /**
+     * 创建高亮文本，将查询词用 Coral 颜色高亮显示
+     */
+    fun buildHighlightedText(text: String, query: String) = buildAnnotatedString {
+        if (query.isBlank()) {
+            append(text)
+            return@buildAnnotatedString
+        }
+
+        val lowerText = text.lowercase()
+        val lowerQuery = query.lowercase()
+        var lastIndex = 0
+        var index = lowerText.indexOf(lowerQuery, lastIndex)
+
+        while (index != -1) {
+            // 添加查询词之前的文本
+            append(text.substring(lastIndex, index))
+            // 高亮查询词
+            withStyle(
+                style = SpanStyle(
+                    color = Coral,
+                    fontWeight = FontWeight.Bold,
+                    background = Color.Unspecified
+                )
+            ) {
+                append(text.substring(index, index + lowerQuery.length))
+            }
+            lastIndex = index + lowerQuery.length
+            index = lowerText.indexOf(lowerQuery, lastIndex)
+        }
+        // 添加剩余文本
+        if (lastIndex < text.length) {
+            append(text.substring(lastIndex))
+        }
+    }
+
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = c.bgCard),
+            .background(c.bgCard, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(14.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AsyncImage(
+            AsyncImage(
                 model = code.repository.owner.avatarUrl,
                 contentDescription = null,
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(20.dp)
                     .clip(CircleShape),
             )
-                Text(
-                    text = code.repository.fullName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Coral,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
             Text(
-                text = code.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = c.textPrimary
-            )
-            Text(
-                text = code.path,
-                style = MaterialTheme.typography.bodySmall,
-                color = c.textSecondary,
+                text = code.repository.fullName,
+                fontSize = 13.sp,
+                color = Coral,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+
+        Spacer(Modifier.height(6.dp))
+
+        Text(
+            text = code.path,
+            fontSize = 12.sp,
+            color = c.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontFamily = FontFamily.Monospace,
+        )
+
+        if (fragment != null) {
+            Spacer(Modifier.height(8.dp))
+
+            val lines = remember(fragment) { fragment.lines().take(8) }
+            val previewBg = c.bgItem
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(previewBg, RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(8.dp)),
+            ) {
+                if (lines.isNotEmpty()) {
+                    lines.forEachIndexed { index, line ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp, vertical = 0.5.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Text(
+                                text = "${index + 1}",
+                                fontSize = 10.sp,
+                                color = c.textTertiary,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.width(24.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = buildHighlightedText(line.ifBlank { " " }, query),
+                                fontSize = 10.sp,
+                                color = c.textSecondary,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.weight(1f),
+                                softWrap = true,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
+            }
         }
     }
 }

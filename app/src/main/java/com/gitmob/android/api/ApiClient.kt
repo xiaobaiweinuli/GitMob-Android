@@ -125,9 +125,15 @@ object ApiClient {
 
         val authInterceptor = Interceptor { chain ->
             val token = runBlocking { tokenStorage.accessToken.first() }
-            val requestBuilder = chain.request().newBuilder()
-                .header("Accept", "application/vnd.github+json")
-                .header("X-GitHub-Api-Version", "2026-03-10")
+            val originalRequest = chain.request()
+            val requestBuilder = originalRequest.newBuilder()
+            
+            // 只有当请求没有设置 Accept Header 时，才添加默认的 Accept Header
+            if (originalRequest.header("Accept") == null) {
+                requestBuilder.header("Accept", "application/vnd.github+json")
+            }
+            
+            requestBuilder.header("X-GitHub-Api-Version", "2026-03-10")
             
             if (!token.isNullOrBlank()) {
                 requestBuilder.header("Authorization", "Bearer $token")

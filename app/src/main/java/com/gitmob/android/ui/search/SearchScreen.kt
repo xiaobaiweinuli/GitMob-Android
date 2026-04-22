@@ -328,7 +328,7 @@ private fun SearchResultsContent(
                 item { LoadingBox(modifier = Modifier.fillMaxWidth()) }
             } else {
                 items(state.codeResults.take(5)) { code ->
-                    SearchCodeCard(code = code, onClick = {
+                    SearchCodeCard(code = code, query = state.query, onClick = {
                         val uri = Uri.parse(code.htmlUrl)
                         val dest = GitHubUrlParser.parse(uri)
                         if (dest is GitHubDestination.FileView) {

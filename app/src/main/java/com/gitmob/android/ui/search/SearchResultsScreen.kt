@@ -163,6 +163,7 @@ fun SearchResultsScreen(
                     items(state.codeResults) { code ->
                         SearchCodeCard(
                             code = code,
+                            query = query,
                             onClick = {
                                 val uri = Uri.parse(code.htmlUrl)
                                 val dest = GitHubUrlParser.parse(uri)
