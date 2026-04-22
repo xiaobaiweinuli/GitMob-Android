@@ -945,6 +945,7 @@ data class GHCodeResult(
 data class GHSearchUser(
     val id: Long = 0,
     val login: String,
+    val name: String? = null,
     @SerializedName("avatar_url") val avatarUrl: String?,
     @SerializedName("html_url") val htmlUrl: String,
     val type: String = "User",   // "User" | "Organization"

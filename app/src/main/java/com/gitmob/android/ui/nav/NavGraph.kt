@@ -49,7 +49,10 @@ import com.gitmob.android.ui.repo.RepoDetailViewModel
 import com.gitmob.android.ui.home.HomeScreen
 import com.gitmob.android.ui.home.HomeViewModel
 import com.gitmob.android.ui.repos.RepoListScreen
+import com.gitmob.android.ui.search.SearchCategory
 import com.gitmob.android.ui.search.SearchScreen
+import com.gitmob.android.ui.search.SearchResultsScreen
+import com.gitmob.android.ui.search.SearchViewModel
 import com.gitmob.android.ui.settings.SettingsScreen
 import com.gitmob.android.ui.theme.BlueColor
 import com.gitmob.android.ui.theme.Coral
@@ -108,6 +111,10 @@ sealed class Route(val path: String) {
             "edit_file/$owner/$repo/$branch?path=${URLEncoder.encode(path, "UTF-8")}&mode=$mode&isSymlink=$isSymlink&isSubmodule=$isSubmodule"
     }
     object Search : Route("search")
+    object SearchResults : Route("search_results/{query}/{category}") {
+        fun go(query: String, category: SearchCategory) = 
+            "search_results/${URLEncoder.encode(query, "UTF-8")}/${category.name}"
+    }
     object UserNavGraph : Route("user_graph") {
         fun go() = "user_graph"
     }
@@ -723,6 +730,57 @@ fun AppNavGraph(
                 onUserClick = { login ->
                     navController.navigate(Route.UserProfile.go(login))
                 },
+                onViewMoreClick = { query, category ->
+                    navController.navigate(Route.SearchResults.go(query, category))
+                },
+                onIssueClick = { owner, repo, number ->
+                    navController.navigate(Route.IssueDetail.go(owner, repo, number))
+                },
+                onPRClick = { owner, repo, number ->
+                    navController.navigate(Route.PRDetail.go(owner, repo, number))
+                },
+                onCodeClick = { owner, repo, path, branch ->
+                    navController.navigate(Route.FileViewer.go(owner, repo, path, branch))
+                }
+            )
+        }
+
+        composable(
+            route = Route.SearchResults.path,
+            arguments = listOf(
+                navArgument("query") { type = NavType.StringType },
+                navArgument("category") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val query = URLDecoder.decode(
+                backStackEntry.arguments?.getString("query") ?: "", 
+                "UTF-8"
+            )
+            val categoryName = backStackEntry.arguments?.getString("category") ?: "REPOS"
+            val category = try { SearchCategory.valueOf(categoryName) } catch (e: Exception) { SearchCategory.REPOS }
+            
+            SearchResultsScreen(
+                query = query,
+                category = category,
+                onBack = { navController.popBackStack() },
+                onRepoClick = { owner, repo ->
+                    navController.navigate(Route.RepoDetail.go(owner, repo))
+                },
+                onOrgClick = { orgLogin ->
+                    navController.popBackStack()
+                },
+                onUserClick = { login ->
+                    navController.navigate(Route.UserProfile.go(login))
+                },
+                onIssueClick = { owner, repo, number ->
+                    navController.navigate(Route.IssueDetail.go(owner, repo, number))
+                },
+                onPRClick = { owner, repo, number ->
+                    navController.navigate(Route.PRDetail.go(owner, repo, number))
+                },
+                onCodeClick = { owner, repo, path, branch ->
+                    navController.navigate(Route.FileViewer.go(owner, repo, path, branch))
+                }
             )
         }
  
@@ -1252,10 +1310,16 @@ fun FileViewerScreen(
 ) {
     val c = LocalGmColors.current
     val repository = remember { RepoRepository() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val tokenStorage = remember { com.gitmob.android.auth.TokenStorage(context) }
+    
     var content by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var error   by remember { mutableStateOf<String?>(null) }
     var fileInfo by remember { mutableStateOf<com.gitmob.android.api.GHContent?>(null) }
+    var repoInfo by remember { mutableStateOf<com.gitmob.android.api.GHRepo?>(null) }
+    var userLogin by remember { mutableStateOf("") }
+    var userOrgs by remember { mutableStateOf<List<com.gitmob.android.api.GHOrg>>(emptyList()) }
     
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -1264,15 +1328,28 @@ fun FileViewerScreen(
     var historyLoading by remember { mutableStateOf(false) }
     var selectedCommitForHistory by remember { mutableStateOf<com.gitmob.android.api.GHCommitFull?>(null) }
     var commitDetailLoading by remember { mutableStateOf(false) }
-    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
  
+    // 获取用户信息
+    LaunchedEffect(Unit) {
+        tokenStorage.userProfile.collect { profile ->
+            if (profile != null) {
+                userLogin = profile.first
+                try {
+                    userOrgs = repository.getUserOrgs()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+    
+    // 获取文件和仓库信息
     LaunchedEffect(path) {
         loading = true
         try { 
             val fileWithInfo = repository.getFileWithInfo(owner, repo, path, ref)
             fileInfo = fileWithInfo.info
             content = fileWithInfo.content
+            repoInfo = repository.getRepo(owner, repo)
             error = null 
         } catch (e: Exception) { 
             error = e.message 
@@ -1280,6 +1357,13 @@ fun FileViewerScreen(
             loading = false 
         }
     }
+    
+    val permission = com.gitmob.android.ui.repo.rememberRepoPermission(
+        repo = repoInfo,
+        userLogin = userLogin,
+        userOrgs = userOrgs
+    )
+    val isArchived = repoInfo?.archived == true
  
     Scaffold(
         containerColor = c.bgDeep,
@@ -1311,65 +1395,79 @@ fun FileViewerScreen(
                             Icon(Icons.Default.MoreVert, null, tint = c.textSecondary, modifier = Modifier.size(20.dp))
                         }
                         DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("编辑", fontSize = 13.sp, color = c.textPrimary) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.Edit,
-                                        null,
-                                        tint = c.textSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onEdit()
-                                },
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+            ) {
+                com.gitmob.android.ui.repo.PermissionRequired(
+                    permission = permission,
+                    requireWrite = true,
+                    isArchived = isArchived
+                ) {
+                    com.gitmob.android.ui.repo.ArchivedAwareDropdownMenuItem(
+                        text = { Text("编辑", fontSize = 13.sp, color = c.textPrimary) },
+                        isArchived = isArchived,
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Edit,
+                                null,
+                                tint = c.textSecondary,
+                                modifier = Modifier.size(16.dp)
                             )
-                            DropdownMenuItem(
-                                text = { Text("删除", fontSize = 13.sp, color = RedColor) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        null,
-                                        tint = RedColor,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    showDeleteDialog = true
-                                },
+                        },
+                        onClick = {
+                            showMenu = false
+                            onEdit()
+                        },
+                    )
+                }
+                com.gitmob.android.ui.repo.PermissionRequired(
+                    permission = permission,
+                    requireOwner = true,
+                    isArchived = isArchived
+                ) {
+                    com.gitmob.android.ui.repo.ArchivedAwareDropdownMenuItem(
+                        text = { Text("删除", fontSize = 13.sp, color = if (isArchived) c.textTertiary else RedColor) },
+                        isArchived = isArchived,
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                null,
+                                tint = if (isArchived) c.textTertiary else RedColor,
+                                modifier = Modifier.size(16.dp)
                             )
-                            DropdownMenuItem(
-                                text = { Text("历史记录", fontSize = 13.sp, color = c.textPrimary) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.History,
-                                        null,
-                                        tint = c.textSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    showHistory = true
-                                    historyLoading = true
-                                    scope.launch {
-                                        try {
-                                            historyCommits = repository.getCommits(owner, repo, ref, path)
-                                        } catch (e: Exception) {
-                                            error = e.message
-                                        } finally {
-                                            historyLoading = false
-                                        }
-                                    }
-                                },
-                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            showDeleteDialog = true
+                        },
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("历史记录", fontSize = 13.sp, color = c.textPrimary) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.History,
+                            null,
+                            tint = c.textSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        showHistory = true
+                        historyLoading = true
+                        scope.launch {
+                            try {
+                                historyCommits = repository.getCommits(owner, repo, ref, path)
+                            } catch (e: Exception) {
+                                error = e.message
+                            } finally {
+                                historyLoading = false
+                            }
                         }
+                    },
+                )
+            }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = c.bgDeep),

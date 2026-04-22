@@ -10,6 +10,7 @@ import com.gitmob.android.api.GHRepo
 import com.gitmob.android.api.GHSearchUser
 import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,28 +66,112 @@ class SearchViewModel : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var searchJob: Job? = null
+    private var debounceJob: Job? = null
 
-    fun setQuery(q: String) {
+    /**
+     * 只更新查询内容，不执行搜索
+     */
+    fun updateQuery(q: String) {
         state.update { it.copy(query = q, error = null) }
         if (q.isBlank()) state.update { SearchState() }
     }
 
-    fun setCategory(cat: SearchCategory) { state.update { it.copy(category = cat) } }
+    fun setQuery(q: String) {
+        updateQuery(q)
+    }
 
+    fun setCategory(cat: SearchCategory) {
+        state.update { it.copy(category = cat) }
+    }
+
+    /**
+     * 搜索（只有用户回车或点击搜索按钮时才触发）
+     */
     fun search(query: String = state.value.query) {
         val q = query.trim(); if (q.isBlank()) return
+        
         searchJob?.cancel()
-        state.update { SearchState(query = q, hasSearched = true,
-            loadingRepos = true, loadingCode = true, loadingIssues = true,
-            loadingPrs = true, loadingUsers = true, loadingOrgs = true) }
+        performSearch(q)
+    }
+
+    /**
+     * 搜索单个分类（用于 SearchResultsScreen）
+     */
+    fun searchSingleCategory(query: String, category: SearchCategory) {
+        val q = query.trim(); if (q.isBlank()) return
+        
+        searchJob?.cancel()
+        
+        state.update { SearchState(query = q, category = category, hasSearched = true) }
         viewModelScope.launch { tokenStorage.addSearchHistory(q) }
+        
         searchJob = viewModelScope.launch {
-            launch { searchRepos(q, 1) }
-            launch { searchCode(q, 1) }
-            launch { searchIssues(q, 1) }
-            launch { searchPrs(q, 1) }
-            launch { searchUsers(q, 1) }
-            launch { searchOrgs(q, 1) }
+            when (category) {
+                SearchCategory.REPOS -> { 
+                    state.update { it.copy(loadingRepos = true) }
+                    searchRepos(q, 1)
+                }
+                SearchCategory.CODE -> { 
+                    state.update { it.copy(loadingCode = true) }
+                    searchCode(q, 1)
+                }
+                SearchCategory.ISSUES -> { 
+                    state.update { it.copy(loadingIssues = true) }
+                    searchIssues(q, 1)
+                }
+                SearchCategory.PRS -> { 
+                    state.update { it.copy(loadingPrs = true) }
+                    searchPrs(q, 1)
+                }
+                SearchCategory.USERS -> { 
+                    state.update { it.copy(loadingUsers = true) }
+                    searchUsers(q, 1)
+                }
+                SearchCategory.ORGS -> { 
+                    state.update { it.copy(loadingOrgs = true) }
+                    searchOrgs(q, 1)
+                }
+                SearchCategory.ALL -> { /* 不会到这里 */ }
+            }
+        }
+    }
+
+    private fun performSearch(q: String) {
+        val category = state.value.category
+        state.update { SearchState(
+            query = q, 
+            category = category,
+            hasSearched = true,
+            loadingRepos = category == SearchCategory.ALL || category == SearchCategory.REPOS,
+            loadingCode = category == SearchCategory.ALL || category == SearchCategory.CODE,
+            loadingIssues = category == SearchCategory.ALL || category == SearchCategory.ISSUES,
+            loadingPrs = category == SearchCategory.ALL || category == SearchCategory.PRS,
+            loadingUsers = category == SearchCategory.ALL || category == SearchCategory.USERS,
+            loadingOrgs = category == SearchCategory.ALL || category == SearchCategory.ORGS
+        ) }
+        viewModelScope.launch { tokenStorage.addSearchHistory(q) }
+        
+        searchJob = viewModelScope.launch {
+            if (state.value.category == SearchCategory.ALL) {
+                // 全部搜索
+                launch { searchRepos(q, 1) }
+                launch { searchCode(q, 1) }
+                launch { searchIssues(q, 1) }
+                launch { searchPrs(q, 1) }
+                launch { searchUsers(q, 1) }
+                launch { searchOrgs(q, 1) }
+            } else {
+                // 单个分类搜索
+                when (state.value.category) {
+                    SearchCategory.REPOS -> searchRepos(q, 1)
+                    SearchCategory.CODE -> searchCode(q, 1)
+                    SearchCategory.ISSUES -> searchIssues(q, 1)
+                    SearchCategory.PRS -> searchPrs(q, 1)
+                    SearchCategory.USERS -> searchUsers(q, 1)
+                    SearchCategory.ORGS -> searchOrgs(q, 1)
+                    SearchCategory.ALL -> {}
+                }
+            }
         }
     }
 
@@ -145,7 +230,13 @@ class SearchViewModel : ViewModel() {
     fun loadMoreUsers()   { if (state.value.userLoadingMore  || !state.value.userHasMore)  return; state.update { it.copy(userLoadingMore  = true) }; viewModelScope.launch { searchUsers(state.value.query,  state.value.userPage  + 1) } }
     fun loadMoreOrgs()    { if (state.value.orgLoadingMore   || !state.value.orgHasMore)   return; state.update { it.copy(orgLoadingMore   = true) }; viewModelScope.launch { searchOrgs(state.value.query,   state.value.orgPage   + 1) } }
 
-    fun searchFromHistory(query: String) { setQuery(query); search(query) }
+    /**
+     * 从历史记录搜索，只填充到查询框，不执行搜索
+     */
+    fun fillFromHistory(query: String) {
+        updateQuery(query)
+    }
+
     fun clearHistory() { viewModelScope.launch { tokenStorage.clearSearchHistory() } }
     val isAnyLoading get() = state.value.run { loadingRepos || loadingCode || loadingIssues || loadingPrs || loadingUsers || loadingOrgs }
 }
