@@ -327,7 +327,7 @@ fun CommitDetailSheet(
             Spacer(Modifier.height(12.dp))
 
             // ── 操作区 ─────────────────────────────────────────────────
-            PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+            PermissionRequired(permission = permission, requireWrite = true, isArchived = isArchived) {
                 Text("操作", fontSize = 12.sp, color = if (isArchived) c.textTertiary else c.textSecondary, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(10.dp))
 

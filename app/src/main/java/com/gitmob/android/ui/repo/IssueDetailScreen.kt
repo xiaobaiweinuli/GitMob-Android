@@ -206,7 +206,7 @@ fun IssueDetailScreen(
                                         )
                                     }
                                 }
-                                PermissionRequired(permission = permission, requireOwner = true) {
+                                PermissionRequired(permission = permission, requireWrite = true) {
                                     ArchivedAwareDropdownMenuItem(
                                         text = { Text("置顶", fontSize = 14.sp) },
                                         isArchived = isArchived,

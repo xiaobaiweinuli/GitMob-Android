@@ -163,7 +163,7 @@ fun ActionsTab(
                     if (state.selectedWorkflow.state == "active") {
                         PermissionRequired(
                             permission = permission,
-                            requireOwner = true,
+                            requireWrite = true,
                             isArchived = isArchived
                         ) {
                             Button(
@@ -409,7 +409,7 @@ fun WorkflowItem(
         if (workflow.state == "active") {
             PermissionRequired(
                 permission = permission,
-                requireOwner = true,
+                requireWrite = true,
                 isArchived = isArchived
             ) {
                 IconButton(

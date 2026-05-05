@@ -105,7 +105,7 @@ fun BranchesTab(
     ) {
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             item {
-                PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+                PermissionRequired(permission = permission, requireWrite = true, isArchived = isArchived) {
                     Button(onClick = onNewBranch, modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isArchived) c.bgItem else CoralDim, 
@@ -157,7 +157,7 @@ fun BranchesTab(
                                     onClick = { onSwitch(branch.name); showMenu = false },
                                 )
                             }
-                            PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+                            PermissionRequired(permission = permission, requireWrite = true, isArchived = isArchived) {
                                 if (!isDefault) {
                                     ArchivedAwareDropdownMenuItem(
                                         text = { Text("设为默认分支", fontSize = 13.sp) },

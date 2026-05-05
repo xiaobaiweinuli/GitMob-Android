@@ -377,7 +377,7 @@ fun ReleaseCard(
             if (release.draft) GmBadge("草稿", c.textTertiary, c.textSecondary)
             Spacer(Modifier.weight(1f))
             Text(release.tagName, fontSize = 12.sp, color = Coral, fontFamily = FontFamily.Monospace)
-            PermissionRequired(permission = permission, requireOwner = true) {
+            PermissionRequired(permission = permission, requireWrite = true) {
                 if (vm != null && onEditClick != null) {
                     Box(
                         modifier = Modifier

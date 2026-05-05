@@ -109,6 +109,10 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
         } catch (_: Exception) {}
     }
     
+    fun setUserOrgs(orgs: List<GHOrg>) {
+        _state.update { it.copy(userOrgs = orgs) }
+    }
+
     fun ensureOrgsLoaded() {
         if (_state.value.userOrgs.isEmpty()) {
             loadOrgs()

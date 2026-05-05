@@ -292,7 +292,7 @@ fun RepoDetailScreen(
                             modifier = Modifier.background(c.bgCard),
                         ) {
                             // 需要权限的选项用 PermissionRequired 包裹
-                            PermissionRequired(permission = permission, requireOwner = true) {
+                            PermissionRequired(permission = permission, requireWrite = true) {
                                 ArchivedAwareDropdownMenuItem(
                                     text = { Text("重命名", fontSize = 14.sp) },
                                     isArchived = isArchived,
@@ -310,7 +310,7 @@ fun RepoDetailScreen(
                                     },
                                 )
                             }
-                            PermissionRequired(permission = permission, requireOwner = true) {
+                            PermissionRequired(permission = permission, requireWrite = true) {
                                 ArchivedAwareDropdownMenuItem(
                                     text = { Text("编辑信息", fontSize = 14.sp) },
                                     isArchived = isArchived,
@@ -353,7 +353,7 @@ fun RepoDetailScreen(
                                     }
                                 },
                             )
-                            PermissionRequired(permission = permission, requireOwner = true) {
+                            PermissionRequired(permission = permission, requireWrite = true) {
                                 ArchivedAwareDropdownMenuItem(
                                     text = {
                                         Text(
@@ -376,7 +376,7 @@ fun RepoDetailScreen(
                                     },
                                 )
                             }
-                            PermissionRequired(permission = permission, requireOwner = true) {
+                            PermissionRequired(permission = permission, requireWrite = true) {
                                 ArchivedAwareDropdownMenuItem(
                                     text = { Text("转移", fontSize = 14.sp) },
                                     isArchived = isArchived,
@@ -394,7 +394,7 @@ fun RepoDetailScreen(
                                     },
                                 )
                             }
-                            PermissionRequired(permission = permission, requireOwner = true) {
+                            PermissionRequired(permission = permission, requireWrite = true) {
                                 ArchivedAwareDropdownMenuItem(
                                     text = {
                                         Text(
@@ -446,7 +446,7 @@ fun RepoDetailScreen(
                                     showWatchSheet = true
                                 },
                             )
-                            PermissionRequired(permission = permission, requireOwner = true) {
+                            PermissionRequired(permission = permission, requireWrite = true) {
                                 ArchivedAwareDropdownMenuItem(
                                     text = {
                                         Text(
@@ -469,7 +469,7 @@ fun RepoDetailScreen(
                                     },
                                 )
                             }
-                            PermissionRequired(permission = permission, requireOwner = true) {
+                            PermissionRequired(permission = permission, requireWrite = true) {
                                 ArchivedAwareDropdownMenuItem(
                                     text = {
                                         Text(
@@ -492,7 +492,7 @@ fun RepoDetailScreen(
                                     },
                                 )
                             }
-                            PermissionRequired(permission = permission, requireOwner = true) {
+                            PermissionRequired(permission = permission, requireWrite = true) {
                                 ArchivedAwareDropdownMenuItem(
                                     text = { Text("删除", fontSize = 14.sp, color = RedColor) },
                                     isArchived = isArchived,
@@ -687,8 +687,6 @@ fun RepoDetailScreen(
                         )
                     }
                     Spacer(Modifier.width(4.dp))
-                } else {
-                    LogManager.d("RepoDetailScreen", "不显示同步按钮: repo.fork=${state.repo?.fork}, forkBehindBy=${state.forkBehindBy}")
                 }
                 Text("${state.branches.size} 个分支", fontSize = 11.sp, color = c.textTertiary)
                 Icon(Icons.Default.ExpandMore, null, tint = c.textTertiary, modifier = Modifier.size(16.dp))
@@ -2217,7 +2215,7 @@ fun FilesTab(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+                        PermissionRequired(permission = permission, requireWrite = true, isArchived = isArchived) {
                             IconButton(
                                 onClick = onUpload,
                                 modifier = Modifier.size(32.dp),
@@ -2242,7 +2240,7 @@ fun FilesTab(
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-                        PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+                        PermissionRequired(permission = permission, requireWrite = true, isArchived = isArchived) {
                             IconButton(
                                 onClick = onAddFile,
                                 modifier = Modifier.size(32.dp),
@@ -2336,7 +2334,7 @@ fun FilesTab(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
                             ) {
-                                PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+                                PermissionRequired(permission = permission, requireWrite = true, isArchived = isArchived) {
                                     ArchivedAwareDropdownMenuItem(
                                         text = { Text("重命名", fontSize = 13.sp) },
                                         isArchived = isArchived,
@@ -2354,7 +2352,7 @@ fun FilesTab(
                                         },
                                     )
                                 }
-                                PermissionRequired(permission = permission, requireOwner = true, isArchived = isArchived) {
+                                PermissionRequired(permission = permission, requireWrite = true, isArchived = isArchived) {
                                     ArchivedAwareDropdownMenuItem(
                                         text = { Text("删除", fontSize = 13.sp, color = if (isArchived) c.textTertiary else RedColor) },
                                         isArchived = isArchived,

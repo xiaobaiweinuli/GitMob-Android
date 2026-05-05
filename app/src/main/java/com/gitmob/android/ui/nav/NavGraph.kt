@@ -814,7 +814,7 @@ fun AppNavGraph(
                     LogManager.d("NavGraph", "用户主页点击星标列表，login=$login")
                     navController.navigate(Route.UserStarred.go(login))
                 },
-                onOrgClick = {
+                onOrgClick = { _, _ ->
                     LogManager.d("NavGraph", "用户主页点击组织列表，login=$login")
                     navController.navigate(Route.UserOrgs.go(login))
                 },
@@ -1072,9 +1072,10 @@ private fun MainScreen(
                                 starVm.toggleStarMode() 
                             }
                         },
-                        onOrgClick      = { org ->
+                        onOrgClick      = { org, orgs ->
                             // 切换到对应组织上下文，再跳转到 Remote Tab
                             navigateToRemote {
+                                repoListVm.setUserOrgs(orgs)
                                 repoListVm.switchContext(
                                     com.gitmob.android.ui.repos.OrgContext(
                                         login = org.login, avatarUrl = org.avatarUrl, isUser = false
@@ -1422,7 +1423,7 @@ fun FileViewerScreen(
                 }
                 com.gitmob.android.ui.repo.PermissionRequired(
                     permission = permission,
-                    requireOwner = true,
+                    requireWrite = true,
                     isArchived = isArchived
                 ) {
                     com.gitmob.android.ui.repo.ArchivedAwareDropdownMenuItem(

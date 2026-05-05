@@ -60,7 +60,7 @@ fun HomeScreen(
     onRepoClick: (String, String) -> Unit,
     onReposClick: () -> Unit,
     onStarredClick: () -> Unit,
-    onOrgClick: (GHOrg) -> Unit,
+    onOrgClick: (GHOrg, List<GHOrg>) -> Unit,
     onUserClick: (String) -> Unit,
     onBack: (() -> Unit)? = null,
     targetUserLogin: String? = null,
@@ -437,7 +437,7 @@ fun HomeScreen(
             } else {
                 state.orgs.forEach { org ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { vm.hideOrgPicker(); onOrgClick(org) }
+                        modifier = Modifier.fillMaxWidth().clickable { vm.hideOrgPicker(); onOrgClick(org, state.orgs) }
                             .padding(horizontal = 20.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
