@@ -271,8 +271,8 @@ class RepoRepository {
 
         // 使用 GraphQL 获取，确保 openIssues 数量正确（只包含 Issues，不含 PRs）
         val token = ApiClient.currentToken()!!
-        val graphQLNode = GraphQLClient.queryRepoOverview(token, owner, repo)!!
-        val result = mapGraphQLToGHRepo(graphQLNode)
+        val graphQLNode = GraphQLClient.queryRepoOverview(token, owner, repo)
+        val result = mapGraphQLToGHRepo(graphQLNode!!)
 
         repoDetailCache[key] = Entry(result)
         result
@@ -1257,7 +1257,7 @@ class RepoRepository {
         val ownerAvatarUrl = node.optString("openGraphImageUrl").ifBlank { null }
         val owner = GHOwner(login = ownerLogin, avatarUrl = ownerAvatarUrl)
 
-        // 解析 parent 字段（（（（（
+        // 解析 parent 字段
         val parent = node.optJSONObject("parent")?.let { mapGraphQLToGHRepo(it) }
 
         return GHRepo(

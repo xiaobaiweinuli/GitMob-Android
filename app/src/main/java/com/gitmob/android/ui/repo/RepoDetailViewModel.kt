@@ -292,29 +292,29 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         val repo = _state.value.repo ?: return@launch
         if (!repo.fork) return@launch
         val parent = repo.parent ?: return@launch
-        
+
         _state.update { it.copy(forkSyncLoading = true) }
-        
+
         try {
             val upstreamOwner = parent.owner.login
             val upstreamRepo = parent.name
             val upstreamBranch = parent.defaultBranch
             val forkBranch = _state.value.currentBranch
-            
+
             // 正向比较：upstream...fork，获取fork领先的提交
             val compareResult = repository.compareCommits(
                 upstreamOwner, upstreamRepo,
                 upstreamBranch,
                 "$owner:$forkBranch"
             )
-            
+
             // 反向比较：fork...upstream，获取fork落后的提交（即upstream领先的提交）
             val reverseCompareResult = repository.compareCommits(
                 owner, _state.value.currentRepoName,
                 forkBranch,
                 "$upstreamOwner:$upstreamBranch"
             )
-            
+
             _state.update { 
                 it.copy(
                     forkSyncLoading = false,
@@ -326,6 +326,7 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
                 ) 
             }
         } catch (e: Exception) {
+            LogManager.e("RepoDetailViewModel", "checkForkSyncStatus 异常", e)
             _state.update { 
                 it.copy(
                     forkSyncLoading = false,
@@ -977,6 +978,10 @@ class RepoDetailViewModel(app: Application, savedStateHandle: SavedStateHandle) 
         loadContents("", branch)
         loadCommits(branch)
         loadReadme(owner, currentRepoName, branch)
+        val repo = _state.value.repo
+        if (repo != null && repo.fork) {
+            checkForkSyncStatus()
+        }
     }
 
     /**

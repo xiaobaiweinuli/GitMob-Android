@@ -665,12 +665,16 @@ fun RepoDetailScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                LaunchedEffect(state.repo?.fork, state.forkBehindBy, state.forkAheadBy, state.forkSyncStatus) {
+                    LogManager.d("RepoDetailScreen", "同步状态更新: repo.fork=${state.repo?.fork}, forkBehindBy=${state.forkBehindBy}, forkAheadBy=${state.forkAheadBy}, forkSyncStatus=${state.forkSyncStatus}")
+                }
                 Icon(Icons.Default.AccountTree, null, tint = BlueColor, modifier = Modifier.size(15.dp))
                 Text(state.currentBranch, fontSize = 13.sp, color = BlueColor,
                     fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f))
                 // 如果是复刻仓库且有落后的提交，显示同步按钮
                 if (state.repo?.fork == true && state.forkBehindBy > 0) {
+                    LogManager.d("RepoDetailScreen", "显示同步按钮: forkBehindBy=${state.forkBehindBy}")
                     IconButton(
                         onClick = { showForkSyncDialog = true },
                         modifier = Modifier.size(24.dp)
@@ -683,6 +687,8 @@ fun RepoDetailScreen(
                         )
                     }
                     Spacer(Modifier.width(4.dp))
+                } else {
+                    LogManager.d("RepoDetailScreen", "不显示同步按钮: repo.fork=${state.repo?.fork}, forkBehindBy=${state.forkBehindBy}")
                 }
                 Text("${state.branches.size} 个分支", fontSize = 11.sp, color = c.textTertiary)
                 Icon(Icons.Default.ExpandMore, null, tint = c.textTertiary, modifier = Modifier.size(16.dp))

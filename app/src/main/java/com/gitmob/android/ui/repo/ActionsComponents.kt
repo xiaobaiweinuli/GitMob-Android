@@ -161,13 +161,19 @@ fun ActionsTab(
                     }
                     Spacer(Modifier.weight(1f))
                     if (state.selectedWorkflow.state == "active") {
-                        Button(
-                            onClick = { showDispatchDialog = state.selectedWorkflow },
-                            colors = ButtonDefaults.buttonColors(containerColor = Coral)
+                        PermissionRequired(
+                            permission = permission,
+                            requireOwner = true,
+                            isArchived = isArchived
                         ) {
-                            Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("运行")
+                            Button(
+                                onClick = { showDispatchDialog = state.selectedWorkflow },
+                                colors = ButtonDefaults.buttonColors(containerColor = Coral)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("运行")
+                            }
                         }
                     }
                 }
@@ -241,6 +247,7 @@ fun ActionsTab(
                                 onDispatch = { showDispatchDialog = workflow },
                                 onClick = { vm.selectWorkflow(workflow) },
                                 onRefresh = { vm.loadWorkflows() },
+                                permission = permission,
                                 isArchived = isArchived
                             )
                         }
@@ -377,6 +384,7 @@ fun WorkflowItem(
     onDispatch: () -> Unit,
     onClick: () -> Unit,
     onRefresh: () -> Unit,
+    permission: RepoPermission,
     isArchived: Boolean = false
 ) {
     Row(
@@ -399,17 +407,23 @@ fun WorkflowItem(
             Text(workflow.path, fontSize = 11.sp, color = c.textTertiary)
         }
         if (workflow.state == "active") {
-            IconButton(
-                onClick = onDispatch, 
-                modifier = Modifier.size(28.dp),
-                enabled = !isArchived
+            PermissionRequired(
+                permission = permission,
+                requireOwner = true,
+                isArchived = isArchived
             ) {
-                Icon(
-                    Icons.Default.PlayCircle, 
-                    null, 
-                    tint = if (isArchived) c.textTertiary else Coral, 
-                    modifier = Modifier.size(18.dp)
-                )
+                IconButton(
+                    onClick = onDispatch,
+                    modifier = Modifier.size(28.dp),
+                    enabled = !isArchived
+                ) {
+                    Icon(
+                        Icons.Default.PlayCircle,
+                        null,
+                        tint = if (isArchived) c.textTertiary else Coral,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

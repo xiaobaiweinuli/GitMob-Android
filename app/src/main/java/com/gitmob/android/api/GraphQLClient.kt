@@ -446,6 +446,19 @@ object GraphQLClient {
             updatedAt
             licenseInfo { spdxId name }
             watchers { totalCount }
+            parent {
+              id
+              databaseId
+              name
+              nameWithOwner
+              description
+              homepageUrl
+              isPrivate
+              url
+              defaultBranchRef { name }
+              owner { login avatarUrl }
+              isFork
+            }
           }
         }
     """.trimIndent()
@@ -486,9 +499,11 @@ object GraphQLClient {
                     .put("query", REPO_OVERVIEW_QUERY)
                     .put("variables", vars)
                 val resp = post(token, body.toString())
-                resp?.optJSONObject("data")?.optJSONObject("repository")
+                val data = resp?.optJSONObject("data")
+                val repoNode = data?.optJSONObject("repository")
+                repoNode
             } catch (e: Exception) {
-                LogManager.w(TAG, "GraphQL 仓库概况失败，降级 REST: ${e.message}")
+                LogManager.w(TAG, "GraphQL 仓库概况失败，降级 REST", e)
                 null
             }
         }
