@@ -57,6 +57,11 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
     private val tokenStorage = TokenStorage(app)
     private val _state = MutableStateFlow(RepoListState())
     val state = _state.asStateFlow()
+    
+    // 用于跟踪当前加载任务
+    private var currentLoadJob: Job? = null
+    // 用于跟踪当前加载的"版本"
+    private var currentLoadId = 0
 
     /** filteredRepos：语言筛选模式下 repos 已是 Search API 结果，只做类型/排序过滤 */
     val filteredRepos = _state.map { s ->
@@ -243,22 +248,60 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── 加载逻辑：有语言筛选→Search API，无→GraphQL/REST ─────────────────
     fun loadRepos(forceRefresh: Boolean = false) {
+        // 取消之前的加载任务
+        currentLoadJob?.cancel()
+        
+        // 增加版本号
+        val loadId = ++currentLoadId
+        
         val langFilter = _state.value.filterState.languageFilter
         if (langFilter != null) {
-            loadReposByLanguage(langFilter, page = 1, clear = true)
+            currentLoadJob = loadReposByLanguage(langFilter, page = 1, clear = true, loadId = loadId)
         } else {
-            loadReposNormal(forceRefresh)
+            currentLoadJob = loadReposNormal(forceRefresh, loadId = loadId)
         }
     }
 
-    private fun loadReposByLanguage(entry: LanguageEntry, page: Int, clear: Boolean) =
+    /**
+     * 按语言筛选加载仓库（用于初始加载，受竞态管理保护）
+     */
+    private fun loadReposByLanguage(entry: LanguageEntry, page: Int, clear: Boolean, loadId: Int): Job =
         viewModelScope.launch {
             if (clear) _state.update { it.copy(loading = true, repos = emptyList(), isLangSearchMode = true, searchPage = 1, searchTotal = 0) }
             try {
                 val q = buildSearchQ(entry.id)
                 val result = ApiClient.api.searchRepos(q, sort = "updated", perPage = 30, page = page)
+                
+                // 只有当这个任务还是最新的，才更新状态
+                if (loadId == currentLoadId) {
+                    _state.update { s -> s.copy(
+                        repos           = if (clear) result.items else s.repos + result.items,
+                        loading         = false,
+                        loadingMore     = false,
+                        searchPage      = page,
+                        searchTotal     = result.totalCount,
+                        hasNextPage     = (page * 30) < result.totalCount,
+                        isLangSearchMode = true,
+                    ) }
+                }
+            } catch (e: Exception) {
+                // 只有当这个任务还是最新的，才更新状态
+                if (loadId == currentLoadId) {
+                    _state.update { it.copy(loading = false, loadingMore = false, error = e.message) }
+                }
+            }
+        }
+
+    /**
+     * 按语言筛选加载更多仓库（用于分页，不受竞态管理影响）
+     */
+    private fun loadMoreReposByLanguage(entry: LanguageEntry, page: Int) =
+        viewModelScope.launch {
+            try {
+                val q = buildSearchQ(entry.id)
+                val result = ApiClient.api.searchRepos(q, sort = "updated", perPage = 30, page = page)
                 _state.update { s -> s.copy(
-                    repos           = if (clear) result.items else s.repos + result.items,
+                    repos           = s.repos + result.items,
                     loading         = false,
                     loadingMore     = false,
                     searchPage      = page,
@@ -267,11 +310,14 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
                     isLangSearchMode = true,
                 ) }
             } catch (e: Exception) {
-                _state.update { it.copy(loading = false, loadingMore = false, error = e.message) }
+                _state.update { it.copy(loadingMore = false, error = e.message) }
             }
         }
 
-    private fun loadReposNormal(forceRefresh: Boolean) = viewModelScope.launch {
+    /**
+     * 正常加载仓库（受竞态管理保护）
+     */
+    private fun loadReposNormal(forceRefresh: Boolean, loadId: Int): Job = viewModelScope.launch {
         val ctx = _state.value.currentContext
         val targetLogin = _state.value.targetUserLogin
         val viewMode = _state.value.viewMode
@@ -299,8 +345,17 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
                     else repo.getMyRepos(forceRefresh = false, cursor = null)
                 }
             }
-            _state.update { it.copy(repos = result.repos, hasNextPage = result.hasNextPage, endCursor = result.endCursor, loading = false) }
-        } catch (e: Exception) { _state.update { it.copy(loading = false, error = e.message ?: "加载失败") } }
+            
+            // 只有当这个任务还是最新的，才更新状态
+            if (loadId == currentLoadId) {
+                _state.update { it.copy(repos = result.repos, hasNextPage = result.hasNextPage, endCursor = result.endCursor, loading = false) }
+            }
+        } catch (e: Exception) {
+            // 只有当这个任务还是最新的，才更新状态
+            if (loadId == currentLoadId) {
+                _state.update { it.copy(loading = false, error = e.message ?: "加载失败") }
+            }
+        }
     }
 
     fun loadMoreRepos() = viewModelScope.launch {
@@ -311,7 +366,7 @@ class RepoListViewModel(app: Application) : AndroidViewModel(app) {
         val viewMode = s.viewMode
         if (s.isLangSearchMode) {
             val langFilter = s.filterState.languageFilter ?: return@launch
-            loadReposByLanguage(langFilter, page = s.searchPage + 1, clear = false)
+            loadMoreReposByLanguage(langFilter, page = s.searchPage + 1)
         } else {
             val ctx = s.currentContext
             try {
