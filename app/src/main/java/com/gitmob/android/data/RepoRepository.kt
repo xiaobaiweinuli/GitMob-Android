@@ -113,14 +113,21 @@ class RepoRepository {
 
     /** 组织仓库列表增量刷新 */
     suspend fun refreshOrgReposIncremental(org: String): ReposPageResult = withContext(Dispatchers.IO) {
-        val fresh   = api.getOrgRepos(org)
+        val token = ApiClient.currentToken() ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val data = GraphQLClient.queryOrgRepos(token, org, cursor = null)
+            ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val nodes = data.optJSONArray("nodes") ?: return@withContext ReposPageResult(emptyList(), false, null)
+        val pageInfo   = data.optJSONObject("pageInfo")
+        val hasNext    = pageInfo?.optBoolean("hasNextPage") ?: false
+        val endCursor  = pageInfo?.optString("endCursor")?.takeIf { it.isNotEmpty() }
+        val fresh      = (0 until nodes.length()).mapNotNull { mapGraphQLToGHRepo(nodes.getJSONObject(it)) }
         val key     = "org:$org"
         val cached  = reposCache[key]?.repos ?: emptyList()
         val merged  = (fresh + cached).distinctBy { it.id }
-        reposCache[key] = ReposCacheEntry(merged, false, null)
-        ReposPageResult(merged, false, null)
+        reposCache[key] = ReposCacheEntry(merged, hasNext, endCursor)
+        ReposPageResult(merged, hasNext, endCursor)
     }
-
+    
     /** Commits 增量刷新：拉第一页，按 sha 合并 */
     suspend fun refreshCommitsIncremental(owner: String, repo: String, sha: String): List<GHCommit> =
         withContext(Dispatchers.IO) {
