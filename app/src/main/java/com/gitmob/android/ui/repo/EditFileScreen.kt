@@ -2,7 +2,6 @@ package com.gitmob.android.ui.repo
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -32,13 +30,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +40,8 @@ import com.gitmob.android.ui.theme.BlueColor
 import com.gitmob.android.ui.theme.Coral
 import com.gitmob.android.ui.theme.Green
 import com.gitmob.android.ui.theme.LocalGmColors
+import io.github.rosemoe.sora.widget.CodeEditor
+import kotlinx.coroutines.launch
 
 /**
  * 编辑/新建文件的模式
@@ -74,19 +70,26 @@ fun EditFileScreen(
     val c = LocalGmColors.current
     val scope = rememberCoroutineScope()
     
-    var currentFileName by remember { 
+    var currentFileName by remember {
         mutableStateOf(
             if (mode == EditFileMode.NEW) "" else fileName
-        ) 
+        )
     }
+    // currentContent 仅用于 Markdown 预览渲染，不再在每次击键时更新。
+    // 代码编辑器内容通过 editorRef 在保存时一次性读取，彻底避免重组风暴。
     var currentContent by remember { mutableStateOf(initialContent) }
     var currentSubmoduleUrl by remember { mutableStateOf(submoduleGitUrl ?: "") }
     var showPreview by remember { mutableStateOf(false) }
     var isFetchingSha by remember { mutableStateOf(false) }
-    
-    val hasChanges = remember(currentFileName, currentContent, mode) {
+
+    // Sora Editor 实例引用，保存时通过 editorRef.value?.text?.toString() 读取最终内容
+    val editorRef = remember { mutableStateOf<CodeEditor?>(null) }
+    // 轻量标志位：只要用户在代码编辑器中触发过任意变更即为 true，不做字符串比较
+    var hasContentChanged by remember { mutableStateOf(false) }
+
+    val hasChanges = remember(currentFileName, hasContentChanged, mode) {
         when (mode) {
-            EditFileMode.EDIT -> currentFileName != fileName || currentContent != initialContent
+            EditFileMode.EDIT -> currentFileName != fileName || hasContentChanged
             EditFileMode.NEW -> currentFileName.isNotBlank()
         }
     }
@@ -141,7 +144,14 @@ fun EditFileScreen(
                     }
                     
                     if (isMd && !isSymlink && !isSubmodule) {
-                        TextButton(onClick = { showPreview = !showPreview }) {
+                        TextButton(onClick = {
+                            // 切换到预览模式前，先将编辑器当前内容同步到 currentContent
+                            // 使 GmMarkdownWebView 能渲染用户最新的编辑结果
+                            if (!showPreview) {
+                                editorRef.value?.text?.toString()?.let { currentContent = it }
+                            }
+                            showPreview = !showPreview
+                        }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Visibility, null, tint = if (showPreview) Coral else c.textSecondary, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -158,7 +168,14 @@ fun EditFileScreen(
                                 } else {
                                     null
                                 }
-                                onSave(currentFileName, currentContent, submoduleUrlToSave)
+                                // symlink / submodule 分支直接用 currentContent（OutlinedTextField 绑定）
+                                // 普通代码编辑分支从 editorRef 读取，避免在每次击键时更新状态
+                                val contentToSave = if (!isSymlink && !isSubmodule) {
+                                    editorRef.value?.text?.toString() ?: currentContent
+                                } else {
+                                    currentContent
+                                }
+                                onSave(currentFileName, contentToSave, submoduleUrlToSave)
                             }
                         },
                         enabled = hasChanges && currentFileName.isNotBlank(),
@@ -418,12 +435,12 @@ fun EditFileScreen(
                 }
             }
             else -> {
+                // else 分支使用 Column 而非 verticalScroll，由 CodeEditorView 内部处理滚动
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues)
                         .imePadding()
-                        .verticalScroll(rememberScrollState())
                 ) {
                     OutlinedTextField(
                         value = currentFileName,
@@ -445,40 +462,24 @@ fun EditFileScreen(
                             unfocusedLabelColor = c.textTertiary,
                         ),
                     )
-                    
-                    Box(
+
+                    // Sora Editor 替代 BasicTextField + verticalScroll 方案
+                    // weight(1f) 确保编辑器占满剩余空间，不与 OutlinedTextField 争高度
+                    com.gitmob.android.ui.common.CodeEditorView(
+                        initialContent = initialContent,
+                        isDarkTheme = c.isDark,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
                             .padding(horizontal = 16.dp)
-                            .padding(bottom = 16.dp)
-                            .background(c.bgItem, RoundedCornerShape(12.dp))
-                    ) {
-                        BasicTextField(
-                            value = currentContent,
-                            onValueChange = { currentContent = it },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            textStyle = TextStyle(
-                                color = c.textPrimary,
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace,
-                                lineHeight = 18.sp
-                            ),
-                            cursorBrush = SolidColor(Coral)
-                        ) { innerTextField ->
-                            if (currentContent.isEmpty()) {
-                                Text(
-                                    text = "// 文件内容",
-                                    color = c.textTertiary,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            innerTextField()
+                            .padding(bottom = 16.dp),
+                        onEditorReady = { editor ->
+                            editorRef.value = editor
+                        },
+                        onContentChanged = {
+                            hasContentChanged = true
                         }
-                    }
+                    )
                 }
             }
         }

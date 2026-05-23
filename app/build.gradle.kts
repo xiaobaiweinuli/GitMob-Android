@@ -130,5 +130,8 @@ dependencies {
     // Markdown 渲染：Flexmark + WebView + github-markdown-css
     // 只使用核心和 autolink 扩展，移除不必要的 PDF 等功能以减小 APK 体积
     implementation("com.vladsch.flexmark:flexmark-ext-autolink:0.64.8")
+    // Sora Editor：原生代码编辑器，替代 BasicTextField，解决大文件卡顿问题
+    implementation(platform(libs.sora.editor.bom))
+    implementation(libs.sora.editor)
     debugImplementation(libs.androidx.ui.tooling)
 }
