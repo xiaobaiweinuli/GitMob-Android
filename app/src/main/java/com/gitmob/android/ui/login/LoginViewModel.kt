@@ -7,6 +7,7 @@ import com.gitmob.android.api.ApiClient
 import com.gitmob.android.auth.AccountInfo
 import com.gitmob.android.auth.AccountStore
 import com.gitmob.android.auth.AuthType
+import com.gitmob.android.auth.GitHubAppManager
 import com.gitmob.android.auth.OAuthManager
 import com.gitmob.android.auth.TokenLoginManager
 import com.gitmob.android.auth.TokenLoginResult
@@ -52,6 +53,42 @@ sealed class LoginUiState {
         val avatarUrl: String,
         val oldOAuthToken: String
     ) : LoginUiState()
+
+    /** GitHub App 登录时：检测到已有同一用户的 OAuth 账号，询问选择 */
+    data class ConfirmReplaceOAuthWithGitHubApp(
+        val login: String,
+        val accessToken: String,
+        val refreshToken: String?,
+        val expiresAt: Long?,
+        val name: String,
+        val email: String,
+        val avatarUrl: String,
+        val existingOAuthToken: String
+    ) : LoginUiState()
+
+    /** GitHub App 登录时：检测到已有同一用户的 Token 账号，询问选择 */
+    data class ConfirmReplaceTokenWithGitHubApp(
+        val login: String,
+        val accessToken: String,
+        val refreshToken: String?,
+        val expiresAt: Long?,
+        val name: String,
+        val email: String,
+        val avatarUrl: String,
+        val existingToken: String
+    ) : LoginUiState()
+
+    /** GitHub App 登录时：检测到已有同一用户的 GitHub App 账号，询问选择 */
+    data class ConfirmReplaceOldGitHubApp(
+        val login: String,
+        val newAccessToken: String,
+        val newRefreshToken: String?,
+        val newExpiresAt: Long?,
+        val name: String,
+        val email: String,
+        val avatarUrl: String,
+        val oldAccessToken: String
+    ) : LoginUiState()
 }
 
 class LoginViewModel(app: Application) : AndroidViewModel(app) {
@@ -68,6 +105,281 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onOAuthError(msg: String) {
         _state.value = Error("授权失败：$msg")
+    }
+
+    /** 收到 GitHub App token：获取用户信息 → 存入 AccountStore → 同步 TokenStorage → 重建 ApiClient */
+    fun onGitHubAppTokenReceived(accessToken: String, refreshToken: String?, expiresAt: Long?) {
+        viewModelScope.launch {
+            _state.value = Loading
+            try {
+                // 先检查是否已有相同 Token 的账号
+                val existingAccounts = accountStore.accounts.first()
+                val existingSameTokenAccount = existingAccounts.firstOrNull {
+                    it.token == accessToken
+                }
+
+                if (existingSameTokenAccount != null) {
+                    // Token 已存在，直接使用
+                    accountStore.switchAccount(existingSameTokenAccount.login)
+                    tokenStorage.syncActiveAccount(existingSameTokenAccount)
+                    ApiClient.rebuild()
+                    _state.value = Success(existingSameTokenAccount.login)
+                    return@launch
+                }
+
+                // 用临时 token 获取用户信息
+                tokenStorage.saveTokenRefreshResult(accessToken, refreshToken, expiresAt)
+                ApiClient.rebuild()
+                val user = ApiClient.api.getCurrentUser()
+
+                val login = user.login
+                val name = user.name ?: user.login
+                val email = user.email ?: "${user.login}@users.noreply.github.com"
+                val avatarUrl = user.avatarUrl ?: ""
+
+                // 检查是否已有同一 login 的 OAuth 账号
+                val existingOAuthAccount = existingAccounts.firstOrNull {
+                    it.login == login && it.authType == AuthType.OAUTH
+                }
+
+                if (existingOAuthAccount != null) {
+                    _state.value = ConfirmReplaceOAuthWithGitHubApp(
+                        login = login,
+                        accessToken = accessToken,
+                        refreshToken = refreshToken,
+                        expiresAt = expiresAt,
+                        name = name,
+                        email = email,
+                        avatarUrl = avatarUrl,
+                        existingOAuthToken = existingOAuthAccount.token
+                    )
+                    return@launch
+                }
+
+                // 检查是否已有同一 login 的 Token 账号
+                val existingTokenAccount = existingAccounts.firstOrNull {
+                    it.login == login && it.authType == AuthType.TOKEN
+                }
+
+                if (existingTokenAccount != null) {
+                    _state.value = ConfirmReplaceTokenWithGitHubApp(
+                        login = login,
+                        accessToken = accessToken,
+                        refreshToken = refreshToken,
+                        expiresAt = expiresAt,
+                        name = name,
+                        email = email,
+                        avatarUrl = avatarUrl,
+                        existingToken = existingTokenAccount.token
+                    )
+                    return@launch
+                }
+
+                // 检查是否已有同一 login 的 GitHub App 账号
+                val existingGitHubAppAccount = existingAccounts.firstOrNull {
+                    it.login == login && it.authType == AuthType.GITHUB_APP
+                }
+
+                if (existingGitHubAppAccount != null) {
+                    _state.value = ConfirmReplaceOldGitHubApp(
+                        login = login,
+                        newAccessToken = accessToken,
+                        newRefreshToken = refreshToken,
+                        newExpiresAt = expiresAt,
+                        name = name,
+                        email = email,
+                        avatarUrl = avatarUrl,
+                        oldAccessToken = existingGitHubAppAccount.token
+                    )
+                    return@launch
+                }
+
+                // 没有冲突，直接登录
+                completeGitHubAppLogin(
+                    accessToken = accessToken,
+                    refreshToken = refreshToken,
+                    expiresAt = expiresAt,
+                    login = login,
+                    name = name,
+                    email = email,
+                    avatarUrl = avatarUrl
+                )
+            } catch (e: Exception) {
+                // 清理脏数据
+                tokenStorage.clearActiveAccount()
+                val remaining = accountStore.accounts.first()
+                if (remaining.isNotEmpty()) {
+                    tokenStorage.syncActiveAccount(remaining.first())
+                    ApiClient.rebuild()
+                }
+                _state.value = Error(e.message ?: "认证失败")
+            }
+        }
+    }
+
+    /** 完成 GitHub App 登录的内部函数 */
+    private suspend fun completeGitHubAppLogin(
+        accessToken: String,
+        refreshToken: String?,
+        expiresAt: Long?,
+        login: String,
+        name: String,
+        email: String,
+        avatarUrl: String
+    ) {
+        val info = AccountInfo(
+            login = login,
+            name = name,
+            email = email,
+            avatarUrl = avatarUrl,
+            token = accessToken,
+            authType = AuthType.GITHUB_APP,
+            refreshToken = refreshToken,
+            expiresAt = expiresAt
+        )
+        accountStore.addOrUpdateAccount(info)
+        tokenStorage.syncActiveAccount(info)
+        ApiClient.rebuild()
+        _state.value = Success(login)
+    }
+
+    /** GitHub App 登录时：确认使用 GitHub App，保留 OAuth */
+    fun confirmUseGitHubAppKeepOAuth(
+        accessToken: String,
+        refreshToken: String?,
+        expiresAt: Long?,
+        login: String,
+        name: String,
+        email: String,
+        avatarUrl: String
+    ) {
+        viewModelScope.launch {
+            _state.value = Loading
+            try {
+                completeGitHubAppLogin(
+                    accessToken = accessToken,
+                    refreshToken = refreshToken,
+                    expiresAt = expiresAt,
+                    login = login,
+                    name = name,
+                    email = email,
+                    avatarUrl = avatarUrl
+                )
+            } catch (e: Exception) {
+                _state.value = Error(e.message ?: "登录失败")
+            }
+        }
+    }
+
+    /** GitHub App 登录时：保留 OAuth，撤销 GitHub App */
+    fun keepOAuthAndRevokeGitHubApp(
+        accessToken: String
+    ) {
+        viewModelScope.launch {
+            _state.value = Loading
+            try {
+                GitHubAppManager.revokeToken(accessToken)
+            } catch (e: Exception) {
+                // 即使撤销失败也没关系
+            }
+            _state.value = Idle
+        }
+    }
+
+    /** GitHub App 登录时：确认使用 GitHub App，保留 Token */
+    fun confirmUseGitHubAppKeepToken(
+        accessToken: String,
+        refreshToken: String?,
+        expiresAt: Long?,
+        login: String,
+        name: String,
+        email: String,
+        avatarUrl: String
+    ) {
+        viewModelScope.launch {
+            _state.value = Loading
+            try {
+                completeGitHubAppLogin(
+                    accessToken = accessToken,
+                    refreshToken = refreshToken,
+                    expiresAt = expiresAt,
+                    login = login,
+                    name = name,
+                    email = email,
+                    avatarUrl = avatarUrl
+                )
+            } catch (e: Exception) {
+                _state.value = Error(e.message ?: "登录失败")
+            }
+        }
+    }
+
+    /** GitHub App 登录时：保留 Token，撤销 GitHub App */
+    fun keepTokenAndRevokeGitHubApp(
+        accessToken: String
+    ) {
+        viewModelScope.launch {
+            _state.value = Loading
+            try {
+                GitHubAppManager.revokeToken(accessToken)
+            } catch (e: Exception) {
+                // 即使撤销失败也没关系
+            }
+            _state.value = Idle
+        }
+    }
+
+    /** GitHub App 登录时：确认使用新 GitHub App，撤销旧 GitHub App */
+    fun confirmUseNewGitHubApp(
+        newAccessToken: String,
+        newRefreshToken: String?,
+        newExpiresAt: Long?,
+        login: String,
+        name: String,
+        email: String,
+        avatarUrl: String,
+        oldAccessToken: String
+    ) {
+        viewModelScope.launch {
+            _state.value = Loading
+            try {
+                GitHubAppManager.revokeToken(oldAccessToken)
+                completeGitHubAppLogin(
+                    accessToken = newAccessToken,
+                    refreshToken = newRefreshToken,
+                    expiresAt = newExpiresAt,
+                    login = login,
+                    name = name,
+                    email = email,
+                    avatarUrl = avatarUrl
+                )
+            } catch (e: Exception) {
+                completeGitHubAppLogin(
+                    accessToken = newAccessToken,
+                    refreshToken = newRefreshToken,
+                    expiresAt = newExpiresAt,
+                    login = login,
+                    name = name,
+                    email = email,
+                    avatarUrl = avatarUrl
+                )
+            }
+        }
+    }
+
+    /** GitHub App 登录时：保留旧 GitHub App，撤销新 GitHub App */
+    fun keepOldGitHubAppAndRevokeNew(
+        newAccessToken: String
+    ) {
+        viewModelScope.launch {
+            _state.value = Loading
+            try {
+                GitHubAppManager.revokeToken(newAccessToken)
+            } catch (e: Exception) {
+                // 即使撤销失败也没关系
+            }
+            _state.value = Idle
+        }
     }
 
     /** 收到新 token：获取用户信息 → 存入 AccountStore → 同步 TokenStorage → 重建 ApiClient */

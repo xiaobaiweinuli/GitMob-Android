@@ -21,6 +21,8 @@ class TokenStorage(private val context: Context) {
 
     private object Keys {
         const val ACCESS_TOKEN  = "access_token"
+        const val REFRESH_TOKEN = "refresh_token"
+        const val EXPIRES_AT    = "expires_at"
         const val USER_LOGIN    = "user_login"
         const val USER_NAME     = "user_name"
         const val USER_EMAIL    = "user_email"
@@ -46,6 +48,8 @@ class TokenStorage(private val context: Context) {
     }
 
     val accessToken: Flow<String?> = prefs.getStringFlow(Keys.ACCESS_TOKEN)
+    val refreshToken: Flow<String?> = prefs.getStringFlow(Keys.REFRESH_TOKEN)
+    val expiresAt: Flow<Long?> = prefs.getLongFlow(Keys.EXPIRES_AT)
     val userLogin:   Flow<String?> = prefs.getStringFlow(Keys.USER_LOGIN)
 
     val userProfile: Flow<Triple<String, String, String>?> = prefs.getStringFlow(Keys.USER_LOGIN).map { login ->
@@ -72,6 +76,39 @@ class TokenStorage(private val context: Context) {
 
     suspend fun saveToken(token: String) {
         prefs.putString(Keys.ACCESS_TOKEN, token)
+    }
+
+    suspend fun saveRefreshToken(refreshToken: String?) {
+        if (refreshToken != null) {
+            prefs.putString(Keys.REFRESH_TOKEN, refreshToken)
+        } else {
+            prefs.remove(Keys.REFRESH_TOKEN)
+        }
+    }
+
+    suspend fun saveExpiresAt(expiresAt: Long?) {
+        if (expiresAt != null) {
+            prefs.putLong(Keys.EXPIRES_AT, expiresAt)
+        } else {
+            prefs.remove(Keys.EXPIRES_AT)
+        }
+    }
+
+    /**
+     * 原子性更新 token、refreshToken 和 expiresAt（用于 GitHub App token 刷新）
+     */
+    suspend fun saveTokenRefreshResult(token: String, refreshToken: String?, expiresAt: Long?) {
+        prefs.putString(Keys.ACCESS_TOKEN, token)
+        if (refreshToken != null) {
+            prefs.putString(Keys.REFRESH_TOKEN, refreshToken)
+        } else {
+            prefs.remove(Keys.REFRESH_TOKEN)
+        }
+        if (expiresAt != null) {
+            prefs.putLong(Keys.EXPIRES_AT, expiresAt)
+        } else {
+            prefs.remove(Keys.EXPIRES_AT)
+        }
     }
 
     suspend fun saveUser(login: String, name: String?, email: String?, avatarUrl: String?) {
@@ -143,10 +180,24 @@ class TokenStorage(private val context: Context) {
         prefs.putString(Keys.USER_NAME, info.name)
         prefs.putString(Keys.USER_EMAIL, info.email)
         prefs.putString(Keys.AVATAR_URL, info.avatarUrl)
+        
+        // 同步 refreshToken 和 expiresAt（仅 GitHub App 有）
+        if (info.refreshToken != null) {
+            prefs.putString(Keys.REFRESH_TOKEN, info.refreshToken)
+        } else {
+            prefs.remove(Keys.REFRESH_TOKEN)
+        }
+        if (info.expiresAt != null) {
+            prefs.putLong(Keys.EXPIRES_AT, info.expiresAt)
+        } else {
+            prefs.remove(Keys.EXPIRES_AT)
+        }
     }
 
     suspend fun clearActiveAccount() {
         prefs.remove(Keys.ACCESS_TOKEN)
+        prefs.remove(Keys.REFRESH_TOKEN)
+        prefs.remove(Keys.EXPIRES_AT)
         prefs.remove(Keys.USER_LOGIN)
         prefs.remove(Keys.USER_NAME)
         prefs.remove(Keys.USER_EMAIL)

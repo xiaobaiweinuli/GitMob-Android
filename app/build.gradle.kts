@@ -24,6 +24,11 @@ android {
         val oauthCallback  = System.getenv("OAUTH_CALLBACK_URL") ?: "https://gitmob.16618888.xyz"
         buildConfigField("String", "GITHUB_CLIENT_ID",  "\"$oauthClientId\"")
         buildConfigField("String", "OAUTH_REDIRECT_URI", "\"$oauthCallback/callback\"")
+        // GitHub App 凭据
+        val githubAppClientId = System.getenv("GITHUB_APP_CLIENT_ID") ?: oauthClientId
+        val githubAppCallback  = System.getenv("GITHUB_APP_CALLBACK_URL") ?: oauthCallback
+        buildConfigField("String", "GITHUB_APP_CLIENT_ID",  "\"$githubAppClientId\"")
+        buildConfigField("String", "GITHUB_APP_REDIRECT_URI", "\"$githubAppCallback/github/callback\"")
         manifestPlaceholders["appScheme"] = "gitmob"
         manifestPlaceholders["appHost"] = "oauth"
     }
@@ -130,5 +135,8 @@ dependencies {
     // Markdown 渲染：Flexmark + WebView + github-markdown-css
     // 只使用核心和 autolink 扩展，移除不必要的 PDF 等功能以减小 APK 体积
     implementation("com.vladsch.flexmark:flexmark-ext-autolink:0.64.8")
+    // Sora Editor：原生代码编辑器，替代 BasicTextField，解决大文件卡顿问题
+    implementation(platform(libs.sora.editor.bom))
+    implementation(libs.sora.editor)
     debugImplementation(libs.androidx.ui.tooling)
 }

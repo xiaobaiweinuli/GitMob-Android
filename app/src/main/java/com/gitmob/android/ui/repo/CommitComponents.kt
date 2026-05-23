@@ -533,46 +533,71 @@ fun CreateFileDialog(
 @Composable
 fun CommitMessageDialog(
     defaultMessage: String = "",
+    defaultFileName: String = "",
+    showFileNameInput: Boolean = false,
     c: GmColors,
-    onConfirm: (String) -> Unit,
+    onConfirm: (String, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var commitMsg by remember { mutableStateOf(defaultMessage) }
+    var fileName by remember { mutableStateOf(defaultFileName) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.bgCard,
         title = { Text("提交信息", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
         text = {
-            OutlinedTextField(
-                value = commitMsg,
-                onValueChange = { commitMsg = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("提交信息") },
-                placeholder = { Text("Describe your changes...", color = c.textTertiary) },
-                singleLine = false,
-                minLines = 2,
-                maxLines = 5,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Coral,
-                    unfocusedBorderColor = c.border,
-                    focusedTextColor = c.textPrimary,
-                    unfocusedTextColor = c.textPrimary,
-                    focusedContainerColor = c.bgItem,
-                    unfocusedContainerColor = c.bgItem,
-                    focusedLabelColor = Coral,
-                    unfocusedLabelColor = c.textTertiary,
-                ),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (showFileNameInput) {
+                    OutlinedTextField(
+                        value = fileName,
+                        onValueChange = { fileName = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("文件名") },
+                        placeholder = { Text("请输入文件名", color = c.textTertiary) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Coral,
+                            unfocusedBorderColor = c.border,
+                            focusedTextColor = c.textPrimary,
+                            unfocusedTextColor = c.textPrimary,
+                            focusedContainerColor = c.bgItem,
+                            unfocusedContainerColor = c.bgItem,
+                            focusedLabelColor = Coral,
+                            unfocusedLabelColor = c.textTertiary,
+                        ),
+                    )
+                }
+                OutlinedTextField(
+                    value = commitMsg,
+                    onValueChange = { commitMsg = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("提交信息") },
+                    placeholder = { Text("Describe your changes...", color = c.textTertiary) },
+                    singleLine = false,
+                    minLines = 2,
+                    maxLines = 5,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Coral,
+                        unfocusedBorderColor = c.border,
+                        focusedTextColor = c.textPrimary,
+                        unfocusedTextColor = c.textPrimary,
+                        focusedContainerColor = c.bgItem,
+                        unfocusedContainerColor = c.bgItem,
+                        focusedLabelColor = Coral,
+                        unfocusedLabelColor = c.textTertiary,
+                    ),
+                )
+            }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (commitMsg.isNotBlank()) {
-                        onConfirm(commitMsg)
+                    if (commitMsg.isNotBlank() && (!showFileNameInput || fileName.isNotBlank())) {
+                        onConfirm(fileName, commitMsg)
                     }
                 },
-                enabled = commitMsg.isNotBlank(),
+                enabled = commitMsg.isNotBlank() && (!showFileNameInput || fileName.isNotBlank()),
                 colors = ButtonDefaults.buttonColors(containerColor = Coral),
             ) {
                 Text("确认")

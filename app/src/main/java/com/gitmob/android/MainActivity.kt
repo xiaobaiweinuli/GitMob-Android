@@ -25,6 +25,9 @@ class MainActivity : ComponentActivity() {
      */
     private var pendingToken by mutableStateOf<String?>(null)
 
+    /** GitHub App 认证回调结果 */
+    private var pendingGitHubAppResult by mutableStateOf<String?>(null)
+
     /** 从其他 App 传入的 github.com 链接，由 NavGraph 解析跳转 */
     private var pendingGitHubUrl by mutableStateOf<String?>(null)
 
@@ -54,10 +57,12 @@ class MainActivity : ComponentActivity() {
                 AppNavGraph(
                     tokenStorage  = tokenStorage,
                     initialToken  = pendingToken,
+                    initialGitHubAppResult = pendingGitHubAppResult,
                     onThemeChange = { mode ->
                         lifecycleScope.launch { tokenStorage.setThemeMode(mode) }
                     },
                     onTokenConsumed = { pendingToken = null },
+                    onGitHubAppResultConsumed = { pendingGitHubAppResult = null },
                     initialGitHubUrl = pendingGitHubUrl,
                     onGitHubUrlConsumed = { pendingGitHubUrl = null },
                 )
@@ -80,6 +85,19 @@ class MainActivity : ComponentActivity() {
                 when {
                     !token.isNullOrBlank() -> pendingToken = token   // 触发 Compose 重组
                     !error.isNullOrBlank() -> pendingToken = "ERROR:$error"
+                }
+            }
+            uri.scheme == "gitmob" && uri.host == "github" -> {
+                val accessToken = uri.getQueryParameter("access_token")
+                val refreshToken = uri.getQueryParameter("refresh_token")
+                val expiresIn = uri.getQueryParameter("expires_in")
+                val error = uri.getQueryParameter("error")
+                when {
+                    !accessToken.isNullOrBlank() -> {
+                        // 格式: access|refresh|expiresIn
+                        pendingGitHubAppResult = "$accessToken|${refreshToken ?: ""}|$expiresIn"
+                    }
+                    !error.isNullOrBlank() -> pendingGitHubAppResult = "ERROR:$error"
                 }
             }
             uri.scheme == "https" && uri.host == "github.com" -> {

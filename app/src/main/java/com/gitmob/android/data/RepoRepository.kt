@@ -127,7 +127,7 @@ class RepoRepository {
         reposCache[key] = ReposCacheEntry(merged, hasNext, endCursor)
         ReposPageResult(merged, hasNext, endCursor)
     }
-    
+
     /** Commits 增量刷新：拉第一页，按 sha 合并 */
     suspend fun refreshCommitsIncremental(owner: String, repo: String, sha: String): List<GHCommit> =
         withContext(Dispatchers.IO) {

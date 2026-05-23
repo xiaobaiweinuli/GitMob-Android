@@ -28,12 +28,14 @@ import coil3.compose.AsyncImage
 import com.gitmob.android.R
 import com.gitmob.android.auth.AccountInfo
 import com.gitmob.android.auth.AuthType
+import com.gitmob.android.auth.GitHubAppManager
 import com.gitmob.android.auth.OAuthManager
 import com.gitmob.android.ui.theme.*
 
 @Composable
 fun LoginScreen(
     pendingToken: String?,
+    pendingGitHubAppResult: String? = null, // GitHub App 回调结果: token|refresh|expires|...
     onSuccess: () -> Unit,
     onTokenConsumed: () -> Unit = {},
     isReauth: Boolean = false,
@@ -55,6 +57,27 @@ fun LoginScreen(
             else                                  -> {
                 vm.onTokenReceived(pendingToken)
                 onTokenConsumed()   // 立即置空，防止二次触发
+            }
+        }
+    }
+
+    // 处理 GitHub App 回调
+    LaunchedEffect(pendingGitHubAppResult) {
+        when {
+            pendingGitHubAppResult == null -> Unit
+            pendingGitHubAppResult.startsWith("ERROR:") -> {
+                vm.onOAuthError(pendingGitHubAppResult.removePrefix("ERROR:"))
+            }
+            else -> {
+                // 格式: access|refresh|expires_in
+                val parts = pendingGitHubAppResult.split("|")
+                if (parts.size >= 3) {
+                    val accessToken = parts[0]
+                    val refreshToken = if (parts[1].isNotBlank()) parts[1] else null
+                    val expiresIn = parts[2].toLongOrNull()
+                    val expiresAt = expiresIn?.let { System.currentTimeMillis() + it * 1000 }
+                    vm.onGitHubAppTokenReceived(accessToken, refreshToken, expiresAt)
+                }
             }
         }
     }
@@ -82,6 +105,7 @@ fun LoginScreen(
                 isReauth      = isReauth,
                 onSelectAccount = { vm.switchToAccount(it) },
                 onAddAccount  = { OAuthManager.launchOAuth(context, forceReauth = false) },
+                onGitHubAppLogin  = { GitHubAppManager.launchGitHubAppAuth(context, forceReauth = false) },
                 onTokenLogin  = { showTokenLoginDialog = true },
             )
         } else {
@@ -90,6 +114,7 @@ fun LoginScreen(
                 state          = state,
                 context        = context,
                 isReauth       = isReauth,
+                onGitHubAppLogin = { GitHubAppManager.launchGitHubAppAuth(context, forceReauth = isReauth) },
                 onTokenLogin   = { showTokenLoginDialog = true },
             )
         }
@@ -166,23 +191,99 @@ fun LoginScreen(
         if (state is LoginUiState.ConfirmReplaceOldOAuth) {
             val confirmState = state as LoginUiState.ConfirmReplaceOldOAuth
             ConfirmReplaceOldOAuthDialog(
-                login              = confirmState.login,
-                onUseNewOAuth      = {
+                login = confirmState.login,
+                onUseNewOAuth = {
                     vm.confirmUseNewOAuth(
                         newOAuthToken = confirmState.newOAuthToken,
-                        login         = confirmState.login,
-                        name          = confirmState.name,
-                        email         = confirmState.email,
-                        avatarUrl     = confirmState.avatarUrl,
+                        login = confirmState.login,
+                        name = confirmState.name,
+                        email = confirmState.email,
+                        avatarUrl = confirmState.avatarUrl,
                         oldOAuthToken = confirmState.oldOAuthToken
                     )
                 },
-                onKeepOldOAuth     = {
+                onKeepOldOAuth = {
                     vm.keepOldOAuthAndRevokeNew(
                         newOAuthToken = confirmState.newOAuthToken
                     )
                 },
-                onDismiss          = { /* 不处理，必须选择一个选项 */ },
+                onDismiss = { /* 不处理，必须选择一个选项 */ },
+            )
+        }
+
+        // 确认替换 OAuth 账号弹窗（GitHub App 登录时）
+        if (state is LoginUiState.ConfirmReplaceOAuthWithGitHubApp) {
+            val confirmState = state as LoginUiState.ConfirmReplaceOAuthWithGitHubApp
+            ConfirmReplaceOAuthWithGitHubAppDialog(
+                login = confirmState.login,
+                onUseGitHubApp = {
+                    vm.confirmUseGitHubAppKeepOAuth(
+                        accessToken = confirmState.accessToken,
+                        refreshToken = confirmState.refreshToken,
+                        expiresAt = confirmState.expiresAt,
+                        login = confirmState.login,
+                        name = confirmState.name,
+                        email = confirmState.email,
+                        avatarUrl = confirmState.avatarUrl
+                    )
+                },
+                onKeepOAuth = {
+                    vm.keepOAuthAndRevokeGitHubApp(
+                        accessToken = confirmState.accessToken
+                    )
+                },
+                onDismiss = { /* 不处理，必须选择一个选项 */ },
+            )
+        }
+
+        // 确认替换 Token 账号弹窗（GitHub App 登录时）
+        if (state is LoginUiState.ConfirmReplaceTokenWithGitHubApp) {
+            val confirmState = state as LoginUiState.ConfirmReplaceTokenWithGitHubApp
+            ConfirmReplaceTokenWithGitHubAppDialog(
+                login = confirmState.login,
+                onUseGitHubApp = {
+                    vm.confirmUseGitHubAppKeepToken(
+                        accessToken = confirmState.accessToken,
+                        refreshToken = confirmState.refreshToken,
+                        expiresAt = confirmState.expiresAt,
+                        login = confirmState.login,
+                        name = confirmState.name,
+                        email = confirmState.email,
+                        avatarUrl = confirmState.avatarUrl
+                    )
+                },
+                onKeepToken = {
+                    vm.keepTokenAndRevokeGitHubApp(
+                        accessToken = confirmState.accessToken
+                    )
+                },
+                onDismiss = { /* 不处理，必须选择一个选项 */ },
+            )
+        }
+
+        // 确认替换旧 GitHub App 账号弹窗（GitHub App 登录时）
+        if (state is LoginUiState.ConfirmReplaceOldGitHubApp) {
+            val confirmState = state as LoginUiState.ConfirmReplaceOldGitHubApp
+            ConfirmReplaceOldGitHubAppDialog(
+                login = confirmState.login,
+                onUseNewGitHubApp = {
+                    vm.confirmUseNewGitHubApp(
+                        newAccessToken = confirmState.newAccessToken,
+                        newRefreshToken = confirmState.newRefreshToken,
+                        newExpiresAt = confirmState.newExpiresAt,
+                        login = confirmState.login,
+                        name = confirmState.name,
+                        email = confirmState.email,
+                        avatarUrl = confirmState.avatarUrl,
+                        oldAccessToken = confirmState.oldAccessToken
+                    )
+                },
+                onKeepOldGitHubApp = {
+                    vm.keepOldGitHubAppAndRevokeNew(
+                        newAccessToken = confirmState.newAccessToken
+                    )
+                },
+                onDismiss = { /* 不处理，必须选择一个选项 */ },
             )
         }
     }
@@ -197,6 +298,7 @@ private fun AccountPickerContent(
     isReauth: Boolean,
     onSelectAccount: (AccountInfo) -> Unit,
     onAddAccount: () -> Unit,
+    onGitHubAppLogin: () -> Unit,
     onTokenLogin: () -> Unit,
 ) {
     val c = LocalGmColors.current
@@ -309,7 +411,7 @@ private fun AccountPickerContent(
 
         Spacer(Modifier.height(12.dp))
 
-        // 添加账号按钮
+        // OAuth 授权登录按钮
         OutlinedButton(
             onClick  = onAddAccount,
             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -319,6 +421,20 @@ private fun AccountPickerContent(
             Icon(Icons.Default.Add, null, tint = Coral, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("OAuth 授权登录", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Coral)
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // GitHub App 登录按钮
+        OutlinedButton(
+            onClick  = onGitHubAppLogin,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape    = RoundedCornerShape(14.dp),
+            border   = androidx.compose.foundation.BorderStroke(1.dp, PurpleColor.copy(alpha = 0.5f)),
+        ) {
+            Icon(Icons.Default.Verified, null, tint = PurpleColor, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("GitHub App 登录", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = PurpleColor)
         }
 
         Spacer(Modifier.height(8.dp))
@@ -381,17 +497,35 @@ private fun AccountItemRow(
                     fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     color = c.textPrimary,
                 )
-                if (account.authType == AuthType.TOKEN) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = RoundedCornerShape(4.dp),
-                    ) {
-                        Text(
-                            "Token",
-                            fontSize = 10.sp, fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
+                when (account.authType) {
+                    AuthType.GITHUB_APP -> {
+                        Surface(
+                            color = PurpleColor.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(4.dp),
+                        ) {
+                            Text(
+                                "GitHub App",
+                                fontSize = 10.sp, fontWeight = FontWeight.Medium,
+                                color = PurpleColor,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                    AuthType.TOKEN -> {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(4.dp),
+                        ) {
+                            Text(
+                                "Token",
+                                fontSize = 10.sp, fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                    AuthType.OAUTH -> {
+                        // OAuth 不显示标签，默认状态
                     }
                 }
             }
@@ -415,6 +549,7 @@ private fun FreshLoginContent(
     state: LoginUiState,
     context: android.content.Context,
     isReauth: Boolean,
+    onGitHubAppLogin: () -> Unit,
     onTokenLogin: () -> Unit,
 ) {
     Column(
@@ -497,6 +632,17 @@ private fun FreshLoginContent(
                     label = if (isReauth) "重新授权登录" else "使用 GitHub 登录",
                 ) {
                     OAuthManager.launchOAuth(context, forceReauth = isReauth)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onGitHubAppLogin,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PurpleColor.copy(alpha = 0.5f)),
+                ) {
+                    Icon(Icons.Default.Verified, null, tint = PurpleColor, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("GitHub App 登录", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = PurpleColor)
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
@@ -985,6 +1131,345 @@ private fun ConfirmReplaceOldOAuthDialog(
                         }
                         Text(
                             "撤销新产生的 OAuth Token，保持当前旧 OAuth 登录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+// ── 确认替换 OAuth 账号弹窗（GitHub App 登录时）─────────────────────────────────────
+@Composable
+private fun ConfirmReplaceOAuthWithGitHubAppDialog(
+    login: String,
+    onUseGitHubApp: () -> Unit,
+    onKeepOAuth: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(onClick = onUseGitHubApp) {
+                Text("使用 GitHub App")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeepOAuth) {
+                Text("保持 OAuth 登录")
+            }
+        },
+        icon = {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = {
+            Text("检测到同一账号已通过 OAuth 登录")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "你当前账号 @$login 已通过 OAuth 授权登录。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "你要切换到 GitHub App 登录吗？",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "使用 GitHub App",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "保留 OAuth 账号，切换到 GitHub App 登录（支持 token 自动刷新）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                    }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "保持 OAuth 登录",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "撤销新产生的 GitHub App Token，保持当前 OAuth 登录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+// ── 确认替换 Token 账号弹窗（GitHub App 登录时）─────────────────────────────────────
+@Composable
+private fun ConfirmReplaceTokenWithGitHubAppDialog(
+    login: String,
+    onUseGitHubApp: () -> Unit,
+    onKeepToken: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(onClick = onUseGitHubApp) {
+                Text("使用 GitHub App")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeepToken) {
+                Text("保持 Token 登录")
+            }
+        },
+        icon = {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = {
+            Text("检测到同一账号已使用 Token 登录")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "你当前账号 @$login 已通过 Token 登录。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "你要切换到 GitHub App 登录吗？",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "使用 GitHub App",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "保留 Token 账号，切换到 GitHub App 登录（支持 token 自动刷新）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                    }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "保持 Token 登录",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "撤销新产生的 GitHub App Token，保持当前 Token 登录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+// ── 确认替换旧 GitHub App 账号弹窗（GitHub App 登录时）─────────────────────────────────────
+@Composable
+private fun ConfirmReplaceOldGitHubAppDialog(
+    login: String,
+    onUseNewGitHubApp: () -> Unit,
+    onKeepOldGitHubApp: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(onClick = onUseNewGitHubApp) {
+                Text("使用新 GitHub App")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeepOldGitHubApp) {
+                Text("保持旧 GitHub App")
+            }
+        },
+        icon = {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = {
+            Text("检测到同一账号已通过 GitHub App 登录")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "你当前账号 @$login 已通过 GitHub App 授权登录。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "你要使用新的 GitHub App Token 替换旧的吗？",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "使用新 GitHub App",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "撤销旧 GitHub App Token，使用新的登录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                    }
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "保持旧 GitHub App",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Text(
+                            "撤销新产生的 GitHub App Token，保持当前旧 GitHub App 登录",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

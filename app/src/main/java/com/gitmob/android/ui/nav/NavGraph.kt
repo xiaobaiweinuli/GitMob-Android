@@ -1,5 +1,7 @@
 package com.gitmob.android.ui.nav
  
+import android.content.ClipData
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment
@@ -155,8 +157,10 @@ private sealed class AppInitState {
 fun AppNavGraph(
     tokenStorage: TokenStorage,
     initialToken: String?,
+    initialGitHubAppResult: String? = null,
     onThemeChange: (ThemeMode) -> Unit,
     onTokenConsumed: () -> Unit = {},
+    onGitHubAppResultConsumed: () -> Unit = {},
     initialGitHubUrl: String? = null,
     onGitHubUrlConsumed: () -> Unit = {},
 ) {
@@ -291,8 +295,13 @@ fun AppNavGraph(
         composable(Route.Login.path) {
             LoginScreen(
                 pendingToken = initialToken,
+                pendingGitHubAppResult = initialGitHubAppResult,
                 isReauth = isReauth,
-                onTokenConsumed = onTokenConsumed,
+                onTokenConsumed = {
+                    onTokenConsumed()
+                    // 同时清空 GitHub App 结果
+                    onGitHubAppResultConsumed()
+                },
                 onSuccess = {
                     isReauth = false
                     com.gitmob.android.GitMobApp.instance.checkForUpdate()
@@ -611,11 +620,22 @@ fun AppNavGraph(
             }
             
             if (showCommitDialog) {
+                val showFileNameInput = (mode == EditFileMode.NEW || !isSymlink && !isSubmodule)
+                val defaultFileName = pendingFileName
                 CommitMessageDialog(
                     defaultMessage = pendingCommitMsg,
+                    defaultFileName = defaultFileName,
+                    showFileNameInput = showFileNameInput,
                     c = c,
-                    onConfirm = { msg ->
+                    onConfirm = { newFileName, msg ->
                         showCommitDialog = false
+                        // 更新文件名（如果有变化）
+                        val updatedPath = if (showFileNameInput && newFileName.isNotBlank()) {
+                            val parentDir = pendingFullPath.substringBeforeLast("/", "")
+                            if (parentDir.isEmpty()) newFileName else "$parentDir/$newFileName"
+                        } else {
+                            pendingFullPath
+                        }
                         scope.launch {
                             try {
                                 when {
@@ -624,7 +644,7 @@ fun AppNavGraph(
                                             owner = owner,
                                             repo = repo,
                                             branch = branch,
-                                            path = pendingFullPath,
+                                            path = updatedPath,
                                             targetPath = pendingContent,
                                             message = msg
                                         )
@@ -635,7 +655,7 @@ fun AppNavGraph(
                                             owner = owner,
                                             repo = repo,
                                             branch = branch,
-                                            path = pendingFullPath,
+                                            path = updatedPath,
                                             targetPath = pendingContent,
                                             message = msg
                                         )
@@ -647,7 +667,7 @@ fun AppNavGraph(
                                             owner = owner,
                                             repo = repo,
                                             branch = branch,
-                                            submodulePath = pendingFullPath,
+                                            submodulePath = updatedPath,
                                             submoduleUrl = submoduleUrl,
                                             submoduleCommitSha = pendingContent,
                                             message = msg
@@ -664,7 +684,7 @@ fun AppNavGraph(
                                                 owner = owner,
                                                 repo = repo,
                                                 branch = branch,
-                                                submodulePath = pendingFullPath,
+                                                submodulePath = updatedPath,
                                                 submoduleUrl = submoduleUrl,
                                                 submoduleCommitSha = pendingContent,
                                                 message = msg
@@ -675,7 +695,7 @@ fun AppNavGraph(
                                                 owner = owner,
                                                 repo = repo,
                                                 branch = branch,
-                                                submodulePath = pendingFullPath,
+                                                submodulePath = updatedPath,
                                                 newCommitSha = pendingContent,
                                                 message = msg
                                             )
@@ -686,7 +706,7 @@ fun AppNavGraph(
                                         repository.createOrUpdateFile(
                                             owner = owner,
                                             repo = repo,
-                                            path = pendingFullPath,
+                                            path = updatedPath,
                                             message = msg,
                                             content = pendingContent,
                                             sha = sha,
@@ -1330,6 +1350,7 @@ fun FileViewerScreen(
     var selectedCommitForHistory by remember { mutableStateOf<com.gitmob.android.api.GHCommitFull?>(null) }
     var commitDetailLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val clipboard = androidx.compose.ui.platform.LocalClipboard.current
  
     // 获取用户信息
     LaunchedEffect(Unit) {
@@ -1443,6 +1464,25 @@ fun FileViewerScreen(
                         },
                     )
                 }
+                DropdownMenuItem(
+                    text = { Text("复制全部", fontSize = 13.sp, color = c.textPrimary) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            null,
+                            tint = c.textSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        scope.launch {
+                            val clipData = ClipData.newPlainText(content, content)
+                            clipboard.setClipEntry(clipData.toClipEntry())
+                        }
+                        android.widget.Toast.makeText(context, "已复制到剪贴板", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                )
                 DropdownMenuItem(
                     text = { Text("历史记录", fontSize = 13.sp, color = c.textPrimary) },
                     leadingIcon = {
@@ -1571,8 +1611,10 @@ fun FileViewerScreen(
                 modifier = Modifier.padding(padding),
             ) {
                 item {
-                    Text(content, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                        color = c.textPrimary, lineHeight = 18.sp)
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(content, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                            color = c.textPrimary, lineHeight = 18.sp)
+                    }
                 }
             }
         }

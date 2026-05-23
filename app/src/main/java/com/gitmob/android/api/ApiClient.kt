@@ -1,6 +1,8 @@
 package com.gitmob.android.api
 
 import android.content.Context
+import com.gitmob.android.auth.AccountStore
+import com.gitmob.android.auth.GitHubAppManager
 import com.gitmob.android.auth.TokenStorage
 import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -17,6 +19,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 import javax.net.ssl.SSLException
 
 object ApiClient {
@@ -33,6 +36,9 @@ object ApiClient {
     /** 全局 401/Token 失效事件——任何地方收到 401 都会 emit true */
     private val _tokenExpired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val tokenExpired: SharedFlow<Unit> = _tokenExpired
+
+    /** token 刷新锁，防止并发刷新 */
+    private val refreshLock = ReentrantLock()
 
     fun init(storage: TokenStorage) {
         tokenStorage = storage
@@ -124,30 +130,50 @@ object ApiClient {
         }
 
         val authInterceptor = Interceptor { chain ->
-            val token = runBlocking { tokenStorage.accessToken.first() }
+            var token = runBlocking { tokenStorage.accessToken.first() }
             val originalRequest = chain.request()
+
+            // 第一次尝试
             val requestBuilder = originalRequest.newBuilder()
-            
-            // 只有当请求没有设置 Accept Header 时，才添加默认的 Accept Header
             if (originalRequest.header("Accept") == null) {
                 requestBuilder.header("Accept", "application/vnd.github+json")
             }
-            
             requestBuilder.header("X-GitHub-Api-Version", "2026-03-10")
-            
             if (!token.isNullOrBlank()) {
                 requestBuilder.header("Authorization", "Bearer $token")
             }
-            
-            val request = requestBuilder.build()
-            val response = chain.proceed(request)
-            
+
+            val firstRequest = requestBuilder.build()
+            var response = chain.proceed(firstRequest)
+
+            // 收到 401 且有 token，尝试刷新
             if (response.code == 401 && !token.isNullOrBlank()) {
-                LogManager.w(TAG, "收到 401，token 已失效，清除本地授权并触发重新登录")
-                runBlocking { tokenStorage.clear() }
-                _tokenExpired.tryEmit(Unit)
+                LogManager.w(TAG, "收到 401，尝试刷新 token")
+                response.close()
+
+                // 尝试刷新 token
+                val refreshed = runBlocking { tryRefreshToken() }
+                if (refreshed) {
+                    LogManager.i(TAG, "Token 刷新成功，重试请求")
+                    token = runBlocking { tokenStorage.accessToken.first() }
+
+                    // 重新构建请求
+                    val newRequestBuilder = originalRequest.newBuilder()
+                    if (originalRequest.header("Accept") == null) {
+                        newRequestBuilder.header("Accept", "application/vnd.github+json")
+                    }
+                    newRequestBuilder.header("X-GitHub-Api-Version", "2026-03-10")
+                    newRequestBuilder.header("Authorization", "Bearer $token")
+
+                    val newRequest = newRequestBuilder.build()
+                    response = chain.proceed(newRequest)
+                } else {
+                    LogManager.w(TAG, "Token 刷新失败，清除本地授权并触发重新登录")
+                    runBlocking { tokenStorage.clear() }
+                    _tokenExpired.tryEmit(Unit)
+                }
             }
-            
+
             response
         }
 
@@ -178,6 +204,55 @@ object ApiClient {
     }
 
     fun currentToken(): String? = runBlocking { tokenStorage.accessToken.first() }
+
+    /**
+     * 尝试刷新 token（线程安全）
+     *
+     * @return 是否刷新成功
+     */
+    private suspend fun tryRefreshToken(): Boolean {
+        // 先检查是否有 refresh token
+        val refreshToken = tokenStorage.refreshToken.first() ?: return false
+
+        // 使用锁防止并发刷新
+        if (!refreshLock.tryLock()) {
+            // 已经有其他线程在刷新，等待并检查是否已经刷新成功
+            LogManager.d(TAG, "已有其他线程在刷新 token，等待...")
+            refreshLock.lock()
+            try {
+                // 检查是否已经有新 token
+                val currentAccessToken = tokenStorage.accessToken.first()
+                return currentAccessToken != null
+            } finally {
+                refreshLock.unlock()
+            }
+        }
+
+        try {
+            LogManager.i(TAG, "开始刷新 token")
+            val result = GitHubAppManager.refreshToken(refreshToken)
+            if (result != null) {
+                LogManager.i(TAG, "Token 刷新成功")
+                tokenStorage.saveTokenRefreshResult(
+                    result.accessToken,
+                    result.refreshToken,
+                    result.expiresAt
+                )
+
+                // 同时更新 AccountStore 中的活跃账号
+                // (注意：这里需要 AccountStore 的引用，或者使用事件通知)
+                // 暂时只更新 TokenStorage，后续可以优化
+                return true
+            }
+            LogManager.w(TAG, "Token 刷新失败")
+            return false
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Token 刷新异常", e)
+            return false
+        } finally {
+            refreshLock.unlock()
+        }
+    }
 
     /**
      * 创建干净的 OkHttpClient（不继承任何拦截器）

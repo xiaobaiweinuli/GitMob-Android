@@ -2,26 +2,52 @@
  * GitMob OAuth Worker
  * 路由:
  *   GET    /           → App 落地页
- *   GET    /auth        → 跳转 GitHub OAuth 授权（?force=1 强制重授权）
- *   GET    /callback    → 接收 code，换 token，HTML + JS 唤起 App
- *   GET    /health      → 健康检查
- *   DELETE /token       → 撤销 Token（token 失效，授权记录保留）
- *   DELETE /grant       → 删除授权 Grant（彻底移除 App 授权，需重新授权）
+ *   GET    /oauth/auth        → 跳转 GitHub OAuth App 授权（?force=1 强制重授权）
+ *   GET    /oauth/callback    → 接收 code，换 token，HTML + JS 唤起 App
+ *   GET    /github/auth       → 跳转 GitHub App 授权（?force=1 强制重授权）
+ *   GET    /github/callback   → 接收 code，换 token（含 refresh_token），HTML + JS 唤起 App
+ *   GET    /health            → 健康检查
+ *   DELETE /oauth/token       → 撤销 OAuth App Token
+ *   DELETE /oauth/grant       → 删除 OAuth App 授权 Grant
+ *   DELETE /github/token      → 撤销 GitHub App Token
+ *   DELETE /github/grant      → 删除 GitHub App 授权 Grant
  *
  * 环境变量（CF Dashboard → Workers → Settings → Variables）:
- *   GITHUB_CLIENT_ID      明文
- *   GITHUB_CLIENT_SECRET  加密 Secret
+ *   GITHUB_CLIENT_ID      OAuth App 明文 ID
+ *   GITHUB_CLIENT_SECRET  OAuth App 加密 Secret
+ *   GITHUB_APP_CLIENT_ID  GitHub App 明文 ID（可选，不提供则回退到 GITHUB_CLIENT_ID）
+ *   GITHUB_APP_CLIENT_SECRET GitHub App 加密 Secret（可选，不提供则回退到 GITHUB_CLIENT_SECRET）
  */
 
 export interface Env {
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
+  GITHUB_APP_CLIENT_ID?: string;
+  GITHUB_APP_CLIENT_SECRET?: string;
   ASSETS: Fetcher;
 }
 
-const APP_SCHEME = "gitmob://oauth";
 const REPO_URL = "https://github.com/xiaobaiweinuli/GitMob-Android";
 const SCOPES = "repo,user,delete_repo,workflow";
+
+// 获取对应认证方式的配置
+function getAuthConfig(env: Env, type: 'oauth' | 'github') {
+  if (type === 'github') {
+    return {
+      clientId: env.GITHUB_APP_CLIENT_ID || env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_APP_CLIENT_SECRET || env.GITHUB_CLIENT_SECRET,
+      scheme: "gitmob://github",
+      callbackPath: "/github/callback"
+    };
+  } else {
+    return {
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
+      scheme: "gitmob://oauth",
+      callbackPath: "/callback"
+    };
+  }
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -35,10 +61,14 @@ export default {
       switch (url.pathname) {
         case "/":
           return handleLanding();
-        case "/auth":
-          return handleAuth(url, env);
-        case "/callback":
-          return await handleCallback(url, env);
+        case "/oauth/auth":
+          return handleAuth(url, env, 'oauth');
+        case "/oauth/callback":
+          return await handleCallback(url, env, 'oauth');
+        case "/github/auth":
+          return handleAuth(url, env, 'github');
+        case "/github/callback":
+          return await handleCallback(url, env, 'github');
         case "/health":
           return json({ ok: true, ts: Date.now() });
       }
@@ -46,10 +76,14 @@ export default {
 
     if (request.method === "DELETE") {
       switch (url.pathname) {
-        case "/token":
-          return await handleRevokeToken(request, env);
-        case "/grant":
-          return await handleDeleteGrant(request, env);
+        case "/oauth/token":
+          return await handleRevokeToken(request, env, 'oauth');
+        case "/oauth/grant":
+          return await handleDeleteGrant(request, env, 'oauth');
+        case "/github/token":
+          return await handleRevokeToken(request, env, 'github');
+        case "/github/grant":
+          return await handleDeleteGrant(request, env, 'github');
       }
     }
 
@@ -180,12 +214,13 @@ function handleLanding(): Response {
   });
 }
 
-function handleAuth(url: URL, env: Env): Response {
+function handleAuth(url: URL, env: Env, type: 'oauth' | 'github'): Response {
+  const config = getAuthConfig(env, type);
   const state = crypto.randomUUID();
   const force = url.searchParams.get("force") === "1";
   const ghUrl = new URL("https://github.com/login/oauth/authorize");
-  ghUrl.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
-  ghUrl.searchParams.set("redirect_uri", `${url.origin}/callback`);
+  ghUrl.searchParams.set("client_id", config.clientId);
+  ghUrl.searchParams.set("redirect_uri", `${url.origin}${config.callbackPath}`);
   ghUrl.searchParams.set("scope", SCOPES);
   ghUrl.searchParams.set("state", state);
   ghUrl.searchParams.set("response_mode", "query");
@@ -193,13 +228,14 @@ function handleAuth(url: URL, env: Env): Response {
   return Response.redirect(ghUrl.toString(), 302);
 }
 
-async function handleCallback(url: URL, env: Env): Promise<Response> {
+async function handleCallback(url: URL, env: Env, type: 'oauth' | 'github'): Promise<Response> {
+  const config = getAuthConfig(env, type);
   const code = url.searchParams.get("code");
   const error = url.searchParams.get("error");
 
   if (error || !code) {
     const desc = url.searchParams.get("error_description") ?? "authorization_failed";
-    return htmlRedirect(`${APP_SCHEME}?error=${encodeURIComponent(desc)}`, true);
+    return htmlRedirect(`${config.scheme}?error=${encodeURIComponent(desc)}`, true);
   }
 
   try {
@@ -207,8 +243,8 @@ async function handleCallback(url: URL, env: Env): Promise<Response> {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
-        client_id: env.GITHUB_CLIENT_ID,
-        client_secret: env.GITHUB_CLIENT_SECRET,
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
         code,
       }),
     });
@@ -218,13 +254,28 @@ async function handleCallback(url: URL, env: Env): Promise<Response> {
 
     if (data.error || !data.access_token) {
       const desc = data.error_description ?? data.error ?? "token_exchange_failed";
-      return htmlRedirect(`${APP_SCHEME}?error=${encodeURIComponent(desc)}`, true);
+      return htmlRedirect(`${config.scheme}?error=${encodeURIComponent(desc)}`, true);
     }
 
-    return htmlRedirect(`${APP_SCHEME}?token=${encodeURIComponent(data.access_token)}`, false);
+    // 根据认证类型构建不同的 deep link
+    if (type === 'github') {
+      // GitHub App 模式，包含 refresh_token 和 expires_in
+      const deepLink = new URL(config.scheme);
+      deepLink.searchParams.set("access_token", data.access_token);
+      if (data.refresh_token) {
+        deepLink.searchParams.set("refresh_token", data.refresh_token);
+      }
+      if (data.expires_in) {
+        deepLink.searchParams.set("expires_in", String(data.expires_in));
+      }
+      return htmlRedirect(deepLink.toString(), false);
+    } else {
+      // OAuth App 模式，只有 access_token
+      return htmlRedirect(`${config.scheme}?token=${encodeURIComponent(data.access_token)}`, false);
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown_error";
-    return htmlRedirect(`${APP_SCHEME}?error=${encodeURIComponent(msg)}`, true);
+    return htmlRedirect(`${config.scheme}?error=${encodeURIComponent(msg)}`, true);
   }
 }
 
@@ -280,11 +331,12 @@ function htmlRedirect(deepLink: string, isError: boolean): Response {
   });
 }
 
-async function handleRevokeToken(request: Request, env: Env): Promise<Response> {
+async function handleRevokeToken(request: Request, env: Env, type: 'oauth' | 'github'): Promise<Response> {
   const token = extractBearerToken(request);
   if (!token) return json({ ok: false, error: "missing_token" }, 400);
   try {
-    const res = await githubAppsApi("DELETE", `/applications/${env.GITHUB_CLIENT_ID}/token`, { access_token: token }, env);
+    const config = getAuthConfig(env, type);
+    const res = await githubAppsApi("DELETE", `/applications/${config.clientId}/token`, { access_token: token }, config);
     if (res.status === 204 || res.status === 404) return json({ ok: true, action: "token_revoked" });
     return json({ ok: false, error: `github_${res.status}` }, 502);
   } catch {
@@ -292,11 +344,12 @@ async function handleRevokeToken(request: Request, env: Env): Promise<Response> 
   }
 }
 
-async function handleDeleteGrant(request: Request, env: Env): Promise<Response> {
+async function handleDeleteGrant(request: Request, env: Env, type: 'oauth' | 'github'): Promise<Response> {
   const token = extractBearerToken(request);
   if (!token) return json({ ok: false, error: "missing_token" }, 400);
   try {
-    const res = await githubAppsApi("DELETE", `/applications/${env.GITHUB_CLIENT_ID}/grant`, { access_token: token }, env);
+    const config = getAuthConfig(env, type);
+    const res = await githubAppsApi("DELETE", `/applications/${config.clientId}/grant`, { access_token: token }, config);
     if (res.status === 204 || res.status === 404) return json({ ok: true, action: "grant_deleted" });
     return json({ ok: false, error: `github_${res.status}` }, 502);
   } catch {
@@ -304,8 +357,8 @@ async function handleDeleteGrant(request: Request, env: Env): Promise<Response> 
   }
 }
 
-async function githubAppsApi(method: string, path: string, body: Record<string, string>, env: Env): Promise<Response> {
-  const credentials = btoa(`${env.GITHUB_CLIENT_ID}:${env.GITHUB_CLIENT_SECRET}`);
+async function githubAppsApi(method: string, path: string, body: Record<string, string>, config: { clientId: string, clientSecret: string }): Promise<Response> {
+  const credentials = btoa(`${config.clientId}:${config.clientSecret}`);
   return fetch(`https://api.github.com${path}`, {
     method,
     headers: {
@@ -313,7 +366,7 @@ async function githubAppsApi(method: string, path: string, body: Record<string, 
       Accept: "application/vnd.github+json",
       "Content-Type": "application/json",
       "User-Agent": "GitMob-OAuth-Worker/2.0",
-      "X-GitHub-Api-Version": "2022-11-28",
+      "X-GitHub-Api-Version": "2026-03-10",
     },
     body: JSON.stringify(body),
   });

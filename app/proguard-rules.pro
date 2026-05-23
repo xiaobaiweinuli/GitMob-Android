@@ -80,6 +80,16 @@
 -keep class coil3.svg.** { *; }
 -keep class coil3.network.** { *; }
 
+# Sora Editor — 保留核心 widget、事件系统、配色方案
+# 规则含 { void <init>(); } 成员模式，兼容 R8 新版行为
+-keep class io.github.rosemoe.sora.widget.CodeEditor { void <init>(...); *; }
+-keep class io.github.rosemoe.sora.widget.schemes.** { void <init>(); *; }
+-keep class io.github.rosemoe.sora.event.** { void <init>(); *; }
+-keep interface io.github.rosemoe.sora.event.** { *; }
+-keep class io.github.rosemoe.sora.text.Content { *; }
+-keep class io.github.rosemoe.sora.text.ContentLine { *; }
+-dontwarn io.github.rosemoe.sora.**
+
 # PDF 相关库 - 只忽略警告，不强制keep所有类
 -dontwarn org.apache.pdfbox.**
 -dontwarn com.openhtmltopdf.**

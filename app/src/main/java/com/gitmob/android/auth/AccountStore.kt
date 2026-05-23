@@ -29,14 +29,17 @@ object GitHubTokenPrefix {
 }
 
 /**
- * 认证类型：OAuth 授权登录 或 Token 手动登录
+ * 认证类型：OAuth 授权登录、Token 手动登录 或 GitHub App 认证
  */
 enum class AuthType {
     @SerializedName("oauth")
     OAUTH,  // OAuth 授权登录（默认）
 
     @SerializedName("token")
-    TOKEN   // 手动 Token 登录
+    TOKEN,  // 手动 Token 登录
+
+    @SerializedName("github_app")
+    GITHUB_APP  // GitHub App 认证
 }
 
 /**
@@ -46,14 +49,24 @@ enum class AuthType {
  * 与 proguard-rules.pro 的 -keepclassmembers ... @SerializedName 规则配合双重保护。
  */
 data class AccountInfo(
-    @SerializedName("login")     val login: String,
-    @SerializedName("name")      val name: String,
-    @SerializedName("email")     val email: String,
-    @SerializedName("avatarUrl") val avatarUrl: String,
-    @SerializedName("token")     val token: String,
-    @SerializedName("authType")  val authType: AuthType = AuthType.OAUTH,
+    @SerializedName("login")         val login: String,
+    @SerializedName("name")          val name: String,
+    @SerializedName("email")         val email: String,
+    @SerializedName("avatarUrl")     val avatarUrl: String,
+    @SerializedName("token")         val token: String,
+    @SerializedName("authType")      val authType: AuthType = AuthType.OAUTH,
+    @SerializedName("refreshToken")  val refreshToken: String? = null,  // GitHub App 刷新令牌
+    @SerializedName("expiresAt")     val expiresAt: Long? = null       // token 过期时间戳（毫秒）
 ) {
     val displayName: String get() = name.ifBlank { login }
+
+    /**
+     * 判断 token 是否已过期（仅对 GitHub App 有效）
+     */
+    fun isTokenExpired(currentTimeMs: Long = System.currentTimeMillis()): Boolean {
+        if (authType != AuthType.GITHUB_APP || expiresAt == null) return false
+        return currentTimeMs >= expiresAt
+    }
 }
 
 /**
@@ -81,6 +94,7 @@ class AccountStore(private val context: Context) {
          */
         fun identifyAuthType(token: String): AuthType {
             return when {
+                token.startsWith(GitHubTokenPrefix.APP_USER) -> AuthType.GITHUB_APP
                 token.startsWith(GitHubTokenPrefix.OAUTH) -> AuthType.OAUTH
                 else -> AuthType.TOKEN
             }

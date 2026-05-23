@@ -49,6 +49,7 @@ class EncryptedPreferences private constructor(context: Context) {
     private val stringFlows = mutableMapOf<String, MutableStateFlow<String?>>()
     private val intFlows = mutableMapOf<String, MutableStateFlow<Int>>()
     private val booleanFlows = mutableMapOf<String, MutableStateFlow<Boolean>>()
+    private val longFlows = mutableMapOf<String, MutableStateFlow<Long?>>()
 
     init {
         val masterKey = MasterKey.Builder(context)
@@ -100,6 +101,14 @@ class EncryptedPreferences private constructor(context: Context) {
         return prefs.getBoolean(key, defaultValue)
     }
 
+    fun putLong(key: String, value: Long) {
+        prefs.edit().putLong(key, value).apply()
+    }
+
+    fun getLong(key: String, defaultValue: Long = 0L): Long {
+        return prefs.getLong(key, defaultValue)
+    }
+
     fun remove(key: String) {
         prefs.edit().remove(key).apply()
     }
@@ -132,11 +141,18 @@ class EncryptedPreferences private constructor(context: Context) {
         }.asStateFlow()
     }
 
+    fun getLongFlow(key: String, defaultValue: Long? = null): StateFlow<Long?> {
+        return longFlows.getOrPut(key) {
+            MutableStateFlow(if (contains(key)) getLong(key) else defaultValue)
+        }.asStateFlow()
+    }
+
     // ── 内部方法 ─────────────────────────────────────────────────
 
     private fun updateFlowsForKey(key: String) {
         stringFlows[key]?.value = getString(key)
         intFlows[key]?.value = getInt(key, 0)
         booleanFlows[key]?.value = getBoolean(key, false)
+        longFlows[key]?.value = if (contains(key)) getLong(key) else null
     }
 }
