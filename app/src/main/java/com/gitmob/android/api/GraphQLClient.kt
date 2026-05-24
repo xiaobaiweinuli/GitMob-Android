@@ -19,6 +19,14 @@ import java.util.concurrent.TimeUnit
  *
  * 端点：POST https://api.github.com/graphql
  */
+/**
+ * JSONObject.optString() 会把 JSON null 值返回为字符串 "null"，
+ * 导致 UI 直接渲染出 "null" 文字。
+ * 此扩展函数统一过滤 "null" 字符串和空白字符串，均视为 Kotlin null。
+ */
+private fun org.json.JSONObject.optNullableString(key: String): String? =
+    optString(key).takeIf { it.isNotBlank() && it != "null" }
+
 object GraphQLClient {
 
     private const val TAG = "GraphQL"
@@ -687,8 +695,8 @@ object GraphQLClient {
                         id = n.optLong("databaseId"),
                         name = n.optString("name"),
                         fullName = fullName,
-                        description = n.optString("description").ifBlank { null },
-                        homepage = n.optString("homepageUrl").ifBlank { null },
+                        description = n.optNullableString("description"),
+                        homepage = n.optNullableString("homepageUrl"),
                         private = n.optBoolean("isPrivate"),
                         htmlUrl = n.optString("url"),
                         sshUrl = n.optString("sshUrl"),
@@ -702,9 +710,9 @@ object GraphQLClient {
                         fork = n.optBoolean("isFork"),
                         archived = n.optBoolean("isArchived"),
                         isTemplate = n.optBoolean("isTemplate"),
-                        updatedAt = n.optString("updatedAt").ifBlank { null },
-                        pushedAt = n.optString("pushedAt").ifBlank { null },
-                        createdAt = n.optString("createdAt").ifBlank { null },
+                        updatedAt = n.optNullableString("updatedAt"),
+                        pushedAt = n.optNullableString("pushedAt"),
+                        createdAt = n.optNullableString("createdAt"),
                         topics = topics,
                     )
                     result.add(repo)
@@ -806,7 +814,7 @@ object GraphQLClient {
                         id = n.optString("id"),
                         name = n.optString("name"),
                         emoji = n.optString("emojiHTML").replace(Regex("<[^>]*>"), "").trim().ifBlank { "💬" },
-                        description = n.optString("description").ifBlank { null },
+                        description = n.optNullableString("description"),
                     )
                 }
             } catch (e: Exception) { LogManager.w(TAG, "getDiscussionCategories: ${e.message}"); emptyList() }
@@ -852,7 +860,7 @@ object GraphQLClient {
                 ?.optJSONObject("discussions") ?: return@withContext Pair(emptyList(), null)
             val pageInfo = discussionsObj.optJSONObject("pageInfo")
             val hasNext = pageInfo?.optBoolean("hasNextPage") ?: false
-            val endCursor = if (hasNext) pageInfo.optString("endCursor").ifBlank { null } else null
+            val endCursor = if (hasNext) pageInfo.optNullableString("endCursor") else null
             val nodes = discussionsObj.optJSONArray("nodes") ?: return@withContext Pair(emptyList(), null)
             val list = (0 until nodes.length()).map { i ->
                 val n = nodes.getJSONObject(i)
@@ -869,7 +877,7 @@ object GraphQLClient {
                                 id = 0,
                                 name = labelNode.optString("name"),
                                 color = labelNode.optString("color"),
-                                description = labelNode.optString("description").ifBlank { null },
+                                description = labelNode.optNullableString("description"),
                                 nodeId = labelNode.optString("id")
                             )
                         )
@@ -879,7 +887,7 @@ object GraphQLClient {
                     id        = n.optString("id"),
                     number    = n.optInt("number"),
                     title     = n.optString("title"),
-                    body      = n.optString("body").ifBlank { null },
+                    body      = n.optNullableString("body"),
                     createdAt = n.optString("createdAt"),
                     updatedAt = n.optString("updatedAt"),
                     url       = n.optString("url"),
@@ -888,7 +896,7 @@ object GraphQLClient {
                     category  = if (catObj != null) com.gitmob.android.api.GHDiscussionCategory(
                         id = catObj.optString("id"), name = catObj.optString("name"),
                         emoji = catObj.optString("emojiHTML").replace(Regex("<[^>]*>"), "").trim().ifBlank { "💬" },
-                        description = catObj.optString("description").ifBlank { null },
+                        description = catObj.optNullableString("description"),
                         isAnswerable = catObj.optBoolean("isAnswerable", false),
                     ) else null,
                     comments    = n.optJSONObject("comments")?.optInt("totalCount") ?: 0,
@@ -971,7 +979,7 @@ object GraphQLClient {
                 id        = n.optString("id"),
                 number    = n.optInt("number"),
                 title     = n.optString("title"),
-                body      = n.optString("body").ifBlank { null },
+                body      = n.optNullableString("body"),
                 createdAt = n.optString("createdAt"),
                 updatedAt = n.optString("updatedAt"),
                 lastEditedAt = if (n.isNull("lastEditedAt")) null else n.optString("lastEditedAt"),
@@ -981,7 +989,7 @@ object GraphQLClient {
                 category  = if (catObj != null) com.gitmob.android.api.GHDiscussionCategory(
                     id = catObj.optString("id"), name = catObj.optString("name"),
                     emoji = catObj.optString("emojiHTML").replace(Regex("<[^>]*>"), "").trim().ifBlank { "💬" },
-                    description = catObj.optString("description").ifBlank { null },
+                    description = catObj.optNullableString("description"),
                     isAnswerable = catObj.optBoolean("isAnswerable", false),
                 ) else null,
                 comments    = n.optJSONObject("comments")?.optInt("totalCount") ?: 0,
@@ -1088,7 +1096,7 @@ object GraphQLClient {
                         id = 0,
                         name = l.optString("name"),
                         color = l.optString("color"),
-                        description = l.optString("description").ifBlank { null },
+                        description = l.optNullableString("description"),
                         nodeId = l.optString("id")
                     )
                 }
@@ -1098,7 +1106,7 @@ object GraphQLClient {
                 number = n.optInt("number"),
                 title = n.optString("title"),
                 state = n.optString("state").lowercase(),
-                body = n.optString("body").ifBlank { null },
+                body = n.optNullableString("body"),
                 htmlUrl = n.optString("url"),
                 createdAt = n.optString("createdAt"),
                 updatedAt = n.optString("updatedAt"),
@@ -1225,7 +1233,7 @@ object GraphQLClient {
                         id = r.optLong("databaseId"),
                         user = if (rAuthorObj != null) com.gitmob.android.api.GHOwner(
                             rAuthorObj.optString("login"), rAuthorObj.optString("avatarUrl")) else com.gitmob.android.api.GHOwner("", ""),
-                        body = r.optString("body").ifBlank { null },
+                        body = r.optNullableString("body"),
                         state = r.optString("state"),
                         submittedAt = r.optString("submittedAt"),
                         htmlUrl = r.optString("url"),
@@ -1241,7 +1249,7 @@ object GraphQLClient {
                         id = 0,
                         name = l.optString("name"),
                         color = l.optString("color"),
-                        description = l.optString("description").ifBlank { null },
+                        description = l.optNullableString("description"),
                         nodeId = l.optString("id")
                     )
                 }
@@ -1250,7 +1258,7 @@ object GraphQLClient {
             val pr = com.gitmob.android.api.GHPullRequest(
                 number = n.optInt("number"),
                 title = n.optString("title"),
-                body = n.optString("body").ifBlank { null },
+                body = n.optNullableString("body"),
                 state = n.optString("state").lowercase(),
                 user = if (authorObj != null) com.gitmob.android.api.GHOwner(
                     authorObj.optString("login"), authorObj.optString("avatarUrl")) else com.gitmob.android.api.GHOwner("", ""),
@@ -1660,7 +1668,7 @@ object GraphQLClient {
             
             val pageInfo = prsObj.optJSONObject("pageInfo")
             val hasNext = pageInfo?.optBoolean("hasNextPage") ?: false
-            val endCursor = if (hasNext) pageInfo.optString("endCursor").ifBlank { null } else null
+            val endCursor = if (hasNext) pageInfo.optNullableString("endCursor") else null
             val nodes = prsObj.optJSONArray("nodes") ?: return@withContext Pair(emptyList(), endCursor)
             
             val list = mutableListOf<com.gitmob.android.api.GHPullRequest>()
@@ -1679,7 +1687,7 @@ object GraphQLClient {
                                 id = 0,
                                 name = labelNode.optString("name"),
                                 color = labelNode.optString("color"),
-                                description = labelNode.optString("description").ifBlank { null },
+                                description = labelNode.optNullableString("description"),
                                 nodeId = labelNode.optString("id")
                             )
                         )
@@ -1719,12 +1727,12 @@ object GraphQLClient {
                     number = n.optInt("number"),
                     title = n.optString("title"),
                     state = n.optString("state").lowercase(),
-                    body = n.optString("body").ifBlank { null },
+                    body = n.optNullableString("body"),
                     htmlUrl = n.optString("url"),
                     createdAt = n.optString("createdAt"),
-                    updatedAt = n.optString("updatedAt").ifBlank { null },
-                    mergedAt = n.optString("mergedAt").ifBlank { null },
-                    closedAt = n.optString("closedAt").ifBlank { null },
+                    updatedAt = n.optNullableString("updatedAt"),
+                    mergedAt = n.optNullableString("mergedAt"),
+                    closedAt = n.optNullableString("closedAt"),
                     user = com.gitmob.android.api.GHOwner(
                         login = authorObj?.optString("login") ?: "",
                         avatarUrl = authorObj?.optString("avatarUrl")
@@ -1790,7 +1798,7 @@ object GraphQLClient {
                     assignees = assigneesList,
                     nodeId = n.optString("id"),
                     locked = n.optBoolean("locked", false),
-                    viewerSubscription = n.optString("viewerSubscription").ifBlank { null }
+                    viewerSubscription = n.optNullableString("viewerSubscription")
                 )
                 list.add(pr)
             }
@@ -1862,7 +1870,7 @@ object GraphQLClient {
             
             val pageInfo = issuesObj.optJSONObject("pageInfo")
             val hasNext = pageInfo?.optBoolean("hasNextPage") ?: false
-            val endCursor = if (hasNext) pageInfo.optString("endCursor").ifBlank { null } else null
+            val endCursor = if (hasNext) pageInfo.optNullableString("endCursor") else null
             val nodes = issuesObj.optJSONArray("nodes") ?: return@withContext Pair(emptyList(), endCursor)
             
             val list = mutableListOf<com.gitmob.android.api.GHIssue>()
@@ -1879,7 +1887,7 @@ object GraphQLClient {
                                 id = 0,
                                 name = labelNode.optString("name"),
                                 color = labelNode.optString("color"),
-                                description = labelNode.optString("description").ifBlank { null },
+                                description = labelNode.optNullableString("description"),
                                 nodeId = labelNode.optString("id")
                             )
                         )
@@ -1903,11 +1911,11 @@ object GraphQLClient {
                     number = n.optInt("number"),
                     title = n.optString("title"),
                     state = n.optString("state").lowercase(),
-                    body = n.optString("body").ifBlank { null },
+                    body = n.optNullableString("body"),
                     htmlUrl = n.optString("url"),
                     createdAt = n.optString("createdAt"),
-                    updatedAt = n.optString("updatedAt").ifBlank { null },
-                    closedAt = n.optString("closedAt").ifBlank { null },
+                    updatedAt = n.optNullableString("updatedAt"),
+                    closedAt = n.optNullableString("closedAt"),
                     user = com.gitmob.android.api.GHOwner(
                         login = authorObj?.optString("login") ?: "",
                         avatarUrl = authorObj?.optString("avatarUrl")
@@ -1917,7 +1925,7 @@ object GraphQLClient {
                     assignees = assigneesList,
                     nodeId = n.optString("id"),
                     locked = n.optBoolean("locked", false),
-                    viewerSubscription = n.optString("viewerSubscription").ifBlank { null }
+                    viewerSubscription = n.optNullableString("viewerSubscription")
                 )
                 list.add(issue)
             }
@@ -2180,7 +2188,7 @@ object GraphQLClient {
         return GHUserContentEdit(
             id = json.optString("id"),
             createdAt = json.optString("createdAt"),
-            diff = json.optString("diff").ifBlank { null },
+            diff = json.optNullableString("diff"),
             editor = editorObj?.let {
                 GHOwner(
                     login = it.optString("login"),

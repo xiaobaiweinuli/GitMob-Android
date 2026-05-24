@@ -1241,7 +1241,7 @@ class RepoRepository {
         val hasIssues = node.optBoolean("hasIssuesEnabled", true)
         val hasDiscussions = node.optBoolean("hasDiscussionsEnabled", false)
         val archived = node.optBoolean("isArchived", false)
-        val homepage = node.optString("homepageUrl").ifBlank { null }
+        val homepage = node.optString("homepageUrl").takeIf { it.isNotBlank() && it != "null" }
 
         // 解析 topics
         val topics = mutableListOf<String>()
@@ -1271,7 +1271,7 @@ class RepoRepository {
             id            = idLong,
             name          = repoName,
             fullName      = nameWithOwner,
-            description   = node.optString("description").ifBlank { null },
+            description   = node.optString("description").takeIf { it.isNotBlank() && it != "null" },
             homepage      = homepage,
             private       = node.optBoolean("isPrivate", false),
             htmlUrl       = node.optString("url"),
@@ -1281,8 +1281,8 @@ class RepoRepository {
             stars         = stars,
             forks         = forks,
             openIssues    = openIssues,
-            updatedAt     = node.optString("updatedAt").ifBlank { null },
-            pushedAt      = node.optString("pushedAt").ifBlank { null },
+            updatedAt     = node.optString("updatedAt").takeIf { it.isNotBlank() && it != "null" },
+            pushedAt      = node.optString("pushedAt").takeIf { it.isNotBlank() && it != "null" },
             language      = language,
             owner         = owner,
             fork          = node.optBoolean("isFork", false),

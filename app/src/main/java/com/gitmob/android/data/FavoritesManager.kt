@@ -69,7 +69,7 @@ private fun JSONObject.toFavRepo() = FavRepo(
     fullName      = optString("fullName"),
     name          = optString("name"),
     ownerLogin    = optString("ownerLogin"),
-    description   = optString("description").ifBlank { null },
+    description   = optString("description").takeIf { it.isNotBlank() && it != "null" },
     language      = optString("language").ifBlank { null },
     stars         = optInt("stars"),
     forks         = optInt("forks", 0), // 向后兼容：旧数据没有 forks 时默认为 0
@@ -77,7 +77,7 @@ private fun JSONObject.toFavRepo() = FavRepo(
     isPrivate     = optBoolean("isPrivate"),
     archived      = optBoolean("archived"),
     htmlUrl       = optString("htmlUrl"),
-    website       = optString("website").ifBlank { null },
+    website       = optString("website").takeIf { it.isNotBlank() && it != "null" },
     topics        = (0 until (optJSONArray("topics")?.length() ?: 0)).map {
         optJSONArray("topics")!!.optString(it)
     },
@@ -87,7 +87,7 @@ private fun JSONObject.toFavRepo() = FavRepo(
 private fun JSONObject.toFavGroup() = FavGroup(
     id          = optString("id"),
     name        = optString("name"),
-    description = optString("description"),
+    description = optString("description").takeIf { it.isNotBlank() && it != "null" } ?: "",
     repoIds     = (0 until (optJSONArray("repoIds")?.length() ?: 0)).map {
         optJSONArray("repoIds")!!.optString(it)
     },

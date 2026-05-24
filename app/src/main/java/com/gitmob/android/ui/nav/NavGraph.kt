@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -613,18 +614,27 @@ fun AppNavGraph(
             if (showCommitDialog) {
                 CommitMessageDialog(
                     defaultMessage = pendingCommitMsg,
+                    defaultFileName = pendingFileName,
+                    showFileNameField = !isSymlink && !isSubmodule,
                     c = c,
-                    onConfirm = { msg ->
+                    onConfirm = { newFileName, msg ->
                         showCommitDialog = false
                         scope.launch {
                             try {
+                                // 对于普通代码文件，CommitDialog 中可能修改了文件名，需要重算路径
+                                // 对于 symlink/submodule，showFileNameField=false，newFileName==pendingFileName
+                                val finalPath = if (path.contains("/")) {
+                                    "${path.substringBeforeLast("/")}/$newFileName"
+                                } else {
+                                    newFileName
+                                }
                                 when {
                                     isSymlink && mode == EditFileMode.NEW -> {
                                         repository.createSymlink(
                                             owner = owner,
                                             repo = repo,
                                             branch = branch,
-                                            path = pendingFullPath,
+                                            path = finalPath,
                                             targetPath = pendingContent,
                                             message = msg
                                         )
@@ -635,7 +645,7 @@ fun AppNavGraph(
                                             owner = owner,
                                             repo = repo,
                                             branch = branch,
-                                            path = pendingFullPath,
+                                            path = finalPath,
                                             targetPath = pendingContent,
                                             message = msg
                                         )
@@ -647,7 +657,7 @@ fun AppNavGraph(
                                             owner = owner,
                                             repo = repo,
                                             branch = branch,
-                                            submodulePath = pendingFullPath,
+                                            submodulePath = finalPath,
                                             submoduleUrl = submoduleUrl,
                                             submoduleCommitSha = pendingContent,
                                             message = msg
@@ -655,27 +665,24 @@ fun AppNavGraph(
                                         navController.popBackStack()
                                     }
                                     isSubmodule && mode == EditFileMode.EDIT -> {
-                                        // 编辑时：如果 URL 变了，需要同时更新 .gitmodules 和子模块 commit
                                         val hasUrlChanged = pendingSubmoduleUrl != null && pendingSubmoduleUrl != submoduleGitUrl
                                         if (hasUrlChanged) {
-                                            // URL 变了，使用 createSubmodule 来更新（会同时更新 .gitmodules）
                                             val submoduleUrl = pendingSubmoduleUrl ?: throw IllegalArgumentException("子模块仓库地址不能为空")
                                             repository.createSubmodule(
                                                 owner = owner,
                                                 repo = repo,
                                                 branch = branch,
-                                                submodulePath = pendingFullPath,
+                                                submodulePath = finalPath,
                                                 submoduleUrl = submoduleUrl,
                                                 submoduleCommitSha = pendingContent,
                                                 message = msg
                                             )
                                         } else {
-                                            // URL 没变，只更新 commit
                                             repository.updateSubmoduleCommit(
                                                 owner = owner,
                                                 repo = repo,
                                                 branch = branch,
-                                                submodulePath = pendingFullPath,
+                                                submodulePath = finalPath,
                                                 newCommitSha = pendingContent,
                                                 message = msg
                                             )
@@ -686,7 +693,7 @@ fun AppNavGraph(
                                         repository.createOrUpdateFile(
                                             owner = owner,
                                             repo = repo,
-                                            path = pendingFullPath,
+                                            path = finalPath,
                                             message = msg,
                                             content = pendingContent,
                                             sha = sha,
@@ -1478,6 +1485,8 @@ fun FileViewerScreen(
         val isSymlink = fileInfo?.type == "symlink"
         val isSubmodule = fileInfo?.submoduleGitUrl != null
         val isMd = path.lowercase().let { it.endsWith(".md") || it.endsWith(".markdown") }
+        val isHtml = path.lowercase().let { it.endsWith(".html") || it.endsWith(".htm") }
+        var showHtmlPreview by remember { mutableStateOf(false) }
         when {
             loading       -> LoadingBox(Modifier.padding(padding))
             error != null -> ErrorBox(error!!) {}
@@ -1566,15 +1575,48 @@ fun FileViewerScreen(
                 markdown = content,
                 modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             )
-            else -> LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                modifier = Modifier.padding(padding),
+            isHtml        -> Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.BottomEnd,
             ) {
-                item {
-                    Text(content, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                        color = c.textPrimary, lineHeight = 18.sp)
+                if (showHtmlPreview) {
+                    com.gitmob.android.ui.common.GmHtmlWebView(
+                        html = content,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                    )
+                } else {
+                    com.gitmob.android.ui.common.CodeEditorView(
+                        initialContent = content,
+                        isDarkTheme = c.isDark,
+                        readOnly = true,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                FloatingActionButton(
+                    onClick = { showHtmlPreview = !showHtmlPreview },
+                    containerColor = Coral,
+                    contentColor = Color.White,
+                    modifier = Modifier.padding(16.dp),
+                ) {
+                    Icon(
+                        imageVector = if (showHtmlPreview)
+                            Icons.AutoMirrored.Filled.ArrowBack
+                        else
+                            Icons.Default.Visibility,
+                        contentDescription = if (showHtmlPreview) "返回源码" else "预览渲染",
+                    )
                 }
             }
+            else -> com.gitmob.android.ui.common.CodeEditorView(
+                initialContent = content,
+                isDarkTheme = c.isDark,
+                readOnly = true,
+                modifier = Modifier.fillMaxSize().padding(padding),
+            )
         }
     }
     

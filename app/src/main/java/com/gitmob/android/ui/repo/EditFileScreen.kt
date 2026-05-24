@@ -87,10 +87,18 @@ fun EditFileScreen(
     // 轻量标志位：只要用户在代码编辑器中触发过任意变更即为 true，不做字符串比较
     var hasContentChanged by remember { mutableStateOf(false) }
 
-    val hasChanges = remember(currentFileName, hasContentChanged, mode) {
-        when (mode) {
-            EditFileMode.EDIT -> currentFileName != fileName || hasContentChanged
-            EditFileMode.NEW -> currentFileName.isNotBlank()
+    // hasChanges 逻辑：
+    // - symlink/submodule：文件名或内容有变化
+    // - 普通代码 EDIT：内容有变化（文件名已移到 CommitDialog）
+    // - 普通代码 NEW：始终 true（CommitDialog 负责验证文件名不为空）
+    val hasChanges = remember(currentFileName, hasContentChanged, mode, isSymlink, isSubmodule) {
+        when {
+            isSymlink || isSubmodule -> when (mode) {
+                EditFileMode.EDIT -> currentFileName != fileName || hasContentChanged
+                EditFileMode.NEW  -> currentFileName.isNotBlank()
+            }
+            mode == EditFileMode.EDIT -> hasContentChanged
+            else -> true
         }
     }
     
@@ -162,23 +170,22 @@ fun EditFileScreen(
                     
                     Button(
                         onClick = {
-                            if (currentFileName.isNotBlank()) {
-                                val submoduleUrlToSave = if (isSubmodule && mode == EditFileMode.NEW) {
-                                    currentSubmoduleUrl.takeIf { it.isNotBlank() }
-                                } else {
-                                    null
+                            if (isSymlink || isSubmodule) {
+                                // symlink/submodule：currentFileName 是目标路径/子模块路径，
+                                // hasChanges 已包含 isNotBlank 检查，额外防御一次
+                                if (currentFileName.isNotBlank()) {
+                                    val submoduleUrlToSave = if (isSubmodule && mode == EditFileMode.NEW) {
+                                        currentSubmoduleUrl.takeIf { it.isNotBlank() }
+                                    } else null
+                                    onSave(currentFileName, currentContent, submoduleUrlToSave)
                                 }
-                                // symlink / submodule 分支直接用 currentContent（OutlinedTextField 绑定）
-                                // 普通代码编辑分支从 editorRef 读取，避免在每次击键时更新状态
-                                val contentToSave = if (!isSymlink && !isSubmodule) {
-                                    editorRef.value?.text?.toString() ?: currentContent
-                                } else {
-                                    currentContent
-                                }
-                                onSave(currentFileName, contentToSave, submoduleUrlToSave)
+                            } else {
+                                // 普通代码文件：文件名已移到 CommitDialog，此处传 fileName（原始名）作为默认值
+                                val contentToSave = editorRef.value?.text?.toString() ?: initialContent
+                                onSave(fileName, contentToSave, null)
                             }
                         },
-                        enabled = hasChanges && currentFileName.isNotBlank(),
+                        enabled = hasChanges && if (isSymlink || isSubmodule) currentFileName.isNotBlank() else true,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Coral,
                             disabledContainerColor = Coral.copy(alpha = 0.4f)
@@ -435,52 +442,18 @@ fun EditFileScreen(
                 }
             }
             else -> {
-                // else 分支使用 Column 而非 verticalScroll，由 CodeEditorView 内部处理滚动
-                Column(
+                // 文件名编辑已移至「提交更改」对话框，编辑器直接占满全屏
+                // 视觉风格与查看器一致：无包裹背景、无额外 padding 卡片
+                com.gitmob.android.ui.common.CodeEditorView(
+                    initialContent = initialContent,
+                    isDarkTheme = c.isDark,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues)
-                        .imePadding()
-                ) {
-                    OutlinedTextField(
-                        value = currentFileName,
-                        onValueChange = { currentFileName = it },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        label = { Text("文件名") },
-                        placeholder = { Text("请输入文件名", color = c.textTertiary) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Coral,
-                            unfocusedBorderColor = c.border,
-                            focusedTextColor = c.textPrimary,
-                            unfocusedTextColor = c.textPrimary,
-                            focusedContainerColor = c.bgItem,
-                            unfocusedContainerColor = c.bgItem,
-                            focusedLabelColor = Coral,
-                            unfocusedLabelColor = c.textTertiary,
-                        ),
-                    )
-
-                    // Sora Editor 替代 BasicTextField + verticalScroll 方案
-                    // weight(1f) 确保编辑器占满剩余空间，不与 OutlinedTextField 争高度
-                    com.gitmob.android.ui.common.CodeEditorView(
-                        initialContent = initialContent,
-                        isDarkTheme = c.isDark,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = 16.dp),
-                        onEditorReady = { editor ->
-                            editorRef.value = editor
-                        },
-                        onContentChanged = {
-                            hasContentChanged = true
-                        }
-                    )
-                }
+                        .imePadding(),
+                    onEditorReady = { editor -> editorRef.value = editor },
+                    onContentChanged = { hasContentChanged = true }
+                )
             }
         }
     }
