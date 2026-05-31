@@ -91,7 +91,7 @@ npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
 
 # 部署到 Cloudflare
-npm run deploy
+wrangler deploy
 ```
 
 可选：在 Cloudflare Dashboard 绑定自定义域名。
@@ -357,6 +357,7 @@ GitMob-Android/
 │   │                     - 查询用户仓库
 │   │                     - 使用 createCommitOnBranch mutation 删除文件
 │   │                     - 获取分支最新 commit OID
+│   │                     - optNullableString() 扩展函数：过滤 optString() 返回的 "null" 字符串
 │   │
 │   ├── auth/               # 认证与授权层
 │   │   ├── AccountStore.kt        # 多账号管理
@@ -394,6 +395,7 @@ GitMob-Android/
 │   ├── ui/                 # UI 层（Jetpack Compose）
 │   │   ├── common/                # 通用组件
 │   │   │   ├── Components.kt      - Button、Card、Dialog、Loading、Error 等通用组件
+│   │   │   ├── CodeEditorView.kt  - 基于 Sora Editor 的代码查看/编辑器 Compose 封装
 │   │   │   └── GmWebView.kt       - 自定义 WebView 组件
 │   │   │
 │   │   ├── create/                # 创建仓库页面
@@ -493,6 +495,10 @@ GitMob-Android/
 │       └── UpdateManager.kt        # 更新检测与下载
 │
 ├── cf-worker/              # Cloudflare Worker（OAuth 中转）
+│   ├── public/                    # 静态资源
+│   │   ├── 404.html               # 404 错误页面
+│   │   ├── logo.png               # 应用 Logo
+│   │   └── robots.txt             # 爬虫规则
 │   ├── src/index.ts               # Worker 主逻辑
 │   ├── package.json               # 依赖配置
 │   ├── tsconfig.json              # TypeScript 配置

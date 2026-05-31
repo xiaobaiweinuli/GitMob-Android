@@ -1592,9 +1592,8 @@ fun RepoDetailScreen(
     if (showCommitMessageDialog) {
         CommitMessageDialog(
             defaultMessage = commitMessage,
-            showFileNameField = false,
             c = c,
-            onConfirm = { _, msg ->
+            onConfirm = { msg ->
                 showCommitMessageDialog = false
                 val fullPath = if (state.currentPath.isNotEmpty()) {
                     "${state.currentPath}/$newFileName"

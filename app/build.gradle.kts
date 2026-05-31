@@ -133,5 +133,7 @@ dependencies {
     // Sora Editor：原生代码编辑器，替代 BasicTextField，解决大文件卡顿问题
     implementation(platform(libs.sora.editor.bom))
     implementation(libs.sora.editor)
+    // 拖拽排序：用于收藏夹分组和仓库列表的编辑模式拖拽
+    implementation(libs.reorderable)
     debugImplementation(libs.androidx.ui.tooling)
 }
