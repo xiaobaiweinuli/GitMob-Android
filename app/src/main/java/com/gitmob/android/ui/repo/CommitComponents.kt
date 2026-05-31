@@ -533,80 +533,46 @@ fun CreateFileDialog(
 @Composable
 fun CommitMessageDialog(
     defaultMessage: String = "",
-    /** 提交对话框中显示的默认文件名，用户可在此修改（重命名/新建时指定名称） */
-    defaultFileName: String = "",
-    /** 是否展示文件名输入框；symlink/submodule 分支不需要，传 false */
-    showFileNameField: Boolean = false,
     c: GmColors,
-    /** 返回最终文件名和提交信息 */
-    onConfirm: (fileName: String, commitMsg: String) -> Unit,
+    onConfirm: (commitMsg: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var commitMsg by remember { mutableStateOf(defaultMessage) }
-    var commitFileName by remember { mutableStateOf(defaultFileName) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.bgCard,
         title = { Text("提交信息", color = c.textPrimary, fontWeight = FontWeight.SemiBold) },
         text = {
-            Column {
-                // 文件名字段：仅普通代码文件编辑/新建时显示，符号链接/子模块不显示
-                if (showFileNameField) {
-                    OutlinedTextField(
-                        value = commitFileName,
-                        onValueChange = { commitFileName = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("文件名") },
-                        placeholder = { Text("请输入文件名", color = c.textTertiary) },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Coral,
-                            unfocusedBorderColor = c.border,
-                            focusedTextColor = c.textPrimary,
-                            unfocusedTextColor = c.textPrimary,
-                            focusedContainerColor = c.bgItem,
-                            unfocusedContainerColor = c.bgItem,
-                            focusedLabelColor = Coral,
-                            unfocusedLabelColor = c.textTertiary,
-                        ),
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                OutlinedTextField(
-                    value = commitMsg,
-                    onValueChange = { commitMsg = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("提交信息") },
-                    placeholder = { Text("Describe your changes...", color = c.textTertiary) },
-                    singleLine = false,
-                    minLines = 2,
-                    maxLines = 5,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Coral,
-                        unfocusedBorderColor = c.border,
-                        focusedTextColor = c.textPrimary,
-                        unfocusedTextColor = c.textPrimary,
-                        focusedContainerColor = c.bgItem,
-                        unfocusedContainerColor = c.bgItem,
-                        focusedLabelColor = Coral,
-                        unfocusedLabelColor = c.textTertiary,
-                    ),
-                )
-            }
+            OutlinedTextField(
+                value = commitMsg,
+                onValueChange = { commitMsg = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("提交信息") },
+                placeholder = { Text("Describe your changes...", color = c.textTertiary) },
+                singleLine = false,
+                minLines = 2,
+                maxLines = 5,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Coral,
+                    unfocusedBorderColor = c.border,
+                    focusedTextColor = c.textPrimary,
+                    unfocusedTextColor = c.textPrimary,
+                    focusedContainerColor = c.bgItem,
+                    unfocusedContainerColor = c.bgItem,
+                    focusedLabelColor = Coral,
+                    unfocusedLabelColor = c.textTertiary,
+                ),
+            )
         },
         confirmButton = {
-            val canConfirm = commitMsg.isNotBlank() &&
-                    (!showFileNameField || commitFileName.isNotBlank())
             Button(
                 onClick = {
-                    if (canConfirm) {
-                        val finalFileName = if (showFileNameField) commitFileName else defaultFileName
-                        onConfirm(finalFileName, commitMsg)
+                    if (commitMsg.isNotBlank()) {
+                        onConfirm(commitMsg)
                     }
                 },
-                enabled = canConfirm,
+                enabled = commitMsg.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = Coral),
             ) {
                 Text("确认")

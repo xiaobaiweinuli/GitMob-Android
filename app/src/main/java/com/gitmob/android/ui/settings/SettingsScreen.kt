@@ -1,5 +1,7 @@
 package com.gitmob.android.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -136,6 +138,18 @@ fun SettingsScreen(
     var importResult by remember { mutableStateOf<ImportResult?>(null) }
     var importResolutions by remember { mutableStateOf<Map<Int, ConflictResolution>>(emptyMap()) }
     var showImportResultDialog by remember { mutableStateOf(false) }
+
+    // Token显示相关
+    var showTokenDialog by remember { mutableStateOf(false) }
+    var toastMessage by remember { mutableStateOf<String?>(null) }
+    val isTokenRevealed = activeAccount?.tokenRevealed ?: false
+
+    LaunchedEffect(toastMessage) {
+        if (toastMessage != null) {
+            kotlinx.coroutines.delay(2500)
+            toastMessage = null
+        }
+    }
 
     // 检测 MANAGE_EXTERNAL_STORAGE
     val hasAllFilesAccess = remember {
@@ -410,6 +424,17 @@ fun SettingsScreen(
 
     Scaffold(
         containerColor = c.bgDeep,
+        snackbarHost = {
+            toastMessage?.let {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    Snackbar(
+                        modifier = Modifier.padding(top = 80.dp, start = 16.dp, end = 16.dp),
+                    ) {
+                        Text(it)
+                    }
+                }
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text("设置", fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = c.textPrimary) },
@@ -817,8 +842,11 @@ fun SettingsScreen(
                     c = c,
                 )
 
-                SDivider(c)
+            }
 
+            // ── 数据 ──────────────────────────────────────────
+            SLabel("数据", c)
+            SCard(c) {
                 // ── 语言数据 ──────────────────────────────────────────────
                 val hasLangData = remember { mutableStateOf(LanguageManager.hasLanguageData(context)) }
                 var langFetching by remember { mutableStateOf(false) }
@@ -870,7 +898,7 @@ fun SettingsScreen(
                             }
                         }) {
                             Text(
-                                if (hasLangData.value) "更新语言数据" else "获取语言数据",
+                                if (hasLangData.value) "更新" else "获取",
                                 color = BlueColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                             )
                         }
@@ -930,7 +958,7 @@ fun SettingsScreen(
                             }
                         }) {
                             Text(
-                                if (hasEmojiData.value) "更新 Emoji 数据" else "获取 Emoji 数据",
+                                if (hasEmojiData.value) "更新" else "获取",
                                 color = PurpleColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                             )
                         }
@@ -1070,6 +1098,27 @@ fun SettingsScreen(
             // ── 账号操作 ──────────────────────────────────────
             SLabel("账号操作", c)
             SCard(c) {
+                // 查看Token按钮（仅在未显示过时显示）
+                if (!isTokenRevealed && activeLogin != null) {
+                    SRow(
+                        title = "查看Token",
+                        subtitle = "查看并复制Token",
+                        leadingIcon = {
+                            SIconBox(
+                                color = CoralDim,
+                                icon = Icons.Default.Key,
+                                tint = Coral
+                            )
+                        },
+                        trailing = {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, null,
+                                tint = c.textTertiary, modifier = Modifier.size(16.dp))
+                        },
+                        onClick = { showTokenDialog = true },
+                        c = c
+                    )
+                    SDivider(c)
+                }
                 if (activeAccount?.authType == AuthType.TOKEN) {
                     // Token 账号：只显示移除账号
                     SRow(
@@ -1251,6 +1300,26 @@ fun SettingsScreen(
                 )
             }
 
+            // ── Token显示弹窗 ───────────────────────────────────
+            if (showTokenDialog && activeLogin != null) {
+                val token by tokenStorage.accessToken.collectAsState(initial = null)
+                if (token != null) {
+                    TokenRevealDialog(
+                        token = token!!,
+                        onConfirm = {
+                            scope.launch {
+                                accountStore.setTokenRevealed(activeLogin!!, true)
+                            }
+                            showTokenDialog = false
+                        },
+                        onDismiss = { showTokenDialog = false },
+                        onTokenCopied = {
+                            toastMessage = "已复制到剪贴板"
+                        },
+                    )
+                }
+            }
+
             // ── 关于 ──────────────────────────────────────────
             SLabel("关于", c)
             SCard(c) {
@@ -1271,6 +1340,116 @@ fun SettingsScreen(
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp))
         }
     }
+}
+
+// ─── Token显示弹窗 ─────────────────────────────────────────────────────────────
+@Composable
+fun TokenRevealDialog(
+    token: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    onTokenCopied: () -> Unit,
+) {
+    val c = LocalGmColors.current
+    val context = LocalContext.current
+    var isHighlighted by remember { mutableStateOf(false) }
+
+    fun copyToClipboard() {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("github_token", token)
+        clipboard.setPrimaryClip(clip)
+        isHighlighted = true
+        onTokenCopied()
+        kotlinx.coroutines.MainScope().launch {
+            kotlinx.coroutines.delay(200)
+            isHighlighted = false
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.bgCard,
+        icon = { Icon(Icons.Default.Key, null, tint = Coral) },
+        title = {
+            Text("查看Token", color = c.textPrimary, fontWeight = FontWeight.SemiBold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x22F87171), RoundedCornerShape(12.dp))
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        null,
+                        tint = RedColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column {
+                        Text(
+                            "此Token具有完整GitHub账号权限",
+                            fontSize = 13.sp,
+                            color = RedColor,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            "请勿截图或分享，关闭后不再显示",
+                            fontSize = 12.sp,
+                            color = c.textSecondary
+                        )
+                    }
+                }
+
+                // Token显示区域
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isHighlighted) Coral.copy(alpha = 0.15f) else c.bgItem,
+                            RoundedCornerShape(12.dp)
+                        )
+                        .clickable(onClick = { copyToClipboard() })
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        null,
+                        tint = c.textTertiary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        token,
+                        fontSize = 13.sp,
+                        color = c.textPrimary,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Text(
+                    "复制后粘贴到插件设置页面中",
+                    fontSize = 12.sp,
+                    color = c.textSecondary
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = Coral),
+            ) {
+                Text("我已复制，不再显示")
+            }
+        }
+    )
 }
 
 // ─── 关于弹窗 ─────────────────────────────────────────────────────────────────

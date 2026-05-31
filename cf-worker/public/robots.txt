@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://gitmob.16618888.xyz/sitemap.xml

@@ -52,6 +52,7 @@ data class AccountInfo(
     @SerializedName("avatarUrl") val avatarUrl: String,
     @SerializedName("token")     val token: String,
     @SerializedName("authType")  val authType: AuthType = AuthType.OAUTH,
+    @SerializedName("tokenRevealed") val tokenRevealed: Boolean = false,
 ) {
     val displayName: String get() = name.ifBlank { login }
 }
@@ -165,6 +166,15 @@ class AccountStore(private val context: Context) {
     /** 获取指定账号的 token（用于撤销操作） */
     suspend fun getToken(login: String): String? =
         accounts.first().firstOrNull { it.login == login }?.token
+
+    /** 设置指定账号的 token 显示状态 */
+    suspend fun setTokenRevealed(login: String, revealed: Boolean) {
+        val current = parseAccounts(prefs.getString(Keys.ACCOUNTS_JSON))
+        val updated = current.map {
+            if (it.login == login) it.copy(tokenRevealed = revealed) else it
+        }
+        prefs.putString(Keys.ACCOUNTS_JSON, gson.toJson(updated))
+    }
 
     /** 清空所有账号数据 */
     suspend fun clearAll() {

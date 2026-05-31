@@ -408,12 +408,7 @@ fun AppNavGraph(
                     navController.navigate(Route.UserProfile.go(login))
                 },
                 onEditFile = { path, mode, branch, isSymlink, isSubmodule ->
-                    val fullPath = if (mode == "NEW" && path.isNotEmpty()) {
-                        "$path/"
-                    } else {
-                        path
-                    }
-                    navController.navigate(Route.EditFile.go(owner, repo, fullPath, branch, mode, isSymlink, isSubmodule))
+                    navController.navigate(Route.EditFile.go(owner, repo, path, branch, mode, isSymlink, isSubmodule))
                 },
                 vm = viewModel {
                         val app = checkNotNull(this[androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY])
@@ -529,6 +524,14 @@ fun AppNavGraph(
             val c = com.gitmob.android.ui.theme.LocalGmColors.current
             var initialContent by remember { mutableStateOf("") }
             var initialFileName by remember { mutableStateOf(path.substringAfterLast("/")) }
+            // 计算父路径
+            val parentPath = remember(path) {
+                if (path.contains("/")) {
+                    path.removeSuffix("/").substringBeforeLast("/")
+                } else {
+                    ""
+                }
+            }
             var loading by remember { mutableStateOf(mode == EditFileMode.EDIT) }
             var sha by remember { mutableStateOf<String?>(null) }
             var isSymlink by remember { mutableStateOf(isSymlinkParam) }
@@ -583,14 +586,18 @@ fun AppNavGraph(
                     isSymlink = isSymlink,
                     isSubmodule = isSubmodule,
                     submoduleGitUrl = submoduleGitUrl,
+                    parentPath = parentPath,
                     onBack = { navController.popBackStack() },
                     onSave = { newFileName, newContent, submoduleUrl ->
-                        val fullPath = if (path.contains("/")) {
-                            val parentPath = path.substringBeforeLast("/")
-                            "$parentPath/$newFileName"
-                        } else {
-                            newFileName
-                        }
+                        LogManager.d("EditFile", "onSave 被调用")
+                        LogManager.d("EditFile", "  path = $path")
+                        LogManager.d("EditFile", "  newFileName = $newFileName")
+                        
+                        // 现在 newFileName 已经是完整路径了
+                        val fullPath = newFileName.removePrefix("/").removeSuffix("/")
+                        
+                        LogManager.d("EditFile", "  最终 fullPath = $fullPath")
+                        
                         val commitMsg = when {
                             isSymlink && mode == EditFileMode.EDIT -> "Update symlink $fullPath"
                             isSymlink && mode == EditFileMode.NEW -> "Create symlink $fullPath"
@@ -599,6 +606,8 @@ fun AppNavGraph(
                             mode == EditFileMode.EDIT -> "Update $fullPath"
                             else -> "Create $fullPath"
                         }
+                        
+                        LogManager.d("EditFile", "  commitMsg = $commitMsg")
                         
                         pendingFileName = newFileName
                         pendingContent = newContent
@@ -614,38 +623,38 @@ fun AppNavGraph(
             if (showCommitDialog) {
                 CommitMessageDialog(
                     defaultMessage = pendingCommitMsg,
-                    defaultFileName = pendingFileName,
-                    showFileNameField = !isSymlink && !isSubmodule,
                     c = c,
-                    onConfirm = { newFileName, msg ->
+                    onConfirm = { msg ->
                         showCommitDialog = false
                         scope.launch {
                             try {
-                                // 对于普通代码文件，CommitDialog 中可能修改了文件名，需要重算路径
-                                // 对于 symlink/submodule，showFileNameField=false，newFileName==pendingFileName
-                                val finalPath = if (path.contains("/")) {
-                                    "${path.substringBeforeLast("/")}/$newFileName"
-                                } else {
-                                    newFileName
-                                }
+                                LogManager.d("EditFile", "开始提交更改")
+                                LogManager.d("EditFile", "  mode = $mode")
+                                LogManager.d("EditFile", "  isSymlink = $isSymlink")
+                                LogManager.d("EditFile", "  isSubmodule = $isSubmodule")
+                                LogManager.d("EditFile", "  pendingFullPath = $pendingFullPath")
+                                LogManager.d("EditFile", "  original path = $path")
+                                
                                 when {
                                     isSymlink && mode == EditFileMode.NEW -> {
+                                        LogManager.d("EditFile", "创建符号链接到 $pendingFullPath")
                                         repository.createSymlink(
                                             owner = owner,
                                             repo = repo,
                                             branch = branch,
-                                            path = finalPath,
+                                            path = pendingFullPath,
                                             targetPath = pendingContent,
                                             message = msg
                                         )
                                         navController.popBackStack()
                                     }
                                     isSymlink && mode == EditFileMode.EDIT -> {
+                                        LogManager.d("EditFile", "更新符号链接到 $pendingFullPath")
                                         repository.createSymlink(
                                             owner = owner,
                                             repo = repo,
                                             branch = branch,
-                                            path = finalPath,
+                                            path = pendingFullPath,
                                             targetPath = pendingContent,
                                             message = msg
                                         )
@@ -653,11 +662,12 @@ fun AppNavGraph(
                                     }
                                     isSubmodule && mode == EditFileMode.NEW -> {
                                         val submoduleUrl = pendingSubmoduleUrl ?: throw IllegalArgumentException("子模块仓库地址不能为空")
+                                        LogManager.d("EditFile", "创建子模块到 $pendingFullPath")
                                         repository.createSubmodule(
                                             owner = owner,
                                             repo = repo,
                                             branch = branch,
-                                            submodulePath = finalPath,
+                                            submodulePath = pendingFullPath,
                                             submoduleUrl = submoduleUrl,
                                             submoduleCommitSha = pendingContent,
                                             message = msg
@@ -668,21 +678,23 @@ fun AppNavGraph(
                                         val hasUrlChanged = pendingSubmoduleUrl != null && pendingSubmoduleUrl != submoduleGitUrl
                                         if (hasUrlChanged) {
                                             val submoduleUrl = pendingSubmoduleUrl ?: throw IllegalArgumentException("子模块仓库地址不能为空")
+                                            LogManager.d("EditFile", "更新子模块URL到 $pendingFullPath")
                                             repository.createSubmodule(
                                                 owner = owner,
                                                 repo = repo,
                                                 branch = branch,
-                                                submodulePath = finalPath,
+                                                submodulePath = pendingFullPath,
                                                 submoduleUrl = submoduleUrl,
                                                 submoduleCommitSha = pendingContent,
                                                 message = msg
                                             )
                                         } else {
+                                            LogManager.d("EditFile", "更新子模块commit到 $pendingFullPath")
                                             repository.updateSubmoduleCommit(
                                                 owner = owner,
                                                 repo = repo,
                                                 branch = branch,
-                                                submodulePath = finalPath,
+                                                submodulePath = pendingFullPath,
                                                 newCommitSha = pendingContent,
                                                 message = msg
                                             )
@@ -690,19 +702,23 @@ fun AppNavGraph(
                                         navController.popBackStack()
                                     }
                                     else -> {
+                                        val targetPath = pendingFullPath
+                                        LogManager.d("EditFile", "创建/更新文件到 $targetPath")
                                         repository.createOrUpdateFile(
                                             owner = owner,
                                             repo = repo,
-                                            path = finalPath,
+                                            path = targetPath,
                                             message = msg,
                                             content = pendingContent,
-                                            sha = sha,
+                                            sha = if (mode == EditFileMode.EDIT) sha else null,
                                             branch = branch,
                                         )
                                         navController.popBackStack()
                                     }
                                 }
+                                LogManager.d("EditFile", "提交成功！")
                             } catch (e: Exception) {
+                                LogManager.e("EditFile", "保存失败", e)
                                 android.widget.Toast.makeText(context, "保存失败: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                             }
                         }

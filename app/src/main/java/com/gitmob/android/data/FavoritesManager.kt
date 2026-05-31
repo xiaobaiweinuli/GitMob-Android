@@ -221,6 +221,13 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
         return id
     }
 
+    fun updateGroup(groupId: String, name: String, description: String) {
+        val newGroups = _state.value.groups.map {
+            if (it.id == groupId) it.copy(name = name, description = description) else it
+        }
+        save(_state.value.copy(groups = newGroups))
+    }
+
     /** 删除分组。deleteMode = "group_only" | "all" */
     fun deleteGroup(groupId: String, deleteMode: String) {
         val s     = _state.value
@@ -339,6 +346,43 @@ class FavoritesManager(app: Application) : AndroidViewModel(app) {
         val newAllReposById = newAllRepos.values.associateBy { it.id }
         save(FavoritesState(groups = newGroups, ungroupedRepos = newUngrouped,
             allRepos = newAllRepos, allReposById = newAllReposById))
+    }
+
+    // ── 排序操作 ─────────────────────────────────────────────────────────────────
+
+    /**
+     * 重新排列分组顺序（编辑模式拖拽完成后调用）
+     * [newOrder] 是新的分组 id 顺序列表
+     */
+    fun reorderGroups(newOrder: List<String>) {
+        val s = _state.value
+        val groupMap = s.groups.associateBy { it.id }
+        val reordered = newOrder.mapNotNull { groupMap[it] }
+        val missing = s.groups.filter { it.id !in newOrder }
+        save(s.copy(groups = reordered + missing))
+    }
+
+    /**
+     * 重新排列指定分组内的仓库顺序（编辑模式拖拽完成后调用）
+     * [groupId] 为 null 时操作未分组列表
+     * [newOrder] 是新的 fullName 顺序列表
+     */
+    fun reorderReposInGroup(groupId: String?, newOrder: List<String>) {
+        val s = _state.value
+        if (groupId == null) {
+            val repoMap = s.ungroupedRepos.associateBy { it.fullName }
+            val reordered = newOrder.mapNotNull { repoMap[it] }
+            val missing = s.ungroupedRepos.filter { it.fullName !in newOrder }
+            save(s.copy(ungroupedRepos = reordered + missing))
+        } else {
+            val newGroups = s.groups.map { g ->
+                if (g.id == groupId) {
+                    val missing = g.repoIds.filter { it !in newOrder }
+                    g.copy(repoIds = newOrder + missing)
+                } else g
+            }
+            save(s.copy(groups = newGroups))
+        }
     }
 
     /** 修改分组（移动到其他分组或未分组） */

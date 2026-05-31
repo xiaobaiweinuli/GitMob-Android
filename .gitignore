@@ -1,7 +1,7 @@
 # Build
 /build
 app/build
-cf-worker/node_modules
+*/node_modules/
 cf-worker/.wrangler
 
 # Keystore（绝对不提交）
@@ -26,9 +26,12 @@ local.properties
 .env.local
 # 其他
 docs
-*.txt
+/*.txt
+*.dev.vars
+cf-worker/package-lock.json
 .trae
 .kotlin
+attention.md
 # 备份文件
 *.bak
 *.tmp

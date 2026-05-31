@@ -456,6 +456,18 @@ class RepoRepository {
         message: String, content: String, sha: String? = null,
         branch: String? = null,
     ): GHCreateFileResponse = withContext(Dispatchers.IO) {
+        LogManager.d("RepoRepository", "createOrUpdateFile 被调用")
+        LogManager.d("RepoRepository", "  owner = $owner")
+        LogManager.d("RepoRepository", "  repo = $repo")
+        LogManager.d("RepoRepository", "  path = $path")
+        LogManager.d("RepoRepository", "  message = $message")
+        LogManager.d("RepoRepository", "  content length = ${content.length}")
+        LogManager.d("RepoRepository", "  sha = $sha")
+        LogManager.d("RepoRepository", "  branch = $branch")
+        
+        val cleanPath = path.removePrefix("/").removeSuffix("/")
+        LogManager.d("RepoRepository", "  cleanPath = $cleanPath")
+        
         val encoded = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val request = GHCreateFileRequest(
             message = message,
@@ -463,11 +475,19 @@ class RepoRepository {
             sha = sha,
             branch = branch,
         )
-        val response = api.createOrUpdateFile(owner, repo, path, request)
-        invalidateContentsCache(owner, repo)
-        fileContentCache.clear()
-        fileWithInfoCache.clear()
-        response
+        
+        LogManager.d("RepoRepository", "  发送API请求...")
+        try {
+            val response = api.createOrUpdateFile(owner, repo, cleanPath, request)
+            LogManager.d("RepoRepository", "  API请求成功！")
+            invalidateContentsCache(owner, repo)
+            fileContentCache.clear()
+            fileWithInfoCache.clear()
+            response
+        } catch (e: Exception) {
+            LogManager.e("RepoRepository", "  API请求失败", e)
+            throw e
+        }
     }
 
     /**
@@ -1612,8 +1632,19 @@ class RepoRepository {
         targetPath: String,
         message: String
     ): Boolean = withContext(Dispatchers.IO) {
+        LogManager.d("RepoRepository", "createSymlink 被调用")
+        LogManager.d("RepoRepository", "  owner = $owner")
+        LogManager.d("RepoRepository", "  repo = $repo")
+        LogManager.d("RepoRepository", "  branch = $branch")
+        LogManager.d("RepoRepository", "  path = $path")
+        LogManager.d("RepoRepository", "  targetPath = $targetPath")
+        LogManager.d("RepoRepository", "  message = $message")
+        
+        val cleanPath = path.removePrefix("/").removeSuffix("/")
+        LogManager.d("RepoRepository", "  cleanPath = $cleanPath")
+        
         val treeItem = com.gitmob.android.api.GHTreeItem(
-            path = path,
+            path = cleanPath,
             mode = "120000",
             type = "blob",
             content = targetPath
@@ -1633,12 +1664,24 @@ class RepoRepository {
         submoduleCommitSha: String,
         message: String
     ): Boolean = withContext(Dispatchers.IO) {
+        LogManager.d("RepoRepository", "createSubmodule 被调用")
+        LogManager.d("RepoRepository", "  owner = $owner")
+        LogManager.d("RepoRepository", "  repo = $repo")
+        LogManager.d("RepoRepository", "  branch = $branch")
+        LogManager.d("RepoRepository", "  submodulePath = $submodulePath")
+        LogManager.d("RepoRepository", "  submoduleUrl = $submoduleUrl")
+        LogManager.d("RepoRepository", "  submoduleCommitSha = $submoduleCommitSha")
+        LogManager.d("RepoRepository", "  message = $message")
+        
+        val cleanPath = submodulePath.removePrefix("/").removeSuffix("/")
+        LogManager.d("RepoRepository", "  cleanPath = $cleanPath")
+        
         val treeItems = mutableListOf<com.gitmob.android.api.GHTreeItem>()
 
         // 1. 添加子模块条目
         treeItems.add(
             com.gitmob.android.api.GHTreeItem(
-                path = submodulePath,
+                path = cleanPath,
                 mode = "160000",
                 type = "commit",
                 sha = submoduleCommitSha
@@ -1655,17 +1698,17 @@ class RepoRepository {
 
             val newGitmodulesContent = if (existingGitmodules != null) {
                 // .gitmodules 已存在，检查是否已有该子模块的配置
-                val submoduleSection = """\[submodule "$submodulePath"\]"""
+                val submoduleSection = """\[submodule "$cleanPath"\]"""
                 if (existingGitmodules.contains(submoduleSection)) {
                     // 已存在，更新（保持原有内容，只修改需要的部分，这里简化处理为完全重写）
-                    buildGitmodulesContent(existingGitmodules, submodulePath, submoduleUrl)
+                    buildGitmodulesContent(existingGitmodules, cleanPath, submoduleUrl)
                 } else {
                     // 不存在，追加新配置
-                    existingGitmodules + "\n\n" + buildSingleSubmoduleConfig(submodulePath, submoduleUrl)
+                    existingGitmodules + "\n\n" + buildSingleSubmoduleConfig(cleanPath, submoduleUrl)
                 }
             } else {
                 // .gitmodules 不存在，创建新的
-                buildSingleSubmoduleConfig(submodulePath, submoduleUrl)
+                buildSingleSubmoduleConfig(cleanPath, submoduleUrl)
             }
 
             treeItems.add(
@@ -1695,8 +1738,19 @@ class RepoRepository {
         newCommitSha: String,
         message: String
     ): Boolean = withContext(Dispatchers.IO) {
+        LogManager.d("RepoRepository", "updateSubmoduleCommit 被调用")
+        LogManager.d("RepoRepository", "  owner = $owner")
+        LogManager.d("RepoRepository", "  repo = $repo")
+        LogManager.d("RepoRepository", "  branch = $branch")
+        LogManager.d("RepoRepository", "  submodulePath = $submodulePath")
+        LogManager.d("RepoRepository", "  newCommitSha = $newCommitSha")
+        LogManager.d("RepoRepository", "  message = $message")
+        
+        val cleanPath = submodulePath.removePrefix("/").removeSuffix("/")
+        LogManager.d("RepoRepository", "  cleanPath = $cleanPath")
+        
         val treeItem = com.gitmob.android.api.GHTreeItem(
-            path = submodulePath,
+            path = cleanPath,
             mode = "160000",
             type = "commit",
             sha = newCommitSha
