@@ -34,7 +34,7 @@ object MarkdownUtils {
     /**
      * 将 Markdown 包装在完整的 HTML 页面中，包含 github-markdown-css 样式
      */
-    fun wrapMarkdownInHtml(markdown: String, isDarkTheme: Boolean = false): String {
+    fun wrapMarkdownInHtml(markdown: String, isDarkTheme: Boolean = false, fontSize: Int = 16): String {
         val htmlContent = markdownToHtml(markdown)
         
         return """
@@ -56,7 +56,7 @@ object MarkdownUtils {
                         overflow-x: auto !important;
                     }
                     
-                    ${getGithubMarkdownCss(isDarkTheme)}
+                    ${getGithubMarkdownCss(isDarkTheme, fontSize)}
                     
                     /* 移动端适配 - 透明背景 */
                     .markdown-body {
@@ -67,6 +67,7 @@ object MarkdownUtils {
                         padding: 0;
                         background-color: transparent !important;
                         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+                        font-size: ${fontSize}px;
                     }
                     
                     .markdown-body img {
@@ -108,7 +109,7 @@ object MarkdownUtils {
     /**
      * 获取 GitHub Markdown CSS 样式
      */
-    private fun getGithubMarkdownCss(isDarkTheme: Boolean): String {
+    private fun getGithubMarkdownCss(isDarkTheme: Boolean, fontSize: Int): String {
         return if (isDarkTheme) {
             """
                 :root {
@@ -136,7 +137,7 @@ object MarkdownUtils {
                     color: #c9d1d9;
                     background-color: transparent !important;
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-                    font-size: 16px;
+                    font-size: ${fontSize}px;
                     line-height: 1.5;
                     word-wrap: break-word;
                 }
@@ -310,7 +311,7 @@ object MarkdownUtils {
                     color: #1f2328;
                     background-color: transparent !important;
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-                    font-size: 16px;
+                    font-size: ${fontSize}px;
                     line-height: 1.5;
                     word-wrap: break-word;
                 }

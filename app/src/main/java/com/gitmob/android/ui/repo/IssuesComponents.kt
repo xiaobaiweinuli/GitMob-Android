@@ -782,14 +782,21 @@ fun IssueFieldItem(
         when (field) {
             is IssueField.MarkdownField -> {
                 if (field.value.isNotBlank())
-                    Text(field.value, fontSize = 13.sp, color = c.textSecondary, lineHeight = 20.sp)
+                    GmMarkdownWebView(
+                        markdown = field.value,
+                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 60.dp)
+                    )
             }
             is IssueField.InputField -> {
                 val v = fieldValues[field.id]?.toString() ?: field.value
                 if (field.label.isNotBlank())
                     FieldLabel(field.label, field.required, c)
                 if (field.description.isNotBlank())
-                    Text(field.description, fontSize = 11.sp, color = c.textTertiary)
+                    GmMarkdownWebView(
+                        markdown = field.description,
+                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 40.dp),
+                        fontSize = 13
+                    )
                 OutlinedTextField(
                     value = v, onValueChange = { fieldValues[field.id] = it },
                     modifier = Modifier.fillMaxWidth(),
@@ -805,7 +812,11 @@ fun IssueFieldItem(
             is IssueField.TextareaField -> {
                 if (field.label.isNotBlank()) FieldLabel(field.label, field.required, c)
                 if (field.description.isNotBlank())
-                    Text(field.description, fontSize = 11.sp, color = c.textTertiary)
+                    GmMarkdownWebView(
+                        markdown = field.description,
+                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 40.dp),
+                        fontSize = 13
+                    )
                 val v = fieldValues[field.id]?.toString() ?: field.value
                 OutlinedTextField(
                     value = v, onValueChange = { fieldValues[field.id] = it },
@@ -820,7 +831,11 @@ fun IssueFieldItem(
             is IssueField.DropdownField -> {
                 if (field.label.isNotBlank()) FieldLabel(field.label, field.required, c)
                 if (field.description.isNotBlank())
-                    Text(field.description, fontSize = 11.sp, color = c.textTertiary)
+                    GmMarkdownWebView(
+                        markdown = field.description,
+                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 40.dp),
+                        fontSize = 13
+                    )
                 val sel = fieldValues[field.id]
                 field.options.forEachIndexed { idx, opt ->
                     val isChecked = if (field.multiple)
@@ -832,10 +847,13 @@ fun IssueFieldItem(
                             .clickable {
                                 if (field.multiple) {
                                     @Suppress("UNCHECKED_CAST")
-                                val cur = (fieldValues[field.id] as? MutableSet<Int>)
-                                        ?: mutableSetOf()
-                                    if (idx in cur) cur.remove(idx) else cur.add(idx)
-                                    fieldValues[field.id] = cur.toMutableSet()
+                                    val cur = (fieldValues[field.id] as? Set<Int>) ?: emptySet()
+                                    val newSet = if (idx in cur) {
+                                        cur - idx
+                                    } else {
+                                        cur + idx
+                                    }
+                                    fieldValues[field.id] = newSet
                                 } else {
                                     fieldValues[field.id] = if (sel == idx) -1 else idx
                                 }
@@ -851,25 +869,36 @@ fun IssueFieldItem(
                             RadioButton(selected = isChecked, onClick = null,
                                 colors = RadioButtonDefaults.colors(selectedColor = Coral))
                         }
-                        Text(opt, fontSize = 13.sp, color = c.textPrimary)
+                        GmMarkdownWebView(
+                            markdown = opt,
+                            modifier = Modifier.defaultMinSize(minHeight = 40.dp)
+                        )
                     }
                 }
             }
             is IssueField.CheckboxesField -> {
                 if (field.label.isNotBlank()) FieldLabel(field.label, field.required, c)
                 if (field.description.isNotBlank())
-                    Text(field.description, fontSize = 11.sp, color = c.textTertiary)
+                    GmMarkdownWebView(
+                        markdown = field.description,
+                        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 40.dp),
+                        fontSize = 13
+                    )
                 @Suppress("UNCHECKED_CAST")
-                val checked = (fieldValues[field.id] as? MutableSet<Int>) ?: mutableSetOf()
+                val checked = (fieldValues[field.id] as? Set<Int>) ?: emptySet()
                 field.options.forEachIndexed { idx, opt ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
                                 @Suppress("UNCHECKED_CAST")
-                                val cur = (fieldValues[field.id] as? MutableSet<Int>) ?: mutableSetOf()
-                                if (idx in cur) cur.remove(idx) else cur.add(idx)
-                                fieldValues[field.id] = cur.toMutableSet()
+                                val cur = (fieldValues[field.id] as? Set<Int>) ?: emptySet()
+                                val newSet = if (idx in cur) {
+                                    cur - idx
+                                } else {
+                                    cur + idx
+                                }
+                                fieldValues[field.id] = newSet
                             }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -879,10 +908,13 @@ fun IssueFieldItem(
                             checked = idx in checked, onCheckedChange = null,
                             colors  = CheckboxDefaults.colors(checkedColor = Coral),
                         )
-                        Column {
-                            Text(opt.label, fontSize = 13.sp, color = c.textPrimary)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            GmMarkdownWebView(
+                                markdown = opt.label,
+                                modifier = Modifier.defaultMinSize(minHeight = 40.dp)
+                            )
                             if (opt.required)
-                                Text("必填", fontSize = 10.sp, color = RedColor)
+                                Text("*", fontSize = 13.sp, color = RedColor)
                         }
                     }
                 }
@@ -894,8 +926,8 @@ fun IssueFieldItem(
 @Composable
 fun FieldLabel(label: String, required: Boolean, c: GmColors) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.textPrimary)
-        if (required) Text("*", fontSize = 13.sp, color = RedColor)
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = c.textPrimary)
+        if (required) Text("*", fontSize = 15.sp, color = RedColor)
     }
 }
 

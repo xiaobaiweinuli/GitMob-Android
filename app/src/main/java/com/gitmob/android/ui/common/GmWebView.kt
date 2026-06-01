@@ -22,12 +22,13 @@ fun GmMarkdownWebView(
     markdown: String,
     modifier: Modifier = Modifier,
     onLinkClick: ((String) -> Unit)? = null,
+    fontSize: Int = 16,
 ) {
     val c = LocalGmColors.current
     val isDarkTheme = c.isDark
     
-    val htmlContent = remember(markdown, isDarkTheme) {
-        MarkdownUtils.wrapMarkdownInHtml(markdown, isDarkTheme)
+    val htmlContent = remember(markdown, isDarkTheme, fontSize) {
+        MarkdownUtils.wrapMarkdownInHtml(markdown, isDarkTheme, fontSize)
     }
     
     AndroidView(
