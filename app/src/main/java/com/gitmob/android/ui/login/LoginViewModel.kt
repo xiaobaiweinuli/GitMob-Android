@@ -72,6 +72,7 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 收到新 token：获取用户信息 → 存入 AccountStore → 同步 TokenStorage → 重建 ApiClient */
     fun onTokenReceived(token: String) {
+        LogManager.i("LoginVM", "🎯 onTokenReceived() 开始, token前缀: ${token.take(20)}...")
         viewModelScope.launch {
             _state.value = Loading
             try {
@@ -82,6 +83,7 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 
                 if (existingSameTokenAccount != null) {
+                    LogManager.i("LoginVM", "Token 已存在，直接切换账号: ${existingSameTokenAccount.login}")
                     // Token 已存在，直接使用
                     accountStore.switchAccount(existingSameTokenAccount.login)
                     tokenStorage.syncActiveAccount(existingSameTokenAccount)
@@ -91,9 +93,13 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 
                 // 用临时 token 获取用户信息
+                LogManager.i("LoginVM", "📝 第 1 次更新: tokenStorage.saveToken()")
                 tokenStorage.saveToken(token)
+                LogManager.i("LoginVM", "🔄 第 1 次 ApiClient.rebuild()")
                 ApiClient.rebuild()
+                LogManager.i("LoginVM", "📡 开始请求 getCurrentUser()")
                 val user = ApiClient.api.getCurrentUser()
+                LogManager.i("LoginVM", "✅ getCurrentUser() 成功: ${user.login}")
                 
                 val login = user.login
                 val name = user.name ?: user.login
@@ -137,6 +143,7 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 // 没有冲突，直接登录
+                LogManager.i("LoginVM", "🎯 调用 completeOAuthLogin()")
                 completeOAuthLogin(
                     token = token,
                     login = login,
@@ -145,6 +152,13 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
                     avatarUrl = avatarUrl
                 )
             } catch (e: Exception) {
+                LogManager.e("LoginVM", "❌ onTokenReceived() 失败", e)
+                // 如果是协程取消异常（CancellationException），直接抛出，不清空 token
+                if (e is kotlinx.coroutines.CancellationException) {
+                    LogManager.i("LoginVM", "⚠️ 检测到协程取消，保留当前 token 并退出")
+                    throw e
+                }
+                // 只有真正的网络/认证错误才清理脏数据
                 // 清理脏数据：既清 TokenStorage 又恢复 AccountStore 的活跃账号
                 tokenStorage.clearActiveAccount()
                 // 如果有其他账号，把 active 恢复到第一个有效账号
@@ -166,6 +180,7 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
         email: String,
         avatarUrl: String
     ) {
+        LogManager.i("LoginVM", "📝 completeOAuthLogin() 开始")
         val info = AccountInfo(
             login     = login,
             name      = name,
@@ -175,9 +190,12 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
             authType  = AuthType.OAUTH
         )
         accountStore.addOrUpdateAccount(info)
+        LogManager.i("LoginVM", "📝 第 2 次更新: tokenStorage.syncActiveAccount()")
         tokenStorage.syncActiveAccount(info)
+        LogManager.i("LoginVM", "🔄 第 2 次 ApiClient.rebuild()")
         ApiClient.rebuild()
 
+        LogManager.i("LoginVM", "✅ completeOAuthLogin() 完成，设置 Success")
         _state.value = Success(login)
     }
     

@@ -4,6 +4,7 @@ import android.content.Context
 import com.gitmob.android.util.EncryptedPreferences
 import com.gitmob.android.util.LogManager
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 

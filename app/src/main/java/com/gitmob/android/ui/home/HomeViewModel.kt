@@ -51,6 +51,18 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private var initialized = false
 
+    /** ViewModel实例ID，用于追踪不同的实例 */
+    private val instanceId = System.identityHashCode(this)
+
+    init {
+        LogManager.i(tag, "🎯 HomeViewModel 构造! 实例ID: $instanceId")
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        LogManager.e(tag, "💀 HomeViewModel 销毁! 实例ID: $instanceId")
+    }
+
     fun load(forceRefresh: Boolean = false) {
         if (!initialized || forceRefresh) {
             initialized = true
@@ -59,6 +71,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadUser(login: String?) {
+        LogManager.i(tag, "🚀 开始 loadUser(login=$login), 实例ID: $instanceId")
         viewModelScope.launch {
             _state.update { 
                 HomeState(
@@ -68,11 +81,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             try {
+                LogManager.i(tag, "📡 请求 getCurrentUser(), 实例ID: $instanceId")
                 val user = if (login == null) {
                     api.getCurrentUser()
                 } else {
                     api.getUser(login)
                 }
+                LogManager.i(tag, "✅ getCurrentUser() 成功: ${user.login}, 实例ID: $instanceId")
                 _state.update { 
                     it.copy(
                         user = user, 
@@ -81,12 +96,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                         isCurrentUser = login == null
                     ) 
                 }
+                LogManager.i(tag, "🔄 启动 4 个子协程加载数据, 实例ID: $instanceId")
                 launch { loadRepoCount(login) }
                 launch { loadPinnedRepos(user.login) }
                 launch { loadStarredCount(login) }
                 launch { loadOrgs(login) }
             } catch (e: Exception) {
-                LogManager.e(tag, "加载主页失败", e)
+                LogManager.e(tag, "❌ 加载主页失败, 实例ID: $instanceId", e)
                 _state.update { it.copy(loading = false, error = e.message) }
             }
         }

@@ -174,11 +174,14 @@ fun AppNavGraph(
     // 三态初始化状态机：区分"正在加载"与"已加载但无 token"，修复新用户白屏
     val initState by produceState<AppInitState>(initialValue = AppInitState.Loading) {
         tokenStorage.accessToken.collect { token ->
-            value = if (token.isNullOrBlank()) AppInitState.NeedsLogin
-                    else AppInitState.Ready(token)
+            val oldValue = value
+            val newValue = if (token.isNullOrBlank()) AppInitState.NeedsLogin
+                          else AppInitState.Ready(token)
+            LogManager.i("NavGraph", "🎯 tokenStorage.accessToken 更新! old=$oldValue, new=$newValue, token前缀=${token?.take(20)}...")
+            value = newValue
         }
     }
- 
+
     // 初始化阶段显示居中 Loading
     if (initState == AppInitState.Loading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -186,8 +189,35 @@ fun AppNavGraph(
         }
         return
     }
- 
-    val startDest = if (initState is AppInitState.NeedsLogin) Route.Login.path else Route.Main.path
+
+    // ✅ 固定 startDestination，不要动态改变（符合官方最佳实践）
+    val fixedStartDest = Route.Login.path
+    LogManager.i("NavGraph", "🎯 NavGraph 重组! initState=$initState")
+
+    // ✅ 在 LaunchedEffect 中根据 initState 手动导航到正确的页面
+    LaunchedEffect(initState) {
+        when (initState) {
+            is AppInitState.NeedsLogin -> {
+                val currentRoute = navController.currentBackStackEntry?.destination?.route
+                if (currentRoute != Route.Login.path) {
+                    LogManager.i("NavGraph", "🔄 导航到 Login 页面")
+                    navController.navigate(Route.Login.path) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            }
+            is AppInitState.Ready -> {
+                val currentRoute = navController.currentBackStackEntry?.destination?.route
+                if (currentRoute != Route.Main.path) {
+                    LogManager.i("NavGraph", "🔄 导航到 Main 页面")
+                    navController.navigate(Route.Main.path) {
+                        popUpTo(Route.Login.path) { inclusive = true }
+                    }
+                }
+            }
+            AppInitState.Loading -> { /* 已处理 */ }
+        }
+    }
  
     // ── accounts_json 自动补全 ──────────────────────────────────────────────
     // 场景：release 混淆崩溃等原因导致 access_token 有效但 accounts_json 缺失。
@@ -287,7 +317,7 @@ fun AppNavGraph(
         onGitHubUrlConsumed()
     }
     
-    NavHost(navController = navController, startDestination = startDest) {
+    NavHost(navController = navController, startDestination = fixedStartDest) {
  
         composable(Route.Login.path) {
             LoginScreen(
@@ -1072,6 +1102,7 @@ private fun MainScreen(
             ) {
                 composable(BottomTab.Home.route) {
                     val homeVm: HomeViewModel = viewModel()
+                    LogManager.i("NavGraph", "🎯 BottomTab.Home.route 重建，HomeViewModel 已获取")
                     HomeScreen(
                         onSearchClick   = onSearchClick,
                         onSettingsClick = {

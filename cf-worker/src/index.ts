@@ -22,7 +22,7 @@ export interface Env {
 const APP_SCHEME = "gitmob://oauth";
 const REPO_URL   = "https://github.com/xiaobaiweinuli/GitMob-Android";
 const SITE_URL   = "https://gitmob.16618888.xyz";
-const SCOPES     = "repo,user,delete_repo,workflow";
+const SCOPES     = "repo,user,delete_repo,workflow,notifications";
 
 // ─── 国际化类型 ──────────────────────────────────────────────────────────────
 

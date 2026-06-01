@@ -516,7 +516,7 @@ private fun FreshLoginContent(
 
         Spacer(Modifier.height(24.dp))
         Text(
-            "使用 GitHub OAuth 授权登录\n权限：repo · workflow · user · notifications · delete_repo",
+            "使用 GitHub OAuth 授权登录\n权限：repo · workflow · user · notifications · delete_repo · admin.org",
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
             textAlign = TextAlign.Center, lineHeight = 17.sp,

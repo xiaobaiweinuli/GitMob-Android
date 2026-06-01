@@ -85,6 +85,7 @@ fun HomeScreen(
     val ctx = LocalContext.current
 
     LaunchedEffect(targetUserLogin) {
+        LogManager.i("HomeScreen", "🎯 LaunchedEffect 触发! targetUserLogin=$targetUserLogin")
         if (targetUserLogin != null) {
             vm.loadUser(targetUserLogin)
         } else {
