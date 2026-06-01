@@ -678,52 +678,61 @@ private fun StarredRepoCard(
         // 底部信息行
         Spacer(Modifier.height(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // 语言
-                if (!repo.language.isNullOrBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Box(Modifier.size(8.dp).background(Yellow, androidx.compose.foundation.shape.CircleShape))
-                        Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 左侧可滚动区域
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState())
+                ) {
+                    // 语言
+                    if (!repo.language.isNullOrBlank()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(Modifier.size(8.dp).background(Yellow, androidx.compose.foundation.shape.CircleShape))
+                            Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+                        }
                     }
-                }
-                // 星标数
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(12.dp))
-                    Text(repo.stars.toString(), fontSize = 11.sp, color = c.textTertiary)
-                }
-                // forks数
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
-                    Text(repo.forks.toString(), fontSize = 11.sp, color = c.textTertiary)
-                }
-                // 所属列表数量提示
-                if (repo.listIds.isNotEmpty()) {
+                    // 星标数
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Icon(Icons.Default.Bookmark, null, tint = Yellow.copy(alpha = 0.7f), modifier = Modifier.size(11.dp))
-                        Text("${repo.listIds.size}个列表", fontSize = 10.sp, color = c.textTertiary)
+                        Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(12.dp))
+                        Text(repo.stars.toString(), fontSize = 11.sp, color = c.textTertiary)
                     }
-                }
-                Spacer(Modifier.weight(1f))
-                // 打开的 Issues 数（> 0 才显示，与远程仓库卡片一致）
-                if (repo.openIssues > 0) {
+                    // forks数
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
-                        Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
+                        Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
+                        Text(repo.forks.toString(), fontSize = 11.sp, color = c.textTertiary)
+                    }
+                    // 所属列表数量提示
+                    if (repo.listIds.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Icon(Icons.Default.Bookmark, null, tint = Yellow.copy(alpha = 0.7f), modifier = Modifier.size(11.dp))
+                            Text("${repo.listIds.size}个列表", fontSize = 10.sp, color = c.textTertiary)
+                        }
+                    }
+                    // 打开的 Issues 数（> 0 才显示，与远程仓库卡片一致）
+                    if (repo.openIssues > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
+                            Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
+                        }
                     }
                 }
-                // 默认分支标签（与远程仓库卡片一致）
-                if (repo.defaultBranch.isNotBlank()) {
-                    Text(
-                        text = repo.defaultBranch,
-                        fontSize = 10.5.sp, color = BlueColor,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier
-                            .background(BlueDim, RoundedCornerShape(20.dp))
-                            .padding(horizontal = 7.dp, vertical = 2.dp),
-                    )
+                Spacer(Modifier.width(8.dp))
+                // 右侧固定区域
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // 默认分支标签（与远程仓库卡片一致）
+                    if (repo.defaultBranch.isNotBlank()) {
+                        Text(
+                            text = repo.defaultBranch,
+                            fontSize = 10.5.sp, color = BlueColor,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier
+                                .background(BlueDim, RoundedCornerShape(20.dp))
+                                .padding(horizontal = 7.dp, vertical = 2.dp),
+                        )
+                    }
                 }
             }
             // topics
@@ -1004,37 +1013,50 @@ private fun RepoCardContent(
         Spacer(Modifier.height(10.dp))
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (!repo.language.isNullOrBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Box(Modifier.size(8.dp).background(Coral, CircleShape))
-                        Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 左侧可滚动区域
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState())
+                ) {
+                    if (!repo.language.isNullOrBlank()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(Modifier.size(8.dp).background(Coral, CircleShape))
+                            Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+                        }
                     }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(12.dp))
-                    Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
-                    Text("${repo.forks}", fontSize = 11.sp, color = c.textTertiary)
-                }
-                if (repo.openIssues > 0) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
-                        Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
+                        Icon(Icons.Default.Star, null, tint = Yellow, modifier = Modifier.size(12.dp))
+                        Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(12.dp))
+                        Text("${repo.forks}", fontSize = 11.sp, color = c.textTertiary)
+                    }
+                    if (repo.openIssues > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Icon(Icons.Default.ErrorOutline, null, tint = Green, modifier = Modifier.size(12.dp))
+                            Text("${repo.openIssues}", fontSize = 11.sp, color = Green)
+                        }
                     }
                 }
-                Spacer(Modifier.weight(1f))
-                if (repo.private) GmBadge("私有", RedDim, RedColor)
-                if (repo.archived == true) GmBadge("已归档", CoralDim, Coral)
-                Text(
-                    text = repo.defaultBranch,
-                    fontSize = 10.5.sp, color = BlueColor,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.background(BlueDim, RoundedCornerShape(20.dp))
-                        .padding(horizontal = 7.dp, vertical = 2.dp),
-                )
+                Spacer(Modifier.width(8.dp))
+                // 右侧固定区域
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (repo.private) GmBadge("私有", RedDim, RedColor)
+                    if (repo.archived == true) GmBadge("已归档", CoralDim, Coral)
+                    Text(
+                        text = repo.defaultBranch,
+                        fontSize = 10.5.sp, color = BlueColor,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .background(BlueDim, RoundedCornerShape(20.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
             }
             
             // topics

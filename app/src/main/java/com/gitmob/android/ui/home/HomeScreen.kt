@@ -1200,31 +1200,44 @@ private fun FavRepoCardContent(
         }
         Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (!repo.language.isNullOrBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Box(Modifier.size(8.dp).background(Coral, CircleShape))
-                        Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 左侧可滚动区域
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState())
+                ) {
+                    if (!repo.language.isNullOrBlank()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(Modifier.size(8.dp).background(Coral, CircleShape))
+                            Text(repo.language, fontSize = 11.sp, color = c.textTertiary)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.StarBorder, null, tint = Yellow, modifier = Modifier.size(13.dp))
+                        Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
+                        Text("${repo.forks}", fontSize = 11.sp, color = c.textTertiary)
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.StarBorder, null, tint = Yellow, modifier = Modifier.size(13.dp))
-                    Text("${repo.stars}", fontSize = 11.sp, color = c.textTertiary)
+                Spacer(Modifier.width(8.dp))
+                // 右侧固定区域
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = repo.defaultBranch,
+                        fontSize = 10.5.sp, color = BlueColor,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .background(BlueDim, RoundedCornerShape(20.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                    if (repo.isPrivate) GmBadge("私有", RedDim, RedColor)
+                    if (repo.archived) GmBadge("已归档", CoralDim, Coral)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Icon(Icons.Default.Share, null, tint = c.textTertiary, modifier = Modifier.size(13.dp))
-                    Text("${repo.forks}", fontSize = 11.sp, color = c.textTertiary)
-                }
-                Text(
-                    text = repo.defaultBranch,
-                    fontSize = 10.5.sp, color = BlueColor,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier
-                        .background(BlueDim, RoundedCornerShape(20.dp))
-                        .padding(horizontal = 7.dp, vertical = 2.dp),
-                )
-                if (repo.isPrivate) GmBadge("私有", RedDim, RedColor)
-                if (repo.archived) GmBadge("已归档", CoralDim, Coral)
             }
             if (repo.topics.isNotEmpty()) {
                 Row(
