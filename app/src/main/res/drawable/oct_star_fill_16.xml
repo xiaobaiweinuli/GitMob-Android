@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Octicons star-fill-16 → 实心⭐带圆点的圆角五边形。
+  用途：Pro 徽章（橙金色 tint）、GitHub Star 徽章（紫粉色 tint）、星标选中态实心。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="@android:color/black"
+        android:pathData="M8,0.25a0.75,0.75 0,0 1,0.673 0.418l1.882,3.815 4.21,0.612a0.75,0.75 0,0 1,0.416 1.279l-3.046,2.97 0.719,4.192a0.751,0.751 0,0 1,-1.088 0.791L8,12.347l-3.766,1.98a0.75,0.75 0,0 1,-1.088 -0.79l0.72,-4.194L0.818,6.374a0.75,0.75 0,0 1,0.416 -1.28l4.21,-0.611L7.327,0.668A0.75,0.75 0,0 1,8 0.25Z" />
+</vector>

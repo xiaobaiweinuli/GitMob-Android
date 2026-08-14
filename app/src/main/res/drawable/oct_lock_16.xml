@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Octicons lock-16 → 🔒 锁图标。
+  用途：Security Bug Bounty Hunter 徽章、授权管理、401 未授权错误等。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="@android:color/black"
+        android:pathData="M4,4a4,4 0,0 1,8 0v2h0.25c0.966,0 1.75,0.784 1.75,1.75v5.5A1.75,1.75 0,0 1,12.25 15h-8.5A1.75,1.75 0,0 1,2 13.25v-5.5C2,6.784 2.784,6 3.75,6H4ZM12.25,7.5h-8.5a0.25,0.25 0,0 0,-0.25 0.25v5.5c0,0.138 0.112,0.25 0.25,0.25h8.5a0.25,0.25 0,0 0,0.25 -0.25v-5.5a0.25,0.25 0,0 0,-0.25 -0.25ZM10.5,6V4a2.5,2.5 0,1 0,-5 0v2Z" />
+</vector>

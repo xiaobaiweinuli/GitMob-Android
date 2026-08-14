@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Octicons cpu-16 → Developer Program Member 徽章（芯片/CPU 图标）。
+  viewBox=0 0 16 16，严格对齐原始 SVG 尺寸，pathData 包含多段 M/Z 子路径
+ （外框 CPU 矩形 + 四周 8 根针脚 + 内部矩形 + 最内层小方块），不拆分以保留原版造型。
+  fillColor 统一用 @android:color/black，由调用方通过 Icon(..., tint=xxx) 动态着色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:fillColor="@android:color/black"
+        android:pathData="M6.5,0.75V2h3V0.75a0.75,0.75 0,0 1,1.5 0V2h1.25c0.966,0 1.75,0.784 1.75,1.75V5h1.25a0.75,0.75 0,0 1,0 1.5H14v3h1.25a0.75,0.75 0,0 1,0 1.5H14v1.25A1.75,1.75 0,0 1,12.25 14H11v1.25a0.75,0.75 0,0 1,-1.5 0V14h-3v1.25a0.75,0.75 0,0 1,-1.5 0V14H3.75A1.75,1.75 0,0 1,2 12.25V11H0.75a0.75,0.75 0,0 1,0 -1.5H2v-3H0.75a0.75,0.75 0,0 1,0 -1.5H2V3.75C2,2.784 2.784,2 3.75,2H5V0.75a0.75,0.75 0,0 1,1.5 0Zm5.75,11.75a0.25,0.25 0,0 0,0.25 -0.25v-8.5a0.25,0.25 0,0 0,-0.25 -0.25h-8.5a0.25,0.25 0,0 0,-0.25 0.25v8.5c0,0.138 0.112,0.25 0.25,0.25ZM5.75,5h4.5a0.75,0.75 0,0 1,0.75 0.75v4.5a0.75,0.75 0,0 1,-0.75 0.75h-4.5a0.75,0.75 0,0 1,-0.75 -0.75v-4.5A0.75,0.75 0,0 1,5.75 5ZM6.5,9.5h3v-3h-3Z" />
+</vector>
