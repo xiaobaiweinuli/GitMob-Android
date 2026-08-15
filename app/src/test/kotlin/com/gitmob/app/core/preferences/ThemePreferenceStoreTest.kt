@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.ui.theme.ThemeMode
+import com.gitmob.app.ui.theme.ThemePreference
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.flow.first
@@ -45,6 +46,14 @@ class ThemePreferenceStoreTest {
         assertEquals(ColorSpec.SpecVersion.SPEC_2025, preference.colorSpec)
         assertFalse(preference.enablePredictiveBack)
         assertEquals(0.9f, preference.pageScale)
+    }
+
+    @Test
+    fun `isLoaded 区分构造默认值与 DataStore 真值`() = runTest {
+        // 数据类默认值 = 未加载；启动门禁靠这个区分"默认主题"和"真实主题"
+        assertFalse(ThemePreference().isLoaded)
+        // 只要 DataStore 吐出值（即使从未写入过任何偏好），isLoaded 就必须为 true
+        assertEquals(true, store.preference.first().isLoaded)
     }
 
     @Test

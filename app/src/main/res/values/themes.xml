@@ -1,3 +1,12 @@
 <resources>
-    <style name="Theme.GitMob" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- 启动窗/Activity 窗背景：贴近 Material3 中性 surface（浅色档）。
+         深色值在 values-night 同名覆盖（KernelSU/orange-cloud/官方 App 共同配方）。
+         API 31+ 的启动页背景由系统从 windowBackground 回落估算，图标用系统默认的
+         launcher 图标（与 KernelSU 相同，不声明任何 windowSplashScreen* 属性）。
+         启动窗颜色由系统进程在 App 启动前读取，拿不到 MaterialKolor 运行时调色板，
+         只能静态双色近似，见 文档/splash-screen-deep-analysis.md。 -->
+    <color name="launch_background">#FFF7F3F9</color>
+    <style name="Theme.GitMob" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/launch_background</item>
+    </style>
 </resources>

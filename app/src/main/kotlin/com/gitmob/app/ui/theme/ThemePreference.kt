@@ -13,6 +13,8 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
  * 区别只在种子色从哪来——不是"系统取色用一套 API、品牌色用另一套 API"分别处理。
  */
 data class ThemePreference(
+    /** 是否已从 DataStore 读到真实值；false = 仍是构造默认值。启动门禁靠它避免"默认主题闪一下再跳变"。 */
+    val isLoaded: Boolean = false,
     val mode: ThemeMode = ThemeMode.SYSTEM,
     /** 是否用系统壁纸取色（Android 12+ Material You）当种子色来源，低于 API 31 自动降级为品牌色 */
     val useDynamicColor: Boolean = false,

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,8 +25,7 @@ class StartupViewModel @Inject constructor(
     themePreferenceStore: ThemePreferenceStore,
 ) : ViewModel() {
 
-    private val _isReady = MutableStateFlow(false)
-    val isReady: StateFlow<Boolean> = _isReady.asStateFlow()
+    private val _isRouteResolved = MutableStateFlow(false)
 
     private val _isLoggedIn = MutableStateFlow(false)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
@@ -33,10 +33,20 @@ class StartupViewModel @Inject constructor(
     val themePreference: StateFlow<ThemePreference> = themePreferenceStore.preference
         .stateIn(viewModelScope, SharingStarted.Eagerly, ThemePreference())
 
+    /**
+     * 登录路由已解析 && 主题偏好已加载，两者齐了首帧才是最终 UI——
+     * 启动页的 setKeepOnScreenCondition 等的就是它，系统淡出因此揭开的是
+     * 真实主页而不是空白/默认主题的中间帧（文档/splash-screen-deep-analysis.md §10）。
+     */
+    val isReady: StateFlow<Boolean> =
+        combine(_isRouteResolved, themePreference) { routeResolved, theme ->
+            routeResolved && theme.isLoaded
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     init {
         viewModelScope.launch {
             _isLoggedIn.value = authRepository.isLoggedIn()
-            _isReady.value = true
+            _isRouteResolved.value = true
         }
     }
 }

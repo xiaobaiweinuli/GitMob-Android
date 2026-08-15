@@ -37,6 +37,7 @@ class ThemePreferenceStore @Inject constructor(
 
     val preference: Flow<ThemePreference> = context.themeDataStore.data.map { prefs ->
         ThemePreference(
+            isLoaded = true, // 能走到 map 就说明 DataStore 已吐出真实值（区别于数据类的构造默认值）
             mode = prefs[modeKey]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
             useDynamicColor = prefs[useDynamicColorKey]?.toBooleanStrictOrNull() ?: false,
             customSeedColor = prefs[customSeedColorKey]?.let { Color(it) },
