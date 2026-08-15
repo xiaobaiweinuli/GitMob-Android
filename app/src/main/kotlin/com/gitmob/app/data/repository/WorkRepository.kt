@@ -10,6 +10,22 @@ import com.gitmob.app.data.model.DiscussionStateReason
 import com.gitmob.app.data.model.IssueState
 import com.gitmob.app.data.model.IssueStateReason
 import com.gitmob.app.data.model.PullRequestState
+import com.gitmob.app.data.model.UserDiscussionAnswerFilter
+import com.gitmob.app.data.model.UserDiscussionFilter
+import com.gitmob.app.data.model.UserDiscussionRelationFilter
+import com.gitmob.app.data.model.UserDiscussionSortFilter
+import com.gitmob.app.data.model.UserDiscussionStateFilter
+import com.gitmob.app.data.model.UserDiscussionVisibilityFilter
+import com.gitmob.app.data.model.UserIssueFilter
+import com.gitmob.app.data.model.UserIssueRelationFilter
+import com.gitmob.app.data.model.UserIssueSortFilter
+import com.gitmob.app.data.model.UserIssueStateFilter
+import com.gitmob.app.data.model.UserIssueVisibilityFilter
+import com.gitmob.app.data.model.UserPullRequestFilter
+import com.gitmob.app.data.model.UserPullRequestRelationFilter
+import com.gitmob.app.data.model.UserPullRequestSortFilter
+import com.gitmob.app.data.model.UserPullRequestStateFilter
+import com.gitmob.app.data.model.UserPullRequestVisibilityFilter
 import com.gitmob.app.data.model.WorkDiscussionItem
 import com.gitmob.app.data.model.WorkIssueItem
 import com.gitmob.app.data.model.WorkSearchNode
@@ -38,10 +54,13 @@ private const val WORK_ISSUE_FIELDS = """
 class WorkRepository @Inject constructor(
     private val api: GHApiClient,
 ) {
-    suspend fun getInvolvedIssues(after: String? = null): ApiResult<PagedWorkIssues> = safeCall {
+    suspend fun getUserIssues(
+        filter: UserIssueFilter = UserIssueFilter(),
+        after: String? = null,
+    ): ApiResult<PagedWorkIssues> = safeCall {
         val query = """
-            query WorkIssues(${'$'}after: String) {
-                search(query: "involves:@me is:issue is:open", type: ISSUE, first: ${PageSize.WORK_ITEMS}, after: ${'$'}after) {
+            query WorkIssues(${'$'}searchQuery: String!, ${'$'}after: String) {
+                search(query: ${'$'}searchQuery, type: ISSUE, first: ${PageSize.WORK_ITEMS}, after: ${'$'}after) {
                     issueCount
                     nodes {
                         ... on Issue {
@@ -55,7 +74,7 @@ class WorkRepository @Inject constructor(
                 }
             }
         """.trimIndent()
-        val conn = fetch(query, after)
+        val conn = fetch(query, buildUserIssueSearchQuery(filter), after)
         PagedWorkIssues(
             totalCount = conn.issueCount,
             items = conn.nodes.map { it.toIssueDomain() },
@@ -64,10 +83,13 @@ class WorkRepository @Inject constructor(
         )
     }
 
-    suspend fun getInvolvedPullRequests(after: String? = null): ApiResult<PagedWorkIssues> = safeCall {
+    suspend fun getUserPullRequests(
+        filter: UserPullRequestFilter = UserPullRequestFilter(),
+        after: String? = null,
+    ): ApiResult<PagedWorkIssues> = safeCall {
         val query = """
-            query WorkPullRequests(${'$'}after: String) {
-                search(query: "involves:@me is:pr is:open", type: ISSUE, first: ${PageSize.WORK_ITEMS}, after: ${'$'}after) {
+            query WorkPullRequests(${'$'}searchQuery: String!, ${'$'}after: String) {
+                search(query: ${'$'}searchQuery, type: ISSUE, first: ${PageSize.WORK_ITEMS}, after: ${'$'}after) {
                     issueCount
                     nodes {
                         ... on PullRequest {
@@ -81,7 +103,7 @@ class WorkRepository @Inject constructor(
                 }
             }
         """.trimIndent()
-        val conn = fetch(query, after)
+        val conn = fetch(query, buildUserPullRequestSearchQuery(filter), after)
         PagedWorkIssues(
             totalCount = conn.issueCount,
             items = conn.nodes.map { it.toPullRequestDomain() },
@@ -90,10 +112,13 @@ class WorkRepository @Inject constructor(
         )
     }
 
-    suspend fun getInvolvedDiscussions(after: String? = null): ApiResult<PagedWorkDiscussions> = safeCall {
+    suspend fun getUserDiscussions(
+        filter: UserDiscussionFilter = UserDiscussionFilter(),
+        after: String? = null,
+    ): ApiResult<PagedWorkDiscussions> = safeCall {
         val query = """
-            query WorkDiscussions(${'$'}after: String) {
-                search(query: "involves:@me", type: DISCUSSION, first: ${PageSize.WORK_ITEMS}, after: ${'$'}after) {
+            query WorkDiscussions(${'$'}searchQuery: String!, ${'$'}after: String) {
+                search(query: ${'$'}searchQuery, type: DISCUSSION, first: ${PageSize.WORK_ITEMS}, after: ${'$'}after) {
                     discussionCount
                     nodes {
                         ... on Discussion {
@@ -108,7 +133,7 @@ class WorkRepository @Inject constructor(
                 }
             }
         """.trimIndent()
-        val conn = fetch(query, after)
+        val conn = fetch(query, buildUserDiscussionSearchQuery(filter), after)
         PagedWorkDiscussions(
             totalCount = conn.discussionCount,
             items = conn.nodes.map {
@@ -126,10 +151,13 @@ class WorkRepository @Inject constructor(
         )
     }
 
-    private suspend fun fetch(query: String, after: String?) =
+    private suspend fun fetch(query: String, searchQuery: String, after: String?) =
         api.graphQL<WorkSearchQueryData>(
             query,
-            after?.let { mapOf("after" to JsonPrimitive(it)) } ?: emptyMap(),
+            buildMap {
+                put("searchQuery", JsonPrimitive(searchQuery))
+                after?.let { put("after", JsonPrimitive(it)) }
+            },
         ).search
 
     private fun WorkSearchNode.toIssueDomain() = WorkIssueItem(
@@ -182,4 +210,121 @@ class WorkRepository @Inject constructor(
         "REOPENED" -> DiscussionStateReason.REOPENED
         else -> error("Unsupported Discussion stateReason: $this")
     }
+}
+
+internal fun buildUserIssueSearchQuery(filter: UserIssueFilter): String = buildList {
+    add(filter.relation.toSearchQualifier())
+    add("is:issue")
+    filter.state.toSearchQualifier()?.let(::add)
+    filter.visibility.toSearchQualifier()?.let(::add)
+    add("sort:${filter.sort.toSearchQualifier()}")
+}.joinToString(" ")
+
+internal fun buildUserPullRequestSearchQuery(filter: UserPullRequestFilter): String = buildList {
+    add(filter.relation.toSearchQualifier())
+    add("is:pr")
+    filter.state.toSearchQualifiers().forEach(::add)
+    filter.visibility.toSearchQualifier()?.let(::add)
+    add("sort:${filter.sort.toSearchQualifier()}")
+}.joinToString(" ")
+
+internal fun buildUserDiscussionSearchQuery(filter: UserDiscussionFilter): String = buildList {
+    add(filter.relation.toSearchQualifier())
+    filter.state.toSearchQualifier()?.let(::add)
+    filter.answer.toSearchQualifier()?.let(::add)
+    filter.visibility.toSearchQualifier()?.let(::add)
+    add("sort:${filter.sort.toSearchQualifier()}")
+}.joinToString(" ")
+
+private fun UserIssueRelationFilter.toSearchQualifier() = when (this) {
+    UserIssueRelationFilter.INVOLVED -> "involves:@me"
+    UserIssueRelationFilter.AUTHORED -> "author:@me"
+    UserIssueRelationFilter.ASSIGNED -> "assignee:@me"
+    UserIssueRelationFilter.MENTIONED -> "mentions:@me"
+    UserIssueRelationFilter.COMMENTED -> "commenter:@me"
+}
+
+private fun UserIssueStateFilter.toSearchQualifier() = when (this) {
+    UserIssueStateFilter.OPEN -> "is:open"
+    UserIssueStateFilter.CLOSED -> "is:closed"
+    UserIssueStateFilter.ALL -> null
+}
+
+private fun UserIssueVisibilityFilter.toSearchQualifier() = when (this) {
+    UserIssueVisibilityFilter.ALL -> null
+    UserIssueVisibilityFilter.PUBLIC -> "is:public"
+    UserIssueVisibilityFilter.PRIVATE -> "is:private"
+    UserIssueVisibilityFilter.INTERNAL -> "is:internal"
+}
+
+private fun UserIssueSortFilter.toSearchQualifier() = when (this) {
+    UserIssueSortFilter.CREATED_DESC -> "created-desc"
+    UserIssueSortFilter.CREATED_ASC -> "created-asc"
+    UserIssueSortFilter.COMMENTS_DESC -> "comments-desc"
+    UserIssueSortFilter.COMMENTS_ASC -> "comments-asc"
+    UserIssueSortFilter.UPDATED_DESC -> "updated-desc"
+    UserIssueSortFilter.UPDATED_ASC -> "updated-asc"
+}
+
+private fun UserPullRequestRelationFilter.toSearchQualifier() = when (this) {
+    UserPullRequestRelationFilter.INVOLVED -> "involves:@me"
+    UserPullRequestRelationFilter.AUTHORED -> "author:@me"
+    UserPullRequestRelationFilter.ASSIGNED -> "assignee:@me"
+    UserPullRequestRelationFilter.REVIEW_REQUESTED -> "review-requested:@me"
+    UserPullRequestRelationFilter.COMMENTED -> "commenter:@me"
+}
+
+private fun UserPullRequestStateFilter.toSearchQualifiers() = when (this) {
+    UserPullRequestStateFilter.OPEN -> listOf("is:open")
+    UserPullRequestStateFilter.MERGED -> listOf("is:merged")
+    UserPullRequestStateFilter.CLOSED_UNMERGED -> listOf("is:closed", "is:unmerged")
+    UserPullRequestStateFilter.ALL -> emptyList()
+}
+
+private fun UserPullRequestVisibilityFilter.toSearchQualifier() = when (this) {
+    UserPullRequestVisibilityFilter.ALL -> null
+    UserPullRequestVisibilityFilter.PUBLIC -> "is:public"
+    UserPullRequestVisibilityFilter.PRIVATE -> "is:private"
+    UserPullRequestVisibilityFilter.INTERNAL -> "is:internal"
+}
+
+private fun UserPullRequestSortFilter.toSearchQualifier() = when (this) {
+    UserPullRequestSortFilter.CREATED_DESC -> "created-desc"
+    UserPullRequestSortFilter.CREATED_ASC -> "created-asc"
+    UserPullRequestSortFilter.COMMENTS_DESC -> "comments-desc"
+    UserPullRequestSortFilter.COMMENTS_ASC -> "comments-asc"
+    UserPullRequestSortFilter.UPDATED_DESC -> "updated-desc"
+    UserPullRequestSortFilter.UPDATED_ASC -> "updated-asc"
+}
+
+private fun UserDiscussionRelationFilter.toSearchQualifier() = when (this) {
+    UserDiscussionRelationFilter.INVOLVED -> "involves:@me"
+    UserDiscussionRelationFilter.AUTHORED -> "author:@me"
+    UserDiscussionRelationFilter.COMMENTED -> "commenter:@me"
+}
+
+private fun UserDiscussionStateFilter.toSearchQualifier() = when (this) {
+    UserDiscussionStateFilter.ALL -> null
+    UserDiscussionStateFilter.OPEN -> "is:open"
+    UserDiscussionStateFilter.CLOSED -> "is:closed"
+}
+
+private fun UserDiscussionAnswerFilter.toSearchQualifier() = when (this) {
+    UserDiscussionAnswerFilter.ALL -> null
+    UserDiscussionAnswerFilter.ANSWERED -> "is:answered"
+    UserDiscussionAnswerFilter.UNANSWERED -> "is:unanswered"
+}
+
+private fun UserDiscussionVisibilityFilter.toSearchQualifier() = when (this) {
+    UserDiscussionVisibilityFilter.ALL -> null
+    UserDiscussionVisibilityFilter.PUBLIC -> "is:public"
+    UserDiscussionVisibilityFilter.PRIVATE -> "is:private"
+    UserDiscussionVisibilityFilter.INTERNAL -> "is:internal"
+}
+
+private fun UserDiscussionSortFilter.toSearchQualifier() = when (this) {
+    UserDiscussionSortFilter.CREATED_DESC -> "created-desc"
+    UserDiscussionSortFilter.CREATED_ASC -> "created-asc"
+    UserDiscussionSortFilter.UPDATED_DESC -> "updated-desc"
+    UserDiscussionSortFilter.UPDATED_ASC -> "updated-asc"
 }

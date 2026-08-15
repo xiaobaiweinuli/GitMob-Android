@@ -14,3 +14,15 @@ data class InboxNotification(
     val isUnread: Boolean,
     val updatedAt: String,
 )
+
+enum class InboxReadFilter {
+    UNREAD,
+    READ,
+    ALL,
+}
+
+data class PagedNotifications(
+    val items: List<InboxNotification>,
+    val nextSourcePage: Int,
+    val hasNextPage: Boolean,
+)

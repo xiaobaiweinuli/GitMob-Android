@@ -63,7 +63,7 @@ import com.gitmob.app.ui.userlist.UserListScreen
 import com.gitmob.app.ui.userstars.UserStarredReposScreen
 import com.gitmob.app.ui.work.WorkDiscussionListScreen
 import com.gitmob.app.ui.work.WorkIssueListScreen
-import com.gitmob.app.ui.work.WorkListMode
+import com.gitmob.app.ui.work.WorkPullRequestListScreen
 
 private data class BottomTab(val route: Route, val label: String, val icon: ImageVector)
 
@@ -231,7 +231,6 @@ private fun LoggedInApp(
         }
         entry<WorkIssuesRoute> {
             WorkIssueListScreen(
-                mode = WorkListMode.ISSUES,
                 onBack = { navigator.goBack() },
                 onItemClick = { owner, name, number ->
                     navigator.navigate(RepoPlaceholderRoute("$owner/$name #$number"))
@@ -239,8 +238,7 @@ private fun LoggedInApp(
             )
         }
         entry<WorkPullRequestsRoute> {
-            WorkIssueListScreen(
-                mode = WorkListMode.PULL_REQUESTS,
+            WorkPullRequestListScreen(
                 onBack = { navigator.goBack() },
                 onItemClick = { owner, name, number ->
                     navigator.navigate(RepoPlaceholderRoute("$owner/$name #$number"))

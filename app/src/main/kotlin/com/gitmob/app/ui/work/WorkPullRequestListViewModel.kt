@@ -4,11 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
-import com.gitmob.app.data.model.UserIssueFilter
-import com.gitmob.app.data.model.UserIssueRelationFilter
-import com.gitmob.app.data.model.UserIssueSortFilter
-import com.gitmob.app.data.model.UserIssueStateFilter
-import com.gitmob.app.data.model.UserIssueVisibilityFilter
+import com.gitmob.app.data.model.PagedWorkIssues
+import com.gitmob.app.data.model.UserPullRequestFilter
+import com.gitmob.app.data.model.UserPullRequestRelationFilter
+import com.gitmob.app.data.model.UserPullRequestSortFilter
+import com.gitmob.app.data.model.UserPullRequestStateFilter
+import com.gitmob.app.data.model.UserPullRequestVisibilityFilter
 import com.gitmob.app.data.model.WorkIssueItem
 import com.gitmob.app.data.repository.WorkRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,24 +21,24 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class WorkIssueListUiState(
+data class WorkPullRequestListUiState(
     val items: List<WorkIssueItem> = emptyList(),
     val totalCount: Int = 0,
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
     val hasNextPage: Boolean = false,
-    val filter: UserIssueFilter = UserIssueFilter(),
+    val filter: UserPullRequestFilter = UserPullRequestFilter(),
 )
 
 @HiltViewModel
-class WorkIssueListViewModel @Inject constructor(
+class WorkPullRequestListViewModel @Inject constructor(
     private val workRepository: WorkRepository,
     private val errorEventBus: ErrorEventBus,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(WorkIssueListUiState())
-    val state: StateFlow<WorkIssueListUiState> = _state.asStateFlow()
+    private val _state = MutableStateFlow(WorkPullRequestListUiState())
+    val state: StateFlow<WorkPullRequestListUiState> = _state.asStateFlow()
 
     private var endCursor: String? = null
     private var loadedOnce = false
@@ -53,19 +54,19 @@ class WorkIssueListViewModel @Inject constructor(
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, loadFailed = false) }
-            applyFirstPage(workRepository.getUserIssues(_state.value.filter, after = null))
+            applyFirstPage(workRepository.getUserPullRequests(_state.value.filter, after = null))
         }
     }
 
-    fun setStateFilter(value: UserIssueStateFilter) = updateFilter(_state.value.filter.copy(state = value))
+    fun setStateFilter(value: UserPullRequestStateFilter) = updateFilter(_state.value.filter.copy(state = value))
 
-    fun setRelationFilter(value: UserIssueRelationFilter) = updateFilter(_state.value.filter.copy(relation = value))
+    fun setRelationFilter(value: UserPullRequestRelationFilter) = updateFilter(_state.value.filter.copy(relation = value))
 
-    fun setVisibilityFilter(value: UserIssueVisibilityFilter) = updateFilter(_state.value.filter.copy(visibility = value))
+    fun setVisibilityFilter(value: UserPullRequestVisibilityFilter) = updateFilter(_state.value.filter.copy(visibility = value))
 
-    fun setSortFilter(value: UserIssueSortFilter) = updateFilter(_state.value.filter.copy(sort = value))
+    fun setSortFilter(value: UserPullRequestSortFilter) = updateFilter(_state.value.filter.copy(sort = value))
 
-    private fun updateFilter(filter: UserIssueFilter) {
+    private fun updateFilter(filter: UserPullRequestFilter) {
         if (filter == _state.value.filter) return
         endCursor = null
         _state.update {
@@ -85,11 +86,15 @@ class WorkIssueListViewModel @Inject constructor(
         if (current.isLoadingMore || !current.hasNextPage) return
         viewModelScope.launch {
             _state.update { it.copy(isLoadingMore = true) }
-            when (val result = workRepository.getUserIssues(current.filter, after = endCursor)) {
+            when (val result = workRepository.getUserPullRequests(current.filter, after = endCursor)) {
                 is ApiResult.Success -> {
                     endCursor = result.data.endCursor
                     _state.update {
-                        it.copy(items = it.items + result.data.items, hasNextPage = result.data.hasNextPage, isLoadingMore = false)
+                        it.copy(
+                            items = it.items + result.data.items,
+                            hasNextPage = result.data.hasNextPage,
+                            isLoadingMore = false,
+                        )
                     }
                 }
                 is ApiResult.Failure -> {
@@ -102,14 +107,17 @@ class WorkIssueListViewModel @Inject constructor(
 
     fun retry() = load()
 
-    private fun applyFirstPage(result: ApiResult<com.gitmob.app.data.model.PagedWorkIssues>) {
+    private fun applyFirstPage(result: ApiResult<PagedWorkIssues>) {
         when (result) {
             is ApiResult.Success -> {
                 endCursor = result.data.endCursor
                 _state.update {
                     it.copy(
-                        items = result.data.items, totalCount = result.data.totalCount,
-                        hasNextPage = result.data.hasNextPage, isLoading = false, loadFailed = false,
+                        items = result.data.items,
+                        totalCount = result.data.totalCount,
+                        hasNextPage = result.data.hasNextPage,
+                        isLoading = false,
+                        loadFailed = false,
                     )
                 }
             }

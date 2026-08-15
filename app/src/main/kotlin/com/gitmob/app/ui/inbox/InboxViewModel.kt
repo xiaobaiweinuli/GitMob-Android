@@ -5,22 +5,25 @@ import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.data.model.InboxNotification
+import com.gitmob.app.data.model.InboxReadFilter
+import com.gitmob.app.data.model.PagedNotifications
 import com.gitmob.app.data.repository.NotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class InboxUiState(
     val notifications: List<InboxNotification> = emptyList(),
-    val showAll: Boolean = false, // false=只看未读，true=连已读也显示
+    val readFilter: InboxReadFilter = InboxReadFilter.UNREAD,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val loadFailed: Boolean = false,
-    val currentPage: Int = 1,
+    val nextSourcePage: Int = 1,
     val hasNextPage: Boolean = true, // REST 页码分页，服务端不直接告诉你是否还有下一页，用"这页是否满页"推断
 )
 
@@ -34,6 +37,7 @@ class InboxViewModel @Inject constructor(
     val state: StateFlow<InboxUiState> = _state.asStateFlow()
 
     private var loadedOnce = false
+    private var firstPageJob: Job? = null
 
     fun loadIfNeeded() {
         if (loadedOnce) return
@@ -42,41 +46,51 @@ class InboxViewModel @Inject constructor(
     }
 
     fun load() {
-        viewModelScope.launch {
+        firstPageJob?.cancel()
+        firstPageJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, loadFailed = false) }
-            applyFirstPage()
+            val filter = _state.value.readFilter
+            applyFirstPage(notificationRepository.getNotifications(sourcePage = 1, filter = filter), filter)
         }
     }
 
     fun refresh() {
-        viewModelScope.launch {
+        firstPageJob?.cancel()
+        firstPageJob = viewModelScope.launch {
             _state.update { it.copy(isRefreshing = true) }
-            val result = if (_state.value.showAll) {
-                notificationRepository.getNotifications(page = 1, all = true)
-            } else {
-                notificationRepository.getNotificationsFresh()
-            }
-            applyFirstPage(result)
+            val filter = _state.value.readFilter
+            val result = notificationRepository.getNotificationsFresh(filter)
+            applyFirstPage(result, filter)
         }
     }
 
-    fun toggleShowAll() {
-        _state.update { it.copy(showAll = !it.showAll) }
+    fun setReadFilter(filter: InboxReadFilter) {
+        if (_state.value.readFilter == filter) return
+        _state.update {
+            it.copy(
+                readFilter = filter,
+                notifications = emptyList(),
+                nextSourcePage = 1,
+                hasNextPage = true,
+                loadFailed = false,
+                isLoading = false,
+                isRefreshing = false,
+            )
+        }
         load()
     }
 
-    private suspend fun applyFirstPage() {
-        applyFirstPage(
-            notificationRepository.getNotifications(page = 1, all = _state.value.showAll),
-        )
-    }
-
-    private suspend fun applyFirstPage(result: ApiResult<List<InboxNotification>>) {
+    private suspend fun applyFirstPage(
+        result: ApiResult<PagedNotifications>,
+        filter: InboxReadFilter,
+    ) {
+        if (_state.value.readFilter != filter) return
         when (result) {
             is ApiResult.Success -> _state.update {
                 it.copy(
-                    notifications = result.data, currentPage = 1,
-                    hasNextPage = result.data.size >= 30, // 满页才认为可能还有下一页，REST per_page=30
+                    notifications = result.data.items,
+                    nextSourcePage = result.data.nextSourcePage,
+                    hasNextPage = result.data.hasNextPage,
                     isLoading = false, isRefreshing = false, loadFailed = false,
                 )
             }
@@ -91,14 +105,22 @@ class InboxViewModel @Inject constructor(
         val current = _state.value
         if (!current.hasNextPage) return
         viewModelScope.launch {
-            val nextPage = current.currentPage + 1
-            when (val result = notificationRepository.getNotifications(page = nextPage, all = current.showAll)) {
-                is ApiResult.Success -> _state.update {
-                    it.copy(
-                        notifications = it.notifications + result.data,
-                        currentPage = nextPage,
-                        hasNextPage = result.data.size >= 30,
-                    )
+            when (val result = notificationRepository.getNotifications(
+                sourcePage = current.nextSourcePage,
+                filter = current.readFilter,
+            )) {
+                is ApiResult.Success -> {
+                    if (_state.value.readFilter == current.readFilter &&
+                        _state.value.nextSourcePage == current.nextSourcePage
+                    ) {
+                        _state.update {
+                            it.copy(
+                                notifications = it.notifications + result.data.items,
+                                nextSourcePage = result.data.nextSourcePage,
+                                hasNextPage = result.data.hasNextPage,
+                            )
+                        }
+                    }
                 }
                 is ApiResult.Failure -> errorEventBus.emit(result.error)
             }
@@ -109,9 +131,15 @@ class InboxViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = notificationRepository.markAsRead(notification.id)) {
                 is ApiResult.Success -> _state.update { state ->
-                    state.copy(notifications = state.notifications.map {
-                        if (it.id == notification.id) it.copy(isUnread = false) else it
-                    })
+                    state.copy(
+                        notifications = when (state.readFilter) {
+                            InboxReadFilter.UNREAD -> state.notifications.filterNot { it.id == notification.id }
+                            InboxReadFilter.READ -> state.notifications.filterNot { it.id == notification.id && it.isUnread }
+                            InboxReadFilter.ALL -> state.notifications.map {
+                                if (it.id == notification.id) it.copy(isUnread = false) else it
+                            }
+                        },
+                    )
                 }
                 is ApiResult.Failure -> errorEventBus.emit(result.error)
             }

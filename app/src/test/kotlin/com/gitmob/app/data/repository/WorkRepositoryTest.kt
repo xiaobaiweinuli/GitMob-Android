@@ -7,6 +7,22 @@ import com.gitmob.app.data.model.DiscussionStateReason
 import com.gitmob.app.data.model.IssueState
 import com.gitmob.app.data.model.IssueStateReason
 import com.gitmob.app.data.model.PullRequestState
+import com.gitmob.app.data.model.UserDiscussionAnswerFilter
+import com.gitmob.app.data.model.UserDiscussionFilter
+import com.gitmob.app.data.model.UserDiscussionRelationFilter
+import com.gitmob.app.data.model.UserDiscussionSortFilter
+import com.gitmob.app.data.model.UserDiscussionStateFilter
+import com.gitmob.app.data.model.UserDiscussionVisibilityFilter
+import com.gitmob.app.data.model.UserIssueFilter
+import com.gitmob.app.data.model.UserIssueRelationFilter
+import com.gitmob.app.data.model.UserIssueSortFilter
+import com.gitmob.app.data.model.UserIssueStateFilter
+import com.gitmob.app.data.model.UserIssueVisibilityFilter
+import com.gitmob.app.data.model.UserPullRequestFilter
+import com.gitmob.app.data.model.UserPullRequestRelationFilter
+import com.gitmob.app.data.model.UserPullRequestSortFilter
+import com.gitmob.app.data.model.UserPullRequestStateFilter
+import com.gitmob.app.data.model.UserPullRequestVisibilityFilter
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -44,7 +60,7 @@ class WorkRepositoryTest {
     }
 
     @Test
-    fun `getInvolvedIssues解析search结果并标记isPullRequest为false`() = runTest {
+    fun `getUserIssues解析search结果并标记isPullRequest为false`() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -62,7 +78,7 @@ class WorkRepositoryTest {
             ),
         )
 
-        val result = repository.getInvolvedIssues()
+        val result = repository.getUserIssues()
 
         assertTrue(result is ApiResult.Success)
         val page = (result as ApiResult.Success).data
@@ -77,7 +93,7 @@ class WorkRepositoryTest {
     }
 
     @Test
-    fun `getInvolvedPullRequests解析草稿和锁定状态`() = runTest {
+    fun `getUserPullRequests解析草稿和锁定状态`() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -95,7 +111,7 @@ class WorkRepositoryTest {
             ),
         )
 
-        val result = repository.getInvolvedPullRequests()
+        val result = repository.getUserPullRequests()
 
         assertTrue(result is ApiResult.Success)
         val item = (result as ApiResult.Success).data.items.first()
@@ -106,7 +122,7 @@ class WorkRepositoryTest {
     }
 
     @Test
-    fun `getInvolvedDiscussions用discussionCount而不是issueCount`() = runTest {
+    fun `getUserDiscussions用discussionCount而不是issueCount`() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -124,7 +140,7 @@ class WorkRepositoryTest {
             ),
         )
 
-        val result = repository.getInvolvedDiscussions()
+        val result = repository.getUserDiscussions()
 
         assertTrue(result is ApiResult.Success)
         val page = (result as ApiResult.Success).data
@@ -133,5 +149,64 @@ class WorkRepositoryTest {
         assertEquals("讨论标题", item.title)
         assertEquals(DiscussionStateReason.RESOLVED, item.stateReason)
         assertTrue(item.isAnswered)
+    }
+
+    @Test
+    fun `issue filter maps relation state visibility and sort qualifiers`() {
+        val query = buildUserIssueSearchQuery(
+            UserIssueFilter(
+                state = UserIssueStateFilter.CLOSED,
+                relation = UserIssueRelationFilter.COMMENTED,
+                visibility = UserIssueVisibilityFilter.PRIVATE,
+                sort = UserIssueSortFilter.COMMENTS_ASC,
+            ),
+        )
+
+        assertEquals(
+            "commenter:@me is:issue is:closed is:private sort:comments-asc",
+            query,
+        )
+    }
+
+    @Test
+    fun `pull request filter keeps merged and closed unmerged distinct`() {
+        assertEquals(
+            "review-requested:@me is:pr is:merged is:internal sort:created-desc",
+            buildUserPullRequestSearchQuery(
+                UserPullRequestFilter(
+                    state = UserPullRequestStateFilter.MERGED,
+                    relation = UserPullRequestRelationFilter.REVIEW_REQUESTED,
+                    visibility = UserPullRequestVisibilityFilter.INTERNAL,
+                    sort = UserPullRequestSortFilter.CREATED_DESC,
+                ),
+            ),
+        )
+        assertEquals(
+            "assignee:@me is:pr is:closed is:unmerged is:public sort:updated-asc",
+            buildUserPullRequestSearchQuery(
+                UserPullRequestFilter(
+                    state = UserPullRequestStateFilter.CLOSED_UNMERGED,
+                    relation = UserPullRequestRelationFilter.ASSIGNED,
+                    visibility = UserPullRequestVisibilityFilter.PUBLIC,
+                    sort = UserPullRequestSortFilter.UPDATED_ASC,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `discussion filter maps author answer visibility and ordering`() {
+        assertEquals(
+            "author:@me is:open is:unanswered is:private sort:created-asc",
+            buildUserDiscussionSearchQuery(
+                UserDiscussionFilter(
+                    state = UserDiscussionStateFilter.OPEN,
+                    relation = UserDiscussionRelationFilter.AUTHORED,
+                    answer = UserDiscussionAnswerFilter.UNANSWERED,
+                    visibility = UserDiscussionVisibilityFilter.PRIVATE,
+                    sort = UserDiscussionSortFilter.CREATED_ASC,
+                ),
+            ),
+        )
     }
 }

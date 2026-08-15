@@ -1,6 +1,7 @@
 package com.gitmob.app.core.error
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 
 /**
@@ -44,6 +45,10 @@ class GraphQLException(val errors: List<GraphQLErrorItem>) : Exception(errors.fi
  */
 suspend inline fun <T> safeCall(crossinline block: suspend () -> T): ApiResult<T> = try {
     ApiResult.Success(block())
+} catch (e: CancellationException) {
+    // 协程取消属于正常控制流。筛选快速切换时旧请求会被主动取消，
+    // 必须继续向上传播，不能落入 catch-all 后被误报为“未知错误”。
+    throw e
 } catch (e: UnauthorizedException) {
     Log.w(TAG_SAFE_CALL, "归类为 Unauthorized (401)", e)
     ApiResult.Failure(ApiError.Unauthorized)

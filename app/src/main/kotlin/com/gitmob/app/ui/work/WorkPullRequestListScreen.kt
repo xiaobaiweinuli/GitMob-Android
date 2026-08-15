@@ -1,6 +1,5 @@
 package com.gitmob.app.ui.work
 
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,9 +28,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -47,20 +47,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.gitmob.app.data.model.WorkDiscussionItem
-import com.gitmob.app.data.model.UserDiscussionAnswerFilter
-import com.gitmob.app.data.model.UserDiscussionRelationFilter
-import com.gitmob.app.data.model.UserDiscussionSortFilter
-import com.gitmob.app.data.model.UserDiscussionStateFilter
-import com.gitmob.app.data.model.UserDiscussionVisibilityFilter
-import com.gitmob.app.ui.common.DiscussionStateIcon
+import com.gitmob.app.data.model.WorkIssueItem
+import com.gitmob.app.data.model.UserPullRequestRelationFilter
+import com.gitmob.app.data.model.UserPullRequestSortFilter
+import com.gitmob.app.data.model.UserPullRequestStateFilter
+import com.gitmob.app.data.model.UserPullRequestVisibilityFilter
+import com.gitmob.app.ui.common.GitHubStateChip
+import com.gitmob.app.ui.common.PullRequestStateIcon
+import com.gitmob.app.ui.common.pullRequestStateVisual
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WorkDiscussionListScreen(
+fun WorkPullRequestListScreen(
     onBack: () -> Unit,
     onItemClick: (owner: String, name: String, number: Int) -> Unit,
-    viewModel: WorkDiscussionListViewModel = hiltViewModel(),
+    viewModel: WorkPullRequestListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(Unit) { viewModel.loadIfNeeded() }
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -68,13 +69,10 @@ fun WorkDiscussionListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("讨论") },
+                title = { Text("拉取请求") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing
@@ -84,28 +82,22 @@ fun WorkDiscussionListScreen(
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
-            DiscussionFilterControls(
+        Column(Modifier.fillMaxSize().padding(innerPadding)) {
+            PullRequestFilterControls(
                 state = state.filter.state,
                 relation = state.filter.relation,
-                answer = state.filter.answer,
                 visibility = state.filter.visibility,
                 sort = state.filter.sort,
                 totalCount = state.totalCount,
                 onStateSelected = viewModel::setStateFilter,
                 onRelationSelected = viewModel::setRelationFilter,
-                onAnswerSelected = viewModel::setAnswerFilter,
                 onVisibilitySelected = viewModel::setVisibilityFilter,
                 onSortSelected = viewModel::setSortFilter,
             )
-            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
                 state.isLoading && state.items.isEmpty() -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
                 }
                 state.loadFailed && state.items.isEmpty() -> {
                     Column(
@@ -114,30 +106,35 @@ fun WorkDiscussionListScreen(
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Text("加载失败")
-                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) { Text("重试") }
+                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) {
+                            Text("重试")
+                        }
                     }
                 }
                 else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize()) {
                         items(state.items) { item ->
-                            WorkDiscussionRow(item, onClick = { onItemClick(item.repoOwner, item.repoName, item.number) })
+                            WorkPullRequestRow(
+                                item = item,
+                                onClick = { onItemClick(item.repoOwner, item.repoName, item.number) },
+                            )
                         }
                         if (state.hasNextPage) {
                             item {
                                 LaunchedEffect(state.items.size) { viewModel.loadMore() }
-                                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator(Modifier.size(20.dp))
                                 }
                             }
                         }
-                        // Push route 底部：navigationBars + captionBar 高度
                         item(key = "bottom_spacer") {
                             Spacer(
                                 Modifier.height(
-                                    WindowInsets.navigationBars.asPaddingValues()
-                                        .calculateBottomPadding() +
-                                        WindowInsets.captionBar.asPaddingValues()
-                                            .calculateBottomPadding(),
+                                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                                        WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
                                 ),
                             )
                         }
@@ -150,36 +147,54 @@ fun WorkDiscussionListScreen(
 }
 
 @Composable
-private fun DiscussionFilterControls(
-    state: UserDiscussionStateFilter,
-    relation: UserDiscussionRelationFilter,
-    answer: UserDiscussionAnswerFilter,
-    visibility: UserDiscussionVisibilityFilter,
-    sort: UserDiscussionSortFilter,
+private fun PullRequestFilterControls(
+    state: UserPullRequestStateFilter,
+    relation: UserPullRequestRelationFilter,
+    visibility: UserPullRequestVisibilityFilter,
+    sort: UserPullRequestSortFilter,
     totalCount: Int,
-    onStateSelected: (UserDiscussionStateFilter) -> Unit,
-    onRelationSelected: (UserDiscussionRelationFilter) -> Unit,
-    onAnswerSelected: (UserDiscussionAnswerFilter) -> Unit,
-    onVisibilitySelected: (UserDiscussionVisibilityFilter) -> Unit,
-    onSortSelected: (UserDiscussionSortFilter) -> Unit,
+    onStateSelected: (UserPullRequestStateFilter) -> Unit,
+    onRelationSelected: (UserPullRequestRelationFilter) -> Unit,
+    onVisibilitySelected: (UserPullRequestVisibilityFilter) -> Unit,
+    onSortSelected: (UserPullRequestSortFilter) -> Unit,
 ) {
     Column {
         Row(Modifier.fillMaxWidth()) {
-            DiscussionFilterMenu("状态", state, UserDiscussionStateFilter.entries, { it.label }, onStateSelected, Modifier.weight(1f))
-            DiscussionFilterMenu("关系", relation, UserDiscussionRelationFilter.entries, { it.label }, onRelationSelected, Modifier.weight(1f))
+            PullRequestFilterMenu(
+                label = "状态",
+                selected = state,
+                options = UserPullRequestStateFilter.entries,
+                optionLabel = { it.label },
+                onSelected = onStateSelected,
+                modifier = Modifier.weight(1f),
+            )
+            PullRequestFilterMenu(
+                label = "关系",
+                selected = relation,
+                options = UserPullRequestRelationFilter.entries,
+                optionLabel = { it.label },
+                onSelected = onRelationSelected,
+                modifier = Modifier.weight(1f),
+            )
         }
         Row(Modifier.fillMaxWidth()) {
-            DiscussionFilterMenu("回答", answer, UserDiscussionAnswerFilter.entries, { it.label }, onAnswerSelected, Modifier.weight(1f))
-            DiscussionFilterMenu("可见性", visibility, UserDiscussionVisibilityFilter.entries, { it.label }, onVisibilitySelected, Modifier.weight(1f))
+            PullRequestFilterMenu(
+                label = "可见性",
+                selected = visibility,
+                options = UserPullRequestVisibilityFilter.entries,
+                optionLabel = { it.label },
+                onSelected = onVisibilitySelected,
+                modifier = Modifier.weight(1f),
+            )
+            PullRequestFilterMenu(
+                label = "排序",
+                selected = sort,
+                options = UserPullRequestSortFilter.entries,
+                optionLabel = { it.label },
+                onSelected = onSortSelected,
+                modifier = Modifier.weight(1f),
+            )
         }
-        DiscussionFilterMenu(
-            label = "排序",
-            selected = sort,
-            options = UserDiscussionSortFilter.entries,
-            optionLabel = { it.label },
-            onSelected = onSortSelected,
-            modifier = Modifier.fillMaxWidth(),
-        )
         Text(
             text = "$totalCount 条",
             style = MaterialTheme.typography.labelMedium,
@@ -191,7 +206,7 @@ private fun DiscussionFilterControls(
 }
 
 @Composable
-private fun <T> DiscussionFilterMenu(
+private fun <T> PullRequestFilterMenu(
     label: String,
     selected: T,
     options: List<T>,
@@ -232,45 +247,45 @@ private fun <T> DiscussionFilterMenu(
     }
 }
 
-private val UserDiscussionStateFilter.label: String
+private val UserPullRequestStateFilter.label: String
     get() = when (this) {
-        UserDiscussionStateFilter.ALL -> "全部"
-        UserDiscussionStateFilter.OPEN -> "打开"
-        UserDiscussionStateFilter.CLOSED -> "已关闭"
+        UserPullRequestStateFilter.OPEN -> "打开"
+        UserPullRequestStateFilter.MERGED -> "已合并"
+        UserPullRequestStateFilter.CLOSED_UNMERGED -> "已关闭"
+        UserPullRequestStateFilter.ALL -> "全部"
     }
 
-private val UserDiscussionRelationFilter.label: String
+private val UserPullRequestRelationFilter.label: String
     get() = when (this) {
-        UserDiscussionRelationFilter.INVOLVED -> "所有参与"
-        UserDiscussionRelationFilter.AUTHORED -> "我创建的"
-        UserDiscussionRelationFilter.COMMENTED -> "我评论过"
+        UserPullRequestRelationFilter.INVOLVED -> "所有参与"
+        UserPullRequestRelationFilter.AUTHORED -> "我创建的"
+        UserPullRequestRelationFilter.ASSIGNED -> "分配给我"
+        UserPullRequestRelationFilter.REVIEW_REQUESTED -> "请求我审查"
+        UserPullRequestRelationFilter.COMMENTED -> "我评论过"
     }
 
-private val UserDiscussionAnswerFilter.label: String
+private val UserPullRequestVisibilityFilter.label: String
     get() = when (this) {
-        UserDiscussionAnswerFilter.ALL -> "全部"
-        UserDiscussionAnswerFilter.ANSWERED -> "已回答"
-        UserDiscussionAnswerFilter.UNANSWERED -> "未回答"
+        UserPullRequestVisibilityFilter.ALL -> "全部"
+        UserPullRequestVisibilityFilter.PUBLIC -> "公开"
+        UserPullRequestVisibilityFilter.PRIVATE -> "私有"
+        UserPullRequestVisibilityFilter.INTERNAL -> "内部"
     }
 
-private val UserDiscussionVisibilityFilter.label: String
+private val UserPullRequestSortFilter.label: String
     get() = when (this) {
-        UserDiscussionVisibilityFilter.ALL -> "全部"
-        UserDiscussionVisibilityFilter.PUBLIC -> "公开"
-        UserDiscussionVisibilityFilter.PRIVATE -> "私有"
-        UserDiscussionVisibilityFilter.INTERNAL -> "内部"
-    }
-
-private val UserDiscussionSortFilter.label: String
-    get() = when (this) {
-        UserDiscussionSortFilter.CREATED_DESC -> "最新创建"
-        UserDiscussionSortFilter.CREATED_ASC -> "最早创建"
-        UserDiscussionSortFilter.UPDATED_DESC -> "最近更新"
-        UserDiscussionSortFilter.UPDATED_ASC -> "最早更新"
+        UserPullRequestSortFilter.CREATED_DESC -> "最新创建"
+        UserPullRequestSortFilter.CREATED_ASC -> "最早创建"
+        UserPullRequestSortFilter.COMMENTS_DESC -> "最多评论"
+        UserPullRequestSortFilter.COMMENTS_ASC -> "最少评论"
+        UserPullRequestSortFilter.UPDATED_DESC -> "最近更新"
+        UserPullRequestSortFilter.UPDATED_ASC -> "最早更新"
     }
 
 @Composable
-private fun WorkDiscussionRow(item: WorkDiscussionItem, onClick: () -> Unit) {
+private fun WorkPullRequestRow(item: WorkIssueItem, onClick: () -> Unit) {
+    val state = checkNotNull(item.pullRequestState)
+    val visual = pullRequestStateVisual(state, item.isDraft, item.locked)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -278,12 +293,8 @@ private fun WorkDiscussionRow(item: WorkDiscussionItem, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DiscussionStateIcon(
-            stateReason = item.stateReason,
-            isAnswered = item.isAnswered,
-            locked = item.locked,
-        )
-        Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
+        PullRequestStateIcon(state = state, isDraft = item.isDraft, locked = item.locked)
+        Column(Modifier.padding(start = 12.dp).weight(1f)) {
             Text(item.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
             Text(
                 "${item.repoOwner}/${item.repoName} · #${item.number}",
@@ -291,5 +302,6 @@ private fun WorkDiscussionRow(item: WorkDiscussionItem, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        GitHubStateChip(visual = visual)
     }
 }
