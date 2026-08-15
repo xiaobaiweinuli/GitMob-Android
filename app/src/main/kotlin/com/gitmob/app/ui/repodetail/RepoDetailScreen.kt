@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -62,6 +61,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.ui.common.RepositoryTopicsRow
+import com.gitmob.app.ui.common.StatusChip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -233,19 +234,30 @@ private fun RepoHeader(
             if (detail.isArchived) StatusChip("已归档")
         }
 
-        // 语言 + Topics
-        if (detail.languageName != null || detail.topics.isNotEmpty()) {
-            Row(modifier = Modifier.padding(top = 8.dp)) {
-                detail.languageName?.let { lang ->
-                    val dotColor = detail.languageColor
-                        ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
-                        ?: MaterialTheme.colorScheme.outline
-                    Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(10.dp)) {}
-                    Text(lang, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp, end = 12.dp))
-                }
-                detail.topics.forEach { StatusChip(it) }
+        // 语言信息独占一行，颜色圆点和语言名称保持对齐。
+        detail.languageName?.let { lang ->
+            val dotColor = detail.languageColor
+                ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+                ?: MaterialTheme.colorScheme.outline
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(10.dp)) {}
+                Text(
+                    text = lang,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(start = 4.dp),
+                )
             }
         }
+
+        // Topics 位于语言下方，并在自己的区域内独立左右滑动。
+        RepositoryTopicsRow(
+            topics = detail.topics,
+            modifier = Modifier.padding(top = if (detail.languageName != null) 6.dp else 8.dp),
+        )
 
         // 操作按钮：标星 / Fork（Watch 放进菜单里的关注者行，简化处理）
         Row(modifier = Modifier.padding(top = 12.dp)) {
@@ -321,21 +333,5 @@ private fun MenuRow(
         }
         count?.let { Text("$it", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) }
         Icon(Icons.Default.ChevronRight, contentDescription = null)
-    }
-}
-
-@Composable
-private fun StatusChip(text: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = RoundedCornerShape(50),
-        modifier = Modifier.padding(end = 6.dp),
-    ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-        )
     }
 }

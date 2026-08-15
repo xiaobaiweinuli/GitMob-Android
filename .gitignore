@@ -46,3 +46,4 @@ reference-github-projects
 *.temp
 *.zip
 *.log
+/GitHub官方App

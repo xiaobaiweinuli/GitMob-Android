@@ -174,24 +174,11 @@ fun RepoCard(
                 }
             }
 
-            // ---- 6. Topics 行（独立横向滚动）----
-            if (repo.topics.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    repo.topics.forEach { topic ->
-                        StatusChip(
-                            topic,
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
+            // ---- 6. Topics 行（主题色 + 独立横向滚动）----
+            RepositoryTopicsRow(
+                topics = repo.topics,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
 }
