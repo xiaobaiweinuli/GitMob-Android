@@ -117,6 +117,7 @@ dependencies {
     implementation(libs.commonmark.ext.gfm.strikethrough)
     implementation(libs.commonmark.ext.autolink)
     implementation(libs.commonmark.ext.task.list.items)
+    implementation(libs.emoji.java)
 
     // Navigation 3（不是 Navigation 2 / navigation-compose，API 完全不同）
     implementation(libs.androidx.navigation3.runtime)

@@ -3,6 +3,7 @@ package com.gitmob.app.ui.common
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -186,8 +187,23 @@ fun ProfilePersonHeader(
                         .padding(top = 12.dp),
                 ) {
                     Row(modifier = Modifier.padding(12.dp)) {
-                        s.emoji?.let { Text(it) }
-                        Text(s.message, modifier = Modifier.padding(start = 8.dp))
+                        s.emoji?.takeIf { it.isNotBlank() }?.let { emoji ->
+                            val customEmoji = githubCustomEmojiDrawable(emoji)
+                            if (customEmoji != null) {
+                                Image(
+                                    painter = painterResource(customEmoji),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            } else {
+                                Text(emojizeGitHubText(emoji))
+                            }
+                        }
+                        Text(
+                            s.message,
+                            modifier = Modifier.padding(start = 8.dp),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
                     }
                 }
             }
@@ -195,7 +211,11 @@ fun ProfilePersonHeader(
 
         // ---- 5. 简介 ----
         bio?.takeIf { it.isNotBlank() }?.let {
-            Text(it, modifier = Modifier.padding(top = 16.dp))
+            Text(
+                emojizeGitHubText(it),
+                modifier = Modifier.padding(top = 16.dp),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
 
         // ---- 6. 位置 / 公司：纯展示，不可点击 ----
@@ -282,8 +302,17 @@ private fun InfoRow(icon: ImageVector, text: String) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(vertical = 4.dp),
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        Text(text, modifier = Modifier.padding(start = 8.dp))
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text,
+            modifier = Modifier.padding(start = 8.dp),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 

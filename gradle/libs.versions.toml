@@ -13,6 +13,7 @@ activityCompose = "1.13.0"
 material3 = "1.4.0"
 materialKolor = "4.0.0"
 commonmark = "0.29.0"
+emojiJava = "5.1.1"
 
 # 架构与导航
 lifecycle = "2.11.0"
@@ -64,6 +65,7 @@ commonmark-ext-gfm-tables = { module = "org.commonmark:commonmark-ext-gfm-tables
 commonmark-ext-gfm-strikethrough = { module = "org.commonmark:commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
 commonmark-ext-autolink = { module = "org.commonmark:commonmark-ext-autolink", version.ref = "commonmark" }
 commonmark-ext-task-list-items = { module = "org.commonmark:commonmark-ext-task-list-items", version.ref = "commonmark" }
+emoji-java = { module = "com.vdurmont:emoji-java", version.ref = "emojiJava" }
 
 # Navigation 3（不是 navigation-compose/Navigation 2，API 完全不同，见 references/navigation3.md）
 androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "navigation3" }
