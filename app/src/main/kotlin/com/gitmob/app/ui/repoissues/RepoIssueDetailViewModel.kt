@@ -87,7 +87,7 @@ class RepoIssueDetailViewModel @Inject constructor(
     fun deletePendingComment() {
         val comment = _state.value.pendingDeleteComment ?: return
         if (!comment.viewerCanDelete) return
-        viewModelScope.launch { when (val result = repository.deleteComment(comment.id)) { is ApiResult.Success -> _state.update { it.copy(comments = it.comments.filterNot { c -> c.id == comment.id }, issue = it.issue?.copy(commentCount = (it.issue?.commentCount.orZero() - 1).coerceAtLeast(0)), pendingDeleteComment = null) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteComment = null) } } } }
+        viewModelScope.launch { when (val result = repository.deleteComment(comment.id)) { is ApiResult.Success -> _state.update { it.copy(comments = it.comments.filterNot { c -> c.id == comment.id }, issue = it.issue?.copy(commentCount = (it.issue.commentCount.orZero() - 1).coerceAtLeast(0)), pendingDeleteComment = null) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteComment = null) } } } }
     }
 
     fun updateIssue(title: String, body: String, labelIds: List<String>, assigneeIds: List<String>, milestoneId: String?, done: () -> Unit) {

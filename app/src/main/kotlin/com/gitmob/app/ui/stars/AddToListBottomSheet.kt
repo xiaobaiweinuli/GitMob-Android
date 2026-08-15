@@ -21,7 +21,9 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.gitmob.app.R
 import com.gitmob.app.data.model.StarredRepo
 import com.gitmob.app.data.model.UserListSummary
 
@@ -45,7 +47,7 @@ fun AddToListBottomSheet(
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text("添加到列表", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
+                Text(stringResource(R.string.common_add_to_list), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
             }
             Text(
                 "${targetRepo.ownerLogin}/${targetRepo.name}",
@@ -81,7 +83,7 @@ fun AddToListBottomSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("创建新列表", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+                    Text(stringResource(R.string.stars_create_new_list), color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
                 }
             }
 
@@ -92,7 +94,7 @@ fun AddToListBottomSheet(
                     .fillMaxWidth()
                     .padding(top = 8.dp, bottom = 24.dp),
             ) {
-                Text("完成")
+                Text(stringResource(R.string.common_done))
             }
         }
     }

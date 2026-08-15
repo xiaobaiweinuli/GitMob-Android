@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.gist
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,11 +53,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistSort
 import com.gitmob.app.ui.common.GistCard
@@ -90,7 +93,8 @@ fun GistScreen(
                     .widthIn(max = 840.dp),
             ) {
                 GistControls(
-                    title = login?.let { "@$it 的 Gist" } ?: if (onBack != null) "我的 Gist" else "Gist",
+                    title = login?.let { stringResource(R.string.gist_title_of_user, it) }
+                        ?: if (onBack != null) stringResource(R.string.gist_title_mine) else "Gist",
                     onBack = onBack,
                     selectedCategory = state.selectedCategory,
                     selectedSort = state.selectedSort,
@@ -140,7 +144,7 @@ private fun GistControls(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onBack != null) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 }
                 Text(text = title, style = MaterialTheme.typography.headlineSmall)
@@ -195,7 +199,7 @@ private fun CategorySelector(
                 onClick = { onCategorySelected(category) },
                 shape = SegmentedButtonDefaults.itemShape(index, GistCategory.entries.size),
             ) {
-                Text(category.label)
+                Text(stringResource(category.labelRes))
             }
         }
     }
@@ -211,7 +215,7 @@ private fun SortMenu(
         FilterChip(
             selected = true,
             onClick = { expanded = true },
-            label = { Text(selectedSort.label, maxLines = 1) },
+            label = { Text(stringResource(selectedSort.labelRes), maxLines = 1) },
         )
         DropdownMenu(
             expanded = expanded,
@@ -219,7 +223,7 @@ private fun SortMenu(
         ) {
             GistSort.entries.forEach { sort ->
                 DropdownMenuItem(
-                    text = { Text(sort.label) },
+                    text = { Text(stringResource(sort.labelRes)) },
                     onClick = {
                         expanded = false
                         onSortSelected(sort)
@@ -280,23 +284,25 @@ private fun GistList(
                 }
                 state.loadFailed && state.items.isEmpty() -> item(key = "error") {
                     FullHeightMessage {
-                        Text("加载失败", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
                         Button(
                             onClick = onRetry,
                             modifier = Modifier.padding(top = 12.dp),
                         ) {
-                            Text("重试")
+                            Text(stringResource(R.string.common_retry))
                         }
                     }
                 }
                 state.items.isEmpty() -> item(key = "empty") {
                     FullHeightMessage {
                         Text(
-                            text = if (state.hasNextPage) "当前批次没有匹配的 Gist" else {
-                                when (state.selectedCategory) {
-                                    GistCategory.ORIGINAL -> "还没有原创 Gist"
-                                    GistCategory.FORKED -> "还没有复刻 Gist"
-                                }
+                            text = if (state.hasNextPage) stringResource(R.string.gist_empty_batch) else {
+                                stringResource(
+                                    when (state.selectedCategory) {
+                                        GistCategory.ORIGINAL -> R.string.gist_empty_original
+                                        GistCategory.FORKED -> R.string.gist_empty_forked
+                                    },
+                                )
                             },
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -310,7 +316,7 @@ private fun GistList(
                                 if (state.isLoadingMore) {
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp))
                                 } else {
-                                    Text("继续查找")
+                                    Text(stringResource(R.string.gist_continue_search))
                                 }
                             }
                         }
@@ -355,16 +361,16 @@ private fun androidx.compose.foundation.lazy.LazyItemScope.FullHeightMessage(
     )
 }
 
-private val GistCategory.label: String
-    get() = when (this) {
-        GistCategory.ORIGINAL -> "原创"
-        GistCategory.FORKED -> "复刻"
+private val GistCategory.labelRes: Int
+    @StringRes get() = when (this) {
+        GistCategory.ORIGINAL -> R.string.gist_category_original
+        GistCategory.FORKED -> R.string.gist_category_forked
     }
 
-private val GistSort.label: String
-    get() = when (this) {
-        GistSort.RECENTLY_CREATED -> "最近创建"
-        GistSort.RECENTLY_UPDATED -> "最近修改"
-        GistSort.OLDEST_CREATED -> "最早创建"
-        GistSort.OLDEST_UPDATED -> "最早修改"
+private val GistSort.labelRes: Int
+    @StringRes get() = when (this) {
+        GistSort.RECENTLY_CREATED -> R.string.work_sort_created_desc
+        GistSort.RECENTLY_UPDATED -> R.string.work_sort_updated_desc
+        GistSort.OLDEST_CREATED -> R.string.work_sort_created_asc
+        GistSort.OLDEST_UPDATED -> R.string.work_sort_updated_asc
     }

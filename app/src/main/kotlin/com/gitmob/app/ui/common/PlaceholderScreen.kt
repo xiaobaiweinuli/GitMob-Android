@@ -21,6 +21,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.gitmob.app.R
 
 /** 通用占位页面——仓库详情里还没实现的菜单项（议题/PR/操作/发行版/讨论/贡献者/许可证）先用这个 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,7 +50,7 @@ fun PlaceholderScreen(label: String) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.weight(1f))
-                Text("$label（开发中）", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.nav_placeholder_wip, label), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.weight(1f))
                 // Push route 底部：navigationBars + captionBar 高度
                 Spacer(

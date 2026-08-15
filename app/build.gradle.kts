@@ -64,6 +64,11 @@ android {
         }
     }
 
+    androidResources {
+        // 扫描 values-* 自动生成 locales_config 并注入 manifest（Android 13+ 系统级应用语言入口）
+        generateLocaleConfig = true
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -96,6 +101,7 @@ ksp {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

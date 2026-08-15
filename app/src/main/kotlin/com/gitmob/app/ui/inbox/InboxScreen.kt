@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.inbox
 
+import androidx.annotation.StringRes
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,9 +54,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.data.model.InboxNotification
 import com.gitmob.app.data.model.InboxReadFilter
 
@@ -80,12 +83,12 @@ fun InboxScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("收件箱") },
+                title = { Text(stringResource(R.string.inbox_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.common_back),
                         )
                     }
                 },
@@ -121,11 +124,11 @@ fun InboxScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                         ) {
-                            Text("加载失败")
+                            Text(stringResource(R.string.common_load_failed))
                             Button(
                                 onClick = viewModel::retry,
                                 modifier = Modifier.padding(top = 12.dp),
-                            ) { Text("重试") }
+                            ) { Text(stringResource(R.string.common_retry)) }
                         }
                     }
                     else -> {
@@ -142,7 +145,7 @@ fun InboxScreen(
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Text(
-                                                "没有${state.readFilter.emptyStateLabel}通知",
+                                                stringResource(state.readFilter.emptyStateRes),
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
@@ -207,13 +210,19 @@ private fun InboxReadFilterMenu(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    "状态",
+                    stringResource(R.string.work_filter_state),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(selected.label, style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(selected.labelRes), style = MaterialTheme.typography.bodyMedium)
             }
-            Icon(Icons.Default.ArrowDropDown, contentDescription = "选择状态")
+            Icon(
+                Icons.Default.ArrowDropDown,
+                contentDescription = stringResource(
+                    R.string.work_select_filter,
+                    stringResource(R.string.work_filter_state),
+                ),
+            )
         }
         DropdownMenu(
             expanded = expanded,
@@ -221,7 +230,7 @@ private fun InboxReadFilterMenu(
         ) {
             InboxReadFilter.entries.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(option.label) },
+                    text = { Text(stringResource(option.labelRes)) },
                     onClick = {
                         expanded = false
                         onSelected(option)
@@ -239,18 +248,19 @@ private fun InboxReadFilterMenu(
     }
 }
 
-private val InboxReadFilter.label: String
-    get() = when (this) {
-        InboxReadFilter.UNREAD -> "未读"
-        InboxReadFilter.READ -> "已读"
-        InboxReadFilter.ALL -> "全部"
+private val InboxReadFilter.labelRes: Int
+    @StringRes get() = when (this) {
+        InboxReadFilter.UNREAD -> R.string.inbox_filter_unread
+        InboxReadFilter.READ -> R.string.inbox_filter_read
+        InboxReadFilter.ALL -> R.string.common_all
     }
 
-private val InboxReadFilter.emptyStateLabel: String
-    get() = when (this) {
-        InboxReadFilter.UNREAD -> "未读"
-        InboxReadFilter.READ -> "已读"
-        InboxReadFilter.ALL -> ""
+/** 空态整句（中/繁/英语序不同，不能用"没有 + 筛选词 + 通知"拼接，必须整句建 key） */
+private val InboxReadFilter.emptyStateRes: Int
+    @StringRes get() = when (this) {
+        InboxReadFilter.UNREAD -> R.string.inbox_empty_unread
+        InboxReadFilter.READ -> R.string.inbox_empty_read
+        InboxReadFilter.ALL -> R.string.inbox_empty_all
     }
 
 @Composable

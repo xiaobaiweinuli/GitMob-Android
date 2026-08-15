@@ -1,6 +1,8 @@
 package com.gitmob.app.data.repository
 
+import com.gitmob.app.R
 import com.gitmob.app.core.cache.MemoryCache
+import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
@@ -79,7 +81,7 @@ class RepoDetailRepository @Inject constructor(
         val node = api.graphQL<RepoDetailQueryData>(
             query,
             mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name)),
-        ).repository ?: throw IllegalStateException("仓库不存在")
+        ).repository ?: throw UserVisibleException(R.string.error_repo_not_found)
 
         val permission = node.viewerPermission?.let {
             runCatching { RepoPermission.valueOf(it) }.getOrDefault(RepoPermission.NONE)
@@ -193,7 +195,7 @@ class RepoDetailRepository @Inject constructor(
             after?.let { put("after", JsonPrimitive(it)) }
         }
         val data = api.graphQL<RepoBranchesQueryData>(query, variables).repository
-            ?: throw IllegalStateException("仓库不存在")
+            ?: throw UserVisibleException(R.string.error_repo_not_found)
 
         val defaultName = data.defaultBranchRef?.name
         PagedBranches(
@@ -224,7 +226,7 @@ class RepoDetailRepository @Inject constructor(
             after?.let { put("after", JsonPrimitive(it)) }
         }
         val conn = api.graphQL<RepoWatchersQueryData>(query, variables).repository?.watchers
-            ?: throw IllegalStateException("仓库不存在")
+            ?: throw UserVisibleException(R.string.error_repo_not_found)
         PagedUsers(
             totalCount = conn.totalCount,
             users = conn.nodes.map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },

@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.work
 
+import androidx.annotation.StringRes
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,9 +45,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.data.model.WorkDiscussionItem
 import com.gitmob.app.data.model.UserDiscussionAnswerFilter
 import com.gitmob.app.data.model.UserDiscussionRelationFilter
@@ -68,12 +71,12 @@ fun WorkDiscussionListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("讨论") },
+                title = { Text(stringResource(R.string.common_discussions)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.common_back),
                         )
                     }
                 },
@@ -113,8 +116,8 @@ fun WorkDiscussionListScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        Text("加载失败")
-                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) { Text("重试") }
+                        Text(stringResource(R.string.common_load_failed))
+                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
                 else -> {
@@ -165,23 +168,23 @@ private fun DiscussionFilterControls(
 ) {
     Column {
         Row(Modifier.fillMaxWidth()) {
-            DiscussionFilterMenu("状态", state, UserDiscussionStateFilter.entries, { it.label }, onStateSelected, Modifier.weight(1f))
-            DiscussionFilterMenu("关系", relation, UserDiscussionRelationFilter.entries, { it.label }, onRelationSelected, Modifier.weight(1f))
+            DiscussionFilterMenu(R.string.work_filter_state, state, UserDiscussionStateFilter.entries, { it.labelRes }, onStateSelected, Modifier.weight(1f))
+            DiscussionFilterMenu(R.string.work_filter_relation, relation, UserDiscussionRelationFilter.entries, { it.labelRes }, onRelationSelected, Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth()) {
-            DiscussionFilterMenu("回答", answer, UserDiscussionAnswerFilter.entries, { it.label }, onAnswerSelected, Modifier.weight(1f))
-            DiscussionFilterMenu("可见性", visibility, UserDiscussionVisibilityFilter.entries, { it.label }, onVisibilitySelected, Modifier.weight(1f))
+            DiscussionFilterMenu(R.string.work_filter_answer, answer, UserDiscussionAnswerFilter.entries, { it.labelRes }, onAnswerSelected, Modifier.weight(1f))
+            DiscussionFilterMenu(R.string.work_filter_visibility, visibility, UserDiscussionVisibilityFilter.entries, { it.labelRes }, onVisibilitySelected, Modifier.weight(1f))
         }
         DiscussionFilterMenu(
-            label = "排序",
+            label = R.string.work_filter_sort,
             selected = sort,
             options = UserDiscussionSortFilter.entries,
-            optionLabel = { it.label },
+            optionLabel = { it.labelRes },
             onSelected = onSortSelected,
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            text = "$totalCount 条",
+            text = stringResource(R.string.work_items_count, totalCount),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -192,14 +195,15 @@ private fun DiscussionFilterControls(
 
 @Composable
 private fun <T> DiscussionFilterMenu(
-    label: String,
+    @StringRes label: Int,
     selected: T,
     options: List<T>,
-    optionLabel: (T) -> String,
+    optionLabel: (T) -> Int,
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val labelText = stringResource(label)
     Box(modifier) {
         Row(
             modifier = Modifier
@@ -209,15 +213,15 @@ private fun <T> DiscussionFilterMenu(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(optionLabel(selected), style = MaterialTheme.typography.bodyMedium)
+                Text(labelText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(optionLabel(selected)), style = MaterialTheme.typography.bodyMedium)
             }
-            Icon(Icons.Default.ArrowDropDown, contentDescription = "选择$label")
+            Icon(Icons.Default.ArrowDropDown, contentDescription = stringResource(R.string.work_select_filter, labelText))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(optionLabel(option)) },
+                    text = { Text(stringResource(optionLabel(option))) },
                     onClick = {
                         expanded = false
                         onSelected(option)
@@ -232,41 +236,46 @@ private fun <T> DiscussionFilterMenu(
     }
 }
 
-private val UserDiscussionStateFilter.label: String
+@get:StringRes
+private val UserDiscussionStateFilter.labelRes: Int
     get() = when (this) {
-        UserDiscussionStateFilter.ALL -> "全部"
-        UserDiscussionStateFilter.OPEN -> "打开"
-        UserDiscussionStateFilter.CLOSED -> "已关闭"
+        UserDiscussionStateFilter.ALL -> R.string.common_all
+        UserDiscussionStateFilter.OPEN -> R.string.work_filter_open
+        UserDiscussionStateFilter.CLOSED -> R.string.common_state_closed
     }
 
-private val UserDiscussionRelationFilter.label: String
+@get:StringRes
+private val UserDiscussionRelationFilter.labelRes: Int
     get() = when (this) {
-        UserDiscussionRelationFilter.INVOLVED -> "所有参与"
-        UserDiscussionRelationFilter.AUTHORED -> "我创建的"
-        UserDiscussionRelationFilter.COMMENTED -> "我评论过"
+        UserDiscussionRelationFilter.INVOLVED -> R.string.work_relation_involved
+        UserDiscussionRelationFilter.AUTHORED -> R.string.work_relation_authored
+        UserDiscussionRelationFilter.COMMENTED -> R.string.work_relation_commented
     }
 
-private val UserDiscussionAnswerFilter.label: String
+@get:StringRes
+private val UserDiscussionAnswerFilter.labelRes: Int
     get() = when (this) {
-        UserDiscussionAnswerFilter.ALL -> "全部"
-        UserDiscussionAnswerFilter.ANSWERED -> "已回答"
-        UserDiscussionAnswerFilter.UNANSWERED -> "未回答"
+        UserDiscussionAnswerFilter.ALL -> R.string.common_all
+        UserDiscussionAnswerFilter.ANSWERED -> R.string.state_answered
+        UserDiscussionAnswerFilter.UNANSWERED -> R.string.work_answer_unanswered
     }
 
-private val UserDiscussionVisibilityFilter.label: String
+@get:StringRes
+private val UserDiscussionVisibilityFilter.labelRes: Int
     get() = when (this) {
-        UserDiscussionVisibilityFilter.ALL -> "全部"
-        UserDiscussionVisibilityFilter.PUBLIC -> "公开"
-        UserDiscussionVisibilityFilter.PRIVATE -> "私有"
-        UserDiscussionVisibilityFilter.INTERNAL -> "内部"
+        UserDiscussionVisibilityFilter.ALL -> R.string.common_all
+        UserDiscussionVisibilityFilter.PUBLIC -> R.string.work_visibility_public
+        UserDiscussionVisibilityFilter.PRIVATE -> R.string.common_private
+        UserDiscussionVisibilityFilter.INTERNAL -> R.string.work_visibility_internal
     }
 
-private val UserDiscussionSortFilter.label: String
+@get:StringRes
+private val UserDiscussionSortFilter.labelRes: Int
     get() = when (this) {
-        UserDiscussionSortFilter.CREATED_DESC -> "最新创建"
-        UserDiscussionSortFilter.CREATED_ASC -> "最早创建"
-        UserDiscussionSortFilter.UPDATED_DESC -> "最近更新"
-        UserDiscussionSortFilter.UPDATED_ASC -> "最早更新"
+        UserDiscussionSortFilter.CREATED_DESC -> R.string.work_sort_created_desc
+        UserDiscussionSortFilter.CREATED_ASC -> R.string.work_sort_created_asc
+        UserDiscussionSortFilter.UPDATED_DESC -> R.string.work_sort_updated_desc
+        UserDiscussionSortFilter.UPDATED_ASC -> R.string.work_sort_updated_asc
     }
 
 @Composable

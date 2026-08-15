@@ -1,5 +1,6 @@
 package com.gitmob.app.core.error
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -31,7 +32,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.gitmob.app.R
 import kotlinx.coroutines.delay
 
 /**
@@ -74,14 +77,28 @@ fun ErrorBannerHost(errorEventBus: ErrorEventBus, modifier: Modifier = Modifier)
     }
 }
 
-fun ApiError.displayMessage(): String = when (this) {
-    ApiError.Unauthorized -> "登录已失效，请重新登录"
-    ApiError.Forbidden -> "权限不足，无法执行此操作"
-    ApiError.RateLimited -> "请求过于频繁，请稍后再试"
-    ApiError.NetworkError -> "网络异常，请检查网络连接"
-    is ApiError.GraphQLError -> errors.firstOrNull()?.message ?: "请求出错"
-    is ApiError.Unknown -> message
+/**
+ * ApiError → 文案资源的纯映射（非 Composable，ViewModel 也能用）。
+ * GraphQLError 的服务端原文走 [serverMessage] 优先展示；Unknown 一律通用文案，
+ * 技术细节只进 Logcat（见 safeCall 的日志）。
+ */
+@StringRes
+fun ApiError.displayMessageRes(): Int = when (this) {
+    ApiError.Unauthorized -> R.string.error_unauthorized
+    ApiError.Forbidden -> R.string.error_forbidden
+    ApiError.RateLimited -> R.string.error_rate_limited
+    ApiError.NetworkError -> R.string.error_network
+    is ApiError.UserVisible -> messageRes
+    is ApiError.GraphQLError -> R.string.error_request_failed
+    is ApiError.Unknown -> R.string.error_request_failed
 }
+
+/** 服务端返回的原始错误文案（仅 GraphQL 错误有），语言由服务端决定，优先于本地资源展示。 */
+fun ApiError.serverMessage(): String? =
+    (this as? ApiError.GraphQLError)?.errors?.firstOrNull()?.message
+
+@Composable
+fun ApiError.displayMessage(): String = serverMessage() ?: stringResource(displayMessageRes())
 
 private fun ApiError.icon(): ImageVector = when (this) {
     ApiError.Unauthorized -> Icons.Default.Lock

@@ -38,10 +38,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.gitmob.app.R
 import com.gitmob.app.data.model.SimpleUser
 
 /**
@@ -61,12 +63,15 @@ fun UserListScreen(
     viewModel: UserListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(login, mode) { viewModel.init(login, mode) }
-    val title = when (mode) {
-        UserListMode.FOLLOWERS -> "关注者"
-        UserListMode.FOLLOWING -> "关注"
-        UserListMode.ORG_MEMBERS -> "成员"
-        UserListMode.WATCHERS -> "关注者" // WATCHERS 走 RepoWatchersScreen，一般不会到这里；兜底保持一致
-    }
+    val title = stringResource(
+        when (mode) {
+            UserListMode.FOLLOWERS -> R.string.userlist_title_followers
+            UserListMode.FOLLOWING -> R.string.userlist_title_following
+            UserListMode.ORG_MEMBERS -> R.string.common_members
+            // WATCHERS 走 RepoWatchersScreen，一般不会到这里；兜底保持一致（仓库语境用 common_watchers）
+            UserListMode.WATCHERS -> R.string.common_watchers
+        },
+    )
     UserListBody(
         title = title,
         viewModel = viewModel,
@@ -86,7 +91,7 @@ fun RepoWatchersScreen(
     viewModel: UserListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name) { viewModel.initForRepoWatchers(owner, name) }
-    UserListBody(title = "关注者", viewModel = viewModel, onUserClick = onUserClick, onBack = onBack)
+    UserListBody(title = stringResource(R.string.common_watchers), viewModel = viewModel, onUserClick = onUserClick, onBack = onBack)
 }
 
 /**
@@ -102,7 +107,7 @@ fun OrgMembersScreen(
     viewModel: UserListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(orgLogin) { viewModel.initForOrgMembers(orgLogin) }
-    UserListBody(title = "成员", viewModel = viewModel, onUserClick = onUserClick, onBack = onBack)
+    UserListBody(title = stringResource(R.string.common_members), viewModel = viewModel, onUserClick = onUserClick, onBack = onBack)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,7 +126,7 @@ private fun UserListBody(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing
@@ -151,9 +156,9 @@ private fun UserListBody(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text("加载失败")
+                    Text(stringResource(R.string.common_load_failed))
                     Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) {
-                        Text("重试")
+                        Text(stringResource(R.string.common_retry))
                     }
                 }
             }

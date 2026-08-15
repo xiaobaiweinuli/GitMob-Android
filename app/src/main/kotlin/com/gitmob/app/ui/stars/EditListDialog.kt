@@ -17,7 +17,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.gitmob.app.R
 import com.gitmob.app.data.model.UserListSummary
 
 @Composable
@@ -36,13 +38,13 @@ fun EditListDialog(
     if (confirmingDelete) {
         AlertDialog(
             onDismissRequest = { confirmingDelete = false },
-            title = { Text("删除列表？") },
-            text = { Text("此操作无法撤销，列表内的仓库不会被取消星标。") },
+            title = { Text(stringResource(R.string.stars_delete_list_title)) },
+            text = { Text(stringResource(R.string.stars_delete_list_message)) },
             confirmButton = {
-                TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDelete) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmingDelete = false }) { Text("取消") }
+                TextButton(onClick = { confirmingDelete = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
         return
@@ -50,20 +52,20 @@ fun EditListDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("编辑列表") },
+        title = { Text(stringResource(R.string.stars_edit_list)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    placeholder = { Text("列表名称") },
+                    placeholder = { Text(stringResource(R.string.stars_list_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    placeholder = { Text("描述（可选）") },
+                    placeholder = { Text(stringResource(R.string.stars_list_description_optional)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 12.dp),
@@ -76,15 +78,15 @@ fun EditListDialog(
                 ) {
                     Checkbox(checked = isPrivate, onCheckedChange = { isPrivate = it })
                     Column {
-                        Text("私有列表")
-                        Text("仅自己可见", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.stars_list_private))
+                        Text(stringResource(R.string.stars_list_private_desc), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 TextButton(
                     onClick = { confirmingDelete = true },
                     modifier = Modifier.padding(top = 8.dp),
                 ) {
-                    Text("删除此列表", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.stars_delete_this_list), color = MaterialTheme.colorScheme.error)
                 }
             }
         },
@@ -93,11 +95,11 @@ fun EditListDialog(
                 onClick = { onConfirm(name.trim(), description.trim().ifBlank { null }, isPrivate) },
                 enabled = name.isNotBlank() && !isSaving,
             ) {
-                Text("保存")
+                Text(stringResource(R.string.common_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

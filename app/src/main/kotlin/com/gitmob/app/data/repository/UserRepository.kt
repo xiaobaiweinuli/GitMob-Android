@@ -1,6 +1,8 @@
 package com.gitmob.app.data.repository
 
+import com.gitmob.app.R
 import com.gitmob.app.core.cache.MemoryCache
+import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
@@ -162,7 +164,7 @@ class UserRepository @Inject constructor(
             }
         """.trimIndent()
         val data = api.graphQL<UserProfileQueryData>(query, mapOf("login" to JsonPrimitive(login)))
-        val node = data.user ?: throw IllegalStateException("用户不存在")
+        val node = data.user ?: throw UserVisibleException(R.string.error_user_not_found)
         node.toDomain()
     }
 
@@ -266,7 +268,7 @@ class UserRepository @Inject constructor(
                 after?.let { put("after", JsonPrimitive(it)) }
             },
         )
-        val conn = data.user?.followers ?: throw IllegalStateException("用户不存在")
+        val conn = data.user?.followers ?: throw UserVisibleException(R.string.error_user_not_found)
         PagedUsers(
             totalCount = conn.totalCount,
             users = conn.nodes.map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
@@ -294,7 +296,7 @@ class UserRepository @Inject constructor(
                 after?.let { put("after", JsonPrimitive(it)) }
             },
         )
-        val conn = data.user?.following ?: throw IllegalStateException("用户不存在")
+        val conn = data.user?.following ?: throw UserVisibleException(R.string.error_user_not_found)
         PagedUsers(
             totalCount = conn.totalCount,
             users = conn.nodes.map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
@@ -395,7 +397,7 @@ class UserRepository @Inject constructor(
             }
         """.trimIndent()
         val data = api.graphQL<RepositoryOwnerQueryData>(query, mapOf("login" to JsonPrimitive(login)))
-        val node = data.repositoryOwner ?: throw IllegalStateException("用户或组织不存在")
+        val node = data.repositoryOwner ?: throw UserVisibleException(R.string.error_owner_not_found)
         when (node.__typename) {
             "User" -> ProfileOwner.Person(
                 id = node.id,
@@ -539,7 +541,7 @@ class UserRepository @Inject constructor(
                 after?.let { put("after", JsonPrimitive(it)) }
             },
         )
-        val conn = data.user?.repositories ?: throw IllegalStateException("用户不存在")
+        val conn = data.user?.repositories ?: throw UserVisibleException(R.string.error_user_not_found)
         RepoList(
             totalCount = conn.totalCount,
             items = conn.nodes.map { it.toDomain() },
@@ -591,7 +593,7 @@ class UserRepository @Inject constructor(
                 after?.let { put("after", JsonPrimitive(it)) }
             },
         )
-        val conn = data.user?.starredRepositories ?: throw IllegalStateException("用户不存在")
+        val conn = data.user?.starredRepositories ?: throw UserVisibleException(R.string.error_user_not_found)
         PagedStarredRepos(
             totalCount = conn.totalCount,
             items = conn.edges.map { it.node.toDomain() },
@@ -624,7 +626,7 @@ class UserRepository @Inject constructor(
                 after?.let { put("after", JsonPrimitive(it)) }
             },
         )
-        val conn = data.user?.organizations ?: throw IllegalStateException("用户不存在")
+        val conn = data.user?.organizations ?: throw UserVisibleException(R.string.error_user_not_found)
         PagedOrgs(
             totalCount = conn.totalCount,
             orgs = conn.nodes.map { SimpleOrg(it.login, it.name, it.avatarUrl) },
@@ -657,7 +659,7 @@ class UserRepository @Inject constructor(
                 after?.let { put("after", JsonPrimitive(it)) }
             },
         )
-        val conn = data.organization?.membersWithRole ?: throw IllegalStateException("组织不存在")
+        val conn = data.organization?.membersWithRole ?: throw UserVisibleException(R.string.error_org_not_found)
         PagedUsers(
             totalCount = conn.totalCount,
             users = conn.nodes.map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },

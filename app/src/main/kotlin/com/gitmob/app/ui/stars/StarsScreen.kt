@@ -43,9 +43,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.data.model.StarFilter
 import com.gitmob.app.data.model.UserListSummary
 import com.gitmob.app.ui.common.StarredRepoCard
@@ -106,12 +108,12 @@ fun StarsScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                         ) {
-                            Text("加载失败", style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
                             Button(
                                 onClick = viewModel::retry,
                                 modifier = Modifier.padding(top = 12.dp),
                             ) {
-                                Text("重试")
+                                Text(stringResource(R.string.common_retry))
                             }
                         }
                     }
@@ -212,7 +214,7 @@ private fun ListsSection(
         ) {
             Icon(Icons.Default.Menu, contentDescription = null)
             Text(
-                "我的列表",
+                stringResource(R.string.stars_my_lists),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(start = 8.dp).weight(1f),
             )
@@ -221,7 +223,7 @@ private fun ListsSection(
                 contentDescription = null,
             )
             IconButton(onClick = onCreateListClick) {
-                Icon(Icons.Default.Add, contentDescription = "新建列表")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.stars_create_list))
             }
         }
 
@@ -229,7 +231,7 @@ private fun ListsSection(
             Column {
                 ListRow(
                     icon = Icons.Default.Star,
-                    label = "全部星标",
+                    label = stringResource(R.string.stars_all_stars),
                     count = null,
                     selected = selectedFilter is StarFilter.All,
                     onClick = { onSelectFilter(StarFilter.All) },
@@ -285,7 +287,7 @@ private fun ListRow(
             count?.let { Text("$it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             onEditClick?.let {
                 IconButton(onClick = it, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Edit, contentDescription = "编辑", modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.common_edit), modifier = Modifier.size(16.dp))
                 }
             }
         }

@@ -21,9 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.gitmob.app.R
 import com.gitmob.app.data.model.PinnedRepo
 
 /**
@@ -41,7 +43,7 @@ fun PinnedReposSection(
 
     Column(modifier = modifier) {
         Text(
-            text = "已置顶",
+            text = stringResource(R.string.common_pinned),
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.padding(bottom = 8.dp),
         )

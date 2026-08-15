@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.common
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -16,8 +17,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.gitmob.app.R
 import com.gitmob.app.data.model.DiscussionStateReason
 import com.gitmob.app.data.model.IssueState
 import com.gitmob.app.data.model.IssueStateReason
@@ -33,7 +36,7 @@ enum class GitHubStateBadge { LOCKED, ANSWERED, LATEST }
 data class GitHubStateVisual(
     val icon: OcticonName,
     val color: GitHubStateColor,
-    val label: String,
+    @StringRes val labelRes: Int,
     val badges: Set<GitHubStateBadge> = emptySet(),
 )
 
@@ -46,27 +49,27 @@ fun issueStateVisual(
         state == IssueState.OPEN && stateReason == IssueStateReason.REOPENED -> GitHubStateVisual(
             OcticonName.ISSUE_REOPENED,
             GitHubStateColor.OPEN,
-            "重新开放",
+            R.string.state_reopened,
         )
         state == IssueState.OPEN -> GitHubStateVisual(
             OcticonName.ISSUE_OPENED,
             GitHubStateColor.OPEN,
-            "开放",
+            R.string.state_open,
         )
         stateReason == IssueStateReason.NOT_PLANNED -> GitHubStateVisual(
             OcticonName.ISSUE_NOT_PLANNED,
             GitHubStateColor.NEUTRAL,
-            "不计划",
+            R.string.state_not_planned,
         )
         stateReason == IssueStateReason.DUPLICATE -> GitHubStateVisual(
             OcticonName.ISSUE_DUPLICATE,
             GitHubStateColor.NEUTRAL,
-            "重复",
+            R.string.state_duplicate,
         )
         else -> GitHubStateVisual(
             OcticonName.ISSUE_CLOSED,
             GitHubStateColor.DONE,
-            "已完成",
+            R.string.state_completed,
         )
     }
     return visual.withBadgeIf(GitHubStateBadge.LOCKED, locked)
@@ -81,22 +84,22 @@ fun pullRequestStateVisual(
         state == PullRequestState.MERGED -> GitHubStateVisual(
             OcticonName.PULL_REQUEST_MERGED,
             GitHubStateColor.DONE,
-            "已合并",
+            R.string.state_merged,
         )
         state == PullRequestState.CLOSED -> GitHubStateVisual(
             OcticonName.PULL_REQUEST_CLOSED,
             GitHubStateColor.DANGER,
-            "已关闭",
+            R.string.common_state_closed,
         )
         isDraft -> GitHubStateVisual(
             OcticonName.PULL_REQUEST_DRAFT,
             GitHubStateColor.NEUTRAL,
-            "草稿",
+            R.string.state_draft,
         )
         else -> GitHubStateVisual(
             OcticonName.PULL_REQUEST_OPENED,
             GitHubStateColor.OPEN,
-            "开放",
+            R.string.state_open,
         )
     }
     return visual.withBadgeIf(GitHubStateBadge.LOCKED, locked)
@@ -111,27 +114,27 @@ fun discussionStateVisual(
         null -> GitHubStateVisual(
             OcticonName.DISCUSSION_OPENED,
             GitHubStateColor.OPEN,
-            "开放",
+            R.string.state_open,
         )
         DiscussionStateReason.REOPENED -> GitHubStateVisual(
             OcticonName.DISCUSSION_OPENED,
             GitHubStateColor.OPEN,
-            "重新开放",
+            R.string.state_reopened,
         )
         DiscussionStateReason.RESOLVED -> GitHubStateVisual(
             OcticonName.DISCUSSION_RESOLVED,
             GitHubStateColor.DONE,
-            "已解决",
+            R.string.state_resolved,
         )
         DiscussionStateReason.DUPLICATE -> GitHubStateVisual(
             OcticonName.DISCUSSION_DUPLICATE,
             GitHubStateColor.NEUTRAL,
-            "重复",
+            R.string.state_duplicate,
         )
         DiscussionStateReason.OUTDATED -> GitHubStateVisual(
             OcticonName.DISCUSSION_OUTDATED,
             GitHubStateColor.NEUTRAL,
-            "已过时",
+            R.string.state_outdated,
         )
     }
     return visual
@@ -145,9 +148,9 @@ fun releaseStateVisual(
     isLatest: Boolean = false,
 ): GitHubStateVisual {
     val visual = when {
-        isDraft -> GitHubStateVisual(OcticonName.RELEASE_TAG, GitHubStateColor.NEUTRAL, "草稿")
-        isPrerelease -> GitHubStateVisual(OcticonName.RELEASE_TAG, GitHubStateColor.ATTENTION, "预发布")
-        else -> GitHubStateVisual(OcticonName.RELEASE_TAG, GitHubStateColor.OPEN, "已发布")
+        isDraft -> GitHubStateVisual(OcticonName.RELEASE_TAG, GitHubStateColor.NEUTRAL, R.string.state_draft)
+        isPrerelease -> GitHubStateVisual(OcticonName.RELEASE_TAG, GitHubStateColor.ATTENTION, R.string.state_prerelease)
+        else -> GitHubStateVisual(OcticonName.RELEASE_TAG, GitHubStateColor.OPEN, R.string.state_published)
     }
     return visual.withBadgeIf(GitHubStateBadge.LATEST, isLatest)
 }
@@ -216,14 +219,14 @@ private fun GitHubStateIcon(
         val stateColor = visual.color.resolveColor()
         Octicon(
             name = visual.icon,
-            contentDescription = visual.label,
+            contentDescription = stringResource(visual.labelRes),
             size = size,
             tint = stateColor,
         )
         if (GitHubStateBadge.ANSWERED in visual.badges) {
             Octicon(
                 name = OcticonName.DISCUSSION_ANSWERED,
-                contentDescription = "已回答",
+                contentDescription = stringResource(R.string.state_answered),
                 size = 12.dp,
                 tint = GitHubStateColor.OPEN.resolveColor(),
             )
@@ -231,7 +234,7 @@ private fun GitHubStateIcon(
         if (GitHubStateBadge.LOCKED in visual.badges) {
             Icon(
                 imageVector = Icons.Default.Lock,
-                contentDescription = "已锁定",
+                contentDescription = stringResource(R.string.state_locked),
                 modifier = Modifier.padding(start = 1.dp).size(12.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -243,7 +246,7 @@ private fun GitHubStateIcon(
                 shape = RoundedCornerShape(4.dp),
             ) {
                 Text(
-                    text = "最新",
+                    text = stringResource(R.string.state_latest),
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                 )
@@ -266,7 +269,7 @@ fun GitHubStateChip(
         shape = RoundedCornerShape(50),
     ) {
         Text(
-            text = visual.label,
+            text = stringResource(visual.labelRes),
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
         )

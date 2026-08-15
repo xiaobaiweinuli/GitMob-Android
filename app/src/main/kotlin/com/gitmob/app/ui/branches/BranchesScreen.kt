@@ -43,9 +43,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoBranch
 
 /**
@@ -71,12 +73,12 @@ fun BranchesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("分支") },
+                title = { Text(stringResource(R.string.common_branches)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.common_back),
                         )
                     }
                 },
@@ -105,11 +107,11 @@ fun BranchesScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        Text("加载失败")
+                        Text(stringResource(R.string.common_load_failed))
                         Button(
                             onClick = viewModel::retry,
                             modifier = Modifier.padding(top = 12.dp),
-                        ) { Text("重试") }
+                        ) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
                 else -> {
@@ -176,11 +178,11 @@ private fun BranchRow(
     if (confirmingDelete) {
         AlertDialog(
             onDismissRequest = { confirmingDelete = false },
-            title = { Text("删除分支 ${branch.name}？") },
-            text = { Text("此操作无法撤销。") },
+            title = { Text(stringResource(R.string.branches_delete_branch_title, branch.name)) },
+            text = { Text(stringResource(R.string.common_cannot_be_undone)) },
             confirmButton = {
                 Text(
-                    "删除",
+                    stringResource(R.string.common_delete),
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.clickable {
                         confirmingDelete = false
@@ -189,7 +191,7 @@ private fun BranchRow(
                 )
             },
             dismissButton = {
-                Text("取消", modifier = Modifier.clickable { confirmingDelete = false }.padding(12.dp))
+                Text(stringResource(R.string.common_cancel), modifier = Modifier.clickable { confirmingDelete = false }.padding(12.dp))
             },
         )
     }
@@ -206,7 +208,7 @@ private fun BranchRow(
                 Text(branch.name, style = MaterialTheme.typography.titleSmall)
                 if (branch.isDefault) {
                     Text(
-                        " 默认",
+                        stringResource(R.string.branches_default_badge),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(start = 6.dp),
@@ -218,24 +220,24 @@ private fun BranchRow(
             }
         }
         if (isCurrent) {
-            Icon(Icons.Default.CheckCircle, contentDescription = "当前分支", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Default.CheckCircle, contentDescription = stringResource(R.string.branches_current_branch), tint = MaterialTheme.colorScheme.primary)
         }
         if (showOverflowMenu) {
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
+                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.branches_more_actions))
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     if (!branch.isDefault) {
                         DropdownMenuItem(
-                            text = { Text("设为默认分支") },
+                            text = { Text(stringResource(R.string.branches_set_default)) },
                             onClick = {
                                 menuExpanded = false
                                 onSetDefault()
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("删除分支", color = MaterialTheme.colorScheme.error) },
+                            text = { Text(stringResource(R.string.branches_delete_branch), color = MaterialTheme.colorScheme.error) },
                             onClick = { menuExpanded = false; confirmingDelete = true },
                         )
                     }

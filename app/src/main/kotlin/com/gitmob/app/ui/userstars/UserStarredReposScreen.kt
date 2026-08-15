@@ -38,9 +38,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.ui.common.StarredRepoCard
 
 /**
@@ -75,10 +77,10 @@ fun UserStarredReposScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("@$login 的星标") },
+                title = { Text(stringResource(R.string.userstars_title, login)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing
@@ -106,12 +108,12 @@ fun UserStarredReposScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        Text("加载失败", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
                         Button(
                             onClick = viewModel::retry,
                             modifier = Modifier.padding(top = 12.dp),
                         ) {
-                            Text("重试")
+                            Text(stringResource(R.string.common_retry))
                         }
                     }
                 }

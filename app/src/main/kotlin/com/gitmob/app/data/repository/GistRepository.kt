@@ -1,6 +1,8 @@
 package com.gitmob.app.data.repository
 
+import com.gitmob.app.R
 import com.gitmob.app.core.cache.MemoryCache
+import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
@@ -127,7 +129,7 @@ class GistRepository @Inject constructor(
                     ?: throw IllegalStateException("viewer Gist 查询根字段缺失")
             } else {
                 response.user?.gists
-                    ?: throw IllegalStateException("用户不存在或 Gist 查询根字段缺失")
+                    ?: throw UserVisibleException(R.string.error_user_not_found)
             }
             val edges = connection.edges.orEmpty().filterNotNull()
             var stoppedInsideBatch = false

@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.login
 
+import com.gitmob.app.R
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -59,7 +60,7 @@ class LoginViewModelTest {
         vm.onTokenInputChange("   ")
         vm.login()
 
-        assertEquals("请输入 Personal Access Token", vm.state.value.inlineError)
+        assertEquals(R.string.login_token_required, vm.state.value.inlineErrorRes)
         assertFalse(vm.state.value.isLoading)
         assertFalse(vm.state.value.loginSucceeded)
     }
@@ -75,7 +76,7 @@ class LoginViewModelTest {
 
         assertTrue(vm.state.value.loginSucceeded)
         assertFalse(vm.state.value.isLoading)
-        assertNull(vm.state.value.inlineError)
+        assertNull(vm.state.value.inlineErrorRes)
         vm.viewModelScope.cancel()
     }
 
@@ -89,7 +90,7 @@ class LoginViewModelTest {
         vm.onTokenInputChange("ghp_badtoken")
         vm.login()
 
-        assertNotNull(vm.state.value.inlineError)
+        assertNotNull(vm.state.value.inlineErrorRes)
         assertFalse(vm.state.value.loginSucceeded)
         assertFalse(vm.state.value.isLoading)
         vm.viewModelScope.cancel()
@@ -107,13 +108,13 @@ class LoginViewModelTest {
         vm.onTokenInputChange("bad")
         vm.login()
         assertFalse(vm.state.value.loginSucceeded)
-        assertNotNull(vm.state.value.inlineError)
+        assertNotNull(vm.state.value.inlineErrorRes)
 
         // 第二次：改token为正确
         vm.onTokenInputChange("good")
         vm.login()
         assertTrue(vm.state.value.loginSucceeded)
-        assertNull(vm.state.value.inlineError)
+        assertNull(vm.state.value.inlineErrorRes)
         vm.viewModelScope.cancel()
     }
 }

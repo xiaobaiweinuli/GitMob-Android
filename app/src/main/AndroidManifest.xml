@@ -37,5 +37,16 @@
             </intent-filter>
         </activity>
 
+        <!-- appcompat 官方配方：API ≤32 上把 setApplicationLocales 选择的语言
+             持久化并在冷启动时自动恢复（Android 13+ 由系统自己存储，此服务不参与） -->
+        <service
+            android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
+            android:enabled="false"
+            android:exported="false">
+            <meta-data
+                android:name="autoStoreLocales"
+                android:value="true" />
+        </service>
+
     </application>
 </manifest>

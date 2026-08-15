@@ -27,10 +27,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.gitmob.app.R
 import com.gitmob.app.data.model.GistListItem
 
 @Composable
@@ -68,7 +70,7 @@ fun GistCard(
                 )
                 if (!gist.isPublic) {
                     StatusChip(
-                        text = "秘密",
+                        text = stringResource(R.string.common_secret),
                         bg = MaterialTheme.colorScheme.errorContainer,
                         fg = MaterialTheme.colorScheme.onErrorContainer,
                     )
@@ -116,7 +118,7 @@ fun GistCard(
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text(
-                    text = previewText ?: "此文件无法预览",
+                    text = previewText ?: stringResource(R.string.common_file_no_preview),
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = if (previewText == null) {
                         MaterialTheme.colorScheme.onSurfaceVariant

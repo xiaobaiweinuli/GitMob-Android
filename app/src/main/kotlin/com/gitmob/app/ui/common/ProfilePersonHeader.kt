@@ -32,8 +32,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.gitmob.app.R
 import com.gitmob.app.data.model.FollowState
 import com.gitmob.app.data.model.SocialAccount
 import com.gitmob.app.data.model.UserStatus
@@ -133,7 +135,7 @@ fun ProfilePersonHeader(
         Row(modifier = Modifier.padding(top = 12.dp)) {
             if (onFollowersClick != null) {
                 Text(
-                    "$followersCount 个关注者",
+                    stringResource(R.string.common_followers_count, followersCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
@@ -142,7 +144,7 @@ fun ProfilePersonHeader(
                 )
             } else {
                 Text(
-                    "$followersCount 个关注者",
+                    stringResource(R.string.common_followers_count, followersCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(end = 16.dp),
@@ -150,14 +152,14 @@ fun ProfilePersonHeader(
             }
             if (onFollowingClick != null) {
                 Text(
-                    "$followingCount 关注",
+                    stringResource(R.string.common_following_count, followingCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable(onClick = onFollowingClick),
                 )
             } else {
                 Text(
-                    "$followingCount 关注",
+                    stringResource(R.string.common_following_count, followingCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -168,9 +170,9 @@ fun ProfilePersonHeader(
         if (!followState.isViewer && followState.viewerCanFollow) {
             Box(modifier = Modifier.padding(top = 12.dp)) {
                 if (followState.viewerIsFollowing) {
-                    OutlinedButton(onClick = onFollowClick) { Text("已关注") }
+                    OutlinedButton(onClick = onFollowClick) { Text(stringResource(R.string.common_following)) }
                 } else {
-                    Button(onClick = onFollowClick) { Text("关注") }
+                    Button(onClick = onFollowClick) { Text(stringResource(R.string.common_follow)) }
                 }
             }
         }
@@ -273,9 +275,9 @@ fun ProfilePersonHeader(
 
         // ---- 8. 徽章行：只显示真实存在的 4 个，buildList 过滤后非空才渲染 Row ----
         val badges = buildList {
-            if (isDeveloperProgramMember) add(OcticonName.BADGE_DEVELOPER_PROGRAM to "开发者计划成员")
-            if (isBountyHunter) add(OcticonName.BADGE_SECURITY_BOUNTY_HUNTER to "安全赏金猎人")
-            if (isCampusExpert) add(OcticonName.BADGE_CAMPUS_EXPERT to "校园专家")
+            if (isDeveloperProgramMember) add(OcticonName.BADGE_DEVELOPER_PROGRAM to stringResource(R.string.common_badge_developer_program))
+            if (isBountyHunter) add(OcticonName.BADGE_SECURITY_BOUNTY_HUNTER to stringResource(R.string.common_badge_bounty_hunter))
+            if (isCampusExpert) add(OcticonName.BADGE_CAMPUS_EXPERT to stringResource(R.string.common_badge_campus_expert))
             if (isGitHubStar) add(OcticonName.BADGE_GITHUB_STAR to "GitHub Star")
         }
         if (badges.isNotEmpty()) {

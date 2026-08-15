@@ -39,10 +39,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.gitmob.app.R
 import com.gitmob.app.data.model.ProfileOwner
 import com.gitmob.app.ui.common.OrganizationsBottomSheet
 import com.gitmob.app.ui.common.PinnedReposSection
@@ -79,7 +81,7 @@ fun ProfileScreen(
                     .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
             )
@@ -104,15 +106,15 @@ fun ProfileScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        Text("加载失败", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "检查网络连接后重试",
+                            stringResource(R.string.common_check_network_retry),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
                         )
                         // 修复：之前是个空壳 lambda，现在走 viewModel.retry()
                         // （内部会复位 initialized 标志 + 重新触发 load，与 HomeScreen 行为一致）
-                        Button(onClick = viewModel::retry) { Text("重试") }
+                        Button(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
                 state.owner != null -> when (val owner = state.owner!!) {
@@ -203,9 +205,9 @@ private fun PersonProfileContent(
         // ---- 统计行：仓库 / 组织 / 星标 / Gist，与 HomeScreen 视觉完全对齐 ----
         ProfileStatsRow(
             stats = listOf(
-                StatItem(OcticonName.REPO, owner.repoCount, "仓库", onClick = onReposClick),
-                StatItem(OcticonName.ORGANIZATION, owner.organizationsCount, "组织", onClick = onOrganizationsClick),
-                StatItem(OcticonName.STAR, owner.starredCount, "星标", onClick = onStarredClick),
+                StatItem(OcticonName.REPO, owner.repoCount, stringResource(R.string.common_repository), onClick = onReposClick),
+                StatItem(OcticonName.ORGANIZATION, owner.organizationsCount, stringResource(R.string.common_organizations), onClick = onOrganizationsClick),
+                StatItem(OcticonName.STAR, owner.starredCount, stringResource(R.string.nav_tab_stars), onClick = onStarredClick),
                 StatItem(Icons.Default.Code, owner.gistCount, "Gist", onClick = onGistClick),
             ),
             modifier = Modifier.padding(top = 16.dp),
@@ -264,7 +266,7 @@ private fun OrgProfileContent(
                     if (owner.isVerified) {
                         Icon(
                             Icons.Default.Verified,
-                            contentDescription = "已验证",
+                            contentDescription = stringResource(R.string.profile_verified),
                             modifier = Modifier
                                 .padding(start = 4.dp)
                                 .size(18.dp),
@@ -280,11 +282,11 @@ private fun OrgProfileContent(
         Box(modifier = Modifier.padding(top = 12.dp)) {
             if (owner.viewerIsFollowing) {
                 OutlinedButton(onClick = onFollowClick) {
-                    Text("已关注")
+                    Text(stringResource(R.string.common_following))
                 }
             } else {
                 Button(onClick = onFollowClick) {
-                    Text("关注")
+                    Text(stringResource(R.string.common_follow))
                 }
             }
         }
@@ -302,8 +304,8 @@ private fun OrgProfileContent(
         // （和个人 Profile 的四列统计行保持相同的 SpaceEvenly 等距样式，只是元素数量为 2）
         ProfileStatsRow(
             stats = listOf(
-                StatItem(OcticonName.REPO, owner.repoCount, "仓库", onClick = onReposClick),
-                StatItem(OcticonName.PEOPLE, owner.membersCount, "成员", onClick = onMembersClick),
+                StatItem(OcticonName.REPO, owner.repoCount, stringResource(R.string.common_repository), onClick = onReposClick),
+                StatItem(OcticonName.PEOPLE, owner.membersCount, stringResource(R.string.common_members), onClick = onMembersClick),
             ),
             modifier = Modifier.padding(top = 12.dp),
         )

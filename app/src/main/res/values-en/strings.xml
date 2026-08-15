@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings · Language -->
+    <string name="settings_language">Language</string>
+    <string name="settings_language_system">Follow system</string>
+    <string name="settings_language_system_desc">Use the device system language</string>
+    <string name="lang_desc_zh_hans">Chinese (Simplified)</string>
+    <string name="lang_desc_zh_hant">Chinese (Traditional)</string>
+    <string name="lang_desc_en">English</string>
+
+    <!-- Errors -->
+    <string name="error_unauthorized">Session expired, please sign in again</string>
+    <string name="error_forbidden">You do not have permission to do this</string>
+    <string name="error_rate_limited">Too many requests, please try again later</string>
+    <string name="error_network">Network error, please check your connection</string>
+    <string name="error_request_failed">Request failed</string>
+    <string name="error_user_not_found">User not found</string>
+    <string name="error_owner_not_found">User or organization not found</string>
+    <string name="error_org_not_found">Organization not found</string>
+    <string name="error_repo_not_found">Repository not found</string>
+    <string name="error_list_not_found">List not found</string>
+    <string name="error_list_create_failed">Failed to create list</string>
+    <string name="error_list_update_failed">Failed to update list</string>
+
+    <!-- Login -->
+    <string name="login_token_required">Please enter a Personal Access Token</string>
+
+    <!-- Navigation · bottom tabs and placeholder screens -->
+    <string name="nav_tab_home">Home</string>
+    <string name="nav_tab_stars">Stars</string>
+    <string name="nav_tab_settings">Settings</string>
+    <string name="nav_placeholder_wip">%1$s (in development)</string>
+    <string name="nav_code_browser">Code browser (%1$s)</string>
+    <string name="nav_commit_history">Commit history (%1$s)</string>
+
+    <!-- Common · shared vocabulary -->
+    <string name="common_repository">Repositories</string>
+    <string name="common_private">Private</string>
+    <string name="common_archived">Archived</string>
+    <string name="common_forked_from">Forked from %1$s/%2$s</string>
+    <string name="common_open_source_repo">Open the source repository</string>
+    <string name="common_open_homepage">Open project homepage</string>
+    <string name="common_unstar">Unstar</string>
+    <string name="common_add_to_list">Add to list</string>
+    <string name="common_pinned">Pinned</string>
+    <string name="common_select_organization">Select organization</string>
+    <string name="common_follow">Follow</string>
+    <string name="common_following">Following</string>
+    <string name="common_followers_count">%1$d followers</string>
+    <string name="common_following_count">%1$d following</string>
+    <string name="common_badge_developer_program">Developer Program Member</string>
+    <string name="common_badge_bounty_hunter">Security Bounty Hunter</string>
+    <string name="common_badge_campus_expert">Campus Expert</string>
+    <string name="common_secret">Secret</string>
+    <string name="common_file_no_preview">This file cannot be previewed</string>
+    <string name="common_state_closed">Closed</string>
+
+    <!-- State · GitHubStateIcon labels -->
+    <string name="state_open">Open</string>
+    <string name="state_reopened">Reopened</string>
+    <string name="state_not_planned">Not planned</string>
+    <string name="state_duplicate">Duplicate</string>
+    <string name="state_completed">Completed</string>
+    <string name="state_merged">Merged</string>
+    <string name="state_draft">Draft</string>
+    <string name="state_resolved">Resolved</string>
+    <string name="state_outdated">Outdated</string>
+    <string name="state_prerelease">Pre-release</string>
+    <string name="state_published">Published</string>
+    <string name="state_answered">Answered</string>
+    <string name="state_locked">Locked</string>
+    <string name="state_latest">Latest</string>
+
+    <!-- Common · back -->
+    <string name="common_back">Back</string>
+
+    <!-- Settings · main page -->
+    <string name="settings_section_preferences">Preferences</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_section_app">App</string>
+    <string name="settings_about">About</string>
+    <string name="settings_about_summary">Version, project, and community info</string>
+    <string name="settings_section_account">Account</string>
+    <string name="settings_logout">Sign out</string>
+    <string name="settings_logout_summary">Sign out of the current GitHub account</string>
+
+    <!-- Settings · theme mode -->
+    <string name="settings_theme_mode">Theme mode</string>
+    <string name="settings_theme_mode_system">Follow system</string>
+    <string name="settings_theme_mode_light">Light</string>
+    <string name="settings_theme_mode_dark">Dark</string>
+
+    <!-- Settings · color source summary -->
+    <string name="settings_color_source_wallpaper">Dynamic color</string>
+    <string name="settings_color_source_brand">GitMob brand color</string>
+    <string name="settings_color_source_custom">Custom theme color</string>
+
+    <!-- Settings · appearance page -->
+    <string name="settings_dark_display">Dark theme</string>
+    <string name="settings_amoled_title">AMOLED black</string>
+    <string name="settings_amoled_desc">Use a pure black background in dark theme</string>
+    <string name="settings_color_source">Color source</string>
+    <string name="settings_dynamic_color_title">Dynamic color</string>
+    <string name="settings_dynamic_color_desc">Use Material You colors from your current wallpaper</string>
+    <string name="settings_theme_color">Theme color</string>
+    <string name="settings_theme_color_disabled_hint">Turn off dynamic color to use preset colors</string>
+
+    <!-- Settings · seed color names -->
+    <string name="settings_seed_color_coral">GitMob Coral</string>
+    <string name="settings_seed_color_red">Red</string>
+    <string name="settings_seed_color_pink">Pink</string>
+    <string name="settings_seed_color_purple">Purple</string>
+    <string name="settings_seed_color_deep_purple">Deep purple</string>
+    <string name="settings_seed_color_indigo">Indigo</string>
+    <string name="settings_seed_color_blue">Blue</string>
+    <string name="settings_seed_color_cyan">Cyan</string>
+    <string name="settings_seed_color_teal">Teal</string>
+    <string name="settings_seed_color_green">Green</string>
+    <string name="settings_seed_color_yellow">Yellow</string>
+    <string name="settings_seed_color_amber">Amber</string>
+    <string name="settings_seed_color_orange">Orange</string>
+    <string name="settings_seed_color_brown">Brown</string>
+    <string name="settings_seed_color_blue_grey">Blue grey</string>
+    <string name="settings_seed_color_soft_coral">Soft coral</string>
+
+    <!-- Settings · palette style -->
+    <string name="settings_palette_style">Palette style</string>
+    <string name="settings_palette_tonal_spot">Tonal Spot</string>
+    <string name="settings_palette_tonal_spot_desc">Balanced, calm default Material colors</string>
+    <string name="settings_palette_neutral">Neutral</string>
+    <string name="settings_palette_neutral_desc">Lower chroma, closer to a grayscale interface</string>
+    <string name="settings_palette_vibrant">Vibrant</string>
+    <string name="settings_palette_vibrant_desc">More saturated primary and secondary colors</string>
+    <string name="settings_palette_expressive">Expressive</string>
+    <string name="settings_palette_expressive_desc">Livelier hue combinations with stronger contrast</string>
+    <string name="settings_palette_rainbow">Rainbow</string>
+    <string name="settings_palette_rainbow_desc">Generates a richer multi-color palette</string>
+    <string name="settings_palette_fruit_salad">Fruit Salad</string>
+    <string name="settings_palette_fruit_salad_desc">Light, playful combinations of adjacent hues</string>
+    <string name="settings_palette_monochrome">Monochrome</string>
+    <string name="settings_palette_monochrome_desc">Black, white, and gray shades only</string>
+    <string name="settings_palette_fidelity">Fidelity</string>
+    <string name="settings_palette_fidelity_desc">Preserves the original look of the seed color</string>
+    <string name="settings_palette_content">Content</string>
+    <string name="settings_palette_content_desc">Builds adjacent and complementary colors around the content color</string>
+
+    <!-- Settings · color spec -->
+    <string name="settings_color_spec">Color spec</string>
+    <string name="settings_color_spec_2021_desc">Mature and stable, keeps the current default look</string>
+    <string name="settings_color_spec_2025_desc">Uses the new dynamic color algorithm and tonal relationships</string>
+
+    <!-- Settings · interaction -->
+    <string name="settings_section_interaction">Interaction</string>
+    <string name="settings_predictive_back_title">Predictive back</string>
+    <string name="settings_predictive_back_desc">Preview the upcoming page during a back gesture</string>
+    <string name="settings_page_scale_title">Page zoom</string>
+    <string name="settings_page_scale_desc">Zooms app content only, without changing system fonts or bars</string>
+
+    <!-- About -->
+    <string name="about_section_developer">Developer</string>
+    <string name="about_developer_sub">Tap to view GitHub profile</string>
+    <string name="about_section_project">Project</string>
+    <string name="about_repo_label">GitHub repository</string>
+    <string name="about_section_permissions">Permissions</string>
+    <string name="about_auth_label">GitHub authorization</string>
+    <string name="about_auth_sub">View or revoke GitMob\'s access to your account</string>
+    <string name="about_section_community">Community</string>
+    <string name="about_telegram_label">Telegram group</string>
+
+    <!-- Common · issues/PRs/discussions shared vocabulary -->
+    <string name="common_issues">Issues</string>
+    <string name="common_pull_requests">Pull requests</string>
+    <string name="common_discussions">Discussions</string>
+    <string name="common_all">All</string>
+    <string name="common_load_failed">Failed to load</string>
+    <string name="common_retry">Retry</string>
+
+    <!-- Work · issue/PR/discussion list filters -->
+    <string name="work_items_count">%1$d items</string>
+    <string name="work_select_filter">Select %1$s</string>
+    <string name="work_filter_state">State</string>
+    <string name="work_filter_relation">Relation</string>
+    <string name="work_filter_answer">Answer</string>
+    <string name="work_filter_visibility">Visibility</string>
+    <string name="work_filter_sort">Sort</string>
+    <string name="work_filter_open">Open</string>
+    <string name="work_visibility_public">Public</string>
+    <string name="work_visibility_internal">Internal</string>
+    <string name="work_relation_involved">Involved</string>
+    <string name="work_relation_authored">Created</string>
+    <string name="work_relation_assigned">Assigned</string>
+    <string name="work_relation_mentioned">Mentioned</string>
+    <string name="work_relation_commented">Commented</string>
+    <string name="work_relation_review_requested">Review requested</string>
+    <string name="work_answer_unanswered">Unanswered</string>
+    <string name="work_sort_created_desc">Newest</string>
+    <string name="work_sort_created_asc">Oldest</string>
+    <string name="work_sort_comments_desc">Most commented</string>
+    <string name="work_sort_comments_asc">Least commented</string>
+    <string name="work_sort_updated_desc">Recently updated</string>
+    <string name="work_sort_updated_asc">Least recently updated</string>
+
+    <!-- Common · dialog buttons and shared vocabulary (batch D) -->
+    <string name="common_watchers">Watchers</string>
+    <string name="common_branches">Branches</string>
+    <string name="common_confirm">Confirm</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_save">Save</string>
+    <string name="common_done">Done</string>
+    <string name="common_edit">Edit</string>
+
+    <!-- Repository detail -->
+    <string name="repo_forked_from">" Forked from %1$s/%2$s"</string>
+    <string name="repo_template">Template</string>
+    <string name="repo_starred_count">" Starred %1$d"</string>
+    <string name="repo_star_count">" Star %1$d"</string>
+    <string name="repo_actions">Actions</string>
+    <string name="repo_releases">Releases</string>
+    <string name="repo_contributors">Contributors</string>
+    <string name="repo_license">License</string>
+    <string name="repo_code">Code</string>
+    <string name="repo_commits">Commits</string>
+    <string name="repo_current_ref">Current: %1$s</string>
+    <string name="repo_readme_truncated">README is too long, showing partial content</string>
+
+    <!-- Stars · list management -->
+    <string name="stars_my_lists">My lists</string>
+    <string name="stars_all_stars">All stars</string>
+    <string name="stars_create_list">New list</string>
+    <string name="stars_edit_list">Edit list</string>
+    <string name="stars_list_name">List name</string>
+    <string name="stars_list_description_optional">Description (optional)</string>
+    <string name="stars_list_private">Private list</string>
+    <string name="stars_list_private_desc">Only visible to you</string>
+    <string name="stars_delete_list_title">Delete list?</string>
+    <string name="stars_delete_list_message">This cannot be undone. Repositories in the list will not be unstarred.</string>
+    <string name="stars_delete_this_list">Delete this list</string>
+    <string name="stars_create_new_list">Create new list</string>
+
+    <!-- Branches -->
+    <string name="branches_delete_branch_title">Delete branch %1$s?</string>
+    <string name="common_cannot_be_undone">This cannot be undone.</string>
+    <string name="branches_default_badge">" Default"</string>
+    <string name="branches_current_branch">Current branch</string>
+    <string name="branches_more_actions">More actions</string>
+    <string name="branches_set_default">Set as default branch</string>
+    <string name="branches_delete_branch">Delete branch</string>
+
+    <!-- Batch E · home/profile/inbox/gist/user list/login -->
+    <string name="common_check_network_retry">Check your network connection and retry</string>
+    <string name="common_organizations">Organizations</string>
+    <string name="common_members">Members</string>
+    <string name="profile_verified">Verified</string>
+    <string name="inbox_title">Inbox</string>
+    <string name="inbox_filter_unread">Unread</string>
+    <string name="inbox_filter_read">Read</string>
+    <string name="inbox_empty_all">No notifications</string>
+    <string name="inbox_empty_unread">No unread notifications</string>
+    <string name="inbox_empty_read">No read notifications</string>
+    <string name="gist_title_of_user">Gists by %1$s</string>
+    <string name="gist_title_mine">My gists</string>
+    <string name="gist_category_original">Original</string>
+    <string name="gist_category_forked">Forked</string>
+    <string name="gist_empty_batch">No matching gists in this batch</string>
+    <string name="gist_empty_original">No original gists yet</string>
+    <string name="gist_empty_forked">No forked gists yet</string>
+    <string name="gist_continue_search">Keep searching</string>
+    <string name="userlist_title_followers">Followers</string>
+    <string name="userlist_title_following">Following</string>
+    <string name="userstars_title">Stars by %1$s</string>
+    <string name="login_title">Sign in to GitMob</string>
+    <string name="login_subtitle">Sign in with a Personal Access Token created on GitHub</string>
+    <string name="login_button">Sign in</string>
+
+    <!-- Batch F · repository issue list/detail -->
+    <string name="issue_new">New issue</string>
+    <string name="issue_empty_filtered">No issues match the filters</string>
+    <string name="issue_delete_title">Delete issue #%1$d?</string>
+    <string name="issue_delete_message">This cannot be undone. The issue and its comments will be deleted.</string>
+    <string name="issue_template_picker_title">Issue templates</string>
+    <string name="issue_template_blank">Blank issue</string>
+    <string name="issue_labels">Labels</string>
+    <string name="issue_milestone">Milestone</string>
+    <string name="issue_assignees">Assignees</string>
+    <string name="issue_filter_selected_count">%1$d selected</string>
+    <string name="issue_filter_clear_labels">Clear labels</string>
+    <string name="issue_filter_more">More filters</string>
+    <string name="issue_filter_more_desc">Milestone / assignees</string>
+    <string name="issue_filter_all_milestones">All milestones</string>
+    <string name="issue_no_milestone">No milestone</string>
+    <string name="issue_filter_all_assignee_states">All assignee states</string>
+    <string name="issue_filter_assigned_any">Assigned to anyone</string>
+    <string name="issue_filter_assigned_none">Assigned to nobody</string>
+    <string name="issue_filter_all_authors">All authors</string>
+    <string name="issue_filter_author_login">Author @%1$s</string>
+    <string name="issue_filter_mentioned">Mentioned</string>
+    <string name="issue_filter_mentioned_off">Clear: mentioned</string>
+    <string name="issue_filter_subscribed">Subscribed</string>
+    <string name="issue_filter_subscribed_off">Clear: subscribed</string>
+    <string name="issue_filter_all_updated">Any update time</string>
+    <string name="issue_filter_updated_7d">Updated in the last 7 days</string>
+    <string name="issue_filter_updated_30d">Updated in the last 30 days</string>
+    <string name="issue_meta_milestone">Milestone %1$s</string>
+    <string name="issue_editor_title_label">Title</string>
+    <string name="issue_editor_body_label">Markdown body</string>
+    <string name="issue_create">Create</string>
+    <string name="issue_title_number">Issue #%1$d</string>
+    <string name="issue_subscribe">Subscribe</string>
+    <string name="issue_more">More</string>
+    <string name="issue_edit">Edit issue</string>
+    <string name="issue_close_completed">Close as completed</string>
+    <string name="issue_close_not_planned">Close as not planned</string>
+    <string name="issue_close_duplicate">Close as duplicate</string>
+    <string name="issue_reopen">Reopen</string>
+    <string name="issue_delete">Delete issue</string>
+    <string name="issue_comment_add">Add a comment</string>
+    <string name="issue_comment_submit">Submit comment</string>
+    <string name="issue_comments_count">Comments (%1$d)</string>
+    <string name="issue_delete_comment_title">Delete comment?</string>
+    <string name="issue_detail_milestone">Milestone: %1$s</string>
+    <string name="issue_detail_assignees">Assignees: %1$s</string>
+    <string name="issue_edit_comment">Edit comment</string>
+    <string name="about_logo_desc">GitMob logo</string>
+</resources>

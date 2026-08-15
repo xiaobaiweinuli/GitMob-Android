@@ -6,7 +6,7 @@
          启动窗颜色由系统进程在 App 启动前读取，拿不到 MaterialKolor 运行时调色板，
          只能静态双色近似，见 文档/splash-screen-deep-analysis.md。 -->
     <color name="launch_background">#FFF7F3F9</color>
-    <style name="Theme.GitMob" parent="android:Theme.Material.Light.NoActionBar">
+    <style name="Theme.GitMob" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:windowBackground">@color/launch_background</item>
     </style>
 </resources>

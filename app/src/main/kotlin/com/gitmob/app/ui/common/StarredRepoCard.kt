@@ -26,9 +26,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.gitmob.app.R
 import com.gitmob.app.data.model.StarredRepo
 
 /**
@@ -95,8 +97,8 @@ fun StarredRepoCard(
             if (repo.isFork && forkOwner != null && forkName != null) {
                 RepoMetadataLinkRow(
                     icon = Icons.AutoMirrored.Default.CallSplit,
-                    text = "复刻自: $forkOwner/$forkName",
-                    contentDescription = "打开源仓库",
+                    text = stringResource(R.string.common_forked_from, forkOwner, forkName),
+                    contentDescription = stringResource(R.string.common_open_source_repo),
                     onClick = { onForkSourceClick(forkOwner, forkName) },
                     modifier = Modifier.padding(top = 2.dp),
                 )
@@ -131,14 +133,14 @@ fun StarredRepoCard(
                             IconButton(onClick = it) {
                                 Icon(
                                     Icons.Default.Star,
-                                    contentDescription = "取消星标",
+                                    contentDescription = stringResource(R.string.common_unstar),
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
                         onAddToListClick?.let {
                             IconButton(onClick = it) {
-                                Icon(Icons.Default.BookmarkAdd, contentDescription = "添加到列表")
+                                Icon(Icons.Default.BookmarkAdd, contentDescription = stringResource(R.string.common_add_to_list))
                             }
                         }
                     }
@@ -150,7 +152,7 @@ fun StarredRepoCard(
                 RepoMetadataLinkRow(
                     icon = Icons.Default.Link,
                     text = homepageUrl,
-                    contentDescription = "打开项目主页",
+                    contentDescription = stringResource(R.string.common_open_homepage),
                     onClick = { onHomepageClick(homepageUrl) },
                     modifier = Modifier.padding(top = 2.dp),
                 )
@@ -207,14 +209,14 @@ fun StarredRepoCard(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (repo.isPrivate) {
                         StatusChip(
-                            "私有",
+                            stringResource(R.string.common_private),
                             MaterialTheme.colorScheme.errorContainer,
                             MaterialTheme.colorScheme.onErrorContainer,
                         )
                     }
                     if (repo.isArchived) {
                         StatusChip(
-                            "已归档",
+                            stringResource(R.string.common_archived),
                             MaterialTheme.colorScheme.errorContainer,
                             MaterialTheme.colorScheme.onErrorContainer,
                         )

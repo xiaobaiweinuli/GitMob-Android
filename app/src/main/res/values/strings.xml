@@ -1,3 +1,330 @@
 <resources>
-    <string name="app_name">GitMob</string>
+    <string name="app_name" translatable="false">GitMob</string>
+
+    <!-- 设置 · 语言 -->
+    <string name="settings_language">语言</string>
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_system_desc">使用设备的系统语言</string>
+    <string name="lang_name_zh_hans" translatable="false">简体中文</string>
+    <string name="lang_name_zh_hant" translatable="false">繁體中文</string>
+    <string name="lang_name_en" translatable="false">English</string>
+    <string name="lang_desc_zh_hans">中文（简体）</string>
+    <string name="lang_desc_zh_hant">中文（繁体）</string>
+    <string name="lang_desc_en">英语</string>
+
+    <!-- 错误提示（ErrorBannerHost / ApiError） -->
+    <string name="error_unauthorized">登录已失效，请重新登录</string>
+    <string name="error_forbidden">权限不足，无法执行此操作</string>
+    <string name="error_rate_limited">请求过于频繁，请稍后再试</string>
+    <string name="error_network">网络异常，请检查网络连接</string>
+    <string name="error_request_failed">请求出错</string>
+    <string name="error_user_not_found">用户不存在</string>
+    <string name="error_owner_not_found">用户或组织不存在</string>
+    <string name="error_org_not_found">组织不存在</string>
+    <string name="error_repo_not_found">仓库不存在</string>
+    <string name="error_list_not_found">列表不存在</string>
+    <string name="error_list_create_failed">创建列表失败</string>
+    <string name="error_list_update_failed">更新列表失败</string>
+
+    <!-- 登录 -->
+    <string name="login_token_required">请输入 Personal Access Token</string>
+
+    <!-- 导航 · 底部 Tab 与占位页 -->
+    <string name="nav_tab_home">主页</string>
+    <string name="nav_tab_stars">星标</string>
+    <string name="nav_tab_settings">设置</string>
+    <string name="nav_tab_gist" translatable="false">Gist</string>
+    <string name="nav_placeholder_wip">%1$s（开发中）</string>
+    <string name="nav_code_browser">代码浏览（%1$s）</string>
+    <string name="nav_commit_history">提交历史（%1$s）</string>
+
+    <!-- 通用 · 跨页复用词 -->
+    <string name="common_repository">仓库</string>
+    <string name="common_private">私有</string>
+    <string name="common_archived">已归档</string>
+    <string name="common_forked_from">复刻自: %1$s/%2$s</string>
+    <string name="common_open_source_repo">打开源仓库</string>
+    <string name="common_open_homepage">打开项目主页</string>
+    <string name="common_unstar">取消星标</string>
+    <string name="common_add_to_list">添加到列表</string>
+    <string name="common_pinned">已置顶</string>
+    <string name="common_select_organization">选择组织</string>
+    <string name="common_follow">关注</string>
+    <string name="common_following">已关注</string>
+    <string name="common_followers_count">%1$d 个关注者</string>
+    <string name="common_following_count">%1$d 关注</string>
+    <string name="common_badge_developer_program">开发者计划成员</string>
+    <string name="common_badge_bounty_hunter">安全赏金猎人</string>
+    <string name="common_badge_campus_expert">校园专家</string>
+    <string name="common_secret">秘密</string>
+    <string name="common_file_no_preview">此文件无法预览</string>
+    <string name="common_state_closed">已关闭</string>
+
+    <!-- 状态 · GitHubStateIcon 状态标签 -->
+    <string name="state_open">开放</string>
+    <string name="state_reopened">重新开放</string>
+    <string name="state_not_planned">不计划</string>
+    <string name="state_duplicate">重复</string>
+    <string name="state_completed">已完成</string>
+    <string name="state_merged">已合并</string>
+    <string name="state_draft">草稿</string>
+    <string name="state_resolved">已解决</string>
+    <string name="state_outdated">已过时</string>
+    <string name="state_prerelease">预发布</string>
+    <string name="state_published">已发布</string>
+    <string name="state_answered">已回答</string>
+    <string name="state_locked">已锁定</string>
+    <string name="state_latest">最新</string>
+
+    <!-- 通用 · 返回 -->
+    <string name="common_back">返回</string>
+
+    <!-- 设置 · 主页 -->
+    <string name="settings_section_preferences">偏好设置</string>
+    <string name="settings_appearance">外观</string>
+    <string name="settings_section_app">应用</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_about_summary">版本、项目与社区信息</string>
+    <string name="settings_section_account">账号</string>
+    <string name="settings_logout">退出登录</string>
+    <string name="settings_logout_summary">退出当前 GitHub 账号</string>
+
+    <!-- 设置 · 主题模式 -->
+    <string name="settings_theme_mode">主题模式</string>
+    <string name="settings_theme_mode_system">跟随系统</string>
+    <string name="settings_theme_mode_light">浅色</string>
+    <string name="settings_theme_mode_dark">深色</string>
+
+    <!-- 设置 · 颜色来源摘要 -->
+    <string name="settings_color_source_wallpaper">壁纸取色</string>
+    <string name="settings_color_source_brand">GitMob 品牌色</string>
+    <string name="settings_color_source_custom">自定义主题色</string>
+
+    <!-- 设置 · 外观页 -->
+    <string name="settings_dark_display">深色显示</string>
+    <string name="settings_amoled_title">AMOLED 纯黑</string>
+    <string name="settings_amoled_desc">仅在深色主题下使用纯黑背景</string>
+    <string name="settings_color_source">颜色来源</string>
+    <string name="settings_dynamic_color_title">跟随系统壁纸</string>
+    <string name="settings_dynamic_color_desc">使用当前壁纸的 Material You 颜色</string>
+    <string name="settings_theme_color">主题色</string>
+    <string name="settings_theme_color_disabled_hint">关闭壁纸取色后可使用预设颜色</string>
+
+    <!-- 设置 · 种子色名称 -->
+    <string name="settings_seed_color_coral">GitMob 珊瑚色</string>
+    <string name="settings_seed_color_red">红色</string>
+    <string name="settings_seed_color_pink">粉色</string>
+    <string name="settings_seed_color_purple">紫色</string>
+    <string name="settings_seed_color_deep_purple">深紫色</string>
+    <string name="settings_seed_color_indigo">靛蓝色</string>
+    <string name="settings_seed_color_blue">蓝色</string>
+    <string name="settings_seed_color_cyan">青色</string>
+    <string name="settings_seed_color_teal">蓝绿色</string>
+    <string name="settings_seed_color_green">绿色</string>
+    <string name="settings_seed_color_yellow">黄色</string>
+    <string name="settings_seed_color_amber">琥珀色</string>
+    <string name="settings_seed_color_orange">橙色</string>
+    <string name="settings_seed_color_brown">棕色</string>
+    <string name="settings_seed_color_blue_grey">蓝灰色</string>
+    <string name="settings_seed_color_soft_coral">柔珊瑚色</string>
+
+    <!-- 设置 · 调色板风格 -->
+    <string name="settings_palette_style">调色板风格</string>
+    <string name="settings_palette_tonal_spot">柔和</string>
+    <string name="settings_palette_tonal_spot_desc">均衡、沉稳的默认 Material 配色</string>
+    <string name="settings_palette_neutral">中性</string>
+    <string name="settings_palette_neutral_desc">降低彩度，更接近灰阶界面</string>
+    <string name="settings_palette_vibrant">鲜明</string>
+    <string name="settings_palette_vibrant_desc">提高主色与辅助色的鲜艳程度</string>
+    <string name="settings_palette_expressive">表现力</string>
+    <string name="settings_palette_expressive_desc">使用更活泼、对比更明显的色相组合</string>
+    <string name="settings_palette_rainbow">彩虹</string>
+    <string name="settings_palette_rainbow_desc">生成更丰富的多色调色板</string>
+    <string name="settings_palette_fruit_salad">果味</string>
+    <string name="settings_palette_fruit_salad_desc">偏轻快的邻近色组合</string>
+    <string name="settings_palette_monochrome">单色</string>
+    <string name="settings_palette_monochrome_desc">仅使用黑、白、灰色阶</string>
+    <string name="settings_palette_fidelity">忠实</string>
+    <string name="settings_palette_fidelity_desc">尽量保留种子色的原始观感</string>
+    <string name="settings_palette_content">内容</string>
+    <string name="settings_palette_content_desc">围绕内容色生成相邻与互补色</string>
+
+    <!-- 设置 · 颜色规格 -->
+    <string name="settings_color_spec">颜色规格</string>
+    <string name="settings_color_spec_2021_desc">成熟稳定，保持当前默认配色表现</string>
+    <string name="settings_color_spec_2025_desc">使用新版动态颜色算法与色调关系</string>
+
+    <!-- 设置 · 交互 -->
+    <string name="settings_section_interaction">交互</string>
+    <string name="settings_predictive_back_title">预测性返回</string>
+    <string name="settings_predictive_back_desc">返回手势时预览即将显示的页面</string>
+    <string name="settings_page_scale_title">页面缩放</string>
+    <string name="settings_page_scale_desc">仅缩放 App 内容，不改变系统字体和系统栏</string>
+
+    <!-- 关于 -->
+    <string name="about_section_developer">开发者</string>
+    <string name="about_developer_sub">点击查看 GitHub 主页</string>
+    <string name="about_section_project">项目</string>
+    <string name="about_repo_label">GitHub 仓库</string>
+    <string name="about_section_permissions">权限</string>
+    <string name="about_auth_label">GitHub 授权管理</string>
+    <string name="about_auth_sub">查看、撤销 GitMob 对你账号的授权</string>
+    <string name="about_section_community">社区</string>
+    <string name="about_telegram_label">Telegram 群组</string>
+
+    <!-- 通用 · 议题/PR/讨论 复用词 -->
+    <string name="common_issues">议题</string>
+    <string name="common_pull_requests">拉取请求</string>
+    <string name="common_discussions">讨论</string>
+    <string name="common_all">全部</string>
+    <string name="common_load_failed">加载失败</string>
+    <string name="common_retry">重试</string>
+
+    <!-- 工作 · 议题/PR/讨论列表筛选 -->
+    <string name="work_items_count">%1$d 条</string>
+    <string name="work_select_filter">选择%1$s</string>
+    <string name="work_filter_state">状态</string>
+    <string name="work_filter_relation">关系</string>
+    <string name="work_filter_answer">回答</string>
+    <string name="work_filter_visibility">可见性</string>
+    <string name="work_filter_sort">排序</string>
+    <string name="work_filter_open">打开</string>
+    <string name="work_visibility_public">公开</string>
+    <string name="work_visibility_internal">内部</string>
+    <string name="work_relation_involved">所有参与</string>
+    <string name="work_relation_authored">我创建的</string>
+    <string name="work_relation_assigned">分配给我</string>
+    <string name="work_relation_mentioned">提及我</string>
+    <string name="work_relation_commented">我评论过</string>
+    <string name="work_relation_review_requested">请求我审查</string>
+    <string name="work_answer_unanswered">未回答</string>
+    <string name="work_sort_created_desc">最新创建</string>
+    <string name="work_sort_created_asc">最早创建</string>
+    <string name="work_sort_comments_desc">最多评论</string>
+    <string name="work_sort_comments_asc">最少评论</string>
+    <string name="work_sort_updated_desc">最近更新</string>
+    <string name="work_sort_updated_asc">最早更新</string>
+
+    <!-- 通用 · 对话框按钮与跨页词（批次 D） -->
+    <string name="common_watchers">关注者</string>
+    <string name="common_branches">分支</string>
+    <string name="common_confirm">确认</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_delete">删除</string>
+    <string name="common_save">保存</string>
+    <string name="common_done">完成</string>
+    <string name="common_edit">编辑</string>
+
+    <!-- 仓库详情 -->
+    <string name="repo_forked_from">" 复刻自 %1$s/%2$s"</string>
+    <string name="repo_template">模板</string>
+    <string name="repo_starred_count">" 已标星 %1$d"</string>
+    <string name="repo_star_count">" 标星 %1$d"</string>
+    <string name="repo_actions">操作</string>
+    <string name="repo_releases">发行版</string>
+    <string name="repo_contributors">贡献者</string>
+    <string name="repo_license">许可证</string>
+    <string name="repo_code">代码</string>
+    <string name="repo_commits">提交</string>
+    <string name="repo_current_ref">当前：%1$s</string>
+    <string name="repo_readme_truncated">README 内容过长，仅显示部分</string>
+
+    <!-- 星标 · 列表管理 -->
+    <string name="stars_my_lists">我的列表</string>
+    <string name="stars_all_stars">全部星标</string>
+    <string name="stars_create_list">新建列表</string>
+    <string name="stars_edit_list">编辑列表</string>
+    <string name="stars_list_name">列表名称</string>
+    <string name="stars_list_description_optional">描述（可选）</string>
+    <string name="stars_list_private">私有列表</string>
+    <string name="stars_list_private_desc">仅自己可见</string>
+    <string name="stars_delete_list_title">删除列表？</string>
+    <string name="stars_delete_list_message">此操作无法撤销，列表内的仓库不会被取消星标。</string>
+    <string name="stars_delete_this_list">删除此列表</string>
+    <string name="stars_create_new_list">创建新列表</string>
+
+    <!-- 分支 -->
+    <string name="branches_delete_branch_title">删除分支 %1$s？</string>
+    <string name="common_cannot_be_undone">此操作无法撤销。</string>
+    <string name="branches_default_badge">" 默认"</string>
+    <string name="branches_current_branch">当前分支</string>
+    <string name="branches_more_actions">更多操作</string>
+    <string name="branches_set_default">设为默认分支</string>
+    <string name="branches_delete_branch">删除分支</string>
+
+    <!-- 批次 E · 主页/资料/收件箱/Gist/用户列表/登录 -->
+    <string name="common_check_network_retry">检查网络连接后重试</string>
+    <string name="common_organizations">组织</string>
+    <string name="common_members">成员</string>
+    <string name="profile_verified">已验证</string>
+    <string name="inbox_title">收件箱</string>
+    <string name="inbox_filter_unread">未读</string>
+    <string name="inbox_filter_read">已读</string>
+    <string name="inbox_empty_all">没有通知</string>
+    <string name="inbox_empty_unread">没有未读通知</string>
+    <string name="inbox_empty_read">没有已读通知</string>
+    <string name="gist_title_of_user">@%1$s 的 Gist</string>
+    <string name="gist_title_mine">我的 Gist</string>
+    <string name="gist_category_original">原创</string>
+    <string name="gist_category_forked">复刻</string>
+    <string name="gist_empty_batch">当前批次没有匹配的 Gist</string>
+    <string name="gist_empty_original">还没有原创 Gist</string>
+    <string name="gist_empty_forked">还没有复刻 Gist</string>
+    <string name="gist_continue_search">继续查找</string>
+    <string name="userlist_title_followers">关注者</string>
+    <string name="userlist_title_following">关注</string>
+    <string name="userstars_title">@%1$s 的星标</string>
+    <string name="login_title">登录 GitMob</string>
+    <string name="login_subtitle">使用你在 GitHub 上创建的 Personal Access Token 登录</string>
+    <string name="login_button">登录</string>
+
+    <!-- 批次 F · 仓库议题列表/详情 -->
+    <string name="issue_new">新建议题</string>
+    <string name="issue_empty_filtered">没有符合条件的议题</string>
+    <string name="issue_delete_title">删除议题 #%1$d？</string>
+    <string name="issue_delete_message">此操作无法撤销，议题及其评论都会被删除。</string>
+    <string name="issue_template_picker_title">选择议题模板</string>
+    <string name="issue_template_blank">空白议题</string>
+    <string name="issue_labels">标签</string>
+    <string name="issue_milestone">里程碑</string>
+    <string name="issue_assignees">指派人</string>
+    <string name="issue_filter_selected_count">已选 %1$d</string>
+    <string name="issue_filter_clear_labels">清除标签</string>
+    <string name="issue_filter_more">更多筛选</string>
+    <string name="issue_filter_more_desc">里程碑 / 指派人</string>
+    <string name="issue_filter_all_milestones">全部里程碑</string>
+    <string name="issue_no_milestone">无里程碑</string>
+    <string name="issue_filter_all_assignee_states">全部指派状态</string>
+    <string name="issue_filter_assigned_any">已指派给任何人</string>
+    <string name="issue_filter_assigned_none">无人指派</string>
+    <string name="issue_filter_all_authors">全部创建者</string>
+    <string name="issue_filter_author_login">创建者 @%1$s</string>
+    <string name="issue_filter_mentioned">被提及</string>
+    <string name="issue_filter_mentioned_off">取消：被提及</string>
+    <string name="issue_filter_subscribed">已订阅</string>
+    <string name="issue_filter_subscribed_off">取消：已订阅</string>
+    <string name="issue_filter_all_updated">全部更新时间</string>
+    <string name="issue_filter_updated_7d">最近 7 天更新</string>
+    <string name="issue_filter_updated_30d">最近 30 天更新</string>
+    <string name="issue_meta_milestone">里程碑 %1$s</string>
+    <string name="issue_editor_title_label">标题</string>
+    <string name="issue_editor_body_label">Markdown 正文</string>
+    <string name="issue_create">创建</string>
+    <string name="issue_title_number">议题 #%1$d</string>
+    <string name="issue_subscribe">订阅</string>
+    <string name="issue_more">更多</string>
+    <string name="issue_edit">编辑议题</string>
+    <string name="issue_close_completed">关闭为已完成</string>
+    <string name="issue_close_not_planned">关闭为不计划处理</string>
+    <string name="issue_close_duplicate">关闭为重复</string>
+    <string name="issue_reopen">重新打开</string>
+    <string name="issue_delete">删除议题</string>
+    <string name="issue_comment_add">添加评论</string>
+    <string name="issue_comment_submit">提交评论</string>
+    <string name="issue_comments_count">评论 %1$d</string>
+    <string name="issue_delete_comment_title">删除评论？</string>
+    <string name="issue_detail_milestone">里程碑：%1$s</string>
+    <string name="issue_detail_assignees">指派：%1$s</string>
+    <string name="issue_edit_comment">编辑评论</string>
+    <string name="about_logo_desc">GitMob 标志</string>
 </resources>

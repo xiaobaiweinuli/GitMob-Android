@@ -1,6 +1,7 @@
 package com.gitmob.app.navigation
 
 import androidx.activity.compose.LocalActivity
+import androidx.annotation.StringRes
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -38,10 +39,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
+import com.gitmob.app.R
 import com.gitmob.app.core.error.ErrorBannerHost
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.ui.branches.BranchesScreen
@@ -68,7 +71,7 @@ import com.gitmob.app.ui.work.WorkDiscussionListScreen
 import com.gitmob.app.ui.work.WorkIssueListScreen
 import com.gitmob.app.ui.work.WorkPullRequestListScreen
 
-private data class BottomTab(val route: Route, val label: String, val icon: ImageVector)
+private data class BottomTab(val route: Route, @StringRes val labelRes: Int, val icon: ImageVector)
 
 /**
  * 全站统一的页面转场：淡入淡出（draw 阶段 alpha，无位移）。
@@ -84,11 +87,11 @@ private fun crossFadeTransition(): ContentTransform =
     fadeIn(animationSpec = tween(260)) togetherWith fadeOut(animationSpec = tween(260))
 
 private val bottomTabs = listOf(
-    BottomTab(HomeRoute, "主页", Icons.Default.Home),
-    BottomTab(ReposRoute, "仓库", Icons.Default.Storage),
-    BottomTab(StarsRoute, "星标", Icons.Default.Star),
-    BottomTab(GistRoute, "Gist", Icons.Default.Code),
-    BottomTab(SettingsRoute, "设置", Icons.Default.Settings),
+    BottomTab(HomeRoute, R.string.nav_tab_home, Icons.Default.Home),
+    BottomTab(ReposRoute, R.string.common_repository, Icons.Default.Storage),
+    BottomTab(StarsRoute, R.string.nav_tab_stars, Icons.Default.Star),
+    BottomTab(GistRoute, R.string.nav_tab_gist, Icons.Default.Code),
+    BottomTab(SettingsRoute, R.string.nav_tab_settings, Icons.Default.Settings),
 )
 
 /**
@@ -376,8 +379,8 @@ private fun LoggedInApp(
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
         }
-        entry<RepoCodeRoute> { route -> PlaceholderScreen("代码浏览（${route.ref}）") }
-        entry<RepoCommitsRoute> { route -> PlaceholderScreen("提交历史（${route.ref}）") }
+        entry<RepoCodeRoute> { route -> PlaceholderScreen(stringResource(R.string.nav_code_browser, route.ref)) }
+        entry<RepoCommitsRoute> { route -> PlaceholderScreen(stringResource(R.string.nav_commit_history, route.ref)) }
 
         // ========== 复用参数化 Screen 的 push 路由 ==========
 
@@ -434,8 +437,8 @@ private fun LoggedInApp(
                                     navigator.navigate(tab.route)
                                 }
                             },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) },
+                            icon = { Icon(tab.icon, contentDescription = stringResource(tab.labelRes)) },
+                            label = { Text(stringResource(tab.labelRes)) },
                         )
                     }
                 }

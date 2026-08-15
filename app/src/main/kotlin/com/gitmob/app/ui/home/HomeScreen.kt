@@ -34,10 +34,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.data.model.ViewerProfile
 import com.gitmob.app.ui.common.OrganizationsBottomSheet
 import com.gitmob.app.ui.common.PinnedReposSection
@@ -151,13 +153,13 @@ private fun RetryContent(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("加载失败", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
         Text(
-            "检查网络连接后重试",
+            stringResource(R.string.common_check_network_retry),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
         )
-        Button(onClick = onRetry) { Text("重试") }
+        Button(onClick = onRetry) { Text(stringResource(R.string.common_retry)) }
     }
 }
 
@@ -221,9 +223,9 @@ private fun ProfileContent(
         // ---- 统计行：仓库 / 组织 / 星标 / Gist，公共 ProfileStatsRow 统一渲染 ----
         ProfileStatsRow(
             stats = listOf(
-                StatItem(OcticonName.REPO, profile.repoCount, "仓库", onClick = onReposClick),
-                StatItem(OcticonName.ORGANIZATION, profile.user.organizationsCount, "组织", onClick = onOrganizationsClick),
-                StatItem(OcticonName.STAR, profile.starredCount, "星标", onClick = onStarredClick),
+                StatItem(OcticonName.REPO, profile.repoCount, stringResource(R.string.common_repository), onClick = onReposClick),
+                StatItem(OcticonName.ORGANIZATION, profile.user.organizationsCount, stringResource(R.string.common_organizations), onClick = onOrganizationsClick),
+                StatItem(OcticonName.STAR, profile.starredCount, stringResource(R.string.nav_tab_stars), onClick = onStarredClick),
                 StatItem(Icons.Default.Code, profile.gistCount, "Gist", onClick = onGistClick),
             ),
             modifier = Modifier.padding(top = 16.dp),
@@ -238,10 +240,10 @@ private fun ProfileContent(
         // ---- 事务入口：议题/PR/讨论带数字（involves:@me 聚合，只对当前登录用户有意义），
         // 收件箱纯入口不带数字（REST 通知接口没有现成的 count 端点，不强求精确数字） ----
         HorizontalDivider(modifier = Modifier.padding(top = 20.dp, bottom = 4.dp))
-        WorkEntryRow(Icons.Default.Adjust, "议题", profile.involvedIssueCount, onWorkIssuesClick)
-        WorkEntryRow(Icons.AutoMirrored.Filled.CallSplit, "拉取请求", profile.involvedPrCount, onWorkPullRequestsClick)
-        WorkEntryRow(Icons.Default.ChatBubble, "讨论", profile.involvedDiscussionCount, onWorkDiscussionsClick)
-        WorkEntryRow(Icons.Default.Inbox, "收件箱", count = null, onInboxClick)
+        WorkEntryRow(Icons.Default.Adjust, stringResource(R.string.common_issues), profile.involvedIssueCount, onWorkIssuesClick)
+        WorkEntryRow(Icons.AutoMirrored.Filled.CallSplit, stringResource(R.string.common_pull_requests), profile.involvedPrCount, onWorkPullRequestsClick)
+        WorkEntryRow(Icons.Default.ChatBubble, stringResource(R.string.common_discussions), profile.involvedDiscussionCount, onWorkDiscussionsClick)
+        WorkEntryRow(Icons.Default.Inbox, stringResource(R.string.inbox_title), count = null, onInboxClick)
     }
 }
 

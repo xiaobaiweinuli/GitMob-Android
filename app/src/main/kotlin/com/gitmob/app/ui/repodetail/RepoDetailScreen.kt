@@ -55,10 +55,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.common.RepositoryTopicsRow
@@ -91,7 +93,7 @@ fun RepoDetailScreen(
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.common_back),
                         )
                     }
                 },
@@ -119,8 +121,8 @@ fun RepoDetailScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        Text("加载失败", style = MaterialTheme.typography.titleMedium)
-                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) { Text("重试") }
+                        Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
+                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
                 state.detail != null -> {
@@ -157,7 +159,7 @@ fun RepoDetailScreen(
                         if (readmeHtml != null) {
                             if (state.readmeTruncated) {
                                 Text(
-                                    "README 内容过长，仅显示部分",
+                                    stringResource(R.string.repo_readme_truncated),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -218,7 +220,7 @@ private fun RepoHeader(
             ) {
                 Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(14.dp))
                 Text(
-                    " 复刻自 ${detail.forkedFromOwner}/${detail.forkedFromName}",
+                    stringResource(R.string.repo_forked_from, detail.forkedFromOwner, detail.forkedFromName ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary, // 用主色提示"这个可以点"，和纯说明性文字区分开
                 )
@@ -231,9 +233,9 @@ private fun RepoHeader(
 
         // 状态标签行：模板 / 私有 / 已归档
         Row(modifier = Modifier.padding(top = 8.dp)) {
-            if (detail.isTemplate) StatusChip("模板")
-            if (detail.isPrivate) StatusChip("私有")
-            if (detail.isArchived) StatusChip("已归档")
+            if (detail.isTemplate) StatusChip(stringResource(R.string.repo_template))
+            if (detail.isPrivate) StatusChip(stringResource(R.string.common_private))
+            if (detail.isArchived) StatusChip(stringResource(R.string.common_archived))
         }
 
         // 语言信息独占一行，颜色圆点和语言名称保持对齐。
@@ -266,12 +268,12 @@ private fun RepoHeader(
             if (detail.viewerHasStarred) {
                 OutlinedButton(onClick = onStarClick) {
                     Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(" 已标星 ${detail.stargazerCount}", modifier = Modifier.padding(start = 4.dp))
+                    Text(stringResource(R.string.repo_starred_count, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
                 }
             } else {
                 Button(onClick = onStarClick) {
                     Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(" 标星 ${detail.stargazerCount}", modifier = Modifier.padding(start = 4.dp))
+                    Text(stringResource(R.string.repo_star_count, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
                 }
             }
         }
@@ -289,28 +291,34 @@ private fun RepoMenu(
     onNavigateIssues: () -> Unit,
     onNavigatePlaceholder: (label: String) -> Unit,
 ) {
+    val pullRequestsLabel = stringResource(R.string.common_pull_requests)
+    val actionsLabel = stringResource(R.string.repo_actions)
+    val releasesLabel = stringResource(R.string.repo_releases)
+    val discussionsLabel = stringResource(R.string.common_discussions)
+    val contributorsLabel = stringResource(R.string.repo_contributors)
+    val licenseLabel = stringResource(R.string.repo_license)
     Column {
-        MenuRow(Icons.Default.Adjust, "议题", detail.openIssueCount, onClick = onNavigateIssues)
-        MenuRow(Icons.AutoMirrored.Default.CallSplit, "拉取请求", detail.openPrCount, onClick = { onNavigatePlaceholder("拉取请求") })
-        MenuRow(Icons.Default.PlayCircle, "操作", null, onClick = { onNavigatePlaceholder("操作") })
+        MenuRow(Icons.Default.Adjust, stringResource(R.string.common_issues), detail.openIssueCount, onClick = onNavigateIssues)
+        MenuRow(Icons.AutoMirrored.Default.CallSplit, pullRequestsLabel, detail.openPrCount, onClick = { onNavigatePlaceholder(pullRequestsLabel) })
+        MenuRow(Icons.Default.PlayCircle, actionsLabel, null, onClick = { onNavigatePlaceholder(actionsLabel) })
         MenuRow(
-            Icons.Default.Sell, "发行版", detail.releaseCount,
+            Icons.Default.Sell, releasesLabel, detail.releaseCount,
             subtitle = detail.latestReleaseTag,
-            onClick = { onNavigatePlaceholder("发行版") },
+            onClick = { onNavigatePlaceholder(releasesLabel) },
         )
-        MenuRow(Icons.Default.ChatBubble, "讨论", null, onClick = { onNavigatePlaceholder("讨论") })
-        MenuRow(Icons.Default.Groups, "贡献者", null, onClick = { onNavigatePlaceholder("贡献者") })
-        MenuRow(Icons.Default.Visibility, "关注者", detail.watcherCount, onClick = onNavigateWatchers)
+        MenuRow(Icons.Default.ChatBubble, discussionsLabel, null, onClick = { onNavigatePlaceholder(discussionsLabel) })
+        MenuRow(Icons.Default.Groups, contributorsLabel, null, onClick = { onNavigatePlaceholder(contributorsLabel) })
+        MenuRow(Icons.Default.Visibility, stringResource(R.string.common_watchers), detail.watcherCount, onClick = onNavigateWatchers)
         detail.licenseName?.let {
-            MenuRow(Icons.Default.Balance, "许可证", null, subtitle = it, onClick = { onNavigatePlaceholder("许可证") })
+            MenuRow(Icons.Default.Balance, licenseLabel, null, subtitle = it, onClick = { onNavigatePlaceholder(licenseLabel) })
         }
         MenuRow(
-            Icons.Default.AccountTree, "分支", detail.branchCount,
-            subtitle = "当前：$currentRef",
+            Icons.Default.AccountTree, stringResource(R.string.common_branches), detail.branchCount,
+            subtitle = stringResource(R.string.repo_current_ref, currentRef),
             onClick = onNavigateBranches,
         )
-        MenuRow(Icons.Default.Code, "代码", null, onClick = { onNavigateCode(currentRef) })
-        MenuRow(Icons.AutoMirrored.Default.Label, "提交", null, onClick = { onNavigateCommits(currentRef) })
+        MenuRow(Icons.Default.Code, stringResource(R.string.repo_code), null, onClick = { onNavigateCode(currentRef) })
+        MenuRow(Icons.AutoMirrored.Default.Label, stringResource(R.string.repo_commits), null, onClick = { onNavigateCommits(currentRef) })
     }
 }
 

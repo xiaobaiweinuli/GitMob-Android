@@ -17,7 +17,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.gitmob.app.R
 
 @Composable
 fun CreateListDialog(
@@ -31,20 +33,20 @@ fun CreateListDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("新建列表") },
+        title = { Text(stringResource(R.string.stars_create_list)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    placeholder = { Text("列表名称") },
+                    placeholder = { Text(stringResource(R.string.stars_list_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    placeholder = { Text("描述（可选）") },
+                    placeholder = { Text(stringResource(R.string.stars_list_description_optional)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 12.dp),
@@ -57,8 +59,8 @@ fun CreateListDialog(
                 ) {
                     Checkbox(checked = isPrivate, onCheckedChange = { isPrivate = it })
                     Column {
-                        Text("私有列表")
-                        Text("仅自己可见", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.stars_list_private))
+                        Text(stringResource(R.string.stars_list_private_desc), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -68,11 +70,11 @@ fun CreateListDialog(
                 onClick = { onConfirm(name.trim(), description.trim().ifBlank { null }, isPrivate) },
                 enabled = name.isNotBlank() && !isSaving,
             ) {
-                Text("确认")
+                Text(stringResource(R.string.common_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

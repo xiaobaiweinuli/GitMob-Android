@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.work
 
+import androidx.annotation.StringRes
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,9 +45,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.data.model.WorkIssueItem
 import com.gitmob.app.data.model.UserIssueRelationFilter
 import com.gitmob.app.data.model.UserIssueSortFilter
@@ -69,12 +72,12 @@ fun WorkIssueListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("议题") },
+                title = { Text(stringResource(R.string.common_issues)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.common_back),
                         )
                     }
                 },
@@ -112,8 +115,8 @@ fun WorkIssueListScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        Text("加载失败")
-                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) { Text("重试") }
+                        Text(stringResource(R.string.common_load_failed))
+                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
                 else -> {
@@ -163,42 +166,42 @@ private fun IssueFilterControls(
     Column {
         Row(Modifier.fillMaxWidth()) {
             IssueFilterMenu(
-                label = "状态",
+                label = R.string.work_filter_state,
                 selected = state,
                 options = UserIssueStateFilter.entries,
-                optionLabel = { it.label },
+                optionLabel = { it.labelRes },
                 onSelected = onStateSelected,
                 modifier = Modifier.weight(1f),
             )
             IssueFilterMenu(
-                label = "关系",
+                label = R.string.work_filter_relation,
                 selected = relation,
                 options = UserIssueRelationFilter.entries,
-                optionLabel = { it.label },
+                optionLabel = { it.labelRes },
                 onSelected = onRelationSelected,
                 modifier = Modifier.weight(1f),
             )
         }
         Row(Modifier.fillMaxWidth()) {
             IssueFilterMenu(
-                label = "可见性",
+                label = R.string.work_filter_visibility,
                 selected = visibility,
                 options = UserIssueVisibilityFilter.entries,
-                optionLabel = { it.label },
+                optionLabel = { it.labelRes },
                 onSelected = onVisibilitySelected,
                 modifier = Modifier.weight(1f),
             )
             IssueFilterMenu(
-                label = "排序",
+                label = R.string.work_filter_sort,
                 selected = sort,
                 options = UserIssueSortFilter.entries,
-                optionLabel = { it.label },
+                optionLabel = { it.labelRes },
                 onSelected = onSortSelected,
                 modifier = Modifier.weight(1f),
             )
         }
         Text(
-            text = "$totalCount 条",
+            text = stringResource(R.string.work_items_count, totalCount),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -209,14 +212,15 @@ private fun IssueFilterControls(
 
 @Composable
 private fun <T> IssueFilterMenu(
-    label: String,
+    @StringRes label: Int,
     selected: T,
     options: List<T>,
-    optionLabel: (T) -> String,
+    optionLabel: (T) -> Int,
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val labelText = stringResource(label)
     Box(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -226,15 +230,15 @@ private fun <T> IssueFilterMenu(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(optionLabel(selected), style = MaterialTheme.typography.bodyMedium)
+                Text(labelText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(optionLabel(selected)), style = MaterialTheme.typography.bodyMedium)
             }
-            Icon(Icons.Default.ArrowDropDown, contentDescription = "选择$label")
+            Icon(Icons.Default.ArrowDropDown, contentDescription = stringResource(R.string.work_select_filter, labelText))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(optionLabel(option)) },
+                    text = { Text(stringResource(optionLabel(option))) },
                     onClick = {
                         expanded = false
                         onSelected(option)
@@ -252,38 +256,42 @@ private fun <T> IssueFilterMenu(
     }
 }
 
-private val UserIssueStateFilter.label: String
+@get:StringRes
+private val UserIssueStateFilter.labelRes: Int
     get() = when (this) {
-        UserIssueStateFilter.OPEN -> "打开"
-        UserIssueStateFilter.CLOSED -> "已关闭"
-        UserIssueStateFilter.ALL -> "全部"
+        UserIssueStateFilter.OPEN -> R.string.work_filter_open
+        UserIssueStateFilter.CLOSED -> R.string.common_state_closed
+        UserIssueStateFilter.ALL -> R.string.common_all
     }
 
-private val UserIssueRelationFilter.label: String
+@get:StringRes
+private val UserIssueRelationFilter.labelRes: Int
     get() = when (this) {
-        UserIssueRelationFilter.INVOLVED -> "所有参与"
-        UserIssueRelationFilter.AUTHORED -> "我创建的"
-        UserIssueRelationFilter.ASSIGNED -> "分配给我"
-        UserIssueRelationFilter.MENTIONED -> "提及我"
-        UserIssueRelationFilter.COMMENTED -> "我评论过"
+        UserIssueRelationFilter.INVOLVED -> R.string.work_relation_involved
+        UserIssueRelationFilter.AUTHORED -> R.string.work_relation_authored
+        UserIssueRelationFilter.ASSIGNED -> R.string.work_relation_assigned
+        UserIssueRelationFilter.MENTIONED -> R.string.work_relation_mentioned
+        UserIssueRelationFilter.COMMENTED -> R.string.work_relation_commented
     }
 
-private val UserIssueVisibilityFilter.label: String
+@get:StringRes
+private val UserIssueVisibilityFilter.labelRes: Int
     get() = when (this) {
-        UserIssueVisibilityFilter.ALL -> "全部"
-        UserIssueVisibilityFilter.PUBLIC -> "公开"
-        UserIssueVisibilityFilter.PRIVATE -> "私有"
-        UserIssueVisibilityFilter.INTERNAL -> "内部"
+        UserIssueVisibilityFilter.ALL -> R.string.common_all
+        UserIssueVisibilityFilter.PUBLIC -> R.string.work_visibility_public
+        UserIssueVisibilityFilter.PRIVATE -> R.string.common_private
+        UserIssueVisibilityFilter.INTERNAL -> R.string.work_visibility_internal
     }
 
-private val UserIssueSortFilter.label: String
+@get:StringRes
+private val UserIssueSortFilter.labelRes: Int
     get() = when (this) {
-        UserIssueSortFilter.CREATED_DESC -> "最新创建"
-        UserIssueSortFilter.CREATED_ASC -> "最早创建"
-        UserIssueSortFilter.COMMENTS_DESC -> "最多评论"
-        UserIssueSortFilter.COMMENTS_ASC -> "最少评论"
-        UserIssueSortFilter.UPDATED_DESC -> "最近更新"
-        UserIssueSortFilter.UPDATED_ASC -> "最早更新"
+        UserIssueSortFilter.CREATED_DESC -> R.string.work_sort_created_desc
+        UserIssueSortFilter.CREATED_ASC -> R.string.work_sort_created_asc
+        UserIssueSortFilter.COMMENTS_DESC -> R.string.work_sort_comments_desc
+        UserIssueSortFilter.COMMENTS_ASC -> R.string.work_sort_comments_asc
+        UserIssueSortFilter.UPDATED_DESC -> R.string.work_sort_updated_desc
+        UserIssueSortFilter.UPDATED_ASC -> R.string.work_sort_updated_asc
     }
 
 @Composable

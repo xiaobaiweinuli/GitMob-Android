@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -58,10 +59,13 @@ fun AboutScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("关于") },
+                title = { Text(stringResource(R.string.settings_about)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                        )
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing
@@ -89,7 +93,7 @@ fun AboutScreen(onBack: () -> Unit) {
                     ) {
                         AsyncImage(
                             model = R.drawable.ic_app_logo,
-                            contentDescription = "GitMob Logo",
+                            contentDescription = stringResource(R.string.about_logo_desc),
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -110,21 +114,21 @@ fun AboutScreen(onBack: () -> Unit) {
             }
 
             item {
-                AboutSection(title = "开发者") {
+                AboutSection(title = stringResource(R.string.about_section_developer)) {
                     AboutLinkRow(
                         icon = null,
                         label = "xiaobaiweinuli",
-                        sub = "点击查看 GitHub 主页",
+                        sub = stringResource(R.string.about_developer_sub),
                         url = "https://github.com/xiaobaiweinuli",
                     )
                 }
             }
 
             item {
-                AboutSection(title = "项目") {
+                AboutSection(title = stringResource(R.string.about_section_project)) {
                     AboutLinkRow(
                         icon = Icons.Default.Code,
-                        label = "GitHub 仓库",
+                        label = stringResource(R.string.about_repo_label),
                         sub = "xiaobaiweinuli/GitMob-Android · Apache 2.0",
                         url = "https://github.com/xiaobaiweinuli/GitMob-Android",
                     )
@@ -132,21 +136,21 @@ fun AboutScreen(onBack: () -> Unit) {
             }
 
             item {
-                AboutSection(title = "权限") {
+                AboutSection(title = stringResource(R.string.about_section_permissions)) {
                     AboutLinkRow(
                         icon = Icons.Default.Security,
-                        label = "GitHub 授权管理",
-                        sub = "查看、撤销 GitMob 对你账号的授权",
+                        label = stringResource(R.string.about_auth_label),
+                        sub = stringResource(R.string.about_auth_sub),
                         url = "https://github.com/settings/connections/applications/Ov23liP9mC2HXALHsFpk",
                     )
                 }
             }
 
             item {
-                AboutSection(title = "社区") {
+                AboutSection(title = stringResource(R.string.about_section_community)) {
                     AboutLinkRow(
                         icon = Icons.AutoMirrored.Default.Send,
-                        label = "Telegram 群组",
+                        label = stringResource(R.string.about_telegram_label),
                         sub = "t.me/MyResNav",
                         url = "https://t.me/MyResNav",
                     )

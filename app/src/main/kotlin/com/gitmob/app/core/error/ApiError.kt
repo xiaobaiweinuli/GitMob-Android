@@ -1,6 +1,7 @@
 package com.gitmob.app.core.error
 
 import android.util.Log
+import androidx.annotation.StringRes
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 
@@ -14,6 +15,14 @@ sealed class ApiError {
     data object RateLimited : ApiError()        // 429 或 GitHub rate limit 响应头耗尽
     data object NetworkError : ApiError()       // 超时/DNS 失败等，和凭证无关，不要误判为登录失效
     data class GraphQLError(val errors: List<GraphQLErrorItem>) : ApiError()
+
+    /**
+     * 业务层主动抛出的用户可见错误（"用户不存在"这类）。携带资源 id 而不是字符串，
+     * 保证错误横幅文案跟随应用语言（i18n 改造：Repository 不再抛中文 message）。
+     */
+    data class UserVisible(@field:StringRes val messageRes: Int) : ApiError()
+
+    /** 无法归类的异常。message 只进 Logcat，UI 一律显示通用"请求出错"文案。 */
     data class Unknown(val message: String) : ApiError()
 }
 
@@ -30,9 +39,16 @@ sealed class ApiResult<out T> {
     }
 }
 
-class UnauthorizedException : Exception("Token 无效或已过期")
+class UnauthorizedException : Exception("Token invalid or expired")
 class NetworkException(message: String) : Exception(message)
-class GraphQLException(val errors: List<GraphQLErrorItem>) : Exception(errors.firstOrNull()?.message ?: "GraphQL 请求出错")
+class GraphQLException(val errors: List<GraphQLErrorItem>) : Exception(errors.firstOrNull()?.message ?: "GraphQL request failed")
+
+/**
+ * Repository 层"数据不存在/操作失败"这类要给用户看的错误统一抛它，
+ * safeCall 会映射成 [ApiError.UserVisible]；纯技术性断言继续用 IllegalStateException
+ * （用户侧显示通用"请求出错"，细节只进 Logcat）。
+ */
+class UserVisibleException(@field:StringRes val messageRes: Int) : Exception()
 
 // safeCall 是 public inline 函数，内部直接访问的常量必须至少是 internal；用 @PublishedApi 标注
 // "仅供 inline 使用"，避免在外部被当作公开 API（Kotlin 官方推荐做法，等同于 GHApiClient 中 DEFAULT_ACCEPT 的处理）。
@@ -52,6 +68,9 @@ suspend inline fun <T> safeCall(crossinline block: suspend () -> T): ApiResult<T
 } catch (e: UnauthorizedException) {
     Log.w(TAG_SAFE_CALL, "归类为 Unauthorized (401)", e)
     ApiResult.Failure(ApiError.Unauthorized)
+} catch (e: UserVisibleException) {
+    Log.w(TAG_SAFE_CALL, "归类为 UserVisible（业务层用户可见错误）", e)
+    ApiResult.Failure(ApiError.UserVisible(e.messageRes))
 } catch (e: GraphQLException) {
     Log.w(TAG_SAFE_CALL, "归类为 GraphQLError: ${e.errors}", e)
     ApiResult.Failure(ApiError.GraphQLError(e.errors))
@@ -73,18 +92,14 @@ suspend inline fun <T> safeCall(crossinline block: suspend () -> T): ApiResult<T
     // ⚠️ 这个异常说明某段同步阻塞代码（OkHttp execute()、数据库 rawQuery 等）被错误地
     // 放在了 Main 线程执行。按 Kotlin 协程"main-safe"规范，所有 suspend 函数都必须
     // 在内部用 withContext(Dispatchers.IO/Default) 自己保证不阻塞调用方。
-    // 单独归类成一条清晰 message，方便用户和开发者从 UI 文案直接识别问题性质，
-    // 避免掉进 catch-all 被笼统地显示为"未知错误"。
     Log.e(TAG_SAFE_CALL, "检测到 NetworkOnMainThreadException！" +
             "说明有阻塞 I/O（网络/磁盘）跑在了 Main 线程。message=${e.message}", e)
-    ApiResult.Failure(ApiError.Unknown(
-        "网络请求错误地在主线程执行（编码问题，已上报，请联系开发者）"
-    ))
+    ApiResult.Failure(ApiError.Unknown("NetworkOnMainThreadException"))
 } catch (e: Exception) {
     // 所有无法归类的异常统一打 ERROR 级别日志并带完整堆栈，
-    // 这就是用户看到"未知错误"时定位问题的核心证据。
-    Log.e(TAG_SAFE_CALL, "未归类异常 -> 显示为未知错误。message=${e.message}, cause=${e.cause}", e)
-    ApiResult.Failure(ApiError.Unknown(e.message ?: "未知错误（详见 Logcat $TAG_SAFE_CALL）"))
+    // 这就是用户看到"请求出错"时定位问题的核心证据（UI 不再透传 message）。
+    Log.e(TAG_SAFE_CALL, "未归类异常 -> 显示为通用请求出错。message=${e.message}, cause=${e.cause}", e)
+    ApiResult.Failure(ApiError.Unknown(e.message ?: "unknown"))
 }
 
 class HttpStatusException(val code: Int, message: String) : Exception(message)

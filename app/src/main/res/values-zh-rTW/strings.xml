@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 設定 · 語言 -->
+    <string name="settings_language">語言</string>
+    <string name="settings_language_system">跟隨系統</string>
+    <string name="settings_language_system_desc">使用裝置的系統語言</string>
+    <string name="lang_desc_zh_hans">中文（簡體）</string>
+    <string name="lang_desc_zh_hant">中文（繁體）</string>
+    <string name="lang_desc_en">英語</string>
+
+    <!-- 錯誤提示 -->
+    <string name="error_unauthorized">登入已失效，請重新登入</string>
+    <string name="error_forbidden">權限不足，無法執行此操作</string>
+    <string name="error_rate_limited">請求過於頻繁，請稍後再試</string>
+    <string name="error_network">網路異常，請檢查網路連線</string>
+    <string name="error_request_failed">請求出錯</string>
+    <string name="error_user_not_found">使用者不存在</string>
+    <string name="error_owner_not_found">使用者或組織不存在</string>
+    <string name="error_org_not_found">組織不存在</string>
+    <string name="error_repo_not_found">儲存庫不存在</string>
+    <string name="error_list_not_found">清單不存在</string>
+    <string name="error_list_create_failed">建立清單失敗</string>
+    <string name="error_list_update_failed">更新清單失敗</string>
+
+    <!-- 登入 -->
+    <string name="login_token_required">請輸入 Personal Access Token</string>
+
+    <!-- 導覽 · 底部 Tab 與佔位頁 -->
+    <string name="nav_tab_home">主頁</string>
+    <string name="nav_tab_stars">星標</string>
+    <string name="nav_tab_settings">設定</string>
+    <string name="nav_placeholder_wip">%1$s（開發中）</string>
+    <string name="nav_code_browser">程式碼瀏覽（%1$s）</string>
+    <string name="nav_commit_history">提交歷史（%1$s）</string>
+
+    <!-- 通用 · 跨頁複用詞 -->
+    <string name="common_repository">儲存庫</string>
+    <string name="common_private">私有</string>
+    <string name="common_archived">已封存</string>
+    <string name="common_forked_from">復刻自: %1$s/%2$s</string>
+    <string name="common_open_source_repo">開啟來源儲存庫</string>
+    <string name="common_open_homepage">開啟專案首頁</string>
+    <string name="common_unstar">取消星標</string>
+    <string name="common_add_to_list">加入清單</string>
+    <string name="common_pinned">已置頂</string>
+    <string name="common_select_organization">選擇組織</string>
+    <string name="common_follow">追蹤</string>
+    <string name="common_following">已追蹤</string>
+    <string name="common_followers_count">%1$d 位追蹤者</string>
+    <string name="common_following_count">%1$d 追蹤中</string>
+    <string name="common_badge_developer_program">開發者計畫成員</string>
+    <string name="common_badge_bounty_hunter">安全賞金獵人</string>
+    <string name="common_badge_campus_expert">校園專家</string>
+    <string name="common_secret">祕密</string>
+    <string name="common_file_no_preview">此檔案無法預覽</string>
+    <string name="common_state_closed">已關閉</string>
+
+    <!-- 狀態 · GitHubStateIcon 狀態標籤 -->
+    <string name="state_open">開放</string>
+    <string name="state_reopened">重新開放</string>
+    <string name="state_not_planned">未規劃</string>
+    <string name="state_duplicate">重複</string>
+    <string name="state_completed">已完成</string>
+    <string name="state_merged">已合併</string>
+    <string name="state_draft">草稿</string>
+    <string name="state_resolved">已解決</string>
+    <string name="state_outdated">已過時</string>
+    <string name="state_prerelease">預先發布</string>
+    <string name="state_published">已發布</string>
+    <string name="state_answered">已回答</string>
+    <string name="state_locked">已鎖定</string>
+    <string name="state_latest">最新</string>
+
+    <!-- 通用 · 返回 -->
+    <string name="common_back">返回</string>
+
+    <!-- 設定 · 主頁 -->
+    <string name="settings_section_preferences">偏好設定</string>
+    <string name="settings_appearance">外觀</string>
+    <string name="settings_section_app">應用程式</string>
+    <string name="settings_about">關於</string>
+    <string name="settings_about_summary">版本、專案與社群資訊</string>
+    <string name="settings_section_account">帳號</string>
+    <string name="settings_logout">登出</string>
+    <string name="settings_logout_summary">登出目前的 GitHub 帳號</string>
+
+    <!-- 設定 · 主題模式 -->
+    <string name="settings_theme_mode">主題模式</string>
+    <string name="settings_theme_mode_system">跟隨系統</string>
+    <string name="settings_theme_mode_light">淺色</string>
+    <string name="settings_theme_mode_dark">深色</string>
+
+    <!-- 設定 · 顏色來源摘要 -->
+    <string name="settings_color_source_wallpaper">桌布取色</string>
+    <string name="settings_color_source_brand">GitMob 品牌色</string>
+    <string name="settings_color_source_custom">自訂主題色</string>
+
+    <!-- 設定 · 外觀頁 -->
+    <string name="settings_dark_display">深色顯示</string>
+    <string name="settings_amoled_title">AMOLED 純黑</string>
+    <string name="settings_amoled_desc">僅在深色主題下使用純黑背景</string>
+    <string name="settings_color_source">顏色來源</string>
+    <string name="settings_dynamic_color_title">跟隨系統桌布</string>
+    <string name="settings_dynamic_color_desc">使用目前桌布的 Material You 顏色</string>
+    <string name="settings_theme_color">主題色</string>
+    <string name="settings_theme_color_disabled_hint">關閉桌布取色後可使用預設顏色</string>
+
+    <!-- 設定 · 種子色名稱 -->
+    <string name="settings_seed_color_coral">GitMob 珊瑚色</string>
+    <string name="settings_seed_color_red">紅色</string>
+    <string name="settings_seed_color_pink">粉紅色</string>
+    <string name="settings_seed_color_purple">紫色</string>
+    <string name="settings_seed_color_deep_purple">深紫色</string>
+    <string name="settings_seed_color_indigo">靛藍色</string>
+    <string name="settings_seed_color_blue">藍色</string>
+    <string name="settings_seed_color_cyan">青色</string>
+    <string name="settings_seed_color_teal">藍綠色</string>
+    <string name="settings_seed_color_green">綠色</string>
+    <string name="settings_seed_color_yellow">黃色</string>
+    <string name="settings_seed_color_amber">琥珀色</string>
+    <string name="settings_seed_color_orange">橙色</string>
+    <string name="settings_seed_color_brown">棕色</string>
+    <string name="settings_seed_color_blue_grey">藍灰色</string>
+    <string name="settings_seed_color_soft_coral">柔珊瑚色</string>
+
+    <!-- 設定 · 調色板風格 -->
+    <string name="settings_palette_style">調色板風格</string>
+    <string name="settings_palette_tonal_spot">柔和</string>
+    <string name="settings_palette_tonal_spot_desc">均衡、沉穩的預設 Material 配色</string>
+    <string name="settings_palette_neutral">中性</string>
+    <string name="settings_palette_neutral_desc">降低彩度，更接近灰階介面</string>
+    <string name="settings_palette_vibrant">鮮明</string>
+    <string name="settings_palette_vibrant_desc">提高主色與輔助色的鮮豔程度</string>
+    <string name="settings_palette_expressive">表現力</string>
+    <string name="settings_palette_expressive_desc">使用更活潑、對比更明顯的色相組合</string>
+    <string name="settings_palette_rainbow">彩虹</string>
+    <string name="settings_palette_rainbow_desc">生成更豐富的多色調色板</string>
+    <string name="settings_palette_fruit_salad">果味</string>
+    <string name="settings_palette_fruit_salad_desc">偏輕快的鄰近色組合</string>
+    <string name="settings_palette_monochrome">單色</string>
+    <string name="settings_palette_monochrome_desc">僅使用黑、白、灰色階</string>
+    <string name="settings_palette_fidelity">忠實</string>
+    <string name="settings_palette_fidelity_desc">盡量保留種子色的原始觀感</string>
+    <string name="settings_palette_content">內容</string>
+    <string name="settings_palette_content_desc">圍繞內容色生成相鄰與互補色</string>
+
+    <!-- 設定 · 顏色規格 -->
+    <string name="settings_color_spec">顏色規格</string>
+    <string name="settings_color_spec_2021_desc">成熟穩定，保持目前預設配色表現</string>
+    <string name="settings_color_spec_2025_desc">使用新版動態顏色演算法與色調關係</string>
+
+    <!-- 設定 · 互動 -->
+    <string name="settings_section_interaction">互動</string>
+    <string name="settings_predictive_back_title">預測性返回</string>
+    <string name="settings_predictive_back_desc">返回手勢時預覽即將顯示的頁面</string>
+    <string name="settings_page_scale_title">頁面縮放</string>
+    <string name="settings_page_scale_desc">僅縮放 App 內容，不變更系統字型與系統列</string>
+
+    <!-- 關於 -->
+    <string name="about_section_developer">開發者</string>
+    <string name="about_developer_sub">點選檢視 GitHub 主頁</string>
+    <string name="about_section_project">專案</string>
+    <string name="about_repo_label">GitHub 儲存庫</string>
+    <string name="about_section_permissions">權限</string>
+    <string name="about_auth_label">GitHub 授權管理</string>
+    <string name="about_auth_sub">檢視、撤銷 GitMob 對你帳號的授權</string>
+    <string name="about_section_community">社群</string>
+    <string name="about_telegram_label">Telegram 群組</string>
+
+    <!-- 通用 · 議題/PR/討論 複用詞 -->
+    <string name="common_issues">議題</string>
+    <string name="common_pull_requests">拉取請求</string>
+    <string name="common_discussions">討論</string>
+    <string name="common_all">全部</string>
+    <string name="common_load_failed">載入失敗</string>
+    <string name="common_retry">重試</string>
+
+    <!-- 工作 · 議題/PR/討論列表篩選 -->
+    <string name="work_items_count">%1$d 筆</string>
+    <string name="work_select_filter">選擇%1$s</string>
+    <string name="work_filter_state">狀態</string>
+    <string name="work_filter_relation">關係</string>
+    <string name="work_filter_answer">回答</string>
+    <string name="work_filter_visibility">可見性</string>
+    <string name="work_filter_sort">排序</string>
+    <string name="work_filter_open">開啟</string>
+    <string name="work_visibility_public">公開</string>
+    <string name="work_visibility_internal">內部</string>
+    <string name="work_relation_involved">所有參與</string>
+    <string name="work_relation_authored">我建立的</string>
+    <string name="work_relation_assigned">指派給我</string>
+    <string name="work_relation_mentioned">提及我</string>
+    <string name="work_relation_commented">我留言過</string>
+    <string name="work_relation_review_requested">請求我審查</string>
+    <string name="work_answer_unanswered">未回答</string>
+    <string name="work_sort_created_desc">最新建立</string>
+    <string name="work_sort_created_asc">最早建立</string>
+    <string name="work_sort_comments_desc">最多留言</string>
+    <string name="work_sort_comments_asc">最少留言</string>
+    <string name="work_sort_updated_desc">最近更新</string>
+    <string name="work_sort_updated_asc">最早更新</string>
+
+    <!-- 通用 · 對話框按鈕與跨頁詞（批次 D） -->
+    <string name="common_watchers">關注者</string>
+    <string name="common_branches">分支</string>
+    <string name="common_confirm">確認</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_delete">刪除</string>
+    <string name="common_save">儲存</string>
+    <string name="common_done">完成</string>
+    <string name="common_edit">編輯</string>
+
+    <!-- 儲存庫詳情 -->
+    <string name="repo_forked_from">" 復刻自 %1$s/%2$s"</string>
+    <string name="repo_template">範本</string>
+    <string name="repo_starred_count">" 已加星號 %1$d"</string>
+    <string name="repo_star_count">" 加星號 %1$d"</string>
+    <string name="repo_actions">操作</string>
+    <string name="repo_releases">發行版本</string>
+    <string name="repo_contributors">貢獻者</string>
+    <string name="repo_license">授權條款</string>
+    <string name="repo_code">程式碼</string>
+    <string name="repo_commits">提交</string>
+    <string name="repo_current_ref">目前：%1$s</string>
+    <string name="repo_readme_truncated">README 內容過長，僅顯示部分</string>
+
+    <!-- 星標 · 清單管理 -->
+    <string name="stars_my_lists">我的清單</string>
+    <string name="stars_all_stars">全部星標</string>
+    <string name="stars_create_list">建立清單</string>
+    <string name="stars_edit_list">編輯清單</string>
+    <string name="stars_list_name">清單名稱</string>
+    <string name="stars_list_description_optional">描述（選填）</string>
+    <string name="stars_list_private">私有清單</string>
+    <string name="stars_list_private_desc">僅自己可見</string>
+    <string name="stars_delete_list_title">刪除清單？</string>
+    <string name="stars_delete_list_message">此操作無法復原，清單內的儲存庫不會被取消星標。</string>
+    <string name="stars_delete_this_list">刪除此清單</string>
+    <string name="stars_create_new_list">建立新清單</string>
+
+    <!-- 分支 -->
+    <string name="branches_delete_branch_title">刪除分支 %1$s？</string>
+    <string name="common_cannot_be_undone">此操作無法復原。</string>
+    <string name="branches_default_badge">" 預設"</string>
+    <string name="branches_current_branch">目前分支</string>
+    <string name="branches_more_actions">更多操作</string>
+    <string name="branches_set_default">設為預設分支</string>
+    <string name="branches_delete_branch">刪除分支</string>
+
+    <!-- 批次 E · 主頁/資料/收件匣/Gist/使用者清單/登入 -->
+    <string name="common_check_network_retry">檢查網路連線後重試</string>
+    <string name="common_organizations">組織</string>
+    <string name="common_members">成員</string>
+    <string name="profile_verified">已驗證</string>
+    <string name="inbox_title">收件匣</string>
+    <string name="inbox_filter_unread">未讀</string>
+    <string name="inbox_filter_read">已讀</string>
+    <string name="inbox_empty_all">沒有通知</string>
+    <string name="inbox_empty_unread">沒有未讀通知</string>
+    <string name="inbox_empty_read">沒有已讀通知</string>
+    <string name="gist_title_of_user">@%1$s 的 Gist</string>
+    <string name="gist_title_mine">我的 Gist</string>
+    <string name="gist_category_original">原創</string>
+    <string name="gist_category_forked">復刻</string>
+    <string name="gist_empty_batch">目前批次沒有符合的 Gist</string>
+    <string name="gist_empty_original">還沒有原創 Gist</string>
+    <string name="gist_empty_forked">還沒有復刻 Gist</string>
+    <string name="gist_continue_search">繼續查找</string>
+    <string name="userlist_title_followers">追蹤者</string>
+    <string name="userlist_title_following">正在追蹤</string>
+    <string name="userstars_title">@%1$s 的星標</string>
+    <string name="login_title">登入 GitMob</string>
+    <string name="login_subtitle">使用你在 GitHub 上建立的 Personal Access Token 登入</string>
+    <string name="login_button">登入</string>
+
+    <!-- 批次 F · 儲存庫議題列表/詳情 -->
+    <string name="issue_new">建立議題</string>
+    <string name="issue_empty_filtered">沒有符合條件的議題</string>
+    <string name="issue_delete_title">刪除議題 #%1$d？</string>
+    <string name="issue_delete_message">此操作無法復原，議題及其留言都會被刪除。</string>
+    <string name="issue_template_picker_title">選擇議題範本</string>
+    <string name="issue_template_blank">空白議題</string>
+    <string name="issue_labels">標籤</string>
+    <string name="issue_milestone">里程碑</string>
+    <string name="issue_assignees">負責人</string>
+    <string name="issue_filter_selected_count">已選 %1$d</string>
+    <string name="issue_filter_clear_labels">清除標籤</string>
+    <string name="issue_filter_more">更多篩選</string>
+    <string name="issue_filter_more_desc">里程碑 / 負責人</string>
+    <string name="issue_filter_all_milestones">全部里程碑</string>
+    <string name="issue_no_milestone">無里程碑</string>
+    <string name="issue_filter_all_assignee_states">全部指派狀態</string>
+    <string name="issue_filter_assigned_any">已指派給任何人</string>
+    <string name="issue_filter_assigned_none">無人指派</string>
+    <string name="issue_filter_all_authors">全部建立者</string>
+    <string name="issue_filter_author_login">建立者 @%1$s</string>
+    <string name="issue_filter_mentioned">被提及</string>
+    <string name="issue_filter_mentioned_off">取消：被提及</string>
+    <string name="issue_filter_subscribed">已訂閱</string>
+    <string name="issue_filter_subscribed_off">取消：已訂閱</string>
+    <string name="issue_filter_all_updated">全部更新時間</string>
+    <string name="issue_filter_updated_7d">最近 7 天更新</string>
+    <string name="issue_filter_updated_30d">最近 30 天更新</string>
+    <string name="issue_meta_milestone">里程碑 %1$s</string>
+    <string name="issue_editor_title_label">標題</string>
+    <string name="issue_editor_body_label">Markdown 內文</string>
+    <string name="issue_create">建立</string>
+    <string name="issue_title_number">議題 #%1$d</string>
+    <string name="issue_subscribe">訂閱</string>
+    <string name="issue_more">更多</string>
+    <string name="issue_edit">編輯議題</string>
+    <string name="issue_close_completed">關閉為已完成</string>
+    <string name="issue_close_not_planned">關閉為未規劃</string>
+    <string name="issue_close_duplicate">關閉為重複</string>
+    <string name="issue_reopen">重新開啟</string>
+    <string name="issue_delete">刪除議題</string>
+    <string name="issue_comment_add">新增留言</string>
+    <string name="issue_comment_submit">送出留言</string>
+    <string name="issue_comments_count">留言 %1$d</string>
+    <string name="issue_delete_comment_title">刪除留言？</string>
+    <string name="issue_detail_milestone">里程碑：%1$s</string>
+    <string name="issue_detail_assignees">負責人：%1$s</string>
+    <string name="issue_edit_comment">編輯留言</string>
+    <string name="about_logo_desc">GitMob 標誌</string>
+</resources>

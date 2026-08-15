@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.login
 
+import com.gitmob.app.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -43,9 +45,9 @@ fun LoginScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("登录 GitMob", style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.login_title), style = MaterialTheme.typography.headlineMedium)
         Text(
-            "使用你在 GitHub 上创建的 Personal Access Token 登录",
+            stringResource(R.string.login_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
         )
@@ -55,8 +57,8 @@ fun LoginScreen(
             onValueChange = viewModel::onTokenInputChange,
             label = { Text("Personal Access Token") },
             visualTransformation = PasswordVisualTransformation(),
-            isError = state.inlineError != null,
-            supportingText = state.inlineError?.let { { Text(it) } },
+            isError = state.inlineErrorRes != null,
+            supportingText = state.inlineErrorRes?.let { res -> { Text(stringResource(res)) } },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -71,7 +73,7 @@ fun LoginScreen(
             if (state.isLoading) {
                 CircularProgressIndicator(modifier = Modifier.padding(2.dp))
             } else {
-                Text("登录")
+                Text(stringResource(R.string.login_button))
             }
         }
     }

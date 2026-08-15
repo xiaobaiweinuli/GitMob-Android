@@ -1,6 +1,8 @@
 package com.gitmob.app.data.repository
 
+import com.gitmob.app.R
 import com.gitmob.app.core.cache.MemoryCache
+import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
@@ -169,7 +171,7 @@ class StarRepository @Inject constructor(
             after?.let { put("after", JsonPrimitive(it)) }
         }
         val conn = api.graphQL<ListItemsQueryData>(query, variables).node?.items
-            ?: throw IllegalStateException("列表不存在")
+            ?: throw UserVisibleException(R.string.error_list_not_found)
         PagedStarredRepos(
             totalCount = conn.totalCount,
             items = conn.nodes.map { it.toDomain() },
@@ -215,7 +217,7 @@ class StarRepository @Inject constructor(
             put("isPrivate", JsonPrimitive(isPrivate))
         }
         val list = api.graphQL<CreateListMutationData>(mutation, variables).createUserList?.list
-            ?: throw IllegalStateException("创建列表失败")
+            ?: throw UserVisibleException(R.string.error_list_create_failed)
         list.toSummary()
     }
 
@@ -259,7 +261,7 @@ class StarRepository @Inject constructor(
             isPrivate?.let { put("isPrivate", JsonPrimitive(it)) }
         }
         val list = api.graphQL<UpdateListMutationData>(mutation, variables).updateUserList?.list
-            ?: throw IllegalStateException("更新列表失败")
+            ?: throw UserVisibleException(R.string.error_list_update_failed)
         // 改完列表（名/描述/私有性）后主动失效缓存
         listsCache.invalidate(Unit)
         list.toSummary()

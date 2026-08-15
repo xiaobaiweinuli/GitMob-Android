@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.work
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,9 +45,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.data.model.WorkIssueItem
 import com.gitmob.app.data.model.UserPullRequestRelationFilter
 import com.gitmob.app.data.model.UserPullRequestSortFilter
@@ -69,10 +72,10 @@ fun WorkPullRequestListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("拉取请求") },
+                title = { Text(stringResource(R.string.common_pull_requests)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing
@@ -105,9 +108,9 @@ fun WorkPullRequestListScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        Text("加载失败")
+                        Text(stringResource(R.string.common_load_failed))
                         Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) {
-                            Text("重试")
+                            Text(stringResource(R.string.common_retry))
                         }
                     }
                 }
@@ -161,42 +164,42 @@ private fun PullRequestFilterControls(
     Column {
         Row(Modifier.fillMaxWidth()) {
             PullRequestFilterMenu(
-                label = "状态",
+                label = R.string.work_filter_state,
                 selected = state,
                 options = UserPullRequestStateFilter.entries,
-                optionLabel = { it.label },
+                optionLabel = { it.labelRes },
                 onSelected = onStateSelected,
                 modifier = Modifier.weight(1f),
             )
             PullRequestFilterMenu(
-                label = "关系",
+                label = R.string.work_filter_relation,
                 selected = relation,
                 options = UserPullRequestRelationFilter.entries,
-                optionLabel = { it.label },
+                optionLabel = { it.labelRes },
                 onSelected = onRelationSelected,
                 modifier = Modifier.weight(1f),
             )
         }
         Row(Modifier.fillMaxWidth()) {
             PullRequestFilterMenu(
-                label = "可见性",
+                label = R.string.work_filter_visibility,
                 selected = visibility,
                 options = UserPullRequestVisibilityFilter.entries,
-                optionLabel = { it.label },
+                optionLabel = { it.labelRes },
                 onSelected = onVisibilitySelected,
                 modifier = Modifier.weight(1f),
             )
             PullRequestFilterMenu(
-                label = "排序",
+                label = R.string.work_filter_sort,
                 selected = sort,
                 options = UserPullRequestSortFilter.entries,
-                optionLabel = { it.label },
+                optionLabel = { it.labelRes },
                 onSelected = onSortSelected,
                 modifier = Modifier.weight(1f),
             )
         }
         Text(
-            text = "$totalCount 条",
+            text = stringResource(R.string.work_items_count, totalCount),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -207,14 +210,15 @@ private fun PullRequestFilterControls(
 
 @Composable
 private fun <T> PullRequestFilterMenu(
-    label: String,
+    @StringRes label: Int,
     selected: T,
     options: List<T>,
-    optionLabel: (T) -> String,
+    optionLabel: (T) -> Int,
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val labelText = stringResource(label)
     Box(modifier) {
         Row(
             modifier = Modifier
@@ -224,15 +228,15 @@ private fun <T> PullRequestFilterMenu(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(optionLabel(selected), style = MaterialTheme.typography.bodyMedium)
+                Text(labelText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(optionLabel(selected)), style = MaterialTheme.typography.bodyMedium)
             }
-            Icon(Icons.Default.ArrowDropDown, contentDescription = "选择$label")
+            Icon(Icons.Default.ArrowDropDown, contentDescription = stringResource(R.string.work_select_filter, labelText))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(optionLabel(option)) },
+                    text = { Text(stringResource(optionLabel(option))) },
                     onClick = {
                         expanded = false
                         onSelected(option)
@@ -247,39 +251,43 @@ private fun <T> PullRequestFilterMenu(
     }
 }
 
-private val UserPullRequestStateFilter.label: String
+@get:StringRes
+private val UserPullRequestStateFilter.labelRes: Int
     get() = when (this) {
-        UserPullRequestStateFilter.OPEN -> "打开"
-        UserPullRequestStateFilter.MERGED -> "已合并"
-        UserPullRequestStateFilter.CLOSED_UNMERGED -> "已关闭"
-        UserPullRequestStateFilter.ALL -> "全部"
+        UserPullRequestStateFilter.OPEN -> R.string.work_filter_open
+        UserPullRequestStateFilter.MERGED -> R.string.state_merged
+        UserPullRequestStateFilter.CLOSED_UNMERGED -> R.string.common_state_closed
+        UserPullRequestStateFilter.ALL -> R.string.common_all
     }
 
-private val UserPullRequestRelationFilter.label: String
+@get:StringRes
+private val UserPullRequestRelationFilter.labelRes: Int
     get() = when (this) {
-        UserPullRequestRelationFilter.INVOLVED -> "所有参与"
-        UserPullRequestRelationFilter.AUTHORED -> "我创建的"
-        UserPullRequestRelationFilter.ASSIGNED -> "分配给我"
-        UserPullRequestRelationFilter.REVIEW_REQUESTED -> "请求我审查"
-        UserPullRequestRelationFilter.COMMENTED -> "我评论过"
+        UserPullRequestRelationFilter.INVOLVED -> R.string.work_relation_involved
+        UserPullRequestRelationFilter.AUTHORED -> R.string.work_relation_authored
+        UserPullRequestRelationFilter.ASSIGNED -> R.string.work_relation_assigned
+        UserPullRequestRelationFilter.REVIEW_REQUESTED -> R.string.work_relation_review_requested
+        UserPullRequestRelationFilter.COMMENTED -> R.string.work_relation_commented
     }
 
-private val UserPullRequestVisibilityFilter.label: String
+@get:StringRes
+private val UserPullRequestVisibilityFilter.labelRes: Int
     get() = when (this) {
-        UserPullRequestVisibilityFilter.ALL -> "全部"
-        UserPullRequestVisibilityFilter.PUBLIC -> "公开"
-        UserPullRequestVisibilityFilter.PRIVATE -> "私有"
-        UserPullRequestVisibilityFilter.INTERNAL -> "内部"
+        UserPullRequestVisibilityFilter.ALL -> R.string.common_all
+        UserPullRequestVisibilityFilter.PUBLIC -> R.string.work_visibility_public
+        UserPullRequestVisibilityFilter.PRIVATE -> R.string.common_private
+        UserPullRequestVisibilityFilter.INTERNAL -> R.string.work_visibility_internal
     }
 
-private val UserPullRequestSortFilter.label: String
+@get:StringRes
+private val UserPullRequestSortFilter.labelRes: Int
     get() = when (this) {
-        UserPullRequestSortFilter.CREATED_DESC -> "最新创建"
-        UserPullRequestSortFilter.CREATED_ASC -> "最早创建"
-        UserPullRequestSortFilter.COMMENTS_DESC -> "最多评论"
-        UserPullRequestSortFilter.COMMENTS_ASC -> "最少评论"
-        UserPullRequestSortFilter.UPDATED_DESC -> "最近更新"
-        UserPullRequestSortFilter.UPDATED_ASC -> "最早更新"
+        UserPullRequestSortFilter.CREATED_DESC -> R.string.work_sort_created_desc
+        UserPullRequestSortFilter.CREATED_ASC -> R.string.work_sort_created_asc
+        UserPullRequestSortFilter.COMMENTS_DESC -> R.string.work_sort_comments_desc
+        UserPullRequestSortFilter.COMMENTS_ASC -> R.string.work_sort_comments_asc
+        UserPullRequestSortFilter.UPDATED_DESC -> R.string.work_sort_updated_desc
+        UserPullRequestSortFilter.UPDATED_ASC -> R.string.work_sort_updated_asc
     }
 
 @Composable

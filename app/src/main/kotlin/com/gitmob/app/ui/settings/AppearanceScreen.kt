@@ -65,13 +65,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.annotation.StringRes
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.ui.theme.Coral
 import com.gitmob.app.ui.theme.ThemeMode
 import com.materialkolor.PaletteStyle
@@ -79,45 +82,45 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
 
 private data class SeedColorOption(
-    val name: String,
+    @StringRes val nameRes: Int,
     val color: Color?,
 )
 
 private val seedColorOptions = listOf(
-    SeedColorOption("GitMob 珊瑚色", null),
-    SeedColorOption("红色", Color(0xFFF44336)),
-    SeedColorOption("粉色", Color(0xFFE91E63)),
-    SeedColorOption("紫色", Color(0xFF9C27B0)),
-    SeedColorOption("深紫色", Color(0xFF673AB7)),
-    SeedColorOption("靛蓝色", Color(0xFF3F51B5)),
-    SeedColorOption("蓝色", Color(0xFF2196F3)),
-    SeedColorOption("青色", Color(0xFF00BCD4)),
-    SeedColorOption("蓝绿色", Color(0xFF009688)),
-    SeedColorOption("绿色", Color(0xFF4CAF50)),
-    SeedColorOption("黄色", Color(0xFFFFEB3B)),
-    SeedColorOption("琥珀色", Color(0xFFFFC107)),
-    SeedColorOption("橙色", Color(0xFFFF9800)),
-    SeedColorOption("棕色", Color(0xFF795548)),
-    SeedColorOption("蓝灰色", Color(0xFF607D8F)),
-    SeedColorOption("柔珊瑚色", Color(0xFFFF9CA8)),
+    SeedColorOption(R.string.settings_seed_color_coral, null),
+    SeedColorOption(R.string.settings_seed_color_red, Color(0xFFF44336)),
+    SeedColorOption(R.string.settings_seed_color_pink, Color(0xFFE91E63)),
+    SeedColorOption(R.string.settings_seed_color_purple, Color(0xFF9C27B0)),
+    SeedColorOption(R.string.settings_seed_color_deep_purple, Color(0xFF673AB7)),
+    SeedColorOption(R.string.settings_seed_color_indigo, Color(0xFF3F51B5)),
+    SeedColorOption(R.string.settings_seed_color_blue, Color(0xFF2196F3)),
+    SeedColorOption(R.string.settings_seed_color_cyan, Color(0xFF00BCD4)),
+    SeedColorOption(R.string.settings_seed_color_teal, Color(0xFF009688)),
+    SeedColorOption(R.string.settings_seed_color_green, Color(0xFF4CAF50)),
+    SeedColorOption(R.string.settings_seed_color_yellow, Color(0xFFFFEB3B)),
+    SeedColorOption(R.string.settings_seed_color_amber, Color(0xFFFFC107)),
+    SeedColorOption(R.string.settings_seed_color_orange, Color(0xFFFF9800)),
+    SeedColorOption(R.string.settings_seed_color_brown, Color(0xFF795548)),
+    SeedColorOption(R.string.settings_seed_color_blue_grey, Color(0xFF607D8F)),
+    SeedColorOption(R.string.settings_seed_color_soft_coral, Color(0xFFFF9CA8)),
 )
 
 private data class PaletteStyleOption(
     val style: PaletteStyle,
-    val label: String,
-    val description: String,
+    @StringRes val labelRes: Int,
+    @StringRes val descriptionRes: Int,
 )
 
 private val paletteStyleOptions = listOf(
-    PaletteStyleOption(PaletteStyle.TonalSpot, "柔和", "均衡、沉稳的默认 Material 配色"),
-    PaletteStyleOption(PaletteStyle.Neutral, "中性", "降低彩度，更接近灰阶界面"),
-    PaletteStyleOption(PaletteStyle.Vibrant, "鲜明", "提高主色与辅助色的鲜艳程度"),
-    PaletteStyleOption(PaletteStyle.Expressive, "表现力", "使用更活泼、对比更明显的色相组合"),
-    PaletteStyleOption(PaletteStyle.Rainbow, "彩虹", "生成更丰富的多色调色板"),
-    PaletteStyleOption(PaletteStyle.FruitSalad, "果味", "偏轻快的邻近色组合"),
-    PaletteStyleOption(PaletteStyle.Monochrome, "单色", "仅使用黑、白、灰色阶"),
-    PaletteStyleOption(PaletteStyle.Fidelity, "忠实", "尽量保留种子色的原始观感"),
-    PaletteStyleOption(PaletteStyle.Content, "内容", "围绕内容色生成相邻与互补色"),
+    PaletteStyleOption(PaletteStyle.TonalSpot, R.string.settings_palette_tonal_spot, R.string.settings_palette_tonal_spot_desc),
+    PaletteStyleOption(PaletteStyle.Neutral, R.string.settings_palette_neutral, R.string.settings_palette_neutral_desc),
+    PaletteStyleOption(PaletteStyle.Vibrant, R.string.settings_palette_vibrant, R.string.settings_palette_vibrant_desc),
+    PaletteStyleOption(PaletteStyle.Expressive, R.string.settings_palette_expressive, R.string.settings_palette_expressive_desc),
+    PaletteStyleOption(PaletteStyle.Rainbow, R.string.settings_palette_rainbow, R.string.settings_palette_rainbow_desc),
+    PaletteStyleOption(PaletteStyle.FruitSalad, R.string.settings_palette_fruit_salad, R.string.settings_palette_fruit_salad_desc),
+    PaletteStyleOption(PaletteStyle.Monochrome, R.string.settings_palette_monochrome, R.string.settings_palette_monochrome_desc),
+    PaletteStyleOption(PaletteStyle.Fidelity, R.string.settings_palette_fidelity, R.string.settings_palette_fidelity_desc),
+    PaletteStyleOption(PaletteStyle.Content, R.string.settings_palette_content, R.string.settings_palette_content_desc),
 )
 
 /** Settings Tab 内的外观 push 页面。 */
@@ -136,12 +139,12 @@ fun AppearanceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("外观") },
+                title = { Text(stringResource(R.string.settings_appearance)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.common_back),
                         )
                     }
                 },
@@ -161,8 +164,8 @@ fun AppearanceScreen(
         ) {
             item {
                 CollapsibleSelectionSection(
-                    title = "主题模式",
-                    currentValue = themeModeLabel(preference.mode),
+                    title = stringResource(R.string.settings_theme_mode),
+                    currentValue = stringResource(themeModeLabel(preference.mode)),
                     expanded = expandedSection == "theme_mode",
                     onToggle = {
                         expandedSection = if (expandedSection == "theme_mode") null else "theme_mode"
@@ -184,10 +187,10 @@ fun AppearanceScreen(
             }
 
             item {
-                AppearanceSection(title = "深色显示") {
+                AppearanceSection(title = stringResource(R.string.settings_dark_display)) {
                     PreferenceSwitchRow(
-                        title = "AMOLED 纯黑",
-                        description = "仅在深色主题下使用纯黑背景",
+                        title = stringResource(R.string.settings_amoled_title),
+                        description = stringResource(R.string.settings_amoled_desc),
                         checked = preference.useAmoled,
                         onCheckedChange = viewModel::setUseAmoled,
                     )
@@ -196,7 +199,7 @@ fun AppearanceScreen(
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 item {
-                    AppearanceSection(title = "颜色来源") {
+                    AppearanceSection(title = stringResource(R.string.settings_color_source)) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -209,9 +212,12 @@ fun AppearanceScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("跟随系统壁纸", style = MaterialTheme.typography.bodyLarge)
                                 Text(
-                                    "使用当前壁纸的 Material You 颜色",
+                                    stringResource(R.string.settings_dynamic_color_title),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                Text(
+                                    stringResource(R.string.settings_dynamic_color_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -226,7 +232,7 @@ fun AppearanceScreen(
             }
 
             item {
-                AppearanceSection(title = "主题色") {
+                AppearanceSection(title = stringResource(R.string.settings_theme_color)) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -235,10 +241,12 @@ fun AppearanceScreen(
                     ) {
                         Text(
                             text = if (dynamicColorActive) {
-                                "关闭壁纸取色后可使用预设颜色"
+                                stringResource(R.string.settings_theme_color_disabled_hint)
                             } else {
-                                seedColorOptions.firstOrNull { it.color == preference.customSeedColor }?.name
-                                    ?: "自定义主题色"
+                                stringResource(
+                                    seedColorOptions.firstOrNull { it.color == preference.customSeedColor }?.nameRes
+                                        ?: R.string.settings_color_source_custom
+                                )
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -250,7 +258,7 @@ fun AppearanceScreen(
                         ) {
                             items(
                                 count = seedColorOptions.size,
-                                key = { seedColorOptions[it].name },
+                                key = { seedColorOptions[it].nameRes },
                             ) { index ->
                                 val option = seedColorOptions[index]
                                 val selected = !dynamicColorActive &&
@@ -278,8 +286,8 @@ fun AppearanceScreen(
             item {
                 val currentStyle = paletteStyleOptions.first { it.style == preference.paletteStyle }
                 CollapsibleSelectionSection(
-                    title = "调色板风格",
-                    currentValue = currentStyle.label,
+                    title = stringResource(R.string.settings_palette_style),
+                    currentValue = stringResource(currentStyle.labelRes),
                     expanded = expandedSection == "palette_style",
                     onToggle = {
                         expandedSection = if (expandedSection == "palette_style") null else "palette_style"
@@ -287,8 +295,8 @@ fun AppearanceScreen(
                 ) {
                     paletteStyleOptions.forEachIndexed { index, option ->
                         SelectionRow(
-                            title = option.label,
-                            description = option.description,
+                            title = stringResource(option.labelRes),
+                            description = stringResource(option.descriptionRes),
                             selected = preference.paletteStyle == option.style,
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
@@ -303,7 +311,7 @@ fun AppearanceScreen(
 
             item {
                 CollapsibleSelectionSection(
-                    title = "颜色规格",
+                    title = stringResource(R.string.settings_color_spec),
                     currentValue = colorSpecLabel(preference.colorSpec),
                     expanded = expandedSection == "color_spec",
                     onToggle = {
@@ -312,7 +320,7 @@ fun AppearanceScreen(
                 ) {
                     SelectionRow(
                         title = "Material 2021",
-                        description = "成熟稳定，保持当前默认配色表现",
+                        description = stringResource(R.string.settings_color_spec_2021_desc),
                         selected = preference.colorSpec == ColorSpec.SpecVersion.SPEC_2021,
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
@@ -323,7 +331,7 @@ fun AppearanceScreen(
                     HorizontalDivider()
                     SelectionRow(
                         title = "Material 2025",
-                        description = "使用新版动态颜色算法与色调关系",
+                        description = stringResource(R.string.settings_color_spec_2025_desc),
                         selected = preference.colorSpec == ColorSpec.SpecVersion.SPEC_2025,
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
@@ -335,12 +343,12 @@ fun AppearanceScreen(
             }
 
             item {
-                AppearanceSection(title = "交互") {
+                AppearanceSection(title = stringResource(R.string.settings_section_interaction)) {
                     Column {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             PreferenceSwitchRow(
-                                title = "预测性返回",
-                                description = "返回手势时预览即将显示的页面",
+                                title = stringResource(R.string.settings_predictive_back_title),
+                                description = stringResource(R.string.settings_predictive_back_desc),
                                 checked = preference.enablePredictiveBack,
                                 onCheckedChange = viewModel::setEnablePredictiveBack,
                             )
@@ -382,9 +390,12 @@ private fun PageScaleRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("页面缩放", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "仅缩放 App 内容，不改变系统字体和系统栏",
+                    stringResource(R.string.settings_page_scale_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    stringResource(R.string.settings_page_scale_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -446,40 +457,6 @@ private fun PreferenceSwitchRow(
 }
 
 @Composable
-private fun SelectionRow(
-    title: String,
-    description: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(
-                selected = selected,
-                role = Role.RadioButton,
-                onClick = onClick,
-            )
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 8.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        RadioButton(selected = selected, onClick = null)
-    }
-}
-
-@Composable
 private fun AppearanceSection(
     title: String,
     content: @Composable () -> Unit,
@@ -497,59 +474,11 @@ private fun AppearanceSection(
     }
 }
 
-@Composable
-private fun CollapsibleSelectionSection(
-    title: String,
-    currentValue: String,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        Card(shape = RoundedCornerShape(8.dp)) {
-            Column {
-                Surface(
-                    onClick = onToggle,
-                    color = Color.Transparent,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(title, style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            text = currentValue,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                AnimatedVisibility(
-                    visible = expanded,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                ) {
-                    Column {
-                        HorizontalDivider()
-                        content()
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun themeModeLabel(mode: ThemeMode): String = when (mode) {
-    ThemeMode.SYSTEM -> "跟随系统"
-    ThemeMode.LIGHT -> "浅色"
-    ThemeMode.DARK -> "深色"
+@StringRes
+private fun themeModeLabel(mode: ThemeMode): Int = when (mode) {
+    ThemeMode.SYSTEM -> R.string.settings_theme_mode_system
+    ThemeMode.LIGHT -> R.string.settings_theme_mode_light
+    ThemeMode.DARK -> R.string.settings_theme_mode_dark
 }
 
 private fun colorSpecLabel(spec: ColorSpec.SpecVersion): String = when (spec) {
@@ -563,10 +492,10 @@ private fun ThemeModeRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val (icon, label) = when (mode) {
-        ThemeMode.SYSTEM -> Icons.Default.SettingsBrightness to "跟随系统"
-        ThemeMode.LIGHT -> Icons.Default.LightMode to "浅色"
-        ThemeMode.DARK -> Icons.Default.DarkMode to "深色"
+    val (icon, labelRes) = when (mode) {
+        ThemeMode.SYSTEM -> Icons.Default.SettingsBrightness to R.string.settings_theme_mode_system
+        ThemeMode.LIGHT -> Icons.Default.LightMode to R.string.settings_theme_mode_light
+        ThemeMode.DARK -> Icons.Default.DarkMode to R.string.settings_theme_mode_dark
     }
     Row(
         modifier = Modifier
@@ -582,7 +511,7 @@ private fun ThemeModeRow(
             modifier = Modifier.padding(start = 8.dp),
         )
         Text(
-            text = label,
+            text = stringResource(labelRes),
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier
                 .weight(1f)
@@ -602,6 +531,7 @@ private fun SeedColorSwatch(
     onClick: () -> Unit,
 ) {
     val swatchColor = option.color ?: Coral
+    val optionName = stringResource(option.nameRes)
     val previewScheme = rememberDynamicColorScheme(
         seedColor = swatchColor,
         isDark = isDark,
@@ -631,7 +561,7 @@ private fun SeedColorSwatch(
                 scaleY = scale
             }
             .semantics {
-                contentDescription = option.name
+                contentDescription = optionName
                 this.selected = selected
             }
             .then(
@@ -668,7 +598,7 @@ private fun SeedColorSwatch(
             ) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = option.name,
+                    contentDescription = optionName,
                     tint = previewScheme.onPrimaryContainer,
                     modifier = Modifier.size(18.dp),
                 )
