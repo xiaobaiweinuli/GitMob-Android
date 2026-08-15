@@ -13,6 +13,7 @@ class RepoCapabilitiesTest {
         assertTrue(cap.canDeleteRepo)
         assertTrue(cap.canManageCollaborators)
         assertTrue(cap.canManageBranchProtection)
+        assertTrue(cap.canDeleteIssues)
     }
 
     @Test
@@ -22,6 +23,7 @@ class RepoCapabilitiesTest {
         assertTrue(cap.canManageSomeSettings)
         assertFalse(cap.canDeleteRepo)
         assertFalse(cap.canManageCollaborators)
+        assertFalse(cap.canDeleteIssues)
     }
 
     @Test
@@ -30,6 +32,7 @@ class RepoCapabilitiesTest {
         assertTrue(cap.canPush)
         assertFalse(cap.canManageSomeSettings)
         assertFalse(cap.canPushToProtectedBranch)
+        assertFalse(cap.canDeleteIssues)
     }
 
     @Test
@@ -37,6 +40,7 @@ class RepoCapabilitiesTest {
         val cap = RepoPermission.TRIAGE.toCapabilities()
         assertFalse(cap.canPush)
         assertTrue(cap.canManageIssuesAndPRs)
+        assertFalse(cap.canDeleteIssues)
     }
 
     @Test
@@ -44,5 +48,14 @@ class RepoCapabilitiesTest {
         val cap = RepoPermission.READ.toCapabilities()
         assertFalse(cap.canPush)
         assertFalse(cap.canManageIssuesAndPRs)
+        assertFalse(cap.canDeleteIssues)
+    }
+
+    @Test
+    fun `NONE has no repository capabilities`() {
+        val cap = RepoPermission.NONE.toCapabilities()
+        assertFalse(cap.canPush)
+        assertFalse(cap.canManageIssuesAndPRs)
+        assertFalse(cap.canDeleteIssues)
     }
 }

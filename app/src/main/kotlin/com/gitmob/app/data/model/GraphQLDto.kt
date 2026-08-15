@@ -94,7 +94,7 @@ data class PagedUserConnection(
 )
 
 @Serializable
-data class SimpleUserNode(val login: String, val name: String? = null, val avatarUrl: String? = null, val bio: String? = null)
+data class SimpleUserNode(val login: String, val name: String? = null, val avatarUrl: String? = null, val bio: String? = null, val id: String? = null)
 
 @Serializable
 data class PageInfoNode(val hasNextPage: Boolean, val endCursor: String? = null)
@@ -544,6 +544,10 @@ data class RepoDetailNode(
     val primaryLanguage: LanguageNode? = null,
     val repositoryTopics: TopicConnection,
     val viewerPermission: String? = null,
+    val viewerCanCreateIssues: Boolean = false,
+    val hasIssuesEnabled: Boolean = false,
+    val isBlankIssuesEnabled: Boolean = false,
+    val issueCreationPolicy: String? = null,
 )
 
 @Serializable
@@ -595,6 +599,130 @@ data class DeleteRefMutationData(val deleteRef: DeleteRefPayload? = null)
 
 @Serializable
 data class DeleteRefPayload(val clientMutationId: String? = null)
+
+// ---- Repository issues ----
+
+@Serializable
+data class RepoIssuesQueryData(val repository: RepoIssuesRepositoryNode? = null)
+
+@Serializable
+data class RepoIssuesRepositoryNode(
+    val id: String,
+    val viewerPermission: String? = null,
+    val viewerCanCreateIssues: Boolean = false,
+    val hasIssuesEnabled: Boolean = false,
+    val issues: RepoIssueConnectionNode,
+)
+
+@Serializable
+data class RepoIssueConnectionNode(
+    val totalCount: Int = 0,
+    val nodes: List<RepoIssueNode> = emptyList(),
+    val pageInfo: PageInfoNode,
+)
+
+@Serializable
+data class RepoIssueNode(
+    val id: String,
+    val number: Int,
+    val title: String,
+    val body: String? = null,
+    val bodyHTML: String? = null,
+    val state: String,
+    val stateReason: String? = null,
+    val author: SimpleUserNode? = null,
+    val createdAt: String,
+    val updatedAt: String,
+    val comments: RepoIssueCommentConnectionNode,
+    val labels: RepoIssueLabelConnectionNode? = null,
+    val assignees: RepoIssueAssigneeConnectionNode? = null,
+    val milestone: RepoIssueMilestoneNode? = null,
+    val locked: Boolean = false,
+    val viewerCanClose: Boolean = false,
+    val viewerCanDelete: Boolean = false,
+    val viewerCanLabel: Boolean = false,
+    val viewerCanSetMilestone: Boolean = false,
+    val viewerCanUpdate: Boolean = false,
+    val viewerCanSubscribe: Boolean = false,
+    val viewerCanReopen: Boolean = false,
+    val viewerSubscription: String? = null,
+)
+
+@Serializable
+data class RepoIssueCommentConnectionNode(
+    val totalCount: Int = 0,
+    val nodes: List<RepoIssueCommentNode> = emptyList(),
+    val pageInfo: PageInfoNode? = null,
+)
+
+@Serializable
+data class RepoIssueCommentNode(
+    val id: String,
+    val author: SimpleUserNode? = null,
+    val body: String? = null,
+    val bodyHTML: String = "",
+    val createdAt: String,
+    val updatedAt: String,
+    val viewerDidAuthor: Boolean = false,
+    val viewerCanUpdate: Boolean = false,
+    val viewerCanDelete: Boolean = false,
+    val viewerCanReact: Boolean = false,
+)
+
+@Serializable data class RepoIssueLabelConnectionNode(val nodes: List<RepoIssueLabelNode> = emptyList())
+@Serializable data class RepoIssueLabelNode(val id: String, val name: String, val color: String, val description: String? = null)
+@Serializable data class RepoIssueAssigneeConnectionNode(val nodes: List<SimpleUserNode> = emptyList())
+@Serializable data class RepoIssueMilestoneNode(val id: String, val number: Int, val title: String, val state: String, val dueOn: String? = null)
+
+@Serializable
+data class RepoIssueDetailQueryData(val repository: RepoIssueDetailRepositoryNode? = null)
+
+@Serializable
+data class RepoIssueDetailRepositoryNode(
+    val id: String,
+    val viewerPermission: String? = null,
+    val issue: RepoIssueNode? = null,
+)
+
+@Serializable data class RepoLabelsQueryData(val repository: RepoLabelsRepositoryNode? = null)
+@Serializable data class RepoLabelsRepositoryNode(val labels: RepoIssueLabelConnectionNode? = null)
+@Serializable data class RepoMilestonesQueryData(val repository: RepoMilestonesRepositoryNode? = null)
+@Serializable data class RepoMilestonesRepositoryNode(val milestones: RepoMilestoneConnectionNode? = null)
+@Serializable data class RepoMilestoneConnectionNode(val nodes: List<RepoIssueMilestoneNode> = emptyList())
+@Serializable data class RepoAssignableUsersQueryData(val repository: RepoAssignableUsersRepositoryNode? = null)
+@Serializable data class RepoAssignableUsersRepositoryNode(val assignableUsers: RepoIssueAssigneeConnectionNode? = null)
+@Serializable data class RepoIssueTemplatesQueryData(val repository: RepoIssueTemplatesRepositoryNode? = null)
+@Serializable data class RepoIssueTemplatesRepositoryNode(
+    val id: String,
+    val viewerCanCreateIssues: Boolean = false,
+    val isBlankIssuesEnabled: Boolean = false,
+    val issueTemplates: List<RepoIssueTemplateNode> = emptyList(),
+)
+@Serializable data class RepoIssueTemplateNode(
+    val name: String,
+    val about: String? = null,
+    val title: String? = null,
+    val body: String? = null,
+    val filename: String,
+    val labels: List<String> = emptyList(),
+    val assignees: List<String> = emptyList(),
+)
+
+@Serializable data class CreateIssueMutationData(val createIssue: IssueMutationPayload? = null)
+@Serializable data class UpdateIssueMutationData(val updateIssue: IssueMutationPayload? = null)
+@Serializable data class CloseIssueMutationData(val closeIssue: IssueMutationPayload? = null)
+@Serializable data class ReopenIssueMutationData(val reopenIssue: IssueMutationPayload? = null)
+@Serializable data class IssueMutationPayload(val issue: RepoIssueNode? = null)
+@Serializable data class DeleteIssueMutationData(val deleteIssue: ClientMutationPayload? = null)
+@Serializable data class AddIssueCommentMutationData(val addComment: IssueCommentMutationPayload? = null)
+@Serializable data class UpdateIssueCommentMutationData(val updateIssueComment: IssueCommentMutationPayload? = null)
+@Serializable data class IssueCommentMutationPayload(val commentEdge: IssueCommentEdgeNode? = null, val issueComment: RepoIssueCommentNode? = null)
+@Serializable data class IssueCommentEdgeNode(val node: RepoIssueCommentNode? = null)
+@Serializable data class DeleteIssueCommentMutationData(val deleteIssueComment: ClientMutationPayload? = null)
+@Serializable data class UpdateIssueSubscriptionMutationData(val updateSubscription: SubscriptionMutationPayload? = null)
+@Serializable data class SubscriptionMutationPayload(val subscribable: SubscriptionNode? = null)
+@Serializable data class SubscriptionNode(val viewerSubscription: String? = null)
+@Serializable data class ClientMutationPayload(val clientMutationId: String? = null)
 
 // ---- 主页事务入口行：议题/PR/讨论 involves:@me 计数 ----
 

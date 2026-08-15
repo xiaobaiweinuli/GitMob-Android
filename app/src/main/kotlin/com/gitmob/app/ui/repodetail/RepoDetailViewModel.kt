@@ -93,6 +93,15 @@ class RepoDetailViewModel @Inject constructor(
                     }
                 }
         }
+        viewModelScope.launch {
+            repoUpdateEventBus.events
+                .filterIsInstance<RepoUpdateEvent.IssueCountChanged>()
+                .collect { event ->
+                    if (event.owner == owner && event.name == name) {
+                        _state.update { state -> state.copy(detail = state.detail?.copy(openIssueCount = event.openIssueCount)) }
+                    }
+                }
+        }
     }
 
     private fun loadReadme() {

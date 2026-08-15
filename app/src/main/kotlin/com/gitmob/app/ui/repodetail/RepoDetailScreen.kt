@@ -76,6 +76,7 @@ fun RepoDetailScreen(
     onNavigateCode: (ref: String) -> Unit,
     onNavigateCommits: (ref: String) -> Unit,
     onNavigateWatchers: () -> Unit,
+    onNavigateIssues: (permission: com.gitmob.app.core.permission.RepoPermission, viewerCanCreateIssues: Boolean) -> Unit,
     onNavigatePlaceholder: (label: String) -> Unit,
     viewModel: RepoDetailViewModel = hiltViewModel(),
 ) {
@@ -149,6 +150,7 @@ fun RepoDetailScreen(
                             onNavigateCode = onNavigateCode,
                             onNavigateCommits = onNavigateCommits,
                             onNavigateWatchers = onNavigateWatchers,
+                            onNavigateIssues = { onNavigateIssues(detail.permission, detail.viewerCanCreateIssues) },
                             onNavigatePlaceholder = onNavigatePlaceholder,
                         )
                         val readmeHtml = state.readmeHtml
@@ -284,10 +286,11 @@ private fun RepoMenu(
     onNavigateCode: (ref: String) -> Unit,
     onNavigateCommits: (ref: String) -> Unit,
     onNavigateWatchers: () -> Unit,
+    onNavigateIssues: () -> Unit,
     onNavigatePlaceholder: (label: String) -> Unit,
 ) {
     Column {
-        MenuRow(Icons.Default.Adjust, "议题", detail.openIssueCount, onClick = { onNavigatePlaceholder("议题") })
+        MenuRow(Icons.Default.Adjust, "议题", detail.openIssueCount, onClick = onNavigateIssues)
         MenuRow(Icons.AutoMirrored.Default.CallSplit, "拉取请求", detail.openPrCount, onClick = { onNavigatePlaceholder("拉取请求") })
         MenuRow(Icons.Default.PlayCircle, "操作", null, onClick = { onNavigatePlaceholder("操作") })
         MenuRow(

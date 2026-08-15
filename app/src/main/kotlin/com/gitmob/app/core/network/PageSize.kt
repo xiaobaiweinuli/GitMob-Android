@@ -36,6 +36,10 @@ object PageSize {
     /** 工作项：Issues / Pull Requests / Discussions */
     const val WORK_ITEMS = 20
 
+    /** Repository issue and issue comment connections. */
+    const val REPO_ISSUES = 20
+    const val ISSUE_COMMENTS = 20
+
     /** Gist 列表底层扫描页和 UI 目标页尺寸 */
     const val GISTS = 20
 

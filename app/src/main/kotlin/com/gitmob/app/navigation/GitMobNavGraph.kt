@@ -29,6 +29,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +52,8 @@ import com.gitmob.app.ui.inbox.InboxScreen
 import com.gitmob.app.ui.login.LoginScreen
 import com.gitmob.app.ui.profile.ProfileScreen
 import com.gitmob.app.ui.repodetail.RepoDetailScreen
+import com.gitmob.app.ui.repoissues.RepoIssueDetailScreen
+import com.gitmob.app.ui.repoissues.RepoIssueListScreen
 import com.gitmob.app.ui.repos.ReposScreen
 import com.gitmob.app.ui.settings.AboutScreen
 import com.gitmob.app.ui.settings.AppearanceScreen
@@ -112,6 +115,8 @@ fun GitMobNavGraph(
     startLoggedIn: Boolean,
     errorEventBus: ErrorEventBus,
     enablePredictiveBack: Boolean,
+    deepLinkDestination: DeepLinkDestination? = null,
+    onDeepLinkConsumed: () -> Unit = {},
 ) {
     var isLoggedIn by remember { mutableStateOf(startLoggedIn) }
 
@@ -120,6 +125,8 @@ fun GitMobNavGraph(
             LoggedInApp(
                 onLogout = { isLoggedIn = false },
                 enablePredictiveBack = enablePredictiveBack,
+                deepLinkDestination = deepLinkDestination,
+                onDeepLinkConsumed = onDeepLinkConsumed,
             )
         } else {
             LoginScreen(onLoginSuccess = { isLoggedIn = true })
@@ -152,6 +159,8 @@ fun GitMobNavGraph(
 private fun LoggedInApp(
     onLogout: () -> Unit,
     enablePredictiveBack: Boolean,
+    deepLinkDestination: DeepLinkDestination?,
+    onDeepLinkConsumed: () -> Unit,
 ) {
     val navState = rememberGitMobNavState(startRoute = HomeRoute)
     val navigator = remember(navState) { GitMobNavigator(navState) }
@@ -170,6 +179,23 @@ private fun LoggedInApp(
         }
     }
     val showingTabRoot = navState.isShowingTabRoot()
+
+    LaunchedEffect(deepLinkDestination) {
+        val destination = deepLinkDestination ?: return@LaunchedEffect
+        when (destination) {
+            is DeepLinkDestination.Profile -> navigator.navigate(ProfileRoute(destination.login))
+            is DeepLinkDestination.RepoOverview -> navigator.navigate(RepoDetailRoute(destination.owner, destination.repo))
+            is DeepLinkDestination.IssueList -> navigator.navigate(RepoIssuesRoute(destination.owner, destination.repo))
+            is DeepLinkDestination.IssueDetail -> navigator.navigate(RepoIssueDetailRoute(destination.owner, destination.repo, destination.number))
+            is DeepLinkDestination.FileView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref))
+            is DeepLinkDestination.DirView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref))
+            is DeepLinkDestination.PullRequestDetail -> navigator.navigate(RepoPlaceholderRoute("${destination.owner}/${destination.repo} #${destination.number}"))
+            is DeepLinkDestination.DiscussionDetail -> navigator.navigate(RepoPlaceholderRoute("${destination.owner}/${destination.repo} #${destination.number}"))
+            is DeepLinkDestination.DiscussionList -> navigator.navigate(RepoPlaceholderRoute("${destination.owner}/${destination.repo} discussions"))
+            DeepLinkDestination.Unsupported -> Unit
+        }
+        onDeepLinkConsumed()
+    }
 
     val entryProvider = entryProvider<NavKey> {
         // ──────────────────────────────────────────────────────────────
@@ -233,7 +259,7 @@ private fun LoggedInApp(
             WorkIssueListScreen(
                 onBack = { navigator.goBack() },
                 onItemClick = { owner, name, number ->
-                    navigator.navigate(RepoPlaceholderRoute("$owner/$name #$number"))
+                    navigator.navigate(RepoIssueDetailRoute(owner, name, number))
                 },
             )
         }
@@ -308,7 +334,29 @@ private fun LoggedInApp(
                 onNavigateCode = { ref -> navigator.navigate(RepoCodeRoute(route.owner, route.name, ref)) },
                 onNavigateCommits = { ref -> navigator.navigate(RepoCommitsRoute(route.owner, route.name, ref)) },
                 onNavigateWatchers = { navigator.navigate(RepoWatchersRoute(route.owner, route.name)) },
+                onNavigateIssues = { permission, viewerCanCreateIssues ->
+                    navigator.navigate(RepoIssuesRoute(route.owner, route.name, permission, viewerCanCreateIssues))
+                },
                 onNavigatePlaceholder = { label -> navigator.navigate(RepoPlaceholderRoute(label)) },
+            )
+        }
+        entry<RepoIssuesRoute> { route ->
+            RepoIssueListScreen(
+                owner = route.owner,
+                name = route.name,
+                permission = route.permission,
+                viewerCanCreateIssues = route.viewerCanCreateIssues,
+                onBack = { navigator.goBack() },
+                onIssueClick = { number -> navigator.navigate(RepoIssueDetailRoute(route.owner, route.name, number, route.permission)) },
+            )
+        }
+        entry<RepoIssueDetailRoute> { route ->
+            RepoIssueDetailScreen(
+                owner = route.owner,
+                name = route.name,
+                number = route.number,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
             )
         }
         entry<RepoBranchesRoute> { route ->

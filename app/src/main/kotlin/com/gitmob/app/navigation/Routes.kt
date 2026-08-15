@@ -1,6 +1,7 @@
 package com.gitmob.app.navigation
 
 import androidx.navigation3.runtime.NavKey
+import com.gitmob.app.core.permission.RepoPermission
 import kotlinx.serialization.Serializable
 
 /**
@@ -52,6 +53,8 @@ sealed interface Route : NavKey
 
 /** 仓库详情及其子页面 */
 @Serializable data class RepoDetailRoute(val owner: String, val name: String) : Route
+@Serializable data class RepoIssuesRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val viewerCanCreateIssues: Boolean? = null) : Route
+@Serializable data class RepoIssueDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoBranchesRoute(val owner: String, val name: String, val currentRef: String, val canManageBranchProtection: Boolean) : Route
 @Serializable data class RepoCodeRoute(val owner: String, val name: String, val ref: String) : Route
 @Serializable data class RepoCommitsRoute(val owner: String, val name: String, val ref: String) : Route

@@ -1,6 +1,7 @@
 package com.gitmob.app.data.model
 
 import com.gitmob.app.core.permission.RepoCapabilities
+import com.gitmob.app.core.permission.RepoPermission
 
 data class RepoDetail(
     val id: String,
@@ -34,7 +35,14 @@ data class RepoDetail(
     val languageColor: String?,
     val topics: List<String>,
     val capabilities: RepoCapabilities,
+    val permission: RepoPermission = RepoPermission.NONE,
+    val viewerCanCreateIssues: Boolean = false,
+    val hasIssuesEnabled: Boolean = false,
+    val isBlankIssuesEnabled: Boolean = false,
+    val issueCreationPolicy: IssueCreationPolicy = IssueCreationPolicy.UNKNOWN,
 )
+
+enum class IssueCreationPolicy { ALL, COLLABORATORS_ONLY, UNKNOWN }
 
 data class RepoReadme(
     val markdown: String?,

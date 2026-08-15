@@ -93,6 +93,7 @@ data class SimpleUser(
     val name: String?,
     val avatarUrl: String?,
     val bio: String?,
+    val id: String? = null,
 )
 
 data class PagedUsers(

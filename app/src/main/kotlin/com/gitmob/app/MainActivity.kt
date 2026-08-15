@@ -1,6 +1,7 @@
 package com.gitmob.app
 
 import android.os.Bundle
+import android.content.Intent
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.activity.ComponentActivity
@@ -9,10 +10,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.navigation.GitMobNavGraph
+import com.gitmob.app.navigation.DeepLinkDestination
+import com.gitmob.app.navigation.EXTRA_DEEP_LINK_DESTINATION
 import com.gitmob.app.ui.theme.GitMobTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -23,6 +28,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var errorEventBus: ErrorEventBus
 
     private val startupViewModel: StartupViewModel by viewModels()
+    private var deepLinkDestination by mutableStateOf<DeepLinkDestination?>(null)
 
     /**
      * 启动链路（KernelSU 同款零依赖配方，分析见 文档/splash-screen-deep-analysis.md §10）：
@@ -38,6 +44,7 @@ class MainActivity : ComponentActivity() {
      */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        deepLinkDestination = intent.deepLinkDestination()
         enableEdgeToEdge()
 
         val content: View = findViewById(android.R.id.content)
@@ -66,9 +73,21 @@ class MainActivity : ComponentActivity() {
                         startLoggedIn = isLoggedIn,
                         errorEventBus = errorEventBus,
                         enablePredictiveBack = themePreference.enablePredictiveBack,
+                        deepLinkDestination = deepLinkDestination,
+                        onDeepLinkConsumed = { deepLinkDestination = null },
                     )
                 }
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        deepLinkDestination = intent.deepLinkDestination()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun Intent.deepLinkDestination(): DeepLinkDestination? =
+        getSerializableExtra(EXTRA_DEEP_LINK_DESTINATION) as? DeepLinkDestination
 }

@@ -56,7 +56,8 @@ class RepoDetailRepositoryTest {
                     "releases":{"totalCount":43,"nodes":[{"name":"GitMob v1.7.8","tagName":"v1.7.8"}]},
                     "primaryLanguage":{"name":"Kotlin","color":"#A97BFF"},
                     "repositoryTopics":{"nodes":[{"topic":{"name":"github"}},{"topic":{"name":"android"}}]},
-                    "viewerPermission":"ADMIN"
+                    "viewerPermission":"ADMIN","viewerCanCreateIssues":true,"hasIssuesEnabled":true,
+                    "isBlankIssuesEnabled":false,"issueCreationPolicy":"COLLABORATORS_ONLY"
                 }}}
                 """.trimIndent(),
             ),
@@ -73,6 +74,9 @@ class RepoDetailRepositoryTest {
         assertEquals(listOf("github", "android"), detail.topics)
         assertTrue(detail.capabilities.canDeleteRepo) // ADMIN 应该派生出可删除仓库
         assertTrue(detail.capabilities.canManageBranchProtection)
+        assertTrue(detail.capabilities.canDeleteIssues)
+        assertTrue(detail.viewerCanCreateIssues)
+        assertTrue(detail.hasIssuesEnabled)
     }
 
     @Test

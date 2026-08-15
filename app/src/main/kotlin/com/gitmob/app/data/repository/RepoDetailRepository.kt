@@ -8,6 +8,7 @@ import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.DeleteRefMutationData
+import com.gitmob.app.data.model.IssueCreationPolicy
 import com.gitmob.app.data.model.PagedBranches
 import com.gitmob.app.data.model.PagedUsers
 import com.gitmob.app.data.model.RepoBranch
@@ -68,6 +69,10 @@ class RepoDetailRepository @Inject constructor(
                     primaryLanguage { name color }
                     repositoryTopics(first: 10) { nodes { topic { name } } } # TOPICS_PER_REPO
                     viewerPermission
+                    viewerCanCreateIssues
+                    hasIssuesEnabled
+                    isBlankIssuesEnabled
+                    issueCreationPolicy
                 }
             }
         """.trimIndent()
@@ -110,6 +115,13 @@ class RepoDetailRepository @Inject constructor(
             languageName = node.primaryLanguage?.name,
             languageColor = node.primaryLanguage?.color,
             topics = node.repositoryTopics.nodes.map { it.topic.name },
+            permission = permission,
+            viewerCanCreateIssues = node.viewerCanCreateIssues,
+            hasIssuesEnabled = node.hasIssuesEnabled,
+            isBlankIssuesEnabled = node.isBlankIssuesEnabled,
+            issueCreationPolicy = node.issueCreationPolicy?.let {
+                runCatching { IssueCreationPolicy.valueOf(it) }.getOrDefault(IssueCreationPolicy.UNKNOWN)
+            } ?: IssueCreationPolicy.UNKNOWN,
             capabilities = permission.toCapabilities(),
         )
     }
