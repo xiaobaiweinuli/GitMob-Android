@@ -13,6 +13,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -61,5 +62,45 @@ class MarkdownWebViewTest {
         assertFalse(document.contains("border-color:"))
         assertFalse(document.contains("background-color: #ffffff"))
         assertFalse(document.contains("background-color: #0d1117"))
+    }
+
+    @Test
+    fun `内部垂直滚动被钳死为零`() {
+        val webView = NoVerticalScrollWebView(RuntimeEnvironment.getApplication())
+
+        webView.scrollTo(0, 100)
+        assertEquals(0, webView.scrollY)
+
+        webView.scrollBy(0, 50)
+        assertEquals(0, webView.scrollY)
+    }
+
+    @Test
+    fun `钳死垂直滚动不影响横向滚动`() {
+        val webView = NoVerticalScrollWebView(RuntimeEnvironment.getApplication())
+
+        webView.scrollTo(30, 100)
+
+        assertEquals(30, webView.scrollX)
+        assertEquals(0, webView.scrollY)
+    }
+
+    @Test
+    fun `Chromium直写滚动位置后由onScrollChanged拉回零`() {
+        val webView = NoVerticalScrollWebView(RuntimeEnvironment.getApplication())
+
+        // 模拟 Chromium 胶水层绕过 scrollTo 直写垂直偏移（fling 的真实路径），
+        // 然后触发必经的 onScrollChanged 回调。
+        ReflectionHelpers.setField(webView, "mScrollY", 120)
+        ReflectionHelpers.callInstanceMethod<Unit>(
+            webView,
+            "onScrollChanged",
+            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, 0),
+            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, 120),
+            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, 0),
+            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, 0),
+        )
+
+        assertEquals(0, webView.scrollY)
     }
 }

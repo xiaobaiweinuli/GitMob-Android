@@ -289,6 +289,15 @@ private fun OrgProfileContent(
             }
         }
 
+        // 组织简介与个人 Bio 保持相同的信息层级：位于资料头部之后、统计和置顶仓库之前。
+        owner.description?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                it,
+                modifier = Modifier.padding(top = 16.dp),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+
         // ---- 组织统计行：仓库 / 成员，二列，公共 ProfileStatsRow 统一渲染
         // （和个人 Profile 的四列统计行保持相同的 SpaceEvenly 等距样式，只是元素数量为 2）
         ProfileStatsRow(
@@ -304,11 +313,6 @@ private fun OrgProfileContent(
             onRepoClick = onPinnedRepoClick,
             modifier = Modifier.padding(top = 20.dp),
         )
-
-        // ---- 组织简介 ----
-        owner.description?.let {
-            Text(it, modifier = Modifier.padding(top = 16.dp))
-        }
 
         // Push route 底部：navigationBars + captionBar 高度补偿
         Spacer(
