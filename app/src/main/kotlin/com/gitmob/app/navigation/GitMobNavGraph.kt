@@ -1,9 +1,10 @@
 package com.gitmob.app.navigation
 
 import androidx.activity.compose.LocalActivity
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -65,6 +66,19 @@ import com.gitmob.app.ui.work.WorkIssueListScreen
 import com.gitmob.app.ui.work.WorkListMode
 
 private data class BottomTab(val route: Route, val label: String, val icon: ImageVector)
+
+/**
+ * 全站统一的页面转场：淡入淡出（draw 阶段 alpha，无位移）。
+ *
+ * 之前是 220ms layout 阶段横滑（slideInHorizontally）——入场页要在动画进行中从零
+ * compose+measure+layout（Nav3 SinglePaneScene 只渲染栈顶 entry，切 Tab 两端都重建），
+ * 重建高峰和逐帧布局抢主线程，掉帧直接表现为滑动顿挫。fade 没有"运动"可掉帧，
+ * 重组抖动被淡入遮蔽（orange-cloud-main / Nav2 官方默认同款观感），
+ * 也顺带消解了"横滑方向恒定"的问题（fade 无方向）。
+ * 详见 文档/tab-switch-jank-and-back-animation-analysis.md。
+ */
+private fun crossFadeTransition(): ContentTransform =
+    fadeIn(animationSpec = tween(260)) togetherWith fadeOut(animationSpec = tween(260))
 
 private val bottomTabs = listOf(
     BottomTab(HomeRoute, "主页", Icons.Default.Home),
@@ -395,30 +409,19 @@ private fun LoggedInApp(
                 // navigator 返回 false = 已在 Home Tab 根页且栈空 → 交给系统 finish Activity
                 if (!handled) activity?.finish()
             },
-            transitionSpec = {
-                slideInHorizontally(
-                    initialOffsetX = { it / 4 },
-                    animationSpec = tween(220),
-                ) togetherWith slideOutHorizontally(
-                    targetOffsetX = { -it / 4 },
-                    animationSpec = tween(220),
-                )
-            },
-            popTransitionSpec = {
-                slideInHorizontally(
-                    initialOffsetX = { -it / 4 },
-                    animationSpec = tween(220),
-                ) togetherWith slideOutHorizontally(
-                    targetOffsetX = { it / 4 },
-                    animationSpec = tween(220),
-                )
-            },
+            transitionSpec = { crossFadeTransition() },
+            popTransitionSpec = { crossFadeTransition() },
             predictivePopTransitionSpec = {
                 if (enablePredictiveBack) {
+                    // 预测性返回开启：保留跟手的横滑预览（平台标准观感）
                     slideInHorizontally(initialOffsetX = { -it / 4 }) togetherWith
                         slideOutHorizontally(targetOffsetX = { it / 4 })
                 } else {
-                    EnterTransition.None togetherWith ExitTransition.None
+                    // 开关语义 = 关闭"跟手预览"，不是关闭动画：
+                    // 回退成与 popTransitionSpec 相同的淡入淡出，提交时播完整动画。
+                    // 之前这里是 None togetherWith None，全面屏手势下所有返回都走本
+                    // spec，等于把一切返回动画关掉了。
+                    crossFadeTransition()
                 }
             },
             // 仅在显示 Tab 根页时加 bottom padding（等于 NavigationBar 高度），
