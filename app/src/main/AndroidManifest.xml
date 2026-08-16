@@ -12,9 +12,14 @@
         android:theme="@style/Theme.GitMob"
         android:supportsRtl="true">
 
+        <!-- configChanges 声明 locale|layoutDirection：语言切换降级为一次普通配置变更，
+             appcompat（≤32）与系统（33+）都走"原地更新资源 + onConfigurationChanged"分支，
+             不再 recreate → 无黑屏闪烁；Compose 的 stringResource 随 LocalConfiguration
+             更新原地重组。全部文案均在组合时解析（无缓存字符串），原地换语言无残留。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="locale|layoutDirection"
             android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
