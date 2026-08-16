@@ -15,8 +15,14 @@ sealed class DeepLinkDestination : Serializable {
     data class IssueDetail(val owner: String, val repo: String, val number: Int) : DeepLinkDestination()
     data class IssueList(val owner: String, val repo: String) : DeepLinkDestination()
     data class PullRequestDetail(val owner: String, val repo: String, val number: Int) : DeepLinkDestination()
+    data class PullRequestList(val owner: String, val repo: String) : DeepLinkDestination()
     data class DiscussionDetail(val owner: String, val repo: String, val number: Int) : DeepLinkDestination()
     data class DiscussionList(val owner: String, val repo: String) : DeepLinkDestination()
+    data class Actions(val owner: String, val repo: String) : DeepLinkDestination()
+    data class WorkflowRun(val owner: String, val repo: String, val runId: Long) : DeepLinkDestination()
+    data class ReleaseList(val owner: String, val repo: String) : DeepLinkDestination()
+    data class ReleaseDetail(val owner: String, val repo: String, val tag: String) : DeepLinkDestination()
+    data class Contributors(val owner: String, val repo: String) : DeepLinkDestination()
     data object Unsupported : DeepLinkDestination()
 }
 
@@ -58,10 +64,26 @@ object DeepLinkRouter {
                 val number = segments.getOrNull(3)?.toIntOrNull() ?: return DeepLinkDestination.Unsupported
                 DeepLinkDestination.PullRequestDetail(owner, repo, number)
             }
+            "pulls" -> DeepLinkDestination.PullRequestList(owner, repo)
             "discussions" -> {
                 val number = segments.getOrNull(3)?.toIntOrNull()
                 if (number != null) DeepLinkDestination.DiscussionDetail(owner, repo, number)
                 else DeepLinkDestination.DiscussionList(owner, repo)
+            }
+            "actions" -> {
+                val runId = if (segments.getOrNull(3) == "runs") segments.getOrNull(4)?.toLongOrNull() else null
+                if (runId != null) DeepLinkDestination.WorkflowRun(owner, repo, runId)
+                else DeepLinkDestination.Actions(owner, repo)
+            }
+            "releases" -> {
+                val tag = if (segments.getOrNull(3) == "tag") segments.drop(4).joinToString("/") else ""
+                if (tag.isNotBlank()) DeepLinkDestination.ReleaseDetail(owner, repo, tag)
+                else DeepLinkDestination.ReleaseList(owner, repo)
+            }
+            "graphs" -> if (segments.getOrNull(3) == "contributors") {
+                DeepLinkDestination.Contributors(owner, repo)
+            } else {
+                DeepLinkDestination.Unsupported
             }
             else -> DeepLinkDestination.Unsupported
         }

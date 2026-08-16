@@ -42,6 +42,26 @@ sealed class RepoUpdateEvent {
         val openPrCount: Int,
     ) : RepoUpdateEvent()
 
+    data class DiscussionCountChanged(
+        override val owner: String,
+        override val name: String,
+        val openDiscussionCount: Int,
+    ) : RepoUpdateEvent()
+
+    data class ReleaseChanged(
+        override val owner: String,
+        override val name: String,
+        val releaseCount: Int,
+        val latestReleaseName: String?,
+        val latestReleaseTag: String?,
+    ) : RepoUpdateEvent()
+
+    data class ActionRunChanged(
+        override val owner: String,
+        override val name: String,
+        val runId: Long,
+    ) : RepoUpdateEvent()
+
     /** Watch 订阅状态变化（SUBSCRIBED/UNSUBSCRIBED/IGNORED） */
     data class WatchStateChanged(
         override val owner: String,

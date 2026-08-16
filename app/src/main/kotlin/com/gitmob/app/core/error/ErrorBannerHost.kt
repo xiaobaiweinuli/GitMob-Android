@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Timer
@@ -43,11 +44,11 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun ErrorBannerHost(errorEventBus: ErrorEventBus, modifier: Modifier = Modifier) {
-    var current by remember { mutableStateOf<ApiError?>(null) }
+    var current by remember { mutableStateOf<BannerEvent?>(null) }
 
     LaunchedEffect(Unit) {
-        errorEventBus.events.collect { error ->
-            current = error
+        errorEventBus.events.collect { event ->
+            current = event
             delay(3000)
             current = null
         }
@@ -59,22 +60,45 @@ fun ErrorBannerHost(errorEventBus: ErrorEventBus, modifier: Modifier = Modifier)
         exit = slideOutVertically() + fadeOut(),
         modifier = modifier.fillMaxWidth(),
     ) {
-        current?.let { error ->
-            val containerColor = error.bannerContainerColor()
-            val contentColor = error.bannerContentColor()
+        current?.let { event ->
+            val containerColor = event.bannerContainerColor()
+            val contentColor = event.bannerContentColor()
             Surface(
                 color = containerColor,
                 modifier = Modifier.padding(8.dp),
                 shape = RoundedCornerShape(8.dp),
             ) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(error.icon(), contentDescription = null, tint = contentColor)
+                    Icon(event.icon(), contentDescription = null, tint = contentColor)
                     Spacer(Modifier.width(8.dp))
-                    Text(error.displayMessage(), color = contentColor)
+                    Text(event.displayMessage(), color = contentColor)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun BannerEvent.displayMessage(): String = when (this) {
+    is BannerEvent.Error -> error.displayMessage()
+    is BannerEvent.Notice -> stringResource(messageRes)
+}
+
+private fun BannerEvent.icon(): ImageVector = when (this) {
+    is BannerEvent.Error -> error.icon()
+    is BannerEvent.Notice -> Icons.Default.CheckCircle
+}
+
+@Composable
+private fun BannerEvent.bannerContainerColor(): Color = when (this) {
+    is BannerEvent.Error -> error.bannerContainerColor()
+    is BannerEvent.Notice -> MaterialTheme.colorScheme.primaryContainer
+}
+
+@Composable
+private fun BannerEvent.bannerContentColor(): Color = when (this) {
+    is BannerEvent.Error -> error.bannerContentColor()
+    is BannerEvent.Notice -> MaterialTheme.colorScheme.onPrimaryContainer
 }
 
 /**

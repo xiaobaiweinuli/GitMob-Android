@@ -11,6 +11,7 @@ import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.DeleteRefMutationData
 import com.gitmob.app.data.model.IssueCreationPolicy
+import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.PagedBranches
 import com.gitmob.app.data.model.PagedUsers
 import com.gitmob.app.data.model.RepoBranch
@@ -75,6 +76,10 @@ class RepoDetailRepository @Inject constructor(
                     hasIssuesEnabled
                     isBlankIssuesEnabled
                     issueCreationPolicy
+                    hasPullRequestsEnabled
+                    pullRequestCreationPolicy
+                    hasDiscussionsEnabled
+                    discussions(states: [OPEN], first: 0) { totalCount }
                 }
             }
         """.trimIndent()
@@ -124,6 +129,13 @@ class RepoDetailRepository @Inject constructor(
             issueCreationPolicy = node.issueCreationPolicy?.let {
                 runCatching { IssueCreationPolicy.valueOf(it) }.getOrDefault(IssueCreationPolicy.UNKNOWN)
             } ?: IssueCreationPolicy.UNKNOWN,
+            hasPullRequestsEnabled = node.hasPullRequestsEnabled,
+            pullRequestCreationPolicy = node.pullRequestCreationPolicy?.let {
+                runCatching { PullRequestCreationPolicy.valueOf(it) }
+                    .getOrDefault(PullRequestCreationPolicy.UNKNOWN)
+            } ?: PullRequestCreationPolicy.UNKNOWN,
+            hasDiscussionsEnabled = node.hasDiscussionsEnabled,
+            openDiscussionCount = node.discussions.totalCount,
             capabilities = permission.toCapabilities(),
         )
     }

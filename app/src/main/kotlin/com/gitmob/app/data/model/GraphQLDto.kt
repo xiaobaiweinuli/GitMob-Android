@@ -548,6 +548,10 @@ data class RepoDetailNode(
     val hasIssuesEnabled: Boolean = false,
     val isBlankIssuesEnabled: Boolean = false,
     val issueCreationPolicy: String? = null,
+    val hasPullRequestsEnabled: Boolean = false,
+    val pullRequestCreationPolicy: String? = null,
+    val hasDiscussionsEnabled: Boolean = false,
+    val discussions: TotalCountNode = TotalCountNode(0),
 )
 
 @Serializable

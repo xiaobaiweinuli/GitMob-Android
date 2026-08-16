@@ -15,11 +15,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import java.net.URI
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
 
-private const val REST_API_VERSION = "2026-03-10" // 最新版本（2026-03-10 发布），升级前先读 GitHub 变更日志
+@PublishedApi
+internal const val REST_API_VERSION = "2026-03-10" // 最新版本（2026-03-10 发布），升级前先读 GitHub 变更日志
 // graphQL()（inline）直接用到这个值，同 DEFAULT_ACCEPT 的道理
 @PublishedApi
 internal const val USER_AGENT = "GitMob-Android"     // REST 强制要求，缺失会被拒绝
@@ -89,6 +91,65 @@ class GHApiClient @Inject constructor(
 
     // 拿原始内容（diff/patch/raw 文件等），不经过 JSON 解码
     suspend fun getRaw(path: String, accept: String): String = executeRestRaw("GET", path, accept)
+
+    /**
+     * Resolve a GitHub REST download endpoint without following its redirect.
+     * The returned signed URL is deliberately unauthenticated so it can be opened
+     * by an external browser without leaking the PAT.
+     */
+    suspend fun resolveRestDownloadUrl(path: String, accept: String = DEFAULT_ACCEPT): String? {
+        val token = tokenProvider.getToken() ?: throw UnauthorizedException()
+        val request = Request.Builder()
+            .url("$restBaseUrl$path")
+            .header("Authorization", "Bearer $token")
+            .header("Accept", accept)
+            .header("X-GitHub-Api-Version", REST_API_VERSION)
+            .header("User-Agent", USER_AGENT)
+            .get()
+            .build()
+        val noRedirectClient = okHttpClient.newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+        return withContext(Dispatchers.IO) {
+            noRedirectClient.newCall(request).execute().use { response ->
+                if (response.code !in setOf(301, 302, 303, 307, 308)) {
+                    if (!response.isSuccessful) {
+                        throw HttpStatusException(response.code, "Download endpoint returned ${response.code}")
+                    }
+                    return@use null
+                }
+                val location = response.header("Location")
+                    ?: return@use null
+                val resolved = runCatching { URI(request.url.toString()).resolve(location).normalize() }.getOrNull()
+                    ?: return@use null
+                if (!resolved.isAbsolute || !resolved.scheme.equals("https", ignoreCase = true) || resolved.userInfo != null) {
+                    return@use null
+                }
+                resolved.toString()
+            }
+        }
+    }
+
+    /** Release asset 使用 uploads.github.com 的绝对 URL，仍复用统一鉴权和错误映射。 */
+    suspend inline fun <reified T> uploadBytes(url: String, contentType: String, bytes: ByteArray): T {
+        val token = tokenProvider.getToken() ?: throw UnauthorizedException()
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", DEFAULT_ACCEPT)
+            .header("X-GitHub-Api-Version", REST_API_VERSION)
+            .header("User-Agent", USER_AGENT)
+            .post(bytes.toRequestBody(contentType.toMediaType()))
+            .build()
+        return withContext(Dispatchers.IO) {
+            okHttpClient.newCall(request).execute().use { response ->
+                val responseBytes = response.body.bytes()
+                if (!response.isSuccessful) throw HttpStatusException(response.code, responseBytes.decodeToString())
+                json.decodeFromString(responseBytes.decodeToString())
+            }
+        }
+    }
 
     suspend inline fun <reified T> executeRest(method: String, path: String, body: String?, accept: String): T {
         rawCall(method, path, body, accept).use { response ->

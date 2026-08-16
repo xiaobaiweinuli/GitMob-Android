@@ -102,6 +102,47 @@ class RepoDetailViewModel @Inject constructor(
                     }
                 }
         }
+        viewModelScope.launch {
+            repoUpdateEventBus.events
+                .filterIsInstance<RepoUpdateEvent.PullRequestCountChanged>()
+                .collect { event ->
+                    if (event.owner == owner && event.name == name) {
+                        _state.update { state -> state.copy(detail = state.detail?.copy(openPrCount = event.openPrCount)) }
+                    }
+                }
+        }
+        viewModelScope.launch {
+            repoUpdateEventBus.events
+                .filterIsInstance<RepoUpdateEvent.DiscussionCountChanged>()
+                .collect { event ->
+                    if (event.owner == owner && event.name == name) {
+                        _state.update { state ->
+                            state.copy(detail = state.detail?.copy(openDiscussionCount = event.openDiscussionCount))
+                        }
+                    }
+                }
+        }
+        viewModelScope.launch {
+            repoUpdateEventBus.events
+                .filterIsInstance<RepoUpdateEvent.ReleaseChanged>()
+                .collect { event ->
+                    if (event.owner == owner && event.name == name) {
+                        if (event.releaseCount >= 0) {
+                            _state.update { state ->
+                                state.copy(
+                                    detail = state.detail?.copy(
+                                        releaseCount = event.releaseCount,
+                                        latestReleaseName = event.latestReleaseName,
+                                        latestReleaseTag = event.latestReleaseTag,
+                                    ),
+                                )
+                            }
+                        } else {
+                            load()
+                        }
+                    }
+                }
+        }
     }
 
     private fun loadReadme() {

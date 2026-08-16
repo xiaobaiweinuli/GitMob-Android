@@ -79,6 +79,12 @@ fun RepoDetailScreen(
     onNavigateCommits: (ref: String) -> Unit,
     onNavigateWatchers: () -> Unit,
     onNavigateIssues: (permission: com.gitmob.app.core.permission.RepoPermission, viewerCanCreateIssues: Boolean) -> Unit,
+    onNavigatePullRequests: (permission: com.gitmob.app.core.permission.RepoPermission) -> Unit,
+    onNavigateDiscussions: (permission: com.gitmob.app.core.permission.RepoPermission) -> Unit,
+    onNavigateActions: (permission: com.gitmob.app.core.permission.RepoPermission, defaultRef: String?) -> Unit,
+    onNavigateReleases: (permission: com.gitmob.app.core.permission.RepoPermission) -> Unit,
+    onNavigateContributors: () -> Unit,
+    onNavigateLicense: (ref: String) -> Unit,
     onNavigatePlaceholder: (label: String) -> Unit,
     viewModel: RepoDetailViewModel = hiltViewModel(),
 ) {
@@ -153,6 +159,12 @@ fun RepoDetailScreen(
                             onNavigateCommits = onNavigateCommits,
                             onNavigateWatchers = onNavigateWatchers,
                             onNavigateIssues = { onNavigateIssues(detail.permission, detail.viewerCanCreateIssues) },
+                            onNavigatePullRequests = { onNavigatePullRequests(detail.permission) },
+                            onNavigateDiscussions = { onNavigateDiscussions(detail.permission) },
+                            onNavigateActions = { onNavigateActions(detail.permission, detail.defaultBranchName) },
+                            onNavigateReleases = { onNavigateReleases(detail.permission) },
+                            onNavigateContributors = onNavigateContributors,
+                            onNavigateLicense = { detail.defaultBranchName?.let(onNavigateLicense) },
                             onNavigatePlaceholder = onNavigatePlaceholder,
                         )
                         val readmeHtml = state.readmeHtml
@@ -289,6 +301,12 @@ private fun RepoMenu(
     onNavigateCommits: (ref: String) -> Unit,
     onNavigateWatchers: () -> Unit,
     onNavigateIssues: () -> Unit,
+    onNavigatePullRequests: () -> Unit,
+    onNavigateDiscussions: () -> Unit,
+    onNavigateActions: () -> Unit,
+    onNavigateReleases: () -> Unit,
+    onNavigateContributors: () -> Unit,
+    onNavigateLicense: () -> Unit,
     onNavigatePlaceholder: (label: String) -> Unit,
 ) {
     val pullRequestsLabel = stringResource(R.string.common_pull_requests)
@@ -299,18 +317,18 @@ private fun RepoMenu(
     val licenseLabel = stringResource(R.string.repo_license)
     Column {
         MenuRow(Icons.Default.Adjust, stringResource(R.string.common_issues), detail.openIssueCount, onClick = onNavigateIssues)
-        MenuRow(Icons.AutoMirrored.Default.CallSplit, pullRequestsLabel, detail.openPrCount, onClick = { onNavigatePlaceholder(pullRequestsLabel) })
-        MenuRow(Icons.Default.PlayCircle, actionsLabel, null, onClick = { onNavigatePlaceholder(actionsLabel) })
+        MenuRow(Icons.AutoMirrored.Default.CallSplit, pullRequestsLabel, detail.openPrCount, onClick = onNavigatePullRequests)
+        MenuRow(Icons.Default.PlayCircle, actionsLabel, null, onClick = onNavigateActions)
         MenuRow(
             Icons.Default.Sell, releasesLabel, detail.releaseCount,
             subtitle = detail.latestReleaseTag,
-            onClick = { onNavigatePlaceholder(releasesLabel) },
+            onClick = onNavigateReleases,
         )
-        MenuRow(Icons.Default.ChatBubble, discussionsLabel, null, onClick = { onNavigatePlaceholder(discussionsLabel) })
-        MenuRow(Icons.Default.Groups, contributorsLabel, null, onClick = { onNavigatePlaceholder(contributorsLabel) })
+        MenuRow(Icons.Default.ChatBubble, discussionsLabel, detail.openDiscussionCount, onClick = onNavigateDiscussions)
+        MenuRow(Icons.Default.Groups, contributorsLabel, null, onClick = onNavigateContributors)
         MenuRow(Icons.Default.Visibility, stringResource(R.string.common_watchers), detail.watcherCount, onClick = onNavigateWatchers)
         detail.licenseName?.let {
-            MenuRow(Icons.Default.Balance, licenseLabel, null, subtitle = it, onClick = { onNavigatePlaceholder(licenseLabel) })
+            MenuRow(Icons.Default.Balance, licenseLabel, null, subtitle = it, onClick = onNavigateLicense)
         }
         MenuRow(
             Icons.Default.AccountTree, stringResource(R.string.common_branches), detail.branchCount,

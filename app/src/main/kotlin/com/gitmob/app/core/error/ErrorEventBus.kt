@@ -1,10 +1,16 @@
 package com.gitmob.app.core.error
 
+import androidx.annotation.StringRes
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import javax.inject.Inject
 import javax.inject.Singleton
+
+sealed interface BannerEvent {
+    data class Error(val error: ApiError) : BannerEvent
+    data class Notice(@field:StringRes val messageRes: Int) : BannerEvent
+}
 
 /**
  * 全局错误事件总线。ViewModel 遇到 ApiResult.Failure 时 emit 到这里，
@@ -13,10 +19,14 @@ import javax.inject.Singleton
  */
 @Singleton
 class ErrorEventBus @Inject constructor() {
-    private val _events = MutableSharedFlow<ApiError>(extraBufferCapacity = 4)
-    val events: SharedFlow<ApiError> = _events.asSharedFlow()
+    private val _events = MutableSharedFlow<BannerEvent>(extraBufferCapacity = 4)
+    val events: SharedFlow<BannerEvent> = _events.asSharedFlow()
 
     suspend fun emit(error: ApiError) {
-        _events.emit(error)
+        _events.emit(BannerEvent.Error(error))
+    }
+
+    suspend fun emitNotice(@StringRes messageRes: Int) {
+        _events.emit(BannerEvent.Notice(messageRes))
     }
 }

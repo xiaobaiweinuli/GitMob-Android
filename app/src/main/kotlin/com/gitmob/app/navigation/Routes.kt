@@ -55,6 +55,19 @@ sealed interface Route : NavKey
 @Serializable data class RepoDetailRoute(val owner: String, val name: String) : Route
 @Serializable data class RepoIssuesRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val viewerCanCreateIssues: Boolean? = null) : Route
 @Serializable data class RepoIssueDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoPullRequestsRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoPullRequestDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoPullRequestEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoDiscussionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoDiscussionDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoDiscussionEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoActionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val defaultRef: String? = null) : Route
+@Serializable data class RepoWorkflowRunRoute(val owner: String, val name: String, val runId: Long, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoReleasesRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoReleaseDetailRoute(val owner: String, val name: String, val tag: String, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoReleaseEditorRoute(val owner: String, val name: String, val releaseId: Long? = null, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoContributorsRoute(val owner: String, val name: String) : Route
+@Serializable data class RepoLicenseRoute(val owner: String, val name: String, val ref: String) : Route
 @Serializable data class RepoBranchesRoute(val owner: String, val name: String, val currentRef: String, val canManageBranchProtection: Boolean) : Route
 @Serializable data class RepoCodeRoute(val owner: String, val name: String, val ref: String) : Route
 @Serializable data class RepoCommitsRoute(val owner: String, val name: String, val ref: String) : Route

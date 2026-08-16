@@ -48,6 +48,13 @@ import com.gitmob.app.R
 import com.gitmob.app.core.error.ErrorBannerHost
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.ui.branches.BranchesScreen
+import com.gitmob.app.ui.repoactions.RepoActionsScreen
+import com.gitmob.app.ui.repoactions.RepoWorkflowRunScreen
+import com.gitmob.app.ui.repocommunity.RepoContributorsScreen
+import com.gitmob.app.ui.repocommunity.RepoLicenseScreen
+import com.gitmob.app.ui.reporeleases.RepoReleaseDetailScreen
+import com.gitmob.app.ui.reporeleases.RepoReleaseEditorScreen
+import com.gitmob.app.ui.reporeleases.RepoReleaseListScreen
 import com.gitmob.app.ui.common.PlaceholderScreen
 import com.gitmob.app.ui.gist.GistScreen
 import com.gitmob.app.ui.home.HomeScreen
@@ -55,8 +62,13 @@ import com.gitmob.app.ui.inbox.InboxScreen
 import com.gitmob.app.ui.login.LoginScreen
 import com.gitmob.app.ui.profile.ProfileScreen
 import com.gitmob.app.ui.repodetail.RepoDetailScreen
+import com.gitmob.app.ui.repodiscussions.RepoDiscussionDetailScreen
+import com.gitmob.app.ui.repodiscussions.RepoDiscussionListScreen
 import com.gitmob.app.ui.repoissues.RepoIssueDetailScreen
 import com.gitmob.app.ui.repoissues.RepoIssueListScreen
+import com.gitmob.app.ui.repopullrequests.RepoPullRequestDetailScreen
+import com.gitmob.app.ui.repopullrequests.RepoPullRequestEditorScreen
+import com.gitmob.app.ui.repopullrequests.RepoPullRequestListScreen
 import com.gitmob.app.ui.repos.ReposScreen
 import com.gitmob.app.ui.settings.AboutScreen
 import com.gitmob.app.ui.settings.AppearanceScreen
@@ -192,9 +204,15 @@ private fun LoggedInApp(
             is DeepLinkDestination.IssueDetail -> navigator.navigate(RepoIssueDetailRoute(destination.owner, destination.repo, destination.number))
             is DeepLinkDestination.FileView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref))
             is DeepLinkDestination.DirView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref))
-            is DeepLinkDestination.PullRequestDetail -> navigator.navigate(RepoPlaceholderRoute("${destination.owner}/${destination.repo} #${destination.number}"))
-            is DeepLinkDestination.DiscussionDetail -> navigator.navigate(RepoPlaceholderRoute("${destination.owner}/${destination.repo} #${destination.number}"))
-            is DeepLinkDestination.DiscussionList -> navigator.navigate(RepoPlaceholderRoute("${destination.owner}/${destination.repo} discussions"))
+            is DeepLinkDestination.PullRequestDetail -> navigator.navigate(RepoPullRequestDetailRoute(destination.owner, destination.repo, destination.number))
+            is DeepLinkDestination.PullRequestList -> navigator.navigate(RepoPullRequestsRoute(destination.owner, destination.repo))
+            is DeepLinkDestination.DiscussionDetail -> navigator.navigate(RepoDiscussionDetailRoute(destination.owner, destination.repo, destination.number))
+            is DeepLinkDestination.DiscussionList -> navigator.navigate(RepoDiscussionsRoute(destination.owner, destination.repo))
+            is DeepLinkDestination.Actions -> navigator.navigate(RepoActionsRoute(destination.owner, destination.repo))
+            is DeepLinkDestination.WorkflowRun -> navigator.navigate(RepoWorkflowRunRoute(destination.owner, destination.repo, destination.runId))
+            is DeepLinkDestination.ReleaseList -> navigator.navigate(RepoReleasesRoute(destination.owner, destination.repo))
+            is DeepLinkDestination.ReleaseDetail -> navigator.navigate(RepoReleaseDetailRoute(destination.owner, destination.repo, destination.tag))
+            is DeepLinkDestination.Contributors -> navigator.navigate(RepoContributorsRoute(destination.owner, destination.repo))
             DeepLinkDestination.Unsupported -> Unit
         }
         onDeepLinkConsumed()
@@ -270,7 +288,7 @@ private fun LoggedInApp(
             WorkPullRequestListScreen(
                 onBack = { navigator.goBack() },
                 onItemClick = { owner, name, number ->
-                    navigator.navigate(RepoPlaceholderRoute("$owner/$name #$number"))
+                    navigator.navigate(RepoPullRequestDetailRoute(owner, name, number))
                 },
             )
         }
@@ -278,7 +296,7 @@ private fun LoggedInApp(
             WorkDiscussionListScreen(
                 onBack = { navigator.goBack() },
                 onItemClick = { owner, name, number ->
-                    navigator.navigate(RepoPlaceholderRoute("$owner/$name #$number"))
+                    navigator.navigate(RepoDiscussionDetailRoute(owner, name, number))
                 },
             )
         }
@@ -340,6 +358,12 @@ private fun LoggedInApp(
                 onNavigateIssues = { permission, viewerCanCreateIssues ->
                     navigator.navigate(RepoIssuesRoute(route.owner, route.name, permission, viewerCanCreateIssues))
                 },
+                onNavigatePullRequests = { permission -> navigator.navigate(RepoPullRequestsRoute(route.owner, route.name, permission)) },
+                onNavigateDiscussions = { permission -> navigator.navigate(RepoDiscussionsRoute(route.owner, route.name, permission)) },
+                onNavigateActions = { permission, defaultRef -> navigator.navigate(RepoActionsRoute(route.owner, route.name, permission, defaultRef)) },
+                onNavigateReleases = { permission -> navigator.navigate(RepoReleasesRoute(route.owner, route.name, permission)) },
+                onNavigateContributors = { navigator.navigate(RepoContributorsRoute(route.owner, route.name)) },
+                onNavigateLicense = { ref -> navigator.navigate(RepoLicenseRoute(route.owner, route.name, ref)) },
                 onNavigatePlaceholder = { label -> navigator.navigate(RepoPlaceholderRoute(label)) },
             )
         }
@@ -359,6 +383,119 @@ private fun LoggedInApp(
                 name = route.name,
                 number = route.number,
                 permission = route.permission,
+                onBack = { navigator.goBack() },
+            )
+        }
+        entry<RepoPullRequestsRoute> { route ->
+            RepoPullRequestListScreen(
+                owner = route.owner,
+                name = route.name,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+                onPullRequestClick = { number -> navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
+                onCreate = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, permission = route.permission)) },
+            )
+        }
+        entry<RepoPullRequestDetailRoute> { route ->
+            RepoPullRequestDetailScreen(
+                owner = route.owner,
+                name = route.name,
+                number = route.number,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+                onEdit = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, route.number, route.permission)) },
+            )
+        }
+        entry<RepoPullRequestEditorRoute> { route ->
+            RepoPullRequestEditorScreen(
+                owner = route.owner,
+                name = route.name,
+                number = route.number,
+                onBack = { navigator.goBack() },
+                onSaved = { number -> navigator.goBack(); navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
+            )
+        }
+        entry<RepoDiscussionsRoute> { route ->
+            RepoDiscussionListScreen(
+                owner = route.owner,
+                name = route.name,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+                onDiscussionClick = { number -> navigator.navigate(RepoDiscussionDetailRoute(route.owner, route.name, number, route.permission)) },
+            )
+        }
+        entry<RepoDiscussionDetailRoute> { route ->
+            RepoDiscussionDetailScreen(
+                owner = route.owner,
+                name = route.name,
+                number = route.number,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+            )
+        }
+        entry<RepoActionsRoute> { route ->
+            RepoActionsScreen(
+                owner = route.owner,
+                name = route.name,
+                permission = route.permission,
+                defaultRef = route.defaultRef,
+                onBack = { navigator.goBack() },
+                onRunClick = { runId -> navigator.navigate(RepoWorkflowRunRoute(route.owner, route.name, runId, route.permission)) },
+            )
+        }
+        entry<RepoWorkflowRunRoute> { route ->
+            RepoWorkflowRunScreen(
+                owner = route.owner,
+                name = route.name,
+                runId = route.runId,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+            )
+        }
+        entry<RepoReleasesRoute> { route ->
+            RepoReleaseListScreen(
+                owner = route.owner,
+                name = route.name,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+                onReleaseClick = { tag -> navigator.navigate(RepoReleaseDetailRoute(route.owner, route.name, tag, route.permission)) },
+                onCreate = { navigator.navigate(RepoReleaseEditorRoute(route.owner, route.name, permission = route.permission)) },
+            )
+        }
+        entry<RepoReleaseDetailRoute> { route ->
+            RepoReleaseDetailScreen(
+                owner = route.owner,
+                name = route.name,
+                tag = route.tag,
+                releaseId = null,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+                onEdit = { releaseId -> navigator.navigate(RepoReleaseEditorRoute(route.owner, route.name, releaseId, route.permission)) },
+            )
+        }
+        entry<RepoReleaseEditorRoute> { route ->
+            RepoReleaseEditorScreen(
+                owner = route.owner,
+                name = route.name,
+                releaseId = route.releaseId,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+                onSaved = { tag -> navigator.goBack(); navigator.navigate(RepoReleaseDetailRoute(route.owner, route.name, tag, route.permission)) },
+            )
+        }
+        entry<RepoContributorsRoute> { route ->
+            RepoContributorsScreen(
+                owner = route.owner,
+                name = route.name,
+                onBack = { navigator.goBack() },
+                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+            )
+        }
+        entry<RepoLicenseRoute> { route ->
+            RepoLicenseScreen(
+                owner = route.owner,
+                name = route.name,
+                ref = route.ref,
                 onBack = { navigator.goBack() },
             )
         }

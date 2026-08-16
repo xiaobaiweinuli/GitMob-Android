@@ -49,4 +49,23 @@ class DeepLinkRouterTest {
         val uri = Uri.parse("https://github.com/owner/repo/issues")
         assertEquals(DeepLinkDestination.IssueList("owner", "repo"), DeepLinkRouter.parse(uri))
     }
+
+    @Test
+    fun `pulls列表和pull详情分别解析`() {
+        assertEquals(DeepLinkDestination.PullRequestList("owner", "repo"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/pulls")))
+        assertEquals(DeepLinkDestination.PullRequestDetail("owner", "repo", 7), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/pull/7")))
+    }
+
+    @Test
+    fun `actions列表和运行详情分别解析`() {
+        assertEquals(DeepLinkDestination.Actions("owner", "repo"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/actions")))
+        assertEquals(DeepLinkDestination.WorkflowRun("owner", "repo", 123L), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/actions/runs/123")))
+    }
+
+    @Test
+    fun `发行版和贡献者链接解析`() {
+        assertEquals(DeepLinkDestination.ReleaseList("owner", "repo"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/releases")))
+        assertEquals(DeepLinkDestination.ReleaseDetail("owner", "repo", "v1.0.0"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/releases/tag/v1.0.0")))
+        assertEquals(DeepLinkDestination.Contributors("owner", "repo"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/graphs/contributors")))
+    }
 }

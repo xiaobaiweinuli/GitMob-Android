@@ -40,9 +40,15 @@ data class RepoDetail(
     val hasIssuesEnabled: Boolean = false,
     val isBlankIssuesEnabled: Boolean = false,
     val issueCreationPolicy: IssueCreationPolicy = IssueCreationPolicy.UNKNOWN,
+    val hasPullRequestsEnabled: Boolean = false,
+    val pullRequestCreationPolicy: PullRequestCreationPolicy = PullRequestCreationPolicy.UNKNOWN,
+    val hasDiscussionsEnabled: Boolean = false,
+    val openDiscussionCount: Int = 0,
 )
 
 enum class IssueCreationPolicy { ALL, COLLABORATORS_ONLY, UNKNOWN }
+
+enum class PullRequestCreationPolicy { ALL, COLLABORATORS_ONLY, UNKNOWN }
 
 data class RepoReadme(
     val markdown: String?,
