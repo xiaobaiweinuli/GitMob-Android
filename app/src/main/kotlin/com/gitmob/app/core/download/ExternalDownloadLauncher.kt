@@ -1,6 +1,7 @@
 package com.gitmob.app.core.download
 
 import android.content.Context
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import com.gitmob.app.R
@@ -23,12 +24,15 @@ class ExternalDownloadLauncher @Inject constructor(
             throw UserVisibleException(R.string.download_address_unavailable)
         }
         val intent = Intent(Intent.ACTION_VIEW, uri)
-            .addCategory(Intent.CATEGORY_BROWSABLE)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (intent.resolveActivity(context.packageManager) == null) {
-            throw UserVisibleException(R.string.download_browser_unavailable)
+        try {
+            // Do not preflight resolveActivity(): package visibility can report a false negative.
+            // Android will select the default handler or show its own chooser when needed.
+            context.startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            throw UserVisibleException(R.string.download_external_app_unavailable)
+        } catch (_: SecurityException) {
+            throw UserVisibleException(R.string.download_external_app_unavailable)
         }
-        runCatching { context.startActivity(intent) }
-            .getOrElse { throw UserVisibleException(R.string.download_browser_unavailable) }
     }
 }

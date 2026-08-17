@@ -51,7 +51,7 @@ class RepoReleaseDetailViewModel @Inject constructor(private val repository: Rep
             _state.update { it.copy(openingAssetIds = it.openingAssetIds + asset.id) }
             try {
                 when (val result = repository.downloadAsset(owner, name, asset)) {
-                    is ApiResult.Success -> errorEventBus.emitNotice(R.string.download_opened_in_browser)
+                    is ApiResult.Success -> errorEventBus.emitNotice(R.string.download_opened_externally)
                     is ApiResult.Failure -> errorEventBus.emit(result.error)
                 }
             } finally {

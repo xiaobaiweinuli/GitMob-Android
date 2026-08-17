@@ -88,9 +88,9 @@
     <string name="settings_section_account">账号</string>
     <string name="settings_logout">退出登录</string>
     <string name="settings_logout_summary">退出当前 GitHub 账号</string>
-    <string name="download_opened_in_browser">已在浏览器中打开下载</string>
+    <string name="download_opened_externally">已交给系统打开下载链接</string>
     <string name="download_address_unavailable">无法获取下载地址，请重试</string>
-    <string name="download_browser_unavailable">未找到可打开下载链接的浏览器</string>
+    <string name="download_external_app_unavailable">系统没有可打开此下载链接的应用</string>
 
     <!-- 设置 · 主题模式 -->
     <string name="settings_theme_mode">主题模式</string>

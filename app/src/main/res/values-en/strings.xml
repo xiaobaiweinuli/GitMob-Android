@@ -83,9 +83,9 @@
     <string name="settings_section_account">Account</string>
     <string name="settings_logout">Sign out</string>
     <string name="settings_logout_summary">Sign out of the current GitHub account</string>
-    <string name="download_opened_in_browser">Opened the download in your browser</string>
+    <string name="download_opened_externally">Sent the download link to the system</string>
     <string name="download_address_unavailable">Could not get the download address. Try again.</string>
-    <string name="download_browser_unavailable">No browser is available to open the download link</string>
+    <string name="download_external_app_unavailable">No app can open this download link</string>
 
     <!-- Settings · theme mode -->
     <string name="settings_theme_mode">Theme mode</string>

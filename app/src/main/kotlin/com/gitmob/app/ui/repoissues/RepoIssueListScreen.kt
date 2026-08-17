@@ -53,8 +53,18 @@ fun RepoIssueListScreen(
                 actions = {
                     if (state.viewerCanCreateIssues) {
                         IconButton(onClick = {
-                            if (state.templates.isNotEmpty()) templatePicker = true else { editorTemplate = null; editorOpen = true }
-                        }) { Icon(Icons.Default.Add, stringResource(R.string.issue_new)) }
+                            when {
+                                !state.templatesLoaded -> viewModel.loadIssueTemplates()
+                                state.templates.isNotEmpty() -> templatePicker = true
+                                state.blankIssuesEnabled -> { editorTemplate = null; editorOpen = true }
+                            }
+                        }, enabled = !state.isLoadingTemplates) {
+                            if (state.isLoadingTemplates) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Add, stringResource(R.string.issue_new))
+                            }
+                        }
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),

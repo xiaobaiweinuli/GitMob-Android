@@ -35,6 +35,9 @@ data class RepoIssueListUiState(
     val assignableUsers: List<SimpleUser> = emptyList(),
     val templates: List<IssueTemplate> = emptyList(),
     val blankIssuesEnabled: Boolean = true,
+    val templatesLoaded: Boolean = false,
+    val isLoadingTemplates: Boolean = false,
+    val templatesLoadFailed: Boolean = false,
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
@@ -62,6 +65,7 @@ class RepoIssueListViewModel @Inject constructor(
         initialized = true; this.owner = owner; this.name = name
         _state.update { it.copy(permission = permission ?: RepoPermission.NONE, capabilities = (permission ?: RepoPermission.NONE).let { p -> p.toCapabilities() }, viewerCanCreateIssues = viewerCanCreateIssues ?: false) }
         load()
+        loadIssueTemplates()
         viewModelScope.launch {
             repoUpdateEventBus.events.filterIsInstance<RepoUpdateEvent.IssueCountChanged>().collect { event ->
                 if (event.owner == owner && event.name == name) {
@@ -73,7 +77,28 @@ class RepoIssueListViewModel @Inject constructor(
             repository.getLabels(owner, name).onSuccess { _state.update { s -> s.copy(labels = it) } }
             repository.getMilestones(owner, name).onSuccess { _state.update { s -> s.copy(milestones = it) } }
             repository.getAssignableUsers(owner, name).onSuccess { _state.update { s -> s.copy(assignableUsers = it) } }
-            repository.getIssueTemplates(owner, name).onSuccess { (blank, templates) -> _state.update { s -> s.copy(blankIssuesEnabled = blank, templates = templates) } }
+        }
+    }
+
+    fun loadIssueTemplates() {
+        if (_state.value.isLoadingTemplates) return
+        _state.update { it.copy(isLoadingTemplates = true, templatesLoadFailed = false) }
+        viewModelScope.launch {
+            when (val result = repository.getIssueTemplates(owner, name)) {
+                is ApiResult.Success -> _state.update {
+                    it.copy(
+                        blankIssuesEnabled = result.data.first,
+                        templates = result.data.second,
+                        templatesLoaded = true,
+                        isLoadingTemplates = false,
+                        templatesLoadFailed = false,
+                    )
+                }
+                is ApiResult.Failure -> {
+                    errorEventBus.emit(result.error)
+                    _state.update { it.copy(templatesLoaded = false, isLoadingTemplates = false, templatesLoadFailed = true) }
+                }
+            }
         }
     }
 
@@ -132,7 +157,7 @@ class RepoIssueListViewModel @Inject constructor(
         val repositoryId = _state.value.repositoryId ?: return
         if (!_state.value.viewerCanCreateIssues || title.isBlank()) return
         viewModelScope.launch {
-            when (val result = repository.createIssue(CreateRepoIssueInput(repositoryId, title.trim(), body, labelIds, assigneeIds, milestoneId, template?.filename))) {
+            when (val result = repository.createIssue(CreateRepoIssueInput(repositoryId, title.trim(), body, labelIds, assigneeIds, milestoneId, template?.name))) {
                 is ApiResult.Success -> { emitIssueCount(suppressRefresh = true); onCreated(result.data); load() }
                 is ApiResult.Failure -> errorEventBus.emit(result.error)
             }

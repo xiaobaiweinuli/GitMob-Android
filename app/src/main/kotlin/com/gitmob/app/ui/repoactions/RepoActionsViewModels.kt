@@ -87,7 +87,7 @@ class RepoWorkflowRunViewModel @Inject constructor(
             _state.update { it.copy(openingArtifactIds = it.openingArtifactIds + artifact.id) }
             try {
                 when (val result = repository.downloadArtifact(owner, name, artifact)) {
-                    is ApiResult.Success -> errorEventBus.emitNotice(R.string.download_opened_in_browser)
+                    is ApiResult.Success -> errorEventBus.emitNotice(R.string.download_opened_externally)
                     is ApiResult.Failure -> errorEventBus.emit(result.error)
                 }
             } finally {
