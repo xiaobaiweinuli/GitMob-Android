@@ -1,6 +1,6 @@
 package com.gitmob.app.data.model
 
-enum class WorkflowDispatchInputType { STRING, BOOLEAN, CHOICE, ENVIRONMENT }
+enum class WorkflowDispatchInputType { STRING, BOOLEAN, CHOICE, NUMBER, ENVIRONMENT }
 
 data class WorkflowDispatchInput(
     val name: String,

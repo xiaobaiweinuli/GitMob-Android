@@ -52,10 +52,66 @@ data class IssueTemplate(
     val name: String,
     val about: String?,
     val title: String?,
-    val body: String?,
     val filename: String,
     val labels: List<String>,
     val assignees: List<String>,
+    val fields: List<IssueFormField>,
+)
+
+sealed interface IssueFormField {
+    val id: String?
+
+    data class Markdown(
+        override val id: String? = null,
+        val value: String,
+    ) : IssueFormField
+
+    data class Input(
+        override val id: String,
+        val label: String,
+        val description: String? = null,
+        val placeholder: String? = null,
+        val value: String? = null,
+        val required: Boolean = false,
+    ) : IssueFormField
+
+    data class Textarea(
+        override val id: String,
+        val label: String,
+        val description: String? = null,
+        val placeholder: String? = null,
+        val value: String? = null,
+        val render: String? = null,
+        val required: Boolean = false,
+    ) : IssueFormField
+
+    data class Dropdown(
+        override val id: String,
+        val label: String,
+        val description: String? = null,
+        val options: List<String>,
+        val multiple: Boolean = false,
+        val defaultIndex: Int? = null,
+        val required: Boolean = false,
+    ) : IssueFormField
+
+    data class Checkboxes(
+        override val id: String,
+        val label: String,
+        val description: String? = null,
+        val options: List<IssueFormCheckboxOption>,
+    ) : IssueFormField
+}
+
+data class IssueFormCheckboxOption(
+    val label: String,
+    val required: Boolean = false,
+)
+
+data class IssueTemplateLoadResult(
+    val blankIssuesEnabled: Boolean,
+    val templates: List<IssueTemplate>,
+    val invalidTemplateCount: Int = 0,
 )
 
 data class IssueComment(
@@ -130,7 +186,6 @@ data class CreateRepoIssueInput(
     val labelIds: List<String> = emptyList(),
     val assigneeIds: List<String> = emptyList(),
     val milestoneId: String? = null,
-    val issueTemplate: String? = null,
 )
 
 data class UpdateRepoIssueInput(

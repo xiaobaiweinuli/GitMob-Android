@@ -137,6 +137,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotaml)
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(libs.androidx.room.runtime)
@@ -150,7 +151,6 @@ dependencies {
     // 以下三个尚未在代码里接入，等"仓库详情->代码浏览"等对应功能开发时再实际使用，
     // 先按用户指定版本声明，见 libs.versions.toml 注释
     // implementation(libs.sora.editor)
-    // implementation(libs.kotaml)
     // implementation(libs.appiconloader)
     // implementation(libs.parcelablelist)
 

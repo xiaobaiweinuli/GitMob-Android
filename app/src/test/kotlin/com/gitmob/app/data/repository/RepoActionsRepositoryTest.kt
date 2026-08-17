@@ -7,11 +7,13 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.RepoActionArtifact
+import com.gitmob.app.data.model.RepoWorkflow
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -86,6 +88,33 @@ class RepoActionsRepositoryTest {
         assertEquals(2, page.page)
         assertEquals("/repos/octo/repo/actions/workflows?per_page=100&page=1", server.takeRequest().path)
         assertEquals("/repos/octo/repo/actions/runs?per_page=30&page=2", server.takeRequest().path)
+    }
+
+    @Test
+    fun `dispatch inputs read workflow yaml from selected ref through GraphQL`() = runTest {
+        val yaml = """
+            name: Manual
+            on:
+              workflow_dispatch:
+                inputs:
+                  environment:
+                    type: choice
+                    required: true
+                    options: [staging, production]
+        """.trimIndent()
+        server.enqueue(MockResponse().setBody("""
+            {"data":{"repository":{"object":{"text":${JsonPrimitive(yaml)},"isBinary":false,"isTruncated":false,"byteSize":${yaml.encodeToByteArray().size}}}}}
+        """.trimIndent()))
+        val workflow = RepoWorkflow(10, "W10", "Manual", ".github/workflows/manual.yml", "active", null, null)
+
+        val result = repository.getDispatchInputs("octo", "repo", workflow, "release/v2")
+
+        assertEquals(listOf("staging", "production"), (result as ApiResult.Success).data.single().options)
+        val request = server.takeRequest()
+        assertEquals("/graphql", request.path)
+        val requestBody = request.body.readUtf8()
+        assertTrue(requestBody.contains("release/v2:.github/workflows/manual.yml"))
+        assertTrue(requestBody.contains("... on Blob"))
     }
 
     @Test

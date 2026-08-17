@@ -38,6 +38,7 @@ data class RepoIssueListUiState(
     val templatesLoaded: Boolean = false,
     val isLoadingTemplates: Boolean = false,
     val templatesLoadFailed: Boolean = false,
+    val invalidTemplateCount: Int = 0,
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
@@ -58,6 +59,8 @@ class RepoIssueListViewModel @Inject constructor(
     private var cursor: String? = null
     private var initialized = false
     private var loadJob: Job? = null
+    private var templatesJob: Job? = null
+    private var templateRequestId = 0L
     private var suppressNextIssueCountRefresh = false
 
     fun init(owner: String, name: String, permission: RepoPermission? = null, viewerCanCreateIssues: Boolean? = null) {
@@ -65,7 +68,6 @@ class RepoIssueListViewModel @Inject constructor(
         initialized = true; this.owner = owner; this.name = name
         _state.update { it.copy(permission = permission ?: RepoPermission.NONE, capabilities = (permission ?: RepoPermission.NONE).let { p -> p.toCapabilities() }, viewerCanCreateIssues = viewerCanCreateIssues ?: false) }
         load()
-        loadIssueTemplates()
         viewModelScope.launch {
             repoUpdateEventBus.events.filterIsInstance<RepoUpdateEvent.IssueCountChanged>().collect { event ->
                 if (event.owner == owner && event.name == name) {
@@ -81,22 +83,28 @@ class RepoIssueListViewModel @Inject constructor(
     }
 
     fun loadIssueTemplates() {
-        if (_state.value.isLoadingTemplates) return
+        templatesJob?.cancel()
+        val requestId = ++templateRequestId
         _state.update { it.copy(isLoadingTemplates = true, templatesLoadFailed = false) }
-        viewModelScope.launch {
+        templatesJob = viewModelScope.launch {
             when (val result = repository.getIssueTemplates(owner, name)) {
                 is ApiResult.Success -> _state.update {
+                    if (requestId != templateRequestId) return@update it
                     it.copy(
-                        blankIssuesEnabled = result.data.first,
-                        templates = result.data.second,
+                        blankIssuesEnabled = result.data.blankIssuesEnabled,
+                        templates = result.data.templates,
                         templatesLoaded = true,
                         isLoadingTemplates = false,
                         templatesLoadFailed = false,
+                        invalidTemplateCount = result.data.invalidTemplateCount,
                     )
                 }
                 is ApiResult.Failure -> {
                     errorEventBus.emit(result.error)
-                    _state.update { it.copy(templatesLoaded = false, isLoadingTemplates = false, templatesLoadFailed = true) }
+                    _state.update {
+                        if (requestId != templateRequestId) it
+                        else it.copy(isLoadingTemplates = false, templatesLoadFailed = true)
+                    }
                 }
             }
         }
@@ -153,11 +161,11 @@ class RepoIssueListViewModel @Inject constructor(
         }
     }
 
-    fun createIssue(title: String, body: String, template: IssueTemplate?, labelIds: List<String>, assigneeIds: List<String>, milestoneId: String?, onCreated: (RepoIssue) -> Unit) {
+    fun createIssue(title: String, body: String, labelIds: List<String>, assigneeIds: List<String>, milestoneId: String?, onCreated: (RepoIssue) -> Unit) {
         val repositoryId = _state.value.repositoryId ?: return
         if (!_state.value.viewerCanCreateIssues || title.isBlank()) return
         viewModelScope.launch {
-            when (val result = repository.createIssue(CreateRepoIssueInput(repositoryId, title.trim(), body, labelIds, assigneeIds, milestoneId, template?.name))) {
+            when (val result = repository.createIssue(CreateRepoIssueInput(repositoryId, title.trim(), body, labelIds, assigneeIds, milestoneId))) {
                 is ApiResult.Success -> { emitIssueCount(suppressRefresh = true); onCreated(result.data); load() }
                 is ApiResult.Failure -> errorEventBus.emit(result.error)
             }

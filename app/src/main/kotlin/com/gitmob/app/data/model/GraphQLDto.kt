@@ -695,21 +695,31 @@ data class RepoIssueDetailRepositoryNode(
 @Serializable data class RepoMilestoneConnectionNode(val nodes: List<RepoIssueMilestoneNode> = emptyList())
 @Serializable data class RepoAssignableUsersQueryData(val repository: RepoAssignableUsersRepositoryNode? = null)
 @Serializable data class RepoAssignableUsersRepositoryNode(val assignableUsers: RepoIssueAssigneeConnectionNode? = null)
-@Serializable data class RepoIssueTemplatesQueryData(val repository: RepoIssueTemplatesRepositoryNode? = null)
-@Serializable data class RepoIssueTemplatesRepositoryNode(
+@Serializable data class RepoIssueFormContextQueryData(val repository: RepoIssueFormContextRepositoryNode? = null)
+@Serializable data class RepoIssueFormContextRepositoryNode(
     val id: String,
     val viewerCanCreateIssues: Boolean = false,
     val isBlankIssuesEnabled: Boolean = false,
-    val issueTemplates: List<RepoIssueTemplateNode> = emptyList(),
+    val defaultBranchRef: BranchRefNode? = null,
 )
-@Serializable data class RepoIssueTemplateNode(
+@Serializable data class RepoIssueFormsQueryData(val repository: RepoIssueFormsRepositoryNode? = null)
+@Serializable data class RepoIssueFormsRepositoryNode(
+    @kotlinx.serialization.SerialName("object") val objectNode: RepoIssueFormsTreeNode? = null,
+)
+@Serializable data class RepoIssueFormsTreeNode(
+    val entries: List<RepoIssueFormTreeEntryNode> = emptyList(),
+)
+@Serializable data class RepoIssueFormTreeEntryNode(
     val name: String,
-    val about: String? = null,
-    val title: String? = null,
-    val body: String? = null,
-    val filename: String,
-    val labels: List<String> = emptyList(),
-    val assignees: List<String> = emptyList(),
+    val path: String? = null,
+    val type: String,
+    @kotlinx.serialization.SerialName("object") val objectNode: RepoIssueFormBlobNode? = null,
+)
+@Serializable data class RepoIssueFormBlobNode(
+    val text: String? = null,
+    val isBinary: Boolean = false,
+    val isTruncated: Boolean = false,
+    val byteSize: Int = 0,
 )
 
 @Serializable data class CreateIssueMutationData(val createIssue: IssueMutationPayload? = null)

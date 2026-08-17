@@ -63,4 +63,52 @@ class WorkflowDispatchYamlParserTest {
     fun `returns empty list without workflow dispatch`() {
         assertTrue(WorkflowDispatchYamlParser.parse("on: [push]").isEmpty())
     }
+
+    @Test
+    fun `parses flow style maps multiline scalars and limited aliases`() {
+        val inputs = WorkflowDispatchYamlParser.parse(
+            """
+            defaults: &defaults
+              description: |
+                Multi-line
+                description
+              required: true
+            on: { workflow_dispatch: { inputs: {
+              message: { <<: *defaults, type: string, default: "hello # world" },
+              target: { type: choice, options: [one, two], default: two }
+            } } }
+            """.trimIndent(),
+        )
+
+        assertEquals(2, inputs.size)
+        assertEquals("Multi-line\ndescription\n", inputs[0].description)
+        assertEquals("hello # world", inputs[0].defaultValue)
+        assertEquals(listOf("one", "two"), inputs[1].options)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `parses number inputs and rejects unknown input types`() {
+        val inputs = WorkflowDispatchYamlParser.parse(
+            """
+            on:
+              workflow_dispatch:
+                inputs:
+                  count:
+                    type: number
+                    default: 1.5
+            """.trimIndent(),
+        )
+        assertEquals(WorkflowDispatchInputType.NUMBER, inputs.single().type)
+        assertEquals("1.5", inputs.single().defaultValue)
+
+        WorkflowDispatchYamlParser.parse(
+            """
+            on:
+              workflow_dispatch:
+                inputs:
+                  attachment:
+                    type: upload
+            """.trimIndent(),
+        )
+    }
 }

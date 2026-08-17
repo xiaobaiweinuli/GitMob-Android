@@ -13,14 +13,17 @@ import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class RepoIssueListViewModelTest {
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
@@ -63,11 +66,52 @@ class RepoIssueListViewModelTest {
         vm.viewModelScope.cancel()
     }
 
+    @Test
+    fun `template load failure is distinct from an empty template list and can retry`() = runTest {
+        val repository = repositoryMock()
+        val template = IssueTemplate("Bug report", "Report a bug", "[Bug] ", "bug.yml", listOf("bug"), listOf("octo"), listOf(IssueFormField.Input("version", "Version", required = true)))
+        coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
+        coEvery { repository.getIssueTemplates("o", "r") } returnsMany listOf(
+            ApiResult.Failure(ApiError.NetworkError),
+            ApiResult.Success(IssueTemplateLoadResult(true, listOf(template))),
+        )
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+
+        vm.init("o", "r", RepoPermission.ADMIN, true)
+        vm.loadIssueTemplates()
+        advanceUntilIdle()
+        assertFalse(vm.state.value.templatesLoaded)
+        assertTrue(vm.state.value.templatesLoadFailed)
+
+        vm.loadIssueTemplates()
+        advanceUntilIdle()
+        assertTrue(vm.state.value.templatesLoaded)
+        assertFalse(vm.state.value.templatesLoadFailed)
+        assertEquals("Bug report", vm.state.value.templates.single().name)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `creating issue forwards the generated markdown body`() = runTest {
+        val repository = repositoryMock()
+        coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
+        coEvery { repository.createIssue(any()) } returns ApiResult.Success(issue())
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+
+        vm.init("o", "r", RepoPermission.ADMIN, true)
+        advanceUntilIdle()
+        vm.createIssue("Title", "### Version\n\n1.0", emptyList(), emptyList(), null) {}
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.createIssue(match { it.body == "### Version\n\n1.0" }) }
+        vm.viewModelScope.cancel()
+    }
+
     private fun repositoryMock(): RepoIssueRepository = mockk {
         coEvery { getLabels(any(), any()) } returns ApiResult.Success(emptyList())
         coEvery { getMilestones(any(), any()) } returns ApiResult.Success(emptyList())
         coEvery { getAssignableUsers(any(), any()) } returns ApiResult.Success(emptyList())
-        coEvery { getIssueTemplates(any(), any()) } returns ApiResult.Success(true to emptyList())
+        coEvery { getIssueTemplates(any(), any()) } returns ApiResult.Success(IssueTemplateLoadResult(true, emptyList()))
     }
 
     private fun page() = RepoIssuePage("R1", RepoPermission.ADMIN, RepoPermission.ADMIN.toCapabilities(), true, true, 1, listOf(issue()), false, null)

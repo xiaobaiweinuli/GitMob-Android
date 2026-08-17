@@ -99,10 +99,54 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
         api.graphQL<RepoAssignableUsersQueryData>(query, repoVariables(owner, name)).repository?.assignableUsers?.nodes.orEmpty().map(::toUser)
     }
 
-    suspend fun getIssueTemplates(owner: String, name: String): ApiResult<Pair<Boolean, List<IssueTemplate>>> = safeCall {
-        val query = "query RepoIssueTemplates(${'$'}owner: String!, ${'$'}name: String!) { repository(owner: ${'$'}owner, name: ${'$'}name) { id viewerCanCreateIssues isBlankIssuesEnabled issueTemplates { name about title body filename labels assignees } } }"
-        val data = api.graphQL<RepoIssueTemplatesQueryData>(query, repoVariables(owner, name)).repository ?: error("Repository not found")
-        data.isBlankIssuesEnabled to data.issueTemplates.map { IssueTemplate(it.name, it.about, it.title, it.body, it.filename, it.labels, it.assignees) }
+    suspend fun getIssueTemplates(owner: String, name: String): ApiResult<IssueTemplateLoadResult> = safeCall {
+        val contextQuery = """
+            query RepoIssueFormContext(${'$'}owner: String!, ${'$'}name: String!) {
+                repository(owner: ${'$'}owner, name: ${'$'}name) {
+                    id viewerCanCreateIssues isBlankIssuesEnabled defaultBranchRef { name }
+                }
+            }
+        """.trimIndent()
+        val context = api.graphQL<RepoIssueFormContextQueryData>(contextQuery, repoVariables(owner, name)).repository
+            ?: error("Repository not found")
+        val defaultBranch = context.defaultBranchRef?.name
+            ?: return@safeCall IssueTemplateLoadResult(context.isBlankIssuesEnabled, emptyList())
+        val formsQuery = """
+            query RepoIssueForms(${'$'}owner: String!, ${'$'}name: String!, ${'$'}expression: String!) {
+                repository(owner: ${'$'}owner, name: ${'$'}name) {
+                    object(expression: ${'$'}expression) {
+                        ... on Tree {
+                            entries {
+                                name path type
+                                object { ... on Blob { text isBinary isTruncated byteSize } }
+                            }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+        val variables = repoVariables(owner, name) + ("expression" to JsonPrimitive("$defaultBranch:.github/ISSUE_TEMPLATE"))
+        val entries = api.graphQL<RepoIssueFormsQueryData>(formsQuery, variables).repository?.objectNode?.entries.orEmpty()
+        val config = entries.firstOrNull { it.type.equals("blob", true) && it.name.equals("config.yml", true) }
+        val blankIssuesEnabled = config?.objectNode?.usableText()?.let { source ->
+            try { IssueFormYamlParser.parseBlankIssuesEnabled(source) } catch (_: Exception) { context.isBlankIssuesEnabled }
+        } ?: context.isBlankIssuesEnabled
+        var invalidTemplateCount = 0
+        val templates = entries.mapNotNull { entry ->
+            if (!entry.type.equals("blob", true) || !entry.name.endsWith(".yml", true) || entry.name.equals("config.yml", true)) return@mapNotNull null
+            val source = entry.objectNode?.usableText()
+            if (source == null) {
+                invalidTemplateCount++
+                return@mapNotNull null
+            }
+            try {
+                IssueFormYamlParser.parse(entry.name, source)
+            } catch (_: Exception) {
+                invalidTemplateCount++
+                null
+            }
+        }.sortedBy { it.name.lowercase() }
+        IssueTemplateLoadResult(blankIssuesEnabled, templates, invalidTemplateCount)
     }
 
     suspend fun createIssue(input: CreateRepoIssueInput): ApiResult<RepoIssue> = safeCall {
@@ -116,7 +160,6 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
             if (input.labelIds.isNotEmpty()) put("labelIds", JsonArray(input.labelIds.map(::JsonPrimitive)))
             if (input.assigneeIds.isNotEmpty()) put("assigneeIds", JsonArray(input.assigneeIds.map(::JsonPrimitive)))
             input.milestoneId?.let { put("milestoneId", JsonPrimitive(it)) }
-            input.issueTemplate?.let { put("issueTemplate", JsonPrimitive(it)) }
         }))).createIssue?.issue ?: error("Issue was not created")
         toIssue(payload)
     }
@@ -178,6 +221,10 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
 
     private fun repoVariables(owner: String, name: String) = mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name))
 
+    private fun RepoIssueFormBlobNode.usableText(): String? = text?.takeIf {
+        !isBinary && !isTruncated && byteSize in 1..MAX_ISSUE_FORM_BYTES
+    }
+
     private fun states(value: RepoIssueStateFilter) = when (value) { RepoIssueStateFilter.OPEN -> listOf("OPEN"); RepoIssueStateFilter.CLOSED -> listOf("CLOSED"); RepoIssueStateFilter.ALL -> listOf("OPEN", "CLOSED") }
 
     private fun issueOrder(value: RepoIssueSort): JsonObject {
@@ -200,6 +247,7 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
     }
 
     companion object {
+        private const val MAX_ISSUE_FORM_BYTES = 256 * 1024
         private fun issueFields(commentsFirst: Int, commentsAfter: String? = null): String = """
             id number title body bodyHTML state stateReason author { login avatarUrl } createdAt updatedAt locked
             comments(first: $commentsFirst${commentsAfter?.let { ", after: $it" }.orEmpty()}) { totalCount nodes { ${commentFields()} } pageInfo { hasNextPage endCursor } }

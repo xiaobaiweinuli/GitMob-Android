@@ -41,8 +41,31 @@ class RepoActionsRepository @Inject constructor(
         RepoWorkflowRunDetail(toRun(run), jobs.jobs.map(::toJob), artifacts.artifacts.map(::toArtifact))
     }
 
-    suspend fun getDispatchInputs(owner: String, name: String, workflow: RepoWorkflow): ApiResult<List<WorkflowDispatchInput>> = safeCall {
-        WorkflowDispatchYamlParser.parse(api.getRaw("/repos/$owner/$name/contents/${workflow.path}", "application/vnd.github.raw"))
+    suspend fun getDispatchInputs(owner: String, name: String, workflow: RepoWorkflow, ref: String): ApiResult<List<WorkflowDispatchInput>> = safeCall {
+        require(ref.isNotBlank()) { "Workflow ref must not be blank" }
+        require(workflow.path.startsWith(".github/workflows/") && !workflow.path.contains("..")) { "Invalid workflow path" }
+        val query = """
+            query ActionWorkflowYaml(${'$'}owner: String!, ${'$'}name: String!, ${'$'}expression: String!) {
+                repository(owner: ${'$'}owner, name: ${'$'}name) {
+                    object(expression: ${'$'}expression) {
+                        ... on Blob { text isBinary isTruncated byteSize }
+                    }
+                }
+            }
+        """.trimIndent()
+        val data = api.graphQL<ActionWorkflowYamlData>(
+            query,
+            mapOf(
+                "owner" to JsonPrimitive(owner),
+                "name" to JsonPrimitive(name),
+                "expression" to JsonPrimitive("$ref:${workflow.path}"),
+            ),
+        )
+        val blob = data.repository?.objectNode ?: error("Workflow YAML not found")
+        if (blob.isBinary || blob.isTruncated || blob.byteSize !in 1..MAX_WORKFLOW_YAML_BYTES) {
+            error("Workflow YAML is unavailable")
+        }
+        WorkflowDispatchYamlParser.parse(blob.text ?: error("Workflow YAML is unavailable"))
     }
 
     suspend fun dispatch(owner: String, name: String, workflowId: Long, ref: String, inputs: Map<String, String>): ApiResult<Unit> = safeCall {
@@ -91,3 +114,15 @@ class RepoActionsRepository @Inject constructor(
 @Serializable private data class RestArtifact(val id: Long, val name: String = "", @SerialName("size_in_bytes") val sizeInBytes: Long = 0, val expired: Boolean = false, @SerialName("expires_at") val expiresAt: String? = null)
 @Serializable private data class ActionsPermissionData(val repository: ActionsPermissionRepository? = null)
 @Serializable private data class ActionsPermissionRepository(val viewerPermission: String? = null)
+@Serializable private data class ActionWorkflowYamlData(val repository: ActionWorkflowYamlRepository? = null)
+@Serializable private data class ActionWorkflowYamlRepository(
+    @SerialName("object") val objectNode: ActionWorkflowYamlBlob? = null,
+)
+@Serializable private data class ActionWorkflowYamlBlob(
+    val text: String? = null,
+    val isBinary: Boolean = false,
+    val isTruncated: Boolean = false,
+    val byteSize: Int = 0,
+)
+
+private const val MAX_WORKFLOW_YAML_BYTES = 1024 * 1024

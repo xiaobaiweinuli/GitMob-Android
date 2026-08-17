@@ -288,6 +288,10 @@
     <string name="issue_delete_message">此操作无法撤销，议题及其评论都会被删除。</string>
     <string name="issue_template_picker_title">选择议题模板</string>
     <string name="issue_template_blank">空白议题</string>
+    <plurals name="issue_template_invalid_count">
+        <item quantity="other">%1$d 个模板因格式错误或包含不支持的控件而不可用</item>
+    </plurals>
+    <string name="issue_template_none_available">没有可用的议题模板，且仓库未开放空白议题。</string>
     <string name="issue_labels">标签</string>
     <string name="issue_milestone">里程碑</string>
     <string name="issue_assignees">指派人</string>
@@ -312,7 +316,9 @@
     <string name="issue_meta_milestone">里程碑 %1$s</string>
     <string name="issue_editor_title_label">标题</string>
     <string name="issue_editor_body_label">Markdown 正文</string>
+    <string name="issue_form_required_label">%1$s *</string>
     <string name="issue_create">创建</string>
+    <string name="common_refresh">刷新</string>
     <string name="issue_title_number">议题 #%1$d</string>
     <string name="issue_subscribe">订阅</string>
     <string name="issue_more">更多</string>
@@ -401,6 +407,7 @@
     <string name="actions_enable_workflow">启用工作流</string>
     <string name="actions_disable_workflow">停用工作流</string>
     <string name="actions_ref">运行分支或标签</string>
+    <string name="actions_load_inputs">读取该分支的输入定义</string>
     <string name="actions_run_number">运行 #%1$d</string>
     <string name="actions_cancel">取消运行</string>
     <string name="actions_force_cancel">强制取消</string>

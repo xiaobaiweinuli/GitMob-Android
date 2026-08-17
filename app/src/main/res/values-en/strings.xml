@@ -283,6 +283,11 @@
     <string name="issue_delete_message">This cannot be undone. The issue and its comments will be deleted.</string>
     <string name="issue_template_picker_title">Issue templates</string>
     <string name="issue_template_blank">Blank issue</string>
+    <plurals name="issue_template_invalid_count">
+        <item quantity="one">%1$d template is unavailable because it is invalid or contains unsupported controls</item>
+        <item quantity="other">%1$d templates are unavailable because they are invalid or contain unsupported controls</item>
+    </plurals>
+    <string name="issue_template_none_available">No issue templates are available and blank issues are disabled.</string>
     <string name="issue_labels">Labels</string>
     <string name="issue_milestone">Milestone</string>
     <string name="issue_assignees">Assignees</string>
@@ -307,7 +312,9 @@
     <string name="issue_meta_milestone">Milestone %1$s</string>
     <string name="issue_editor_title_label">Title</string>
     <string name="issue_editor_body_label">Markdown body</string>
+    <string name="issue_form_required_label">%1$s *</string>
     <string name="issue_create">Create</string>
+    <string name="common_refresh">Refresh</string>
     <string name="issue_title_number">Issue #%1$d</string>
     <string name="issue_subscribe">Subscribe</string>
     <string name="issue_more">More</string>
@@ -396,6 +403,7 @@
     <string name="actions_enable_workflow">Enable workflow</string>
     <string name="actions_disable_workflow">Disable workflow</string>
     <string name="actions_ref">Branch or tag</string>
+    <string name="actions_load_inputs">Load inputs from this ref</string>
     <string name="actions_run_number">Run #%1$d</string>
     <string name="actions_cancel">Cancel run</string>
     <string name="actions_force_cancel">Force cancel</string>

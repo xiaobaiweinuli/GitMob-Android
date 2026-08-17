@@ -13,6 +13,7 @@ import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
 import com.gitmob.app.data.repository.RepoActionsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +35,7 @@ data class RepoActionsUiState(
     val dispatchWorkflow: RepoWorkflow? = null,
     val dispatchInputs: List<WorkflowDispatchInput> = emptyList(),
     val dispatchRef: String = "main",
+    val dispatchInputsRef: String? = null,
     val isLoadingInputs: Boolean = false,
 )
 
@@ -46,12 +48,26 @@ class RepoActionsViewModel @Inject constructor(
     private val _state = MutableStateFlow(RepoActionsUiState())
     val state: StateFlow<RepoActionsUiState> = _state.asStateFlow()
     private var owner = ""; private var name = ""; private var initialized = false
+    private var dispatchInputsJob: Job? = null
     fun init(owner: String, name: String, permission: RepoPermission?, defaultRef: String?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; _state.update { it.copy(dispatchRef = defaultRef ?: "main") }; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } } ?: viewModelScope.launch { when (val result = repository.getRepositoryPermission(owner, name)) { is ApiResult.Success -> _state.update { it.copy(permission = result.data, capabilities = result.data.toCapabilities()) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }; load() }
     fun load() { viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getActions(owner, name)) { is ApiResult.Success -> _state.update { it.copy(workflows = result.data.workflows, runs = result.data.runs, totalCount = result.data.totalCount, page = result.data.page, hasNextPage = result.data.hasNextPage, isLoading = false) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun refresh() = load()
     fun loadMore() { val s = _state.value; if (!s.hasNextPage || s.isLoadingMore) return; viewModelScope.launch { _state.update { it.copy(isLoadingMore = true) }; when (val result = repository.getActions(owner, name, s.page + 1)) { is ApiResult.Success -> _state.update { it.copy(runs = it.runs + result.data.runs, page = result.data.page, hasNextPage = result.data.hasNextPage, isLoadingMore = false) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoadingMore = false) } } } } }
-    fun prepareDispatch(workflow: RepoWorkflow) { if (!_state.value.capabilities.canPush) return; viewModelScope.launch { _state.update { it.copy(dispatchWorkflow = workflow, isLoadingInputs = true) }; when (val result = repository.getDispatchInputs(owner, name, workflow)) { is ApiResult.Success -> _state.update { it.copy(dispatchInputs = result.data, isLoadingInputs = false) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(dispatchWorkflow = null, isLoadingInputs = false) } } } } }
-    fun dismissDispatch() = _state.update { it.copy(dispatchWorkflow = null, dispatchInputs = emptyList()) }
+    fun prepareDispatch(workflow: RepoWorkflow) { if (!_state.value.capabilities.canPush) return; _state.update { it.copy(dispatchWorkflow = workflow, dispatchInputs = emptyList(), dispatchInputsRef = null) }; loadDispatchInputs(_state.value.dispatchRef) }
+    fun loadDispatchInputs(ref: String) {
+        val workflow = _state.value.dispatchWorkflow ?: return
+        val normalizedRef = ref.trim()
+        if (normalizedRef.isEmpty()) return
+        dispatchInputsJob?.cancel()
+        dispatchInputsJob = viewModelScope.launch {
+            _state.update { it.copy(dispatchRef = normalizedRef, isLoadingInputs = true, dispatchInputsRef = null) }
+            when (val result = repository.getDispatchInputs(owner, name, workflow, normalizedRef)) {
+                is ApiResult.Success -> _state.update { it.copy(dispatchInputs = result.data, dispatchInputsRef = normalizedRef, isLoadingInputs = false) }
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoadingInputs = false) } }
+            }
+        }
+    }
+    fun dismissDispatch() { dispatchInputsJob?.cancel(); _state.update { it.copy(dispatchWorkflow = null, dispatchInputs = emptyList(), dispatchInputsRef = null, isLoadingInputs = false) } }
     fun dispatch(ref: String, inputs: Map<String, String>) { val workflow = _state.value.dispatchWorkflow ?: return; viewModelScope.launch { when (val result = repository.dispatch(owner, name, workflow.id, ref, inputs)) { is ApiResult.Success -> { dismissDispatch(); load(); repoUpdateEventBus.emit(RepoUpdateEvent.ActionRunChanged(owner, name, 0L)) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
     fun setWorkflowEnabled(workflow: RepoWorkflow, enabled: Boolean) { if (!_state.value.capabilities.canPush) return; viewModelScope.launch { when (val result = repository.enableWorkflow(owner, name, workflow.id, enabled)) { is ApiResult.Success -> _state.update { it.copy(workflows = it.workflows.map { value -> if (value.id == workflow.id) value.copy(state = if (enabled) "active" else "disabled_manually") else value }) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
 }
