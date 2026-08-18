@@ -81,16 +81,16 @@ import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.RepoPullRequest
-import com.gitmob.app.data.model.RepoPullRequestComment
 import com.gitmob.app.data.model.RepoPullRequestCreateMetadata
 import com.gitmob.app.data.model.RepoPullRequestMergeMethod
 import com.gitmob.app.data.model.RepoPullRequestReviewEvent
 import com.gitmob.app.data.model.RepoPullRequestSort
 import com.gitmob.app.data.model.RepoPullRequestState
 import com.gitmob.app.data.model.RepoPullRequestStateFilter
-import com.gitmob.app.ui.common.MarkdownWebView
-import com.gitmob.app.ui.common.ConversationComposerSheet
+import com.gitmob.app.navigation.ConversationComposerTarget
+import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
+import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.common.quoteMarkdown
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -226,23 +226,15 @@ fun RepoPullRequestDetailScreen(
     permission: RepoPermission?,
     onBack: () -> Unit,
     onEdit: () -> Unit,
+    onCompose: (ConversationComposeRequest) -> Unit,
     viewModel: RepoPullRequestDetailViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name, number) { viewModel.init(owner, name, number, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
-    var composerOpen by remember { mutableStateOf(false) }
-    var composerText by remember { mutableStateOf("") }
     var reviewOpen by remember { mutableStateOf(false) }
     var mergeOpen by remember { mutableStateOf(false) }
-    var editingComment by remember { mutableStateOf<RepoPullRequestComment?>(null) }
-
-    fun openComposer(text: String = "", editing: RepoPullRequestComment? = null) {
-        composerText = text
-        editingComment = editing
-        composerOpen = true
-    }
 
     Scaffold(
         topBar = {
@@ -269,7 +261,22 @@ fun RepoPullRequestDetailScreen(
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
         },
-        floatingActionButton = { if (state.pullRequest != null && tab == 0) ExtendedFloatingActionButton(onClick = { openComposer() }, icon = { Icon(Icons.AutoMirrored.Filled.Comment, null) }, text = { Text(stringResource(R.string.conversation_comment)) }) },
+        floatingActionButton = {
+            if (state.pullRequest != null && tab == 0) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        onCompose(
+                            ConversationComposeRequest(
+                                target = ConversationComposerTarget.PULL_REQUEST_COMMENT,
+                                subjectId = state.pullRequest!!.id,
+                            ),
+                        )
+                    },
+                    icon = { Icon(Icons.AutoMirrored.Filled.Comment, null) },
+                    text = { Text(stringResource(R.string.conversation_comment)) },
+                )
+            }
+        },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     ) { padding ->
         when {
@@ -284,21 +291,133 @@ fun RepoPullRequestDetailScreen(
                 }
                 when (tab) {
                     0 -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
-                        item { ConversationContentCard(author = state.pullRequest!!.author, createdAt = state.pullRequest!!.createdAt, bodyHtml = state.pullRequest!!.bodyHtml, url = state.pullRequest!!.url, authorAssociation = state.pullRequest!!.authorAssociation, isThreadAuthor = true, onQuoteReply = { openComposer(quoteMarkdown(state.pullRequest!!.body)) }, onEdit = onEdit.takeIf { state.pullRequest!!.viewerCanUpdate }, modifier = Modifier.padding(12.dp)) }
-                        items(state.comments, key = { it.id }) { item -> ConversationContentCard(author = item.author, createdAt = item.createdAt, bodyHtml = item.bodyHtml, url = item.url, authorAssociation = item.authorAssociation, isThreadAuthor = item.author?.login == state.pullRequest!!.author?.login, onQuoteReply = { openComposer(quoteMarkdown(item.body)) }, onEdit = ({ openComposer(item.body, item) }).takeIf { item.viewerCanUpdate }, onDelete = ({ viewModel.confirmDeleteComment(item) }).takeIf { item.viewerCanDelete }, modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)) }
+                        item {
+                            ConversationContentCard(
+                                author = state.pullRequest!!.author,
+                                createdAt = state.pullRequest!!.createdAt,
+                                bodyHtml = state.pullRequest!!.bodyHtml,
+                                url = state.pullRequest!!.url,
+                                authorAssociation = state.pullRequest!!.authorAssociation,
+                                isThreadAuthor = true,
+                                onQuoteReply = {
+                                    onCompose(
+                                        ConversationComposeRequest(
+                                            target = ConversationComposerTarget.PULL_REQUEST_COMMENT,
+                                            subjectId = state.pullRequest!!.id,
+                                            initialText = quoteMarkdown(state.pullRequest!!.body),
+                                        ),
+                                    )
+                                },
+                                onEdit = onEdit.takeIf { state.pullRequest!!.viewerCanUpdate },
+                                modifier = Modifier.padding(12.dp),
+                            )
+                        }
+                        items(state.comments, key = { it.id }) { item ->
+                            ConversationContentCard(
+                                author = item.author,
+                                createdAt = item.createdAt,
+                                bodyHtml = item.bodyHtml,
+                                url = item.url,
+                                authorAssociation = item.authorAssociation,
+                                isThreadAuthor = item.author?.login == state.pullRequest!!.author?.login,
+                                onQuoteReply = {
+                                    onCompose(
+                                        ConversationComposeRequest(
+                                            target = ConversationComposerTarget.PULL_REQUEST_COMMENT,
+                                            subjectId = state.pullRequest!!.id,
+                                            initialText = quoteMarkdown(item.body),
+                                        ),
+                                    )
+                                },
+                                onEdit = ({
+                                    onCompose(
+                                        ConversationComposeRequest(
+                                            target = ConversationComposerTarget.PULL_REQUEST_COMMENT,
+                                            subjectId = state.pullRequest!!.id,
+                                            initialText = item.body,
+                                            commentId = item.id,
+                                        ),
+                                    )
+                                }).takeIf { item.viewerCanUpdate },
+                                onDelete = ({ viewModel.confirmDeleteComment(item) }).takeIf { item.viewerCanDelete },
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                            )
+                        }
                         if (state.hasMoreComments) item { LaunchedEffect(state.comments.size) { viewModel.loadMoreComments() } }
                     }
                     1 -> LazyColumn { items(state.files, key = { it.path }) { file -> Column(Modifier.fillMaxWidth().padding(16.dp)) { Text(file.path, fontWeight = FontWeight.SemiBold); Text(stringResource(R.string.pr_file_stats, file.additions, file.deletions)); file.patch?.let { Text(it, style = MaterialTheme.typography.bodySmall) }; HorizontalDivider(Modifier.padding(top = 12.dp)) } } }
                     2 -> LazyColumn { items(state.commits, key = { it.oid }) { commitItem -> Column(Modifier.fillMaxWidth().padding(16.dp)) { Text(commitItem.headline, fontWeight = FontWeight.SemiBold); Text("${commitItem.oid.take(7)} · ${commitItem.authorLogin ?: stringResource(R.string.common_deleted_user)} · ${commitItem.committedAt.take(10)}", style = MaterialTheme.typography.bodySmall); HorizontalDivider(Modifier.padding(top = 12.dp)) } } }
-                    else -> LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { items(state.reviews, key = { it.id }) { review -> Column { Text(pullRequestReviewStateLabel(review.state), fontWeight = FontWeight.SemiBold); ConversationContentCard(author = review.author, createdAt = review.submittedAt.orEmpty(), bodyHtml = review.bodyHtml, url = review.url, authorAssociation = review.authorAssociation, isThreadAuthor = review.author?.login == state.pullRequest!!.author?.login, onQuoteReply = { openComposer(quoteMarkdown(review.body)) }) } }; items(state.threads, key = { it.id }) { thread -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("${thread.path}:${thread.line ?: 0}", fontWeight = FontWeight.SemiBold); thread.comments.forEach { item -> ConversationContentCard(author = item.author, createdAt = item.createdAt, bodyHtml = item.bodyHtml, url = item.url, authorAssociation = item.authorAssociation, isThreadAuthor = item.author?.login == state.pullRequest!!.author?.login, onQuoteReply = { openComposer(quoteMarkdown(item.body)) }) }; if (thread.viewerCanResolve || thread.viewerCanUnresolve) TextButton(onClick = { viewModel.toggleThreadResolved(thread) }) { Text(stringResource(if (thread.isResolved) R.string.pr_unresolve else R.string.pr_resolve)) } } } }
+                    else -> LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(state.reviews, key = { it.id }) { review ->
+                            Column {
+                                Text(pullRequestReviewStateLabel(review.state), fontWeight = FontWeight.SemiBold)
+                                ConversationContentCard(
+                                    author = review.author,
+                                    createdAt = review.submittedAt.orEmpty(),
+                                    bodyHtml = review.bodyHtml,
+                                    url = review.url,
+                                    authorAssociation = review.authorAssociation,
+                                    isThreadAuthor = review.author?.login == state.pullRequest!!.author?.login,
+                                    onQuoteReply = {
+                                        onCompose(
+                                            ConversationComposeRequest(
+                                                target = ConversationComposerTarget.PULL_REQUEST_COMMENT,
+                                                subjectId = state.pullRequest!!.id,
+                                                initialText = quoteMarkdown(review.body),
+                                            ),
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                        items(state.threads, key = { it.id }) { thread ->
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("${thread.path}:${thread.line ?: 0}", fontWeight = FontWeight.SemiBold)
+                                thread.comments.forEach { item ->
+                                    ConversationContentCard(
+                                        author = item.author,
+                                        createdAt = item.createdAt,
+                                        bodyHtml = item.bodyHtml,
+                                        url = item.url,
+                                        authorAssociation = item.authorAssociation,
+                                        isThreadAuthor = item.author?.login == state.pullRequest!!.author?.login,
+                                        onQuoteReply = {
+                                            onCompose(
+                                                ConversationComposeRequest(
+                                                    target = ConversationComposerTarget.PULL_REQUEST_THREAD,
+                                                    subjectId = thread.id,
+                                                    initialText = quoteMarkdown(item.body),
+                                                ),
+                                            )
+                                        },
+                                    )
+                                }
+                                if (thread.viewerCanResolve || thread.viewerCanUnresolve) {
+                                    TextButton(onClick = { viewModel.toggleThreadResolved(thread) }) {
+                                        Text(stringResource(if (thread.isResolved) R.string.pr_unresolve else R.string.pr_resolve))
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    if (reviewOpen) ReviewDialog({ reviewOpen = false }) { event, body -> viewModel.submitReview(event, body) { reviewOpen = false } }
+    if (reviewOpen) ReviewDialog({ reviewOpen = false }) { event ->
+        reviewOpen = false
+        state.pullRequest?.let { pullRequest ->
+            onCompose(
+                ConversationComposeRequest(
+                    target = ConversationComposerTarget.PULL_REQUEST_REVIEW,
+                    subjectId = pullRequest.id,
+                    reviewEvent = event.name,
+                ),
+            )
+        }
+    }
     if (mergeOpen) MergeDialog(state.allowedMergeMethods, state.pullRequest?.autoMergeEnabled == true, { mergeOpen = false }, viewModel::merge, viewModel::toggleAutoMerge)
-    if (composerOpen) ConversationComposerSheet(title = stringResource(if (editingComment == null) R.string.conversation_write_comment else R.string.conversation_edit_comment), value = composerText, onValueChange = { composerText = it }, onDismiss = { if (!state.isSubmittingComment) composerOpen = false }, isSubmitting = state.isSubmittingComment, onSubmit = { val editing = editingComment; if (editing == null) viewModel.addComment(composerText) { composerOpen = false; composerText = "" } else viewModel.updateComment(editing, composerText) { composerOpen = false; composerText = ""; editingComment = null } })
     state.pendingDeleteComment?.let { AlertDialog(onDismissRequest = { viewModel.confirmDeleteComment(null) }, title = { Text(stringResource(R.string.issue_delete_comment_title)) }, text = { Text(stringResource(R.string.common_cannot_be_undone)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteComment(null) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = viewModel::deletePendingComment) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } }) }
 }
 
@@ -318,10 +437,24 @@ private fun PullRequestHeader(pullRequest: RepoPullRequest) {
 }
 
 @Composable
-private fun ReviewDialog(onDismiss: () -> Unit, onSubmit: (RepoPullRequestReviewEvent, String) -> Unit) {
-    var body by remember { mutableStateOf("") }
+private fun ReviewDialog(onDismiss: () -> Unit, onSubmit: (RepoPullRequestReviewEvent) -> Unit) {
     var event by remember { mutableStateOf(RepoPullRequestReviewEvent.COMMENT) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.pr_review)) }, text = { Column { RepoPullRequestReviewEvent.entries.forEach { item -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(event == item, { event = item }); Text(stringResource(item.label)) } }; OutlinedTextField(body, { body = it }, label = { Text(stringResource(R.string.issue_editor_body_label)) }, minLines = 4) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { Button(onClick = { onSubmit(event, body) }) { Text(stringResource(R.string.pr_submit_review)) } })
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.pr_review)) },
+        text = {
+            Column {
+                RepoPullRequestReviewEvent.entries.forEach { item ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(event == item, { event = item })
+                        Text(stringResource(item.label))
+                    }
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+        confirmButton = { Button(onClick = { onSubmit(event) }) { Text(stringResource(R.string.common_continue)) } },
+    )
 }
 
 @Composable

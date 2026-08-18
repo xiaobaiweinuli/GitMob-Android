@@ -23,7 +23,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
-import com.gitmob.app.ui.common.ConversationComposerSheet
+import com.gitmob.app.navigation.ConversationComposerTarget
+import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
 import com.gitmob.app.ui.common.ConversationMenuItem
 import com.gitmob.app.ui.common.GitHubEmojiLabel
@@ -56,25 +57,29 @@ fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermis
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permission: RepoPermission?, onBack: () -> Unit, onEdit: () -> Unit, viewModel: RepoDiscussionDetailViewModel = hiltViewModel()) {
+fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permission: RepoPermission?, onBack: () -> Unit, onEdit: () -> Unit, onCompose: (ConversationComposeRequest) -> Unit, viewModel: RepoDiscussionDetailViewModel = hiltViewModel()) {
     LaunchedEffect(owner, name, number) { viewModel.init(owner, name, number, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuOpen by remember { mutableStateOf(false) }
-    var composerOpen by remember { mutableStateOf(false) }
-    var composerText by remember { mutableStateOf("") }
-    var editing by remember { mutableStateOf<RepoDiscussionComment?>(null) }
-    var replyToId by remember { mutableStateOf<String?>(null) }
-
-    fun openComposer(text: String = "", edit: RepoDiscussionComment? = null, reply: String? = null) {
-        composerText = text
-        editing = edit
-        replyToId = reply
-        composerOpen = true
-    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.discussion_number, number)) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { state.discussion?.let { d -> if (d.viewerCanSubscribe) IconButton(onClick = viewModel::toggleSubscription) { Icon(if (d.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe)) }; Box { IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }; DropdownMenu(menuOpen, { menuOpen = false }) { if (d.state == RepoDiscussionState.OPEN && d.viewerCanClose) DropdownMenuItem(text = { Text(stringResource(R.string.discussion_close)) }, onClick = { menuOpen = false; viewModel.close() }); if (d.state == RepoDiscussionState.CLOSED && d.viewerCanReopen) DropdownMenuItem(text = { Text(stringResource(R.string.discussion_reopen)) }, onClick = { menuOpen = false; viewModel.reopen() }); if (state.capabilities.canManageIssuesAndPRs && d.viewerCanDelete) DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; viewModel.confirmDeleteDiscussion(true) }) } } } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
-        floatingActionButton = { if (state.discussion != null) ExtendedFloatingActionButton(onClick = { openComposer() }, icon = { Icon(Icons.AutoMirrored.Filled.Comment, null) }, text = { Text(stringResource(R.string.conversation_comment)) }) },
+        floatingActionButton = {
+            state.discussion?.let { discussion ->
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        onCompose(
+                            ConversationComposeRequest(
+                                target = ConversationComposerTarget.DISCUSSION_COMMENT,
+                                subjectId = discussion.id,
+                            ),
+                        )
+                    },
+                    icon = { Icon(Icons.AutoMirrored.Filled.Comment, null) },
+                    text = { Text(stringResource(R.string.conversation_comment)) },
+                )
+            }
+        },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     ) { padding ->
         when {
@@ -84,12 +89,60 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
                 val discussion = state.discussion!!
                 LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item { DiscussionHeader(discussion) }
-                    item { ConversationContentCard(author = discussion.author, createdAt = discussion.createdAt, bodyHtml = discussion.bodyHtml, url = discussion.url, authorAssociation = discussion.authorAssociation, isThreadAuthor = true, onQuoteReply = { openComposer(quoteMarkdown(discussion.body)) }, onEdit = onEdit.takeIf { discussion.viewerCanUpdate }) }
+                    item {
+                        ConversationContentCard(
+                            author = discussion.author,
+                            createdAt = discussion.createdAt,
+                            bodyHtml = discussion.bodyHtml,
+                            url = discussion.url,
+                            authorAssociation = discussion.authorAssociation,
+                            isThreadAuthor = true,
+                            onQuoteReply = {
+                                onCompose(
+                                    ConversationComposeRequest(
+                                        target = ConversationComposerTarget.DISCUSSION_COMMENT,
+                                        subjectId = discussion.id,
+                                        initialText = quoteMarkdown(discussion.body),
+                                    ),
+                                )
+                            },
+                            onEdit = onEdit.takeIf { discussion.viewerCanUpdate },
+                        )
+                    }
                     item { Text(stringResource(R.string.issue_comments_count, discussion.commentCount), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
                     items(state.comments, key = { it.id }) { comment ->
                         val answerLabel = stringResource(if (comment.isAnswer) R.string.discussion_unmark_answer else R.string.discussion_mark_answer)
                         val answerActions = if (comment.viewerCanMarkAsAnswer || comment.viewerCanUnmarkAsAnswer) listOf(ConversationMenuItem(answerLabel) { viewModel.markAnswer(comment, !comment.isAnswer) }) else emptyList()
-                        ConversationContentCard(author = comment.author, createdAt = comment.createdAt, bodyHtml = comment.bodyHtml, url = comment.url, authorAssociation = comment.authorAssociation, isThreadAuthor = comment.author?.login == discussion.author?.login, onQuoteReply = { openComposer(quoteMarkdown(comment.body), reply = comment.id) }, onEdit = ({ openComposer(comment.body, edit = comment) }).takeIf { comment.viewerCanUpdate }, onDelete = ({ viewModel.confirmDeleteComment(comment) }).takeIf { comment.viewerCanDelete }, extraMenuItems = answerActions)
+                        ConversationContentCard(
+                            author = comment.author,
+                            createdAt = comment.createdAt,
+                            bodyHtml = comment.bodyHtml,
+                            url = comment.url,
+                            authorAssociation = comment.authorAssociation,
+                            isThreadAuthor = comment.author?.login == discussion.author?.login,
+                            onQuoteReply = {
+                                onCompose(
+                                    ConversationComposeRequest(
+                                        target = ConversationComposerTarget.DISCUSSION_COMMENT,
+                                        subjectId = discussion.id,
+                                        initialText = quoteMarkdown(comment.body),
+                                        replyToId = comment.id,
+                                    ),
+                                )
+                            },
+                            onEdit = ({
+                                onCompose(
+                                    ConversationComposeRequest(
+                                        target = ConversationComposerTarget.DISCUSSION_COMMENT,
+                                        subjectId = discussion.id,
+                                        initialText = comment.body,
+                                        commentId = comment.id,
+                                    ),
+                                )
+                            }).takeIf { comment.viewerCanUpdate },
+                            onDelete = ({ viewModel.confirmDeleteComment(comment) }).takeIf { comment.viewerCanDelete },
+                            extraMenuItems = answerActions,
+                        )
                     }
                     if (state.hasMoreComments) item { LaunchedEffect(state.comments.size) { viewModel.loadMoreComments() } }
                 }
@@ -97,7 +150,6 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
         }
     }
 
-    if (composerOpen) ConversationComposerSheet(title = stringResource(if (editing == null) R.string.conversation_write_comment else R.string.conversation_edit_comment), value = composerText, onValueChange = { composerText = it }, onDismiss = { if (!state.isSubmittingComment) composerOpen = false }, isSubmitting = state.isSubmittingComment, onSubmit = { val edit = editing; if (edit == null) viewModel.addComment(composerText, replyToId) { composerOpen = false; composerText = ""; replyToId = null } else viewModel.updateComment(edit, composerText) { composerOpen = false; composerText = ""; editing = null } })
     state.pendingDeleteComment?.let { AlertDialog(onDismissRequest = { viewModel.confirmDeleteComment(null) }, title = { Text(stringResource(R.string.issue_delete_comment_title)) }, text = { Text(stringResource(R.string.common_cannot_be_undone)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteComment(null) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = viewModel::deletePendingComment) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } }) }
     if (state.pendingDeleteDiscussion) AlertDialog(onDismissRequest = { viewModel.confirmDeleteDiscussion(false) }, title = { Text(stringResource(R.string.discussion_delete_title, number)) }, text = { Text(stringResource(R.string.discussion_delete_message)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteDiscussion(false) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = { viewModel.deleteDiscussion(onBack) }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } })
 }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -165,7 +166,18 @@ class RepoPullRequestDetailViewModel @Inject constructor(
         this.name = name
         this.number = number
         permission?.let { value -> _state.update { it.copy(permission = value, capabilities = value.toCapabilities()) } }
+        observeCommentChanges()
         load()
+    }
+
+    private fun observeCommentChanges() {
+        viewModelScope.launch {
+            repoUpdateEventBus.events
+                .filterIsInstance<RepoUpdateEvent.PullRequestCommentsChanged>()
+                .collect { event ->
+                    if (event.owner == owner && event.name == name && event.number == number) load()
+                }
+        }
     }
 
     fun load() {

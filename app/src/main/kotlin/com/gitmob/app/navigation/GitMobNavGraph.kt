@@ -48,6 +48,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.error.ErrorBannerHost
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.ui.branches.BranchesScreen
+import com.gitmob.app.ui.common.ConversationComposerScreen
 import com.gitmob.app.ui.repoactions.RepoActionsScreen
 import com.gitmob.app.ui.repoactions.RepoWorkflowRunScreen
 import com.gitmob.app.ui.repocommunity.RepoContributorsScreen
@@ -388,6 +389,21 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onEdit = { navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                onCompose = { request ->
+                    navigator.navigate(
+                        ConversationComposerRoute(
+                            owner = route.owner,
+                            name = route.name,
+                            number = route.number,
+                            target = request.target,
+                            subjectId = request.subjectId,
+                            initialText = request.initialText,
+                            commentId = request.commentId,
+                            replyToId = request.replyToId,
+                            reviewEvent = request.reviewEvent,
+                        ),
+                    )
+                },
             )
         }
         entry<RepoIssueEditorRoute> { route ->
@@ -418,6 +434,21 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onEdit = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                onCompose = { request ->
+                    navigator.navigate(
+                        ConversationComposerRoute(
+                            owner = route.owner,
+                            name = route.name,
+                            number = route.number,
+                            target = request.target,
+                            subjectId = request.subjectId,
+                            initialText = request.initialText,
+                            commentId = request.commentId,
+                            replyToId = request.replyToId,
+                            reviewEvent = request.reviewEvent,
+                        ),
+                    )
+                },
             )
         }
         entry<RepoPullRequestEditorRoute> { route ->
@@ -447,6 +478,21 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onEdit = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                onCompose = { request ->
+                    navigator.navigate(
+                        ConversationComposerRoute(
+                            owner = route.owner,
+                            name = route.name,
+                            number = route.number,
+                            target = request.target,
+                            subjectId = request.subjectId,
+                            initialText = request.initialText,
+                            commentId = request.commentId,
+                            replyToId = request.replyToId,
+                            reviewEvent = request.reviewEvent,
+                        ),
+                    )
+                },
             )
         }
         entry<RepoDiscussionEditorRoute> { route ->
@@ -456,6 +502,12 @@ private fun LoggedInApp(
                 number = route.number,
                 onBack = { navigator.goBack() },
                 onSaved = { number -> navigator.goBack(); navigator.navigate(RepoDiscussionDetailRoute(route.owner, route.name, number, route.permission)) },
+            )
+        }
+        entry<ConversationComposerRoute> { route ->
+            ConversationComposerScreen(
+                route = route,
+                onBack = { navigator.goBack() },
             )
         }
         entry<RepoActionsRoute> { route ->

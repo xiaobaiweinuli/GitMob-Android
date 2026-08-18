@@ -15,6 +15,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -51,11 +52,22 @@ class RepoIssueDetailViewModel @Inject constructor(
         if (initialized) return
         initialized = true; this.owner = owner; this.name = name; this.number = number
         permission?.let { p -> _state.update { it.copy(permission = p, capabilities = p.toCapabilities()) } }
+        observeCommentChanges()
         load()
         viewModelScope.launch {
             repository.getLabels(owner, name).success { _state.update { s -> s.copy(labels = it) } }
             repository.getMilestones(owner, name).success { _state.update { s -> s.copy(milestones = it) } }
             repository.getAssignableUsers(owner, name).success { _state.update { s -> s.copy(assignableUsers = it) } }
+        }
+    }
+
+    private fun observeCommentChanges() {
+        viewModelScope.launch {
+            repoUpdateEventBus.events
+                .filterIsInstance<RepoUpdateEvent.IssueCommentsChanged>()
+                .collect { event ->
+                    if (event.owner == owner && event.name == name && event.number == number) load()
+                }
         }
     }
 

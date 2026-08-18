@@ -62,6 +62,24 @@ sealed class RepoUpdateEvent {
         val runId: Long,
     ) : RepoUpdateEvent()
 
+    data class IssueCommentsChanged(
+        override val owner: String,
+        override val name: String,
+        val number: Int,
+    ) : RepoUpdateEvent()
+
+    data class PullRequestCommentsChanged(
+        override val owner: String,
+        override val name: String,
+        val number: Int,
+    ) : RepoUpdateEvent()
+
+    data class DiscussionCommentsChanged(
+        override val owner: String,
+        override val name: String,
+        val number: Int,
+    ) : RepoUpdateEvent()
+
     /** Watch 订阅状态变化（SUBSCRIBED/UNSUBSCRIBED/IGNORED） */
     data class WatchStateChanged(
         override val owner: String,

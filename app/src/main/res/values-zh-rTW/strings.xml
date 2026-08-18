@@ -471,4 +471,27 @@
     <string name="conversation_edit_comment">編輯評論</string>
     <string name="conversation_markdown_body">Markdown 內容</string>
     <string name="conversation_submitting">提交中…</string>
+    <string name="conversation_send">傳送</string>
+    <string name="conversation_edit_tab">編輯</string>
+    <string name="conversation_preview_tab">預覽</string>
+    <string name="conversation_markdown_placeholder">輸入 Markdown 內容…</string>
+    <string name="conversation_reply">回覆</string>
+    <string name="conversation_discard_title">放棄編輯？</string>
+    <string name="conversation_discard_message">未儲存的內容將會遺失。</string>
+    <string name="conversation_discard">放棄</string>
+    <string name="conversation_preview_empty">沒有可預覽的內容</string>
+    <string name="conversation_preview_failed">預覽失敗</string>
+    <string name="conversation_tool_bold">粗體</string>
+    <string name="conversation_tool_italic">斜體</string>
+    <string name="conversation_tool_strikethrough">刪除線</string>
+    <string name="conversation_tool_heading">標題</string>
+    <string name="conversation_tool_bullet">無序清單</string>
+    <string name="conversation_tool_numbered">有序清單</string>
+    <string name="conversation_tool_task">工作清單</string>
+    <string name="conversation_tool_quote">引用</string>
+    <string name="conversation_tool_inline_code">行內程式碼</string>
+    <string name="conversation_tool_code_block">程式碼區塊</string>
+    <string name="conversation_tool_undo">復原</string>
+    <string name="conversation_tool_redo">重做</string>
+    <string name="common_continue">繼續</string>
 </resources>

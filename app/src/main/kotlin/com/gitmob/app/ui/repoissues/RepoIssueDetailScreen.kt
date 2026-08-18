@@ -19,7 +19,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
-import com.gitmob.app.ui.common.ConversationComposerSheet
+import com.gitmob.app.navigation.ConversationComposerTarget
+import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
 import com.gitmob.app.ui.common.quoteMarkdown
 
@@ -32,21 +33,12 @@ fun RepoIssueDetailScreen(
     permission: RepoPermission?,
     onBack: () -> Unit,
     onEdit: () -> Unit,
+    onCompose: (ConversationComposeRequest) -> Unit,
     viewModel: RepoIssueDetailViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name, number) { viewModel.init(owner, name, number, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var pageMenuOpen by remember { mutableStateOf(false) }
-    var composerOpen by remember { mutableStateOf(false) }
-    var composerText by remember { mutableStateOf("") }
-    var editingComment by remember { mutableStateOf<IssueComment?>(null) }
-
-    fun openComposer(text: String = "", edit: IssueComment? = null) {
-        editingComment = edit
-        composerText = text
-        composerOpen = true
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -76,7 +68,7 @@ fun RepoIssueDetailScreen(
         },
         floatingActionButton = {
             if (state.issue != null) ExtendedFloatingActionButton(
-                onClick = { openComposer() },
+                onClick = { state.issue?.let { onCompose(ConversationComposeRequest(ConversationComposerTarget.ISSUE_COMMENT, it.id)) } },
                 icon = { Icon(Icons.AutoMirrored.Filled.Comment, null) },
                 text = { Text(stringResource(R.string.conversation_comment)) },
             )
@@ -92,27 +84,15 @@ fun RepoIssueDetailScreen(
                 hasMoreComments = state.hasMoreComments,
                 onLoadMore = viewModel::loadMoreComments,
                 onEditIssue = onEdit,
-                onQuoteIssue = { openComposer(quoteMarkdown(state.issue!!.body.orEmpty())) },
-                onEditComment = { openComposer(it.body.orEmpty(), it) },
-                onQuoteComment = { openComposer(quoteMarkdown(it.body.orEmpty())) },
+                onQuoteIssue = { onCompose(ConversationComposeRequest(ConversationComposerTarget.ISSUE_COMMENT, state.issue!!.id, quoteMarkdown(state.issue!!.body.orEmpty()))) },
+                onEditComment = { onCompose(ConversationComposeRequest(ConversationComposerTarget.ISSUE_COMMENT, state.issue!!.id, it.body.orEmpty(), commentId = it.id)) },
+                onQuoteComment = { onCompose(ConversationComposeRequest(ConversationComposerTarget.ISSUE_COMMENT, state.issue!!.id, quoteMarkdown(it.body.orEmpty()))) },
                 onDeleteComment = viewModel::confirmDeleteComment,
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
         }
     }
 
-    if (composerOpen) ConversationComposerSheet(
-        title = stringResource(if (editingComment == null) R.string.conversation_write_comment else R.string.conversation_edit_comment),
-        value = composerText,
-        onValueChange = { composerText = it },
-        onDismiss = { if (!state.isSubmittingComment) composerOpen = false },
-        isSubmitting = state.isSubmittingComment,
-        onSubmit = {
-            val editing = editingComment
-            if (editing == null) viewModel.addComment(composerText) { composerOpen = false; composerText = "" }
-            else viewModel.updateComment(editing, composerText) { composerOpen = false; composerText = ""; editingComment = null }
-        },
-    )
     state.pendingDeleteComment?.let {
         AlertDialog(
             onDismissRequest = { viewModel.confirmDeleteComment(null) },

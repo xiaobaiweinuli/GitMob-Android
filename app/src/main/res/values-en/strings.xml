@@ -472,4 +472,27 @@
     <string name="conversation_edit_comment">Edit comment</string>
     <string name="conversation_markdown_body">Markdown content</string>
     <string name="conversation_submitting">Submitting…</string>
+    <string name="conversation_send">Send</string>
+    <string name="conversation_edit_tab">Edit</string>
+    <string name="conversation_preview_tab">Preview</string>
+    <string name="conversation_markdown_placeholder">Write Markdown…</string>
+    <string name="conversation_reply">Reply</string>
+    <string name="conversation_discard_title">Discard changes?</string>
+    <string name="conversation_discard_message">Your unsaved content will be lost.</string>
+    <string name="conversation_discard">Discard</string>
+    <string name="conversation_preview_empty">Nothing to preview</string>
+    <string name="conversation_preview_failed">Preview failed</string>
+    <string name="conversation_tool_bold">Bold</string>
+    <string name="conversation_tool_italic">Italic</string>
+    <string name="conversation_tool_strikethrough">Strikethrough</string>
+    <string name="conversation_tool_heading">Heading</string>
+    <string name="conversation_tool_bullet">Bulleted list</string>
+    <string name="conversation_tool_numbered">Numbered list</string>
+    <string name="conversation_tool_task">Task list</string>
+    <string name="conversation_tool_quote">Quote</string>
+    <string name="conversation_tool_inline_code">Inline code</string>
+    <string name="conversation_tool_code_block">Code block</string>
+    <string name="conversation_tool_undo">Undo</string>
+    <string name="conversation_tool_redo">Redo</string>
+    <string name="common_continue">Continue</string>
 </resources>

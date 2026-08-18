@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -92,7 +93,8 @@ class RepoDiscussionDetailViewModel @Inject constructor(
     private val _state = MutableStateFlow(RepoDiscussionDetailUiState())
     val state: StateFlow<RepoDiscussionDetailUiState> = _state.asStateFlow()
     private var owner = ""; private var name = ""; private var number = 0; private var cursor: String? = null; private var initialized = false
-    fun init(owner: String, name: String, number: Int, permission: RepoPermission?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; this.number = number; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } }; load() }
+    fun init(owner: String, name: String, number: Int, permission: RepoPermission?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; this.number = number; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } }; observeCommentChanges(); load() }
+    private fun observeCommentChanges() { viewModelScope.launch { repoUpdateEventBus.events.filterIsInstance<RepoUpdateEvent.DiscussionCommentsChanged>().collect { event -> if (event.owner == owner && event.name == name && event.number == number) load() } } }
     fun load() { cursor = null; viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getDiscussion(owner, name, number)) { is ApiResult.Success -> apply(result.data); is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun retry() = load()
     fun loadMoreComments() { val state = _state.value; if (!state.hasMoreComments) return; viewModelScope.launch { when (val result = repository.getDiscussion(owner, name, number, cursor)) { is ApiResult.Success -> { cursor = result.data.commentsEndCursor; _state.update { it.copy(comments = it.comments + result.data.comments, hasMoreComments = result.data.hasNextComments) } }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }

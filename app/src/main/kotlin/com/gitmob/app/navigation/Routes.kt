@@ -62,6 +62,20 @@ sealed interface Route : NavKey
 @Serializable data class RepoDiscussionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoDiscussionDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoDiscussionEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null) : Route
+@Serializable
+enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_THREAD, DISCUSSION_COMMENT }
+
+@Serializable data class ConversationComposerRoute(
+    val owner: String,
+    val name: String,
+    val number: Int,
+    val target: ConversationComposerTarget,
+    val subjectId: String,
+    val initialText: String = "",
+    val commentId: String? = null,
+    val replyToId: String? = null,
+    val reviewEvent: String? = null,
+) : Route
 @Serializable data class RepoActionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val defaultRef: String? = null) : Route
 @Serializable data class RepoWorkflowRunRoute(val owner: String, val name: String, val runId: Long, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoReleasesRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
