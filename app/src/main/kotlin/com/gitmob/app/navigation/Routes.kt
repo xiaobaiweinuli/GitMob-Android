@@ -55,6 +55,7 @@ sealed interface Route : NavKey
 @Serializable data class RepoDetailRoute(val owner: String, val name: String) : Route
 @Serializable data class RepoIssuesRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val viewerCanCreateIssues: Boolean? = null) : Route
 @Serializable data class RepoIssueDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoIssueEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null, val templateFilename: String? = null) : Route
 @Serializable data class RepoPullRequestsRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoPullRequestDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoPullRequestEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null) : Route

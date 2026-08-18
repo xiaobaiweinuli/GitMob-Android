@@ -63,8 +63,10 @@ import com.gitmob.app.ui.login.LoginScreen
 import com.gitmob.app.ui.profile.ProfileScreen
 import com.gitmob.app.ui.repodetail.RepoDetailScreen
 import com.gitmob.app.ui.repodiscussions.RepoDiscussionDetailScreen
+import com.gitmob.app.ui.repodiscussions.RepoDiscussionEditorScreen
 import com.gitmob.app.ui.repodiscussions.RepoDiscussionListScreen
 import com.gitmob.app.ui.repoissues.RepoIssueDetailScreen
+import com.gitmob.app.ui.repoissues.RepoIssueEditorScreen
 import com.gitmob.app.ui.repoissues.RepoIssueListScreen
 import com.gitmob.app.ui.repopullrequests.RepoPullRequestDetailScreen
 import com.gitmob.app.ui.repopullrequests.RepoPullRequestEditorScreen
@@ -375,6 +377,7 @@ private fun LoggedInApp(
                 viewerCanCreateIssues = route.viewerCanCreateIssues,
                 onBack = { navigator.goBack() },
                 onIssueClick = { number -> navigator.navigate(RepoIssueDetailRoute(route.owner, route.name, number, route.permission)) },
+                onCreate = { templateFilename -> navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, permission = route.permission, templateFilename = templateFilename)) },
             )
         }
         entry<RepoIssueDetailRoute> { route ->
@@ -384,6 +387,17 @@ private fun LoggedInApp(
                 number = route.number,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onEdit = { navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, route.number, route.permission)) },
+            )
+        }
+        entry<RepoIssueEditorRoute> { route ->
+            RepoIssueEditorScreen(
+                owner = route.owner,
+                name = route.name,
+                number = route.number,
+                templateFilename = route.templateFilename,
+                onBack = { navigator.goBack() },
+                onSaved = { number -> navigator.goBack(); navigator.navigate(RepoIssueDetailRoute(route.owner, route.name, number, route.permission)) },
             )
         }
         entry<RepoPullRequestsRoute> { route ->
@@ -422,6 +436,7 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onDiscussionClick = { number -> navigator.navigate(RepoDiscussionDetailRoute(route.owner, route.name, number, route.permission)) },
+                onCreate = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, permission = route.permission)) },
             )
         }
         entry<RepoDiscussionDetailRoute> { route ->
@@ -431,6 +446,16 @@ private fun LoggedInApp(
                 number = route.number,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onEdit = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, route.number, route.permission)) },
+            )
+        }
+        entry<RepoDiscussionEditorRoute> { route ->
+            RepoDiscussionEditorScreen(
+                owner = route.owner,
+                name = route.name,
+                number = route.number,
+                onBack = { navigator.goBack() },
+                onSaved = { number -> navigator.goBack(); navigator.navigate(RepoDiscussionDetailRoute(route.owner, route.name, number, route.permission)) },
             )
         }
         entry<RepoActionsRoute> { route ->

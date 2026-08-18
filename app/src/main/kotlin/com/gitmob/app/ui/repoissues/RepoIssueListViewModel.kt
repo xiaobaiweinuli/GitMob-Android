@@ -29,16 +29,16 @@ data class RepoIssueListUiState(
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
     val viewerCanCreateIssues: Boolean = false,
     val hasIssuesEnabled: Boolean = false,
-    val repositoryId: String? = null,
     val labels: List<IssueLabel> = emptyList(),
     val milestones: List<IssueMilestone> = emptyList(),
     val assignableUsers: List<SimpleUser> = emptyList(),
+    val templatePickerVisible: Boolean = false,
+    val templatePickerLoading: Boolean = false,
+    val templateLoadFailed: Boolean = false,
     val templates: List<IssueTemplate> = emptyList(),
     val blankIssuesEnabled: Boolean = true,
-    val templatesLoaded: Boolean = false,
-    val isLoadingTemplates: Boolean = false,
-    val templatesLoadFailed: Boolean = false,
     val invalidTemplateCount: Int = 0,
+    val blankCreateRequested: Boolean = false,
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
@@ -59,8 +59,6 @@ class RepoIssueListViewModel @Inject constructor(
     private var cursor: String? = null
     private var initialized = false
     private var loadJob: Job? = null
-    private var templatesJob: Job? = null
-    private var templateRequestId = 0L
     private var suppressNextIssueCountRefresh = false
 
     fun init(owner: String, name: String, permission: RepoPermission? = null, viewerCanCreateIssues: Boolean? = null) {
@@ -79,34 +77,6 @@ class RepoIssueListViewModel @Inject constructor(
             repository.getLabels(owner, name).onSuccess { _state.update { s -> s.copy(labels = it) } }
             repository.getMilestones(owner, name).onSuccess { _state.update { s -> s.copy(milestones = it) } }
             repository.getAssignableUsers(owner, name).onSuccess { _state.update { s -> s.copy(assignableUsers = it) } }
-        }
-    }
-
-    fun loadIssueTemplates() {
-        templatesJob?.cancel()
-        val requestId = ++templateRequestId
-        _state.update { it.copy(isLoadingTemplates = true, templatesLoadFailed = false) }
-        templatesJob = viewModelScope.launch {
-            when (val result = repository.getIssueTemplates(owner, name)) {
-                is ApiResult.Success -> _state.update {
-                    if (requestId != templateRequestId) return@update it
-                    it.copy(
-                        blankIssuesEnabled = result.data.blankIssuesEnabled,
-                        templates = result.data.templates,
-                        templatesLoaded = true,
-                        isLoadingTemplates = false,
-                        templatesLoadFailed = false,
-                        invalidTemplateCount = result.data.invalidTemplateCount,
-                    )
-                }
-                is ApiResult.Failure -> {
-                    errorEventBus.emit(result.error)
-                    _state.update {
-                        if (requestId != templateRequestId) it
-                        else it.copy(isLoadingTemplates = false, templatesLoadFailed = true)
-                    }
-                }
-            }
         }
     }
 
@@ -133,6 +103,36 @@ class RepoIssueListViewModel @Inject constructor(
     fun setMentioned(value: Boolean) = setFilter(_state.value.filter.copy(mentioned = value))
     fun setSubscribed(value: Boolean) = setFilter(_state.value.filter.copy(subscribed = value))
     fun setUpdatedSince(value: java.time.Instant?) = setFilter(_state.value.filter.copy(updatedSince = value))
+
+    fun beginCreate() {
+        val current = _state.value
+        if (!current.viewerCanCreateIssues || current.templatePickerLoading) return
+        viewModelScope.launch {
+            _state.update { it.copy(templatePickerLoading = true, templateLoadFailed = false, templatePickerVisible = false, blankCreateRequested = false) }
+            when (val result = repository.getIssueTemplates(owner, name)) {
+                is ApiResult.Success -> {
+                    val templates = result.data
+                    _state.update {
+                        it.copy(
+                            templates = templates.templates,
+                            blankIssuesEnabled = templates.blankIssuesEnabled,
+                            invalidTemplateCount = templates.invalidTemplateCount,
+                            templatePickerLoading = false,
+                            templatePickerVisible = templates.templates.isNotEmpty() || !templates.blankIssuesEnabled,
+                            blankCreateRequested = templates.templates.isEmpty() && templates.blankIssuesEnabled,
+                        )
+                    }
+                }
+                is ApiResult.Failure -> {
+                    errorEventBus.emit(result.error)
+                    _state.update { it.copy(templatePickerLoading = false, templateLoadFailed = true) }
+                }
+            }
+        }
+    }
+
+    fun dismissTemplatePicker() = _state.update { it.copy(templatePickerVisible = false, templateLoadFailed = false) }
+    fun consumeBlankCreateRequest() = _state.update { it.copy(blankCreateRequested = false) }
 
     fun loadMore() {
         val current = _state.value
@@ -161,17 +161,6 @@ class RepoIssueListViewModel @Inject constructor(
         }
     }
 
-    fun createIssue(title: String, body: String, labelIds: List<String>, assigneeIds: List<String>, milestoneId: String?, onCreated: (RepoIssue) -> Unit) {
-        val repositoryId = _state.value.repositoryId ?: return
-        if (!_state.value.viewerCanCreateIssues || title.isBlank()) return
-        viewModelScope.launch {
-            when (val result = repository.createIssue(CreateRepoIssueInput(repositoryId, title.trim(), body, labelIds, assigneeIds, milestoneId))) {
-                is ApiResult.Success -> { emitIssueCount(suppressRefresh = true); onCreated(result.data); load() }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
-            }
-        }
-    }
-
     private suspend fun emitIssueCount(suppressRefresh: Boolean = false) {
         val result = repository.getIssues(owner, name, RepoIssueFilter(), null)
         val count = (result as? ApiResult.Success)?.data?.totalCount ?: return
@@ -182,7 +171,7 @@ class RepoIssueListViewModel @Inject constructor(
     private fun RepoIssueListUiState.merge(page: RepoIssuePage, loadingMore: Boolean) = copy(
         items = if (loadingMore) items + page.items else page.items, totalCount = page.totalCount, permission = page.permission,
         capabilities = page.capabilities, viewerCanCreateIssues = page.viewerCanCreateIssues, hasIssuesEnabled = page.hasIssuesEnabled,
-        repositoryId = page.repositoryId, hasNextPage = page.hasNextPage, isLoading = false, isLoadingMore = false, loadFailed = false,
+        hasNextPage = page.hasNextPage, isLoading = false, isLoadingMore = false, loadFailed = false,
     ).also { cursor = page.endCursor }
 
     private suspend fun <T> ApiResult<T>.onSuccess(block: suspend (T) -> Unit) { if (this is ApiResult.Success) block(data) }

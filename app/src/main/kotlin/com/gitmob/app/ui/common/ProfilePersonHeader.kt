@@ -2,7 +2,6 @@ package com.gitmob.app.ui.common
 
 import android.content.Intent
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -187,25 +186,14 @@ fun ProfilePersonHeader(
                         .fillMaxWidth()
                         .padding(top = 12.dp),
                 ) {
-                    Row(modifier = Modifier.padding(12.dp)) {
-                        s.emoji?.takeIf { it.isNotBlank() }?.let { emoji ->
-                            val customEmoji = githubCustomEmojiDrawable(emoji)
-                            if (customEmoji != null) {
-                                Image(
-                                    painter = painterResource(customEmoji),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            } else {
-                                Text(emojizeGitHubText(emoji))
-                            }
-                        }
-                        Text(
-                            s.message,
-                            modifier = Modifier.padding(start = 8.dp),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
+                    GitHubEmojiLabel(
+                        emoji = s.emoji,
+                        text = s.message,
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        iconSize = 20.dp,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
                 }
             }
         }

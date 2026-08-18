@@ -628,6 +628,7 @@ data class RepoIssueConnectionNode(
 @Serializable
 data class RepoIssueNode(
     val id: String,
+    val url: String = "",
     val number: Int,
     val title: String,
     val body: String? = null,
@@ -635,6 +636,7 @@ data class RepoIssueNode(
     val state: String,
     val stateReason: String? = null,
     val author: SimpleUserNode? = null,
+    val authorAssociation: String = "NONE",
     val createdAt: String,
     val updatedAt: String,
     val comments: RepoIssueCommentConnectionNode,
@@ -662,7 +664,9 @@ data class RepoIssueCommentConnectionNode(
 @Serializable
 data class RepoIssueCommentNode(
     val id: String,
+    val url: String = "",
     val author: SimpleUserNode? = null,
+    val authorAssociation: String = "NONE",
     val body: String? = null,
     val bodyHTML: String = "",
     val createdAt: String,

@@ -125,6 +125,8 @@ data class IssueComment(
     val viewerCanUpdate: Boolean,
     val viewerCanDelete: Boolean,
     val viewerCanReact: Boolean,
+    val url: String = "",
+    val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
 )
 
 data class RepoIssue(
@@ -151,6 +153,8 @@ data class RepoIssue(
     val viewerCanSubscribe: Boolean,
     val viewerCanReopen: Boolean,
     val viewerSubscription: String?,
+    val url: String = "",
+    val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
 )
 
 data class RepoIssuePage(

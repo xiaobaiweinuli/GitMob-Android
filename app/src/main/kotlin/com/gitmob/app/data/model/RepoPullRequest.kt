@@ -54,6 +54,8 @@ data class RepoPullRequest(
     val viewerCanUpdateBranch: Boolean,
     val viewerSubscription: String?,
     val autoMergeEnabled: Boolean,
+    val url: String = "",
+    val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
 )
 
 data class RepoPullRequestPage(
@@ -80,16 +82,21 @@ data class RepoPullRequestComment(
     val viewerCanUpdate: Boolean,
     val viewerCanDelete: Boolean,
     val viewerCanReact: Boolean,
+    val url: String = "",
+    val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
 )
 
 data class RepoPullRequestReview(
     val id: String,
     val author: SimpleUser?,
+    val body: String = "",
     val bodyHtml: String,
     val state: String,
     val submittedAt: String?,
     val viewerCanUpdate: Boolean,
     val viewerCanDelete: Boolean,
+    val url: String = "",
+    val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
 )
 
 data class RepoPullRequestReviewComment(
@@ -104,6 +111,8 @@ data class RepoPullRequestReviewComment(
     val createdAt: String,
     val viewerCanUpdate: Boolean,
     val viewerCanDelete: Boolean,
+    val url: String = "",
+    val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
 )
 
 data class RepoPullRequestReviewThread(

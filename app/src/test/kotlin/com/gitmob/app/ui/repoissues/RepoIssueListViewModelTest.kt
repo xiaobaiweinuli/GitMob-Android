@@ -67,43 +67,50 @@ class RepoIssueListViewModelTest {
     }
 
     @Test
-    fun `template load failure is distinct from an empty template list and can retry`() = runTest {
+    fun `template picker opens when valid templates exist`() = runTest {
         val repository = repositoryMock()
-        val template = IssueTemplate("Bug report", "Report a bug", "[Bug] ", "bug.yml", listOf("bug"), listOf("octo"), listOf(IssueFormField.Input("version", "Version", required = true)))
         coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
-        coEvery { repository.getIssueTemplates("o", "r") } returnsMany listOf(
-            ApiResult.Failure(ApiError.NetworkError),
-            ApiResult.Success(IssueTemplateLoadResult(true, listOf(template))),
+        coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(
+            IssueTemplateLoadResult(true, listOf(IssueTemplate("Bug", "About", null, "bug.yml", emptyList(), emptyList(), emptyList()))),
         )
         val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
-
         vm.init("o", "r", RepoPermission.ADMIN, true)
-        vm.loadIssueTemplates()
         advanceUntilIdle()
-        assertFalse(vm.state.value.templatesLoaded)
-        assertTrue(vm.state.value.templatesLoadFailed)
-
-        vm.loadIssueTemplates()
+        vm.beginCreate()
         advanceUntilIdle()
-        assertTrue(vm.state.value.templatesLoaded)
-        assertFalse(vm.state.value.templatesLoadFailed)
-        assertEquals("Bug report", vm.state.value.templates.single().name)
+        assertTrue(vm.state.value.templatePickerVisible)
+        assertEquals("bug.yml", vm.state.value.templates.single().filename)
+        assertFalse(vm.state.value.blankCreateRequested)
         vm.viewModelScope.cancel()
     }
 
     @Test
-    fun `creating issue forwards the generated markdown body`() = runTest {
+    fun `blank issue starts directly when no templates are available`() = runTest {
         val repository = repositoryMock()
         coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
-        coEvery { repository.createIssue(any()) } returns ApiResult.Success(issue())
+        coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(IssueTemplateLoadResult(true, emptyList()))
         val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
-
         vm.init("o", "r", RepoPermission.ADMIN, true)
         advanceUntilIdle()
-        vm.createIssue("Title", "### Version\n\n1.0", emptyList(), emptyList(), null) {}
+        vm.beginCreate()
         advanceUntilIdle()
+        assertTrue(vm.state.value.blankCreateRequested)
+        assertFalse(vm.state.value.templatePickerVisible)
+        vm.viewModelScope.cancel()
+    }
 
-        coVerify(exactly = 1) { repository.createIssue(match { it.body == "### Version\n\n1.0" }) }
+    @Test
+    fun `template dialog remains visible when blank issues are disabled`() = runTest {
+        val repository = repositoryMock()
+        coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
+        coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(IssueTemplateLoadResult(false, emptyList()))
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        vm.init("o", "r", RepoPermission.ADMIN, true)
+        advanceUntilIdle()
+        vm.beginCreate()
+        advanceUntilIdle()
+        assertTrue(vm.state.value.templatePickerVisible)
+        assertFalse(vm.state.value.blankCreateRequested)
         vm.viewModelScope.cancel()
     }
 

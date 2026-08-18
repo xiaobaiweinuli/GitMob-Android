@@ -249,7 +249,7 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
     companion object {
         private const val MAX_ISSUE_FORM_BYTES = 256 * 1024
         private fun issueFields(commentsFirst: Int, commentsAfter: String? = null): String = """
-            id number title body bodyHTML state stateReason author { login avatarUrl } createdAt updatedAt locked
+            id url number title body bodyHTML state stateReason author { login avatarUrl } authorAssociation createdAt updatedAt locked
             comments(first: $commentsFirst${commentsAfter?.let { ", after: $it" }.orEmpty()}) { totalCount nodes { ${commentFields()} } pageInfo { hasNextPage endCursor } }
             labels(first: 20) { nodes { id name color description } }
             assignees(first: 20) { nodes { id login name avatarUrl bio } }
@@ -257,12 +257,13 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
             viewerCanClose viewerCanDelete viewerCanLabel viewerCanSetMilestone viewerCanUpdate viewerCanSubscribe viewerCanReopen viewerSubscription
         """.trimIndent()
 
-        private fun commentFields() = "id author { login avatarUrl } body bodyHTML createdAt updatedAt viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanReact"
+        private fun commentFields() = "id url author { login avatarUrl } authorAssociation body bodyHTML createdAt updatedAt viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanReact"
         private fun parsePermission(value: String?) = value?.let { runCatching { RepoPermission.valueOf(it) }.getOrDefault(RepoPermission.NONE) } ?: RepoPermission.NONE
         private fun toUser(node: SimpleUserNode) = SimpleUser(node.login, node.name, node.avatarUrl, node.bio, node.id)
         private fun toLabel(node: RepoIssueLabelNode) = IssueLabel(node.id, node.name, node.color, node.description)
         private fun toMilestone(node: RepoIssueMilestoneNode) = IssueMilestone(node.id, node.number, node.title, node.state, node.dueOn)
-        private fun toComment(node: RepoIssueCommentNode) = IssueComment(node.id, node.author?.let(::toUser), node.body, node.bodyHTML, node.createdAt, node.updatedAt, node.viewerDidAuthor, node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact)
+        private fun association(value: String) = runCatching { CommentAuthorAssociation.valueOf(value) }.getOrDefault(CommentAuthorAssociation.NONE)
+        private fun toComment(node: RepoIssueCommentNode) = IssueComment(node.id, node.author?.let(::toUser), node.body, node.bodyHTML, node.createdAt, node.updatedAt, node.viewerDidAuthor, node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact, node.url, association(node.authorAssociation))
         private fun toCommentPage(node: RepoIssueCommentConnectionNode) = IssueCommentPage(node.nodes.map(::toComment), node.pageInfo?.hasNextPage ?: false, node.pageInfo?.endCursor)
         private fun toIssue(node: RepoIssueNode) = RepoIssue(
             id = node.id, number = node.number, title = node.title, body = node.body, bodyHtml = node.bodyHTML,
@@ -271,7 +272,8 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
             labels = node.labels?.nodes.orEmpty().map(::toLabel), assignees = node.assignees?.nodes.orEmpty().map(::toUser), milestone = node.milestone?.let(::toMilestone),
             locked = node.locked, viewerCanClose = node.viewerCanClose, viewerCanDelete = node.viewerCanDelete, viewerCanLabel = node.viewerCanLabel,
             viewerCanSetMilestone = node.viewerCanSetMilestone, viewerCanUpdate = node.viewerCanUpdate, viewerCanSubscribe = node.viewerCanSubscribe,
-            viewerCanReopen = node.viewerCanReopen, viewerSubscription = node.viewerSubscription,
+            viewerCanReopen = node.viewerCanReopen, viewerSubscription = node.viewerSubscription, url = node.url,
+            authorAssociation = association(node.authorAssociation),
         )
     }
 }

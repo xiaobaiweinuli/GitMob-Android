@@ -96,6 +96,17 @@ data class SimpleUser(
     val id: String? = null,
 )
 
+enum class CommentAuthorAssociation {
+    OWNER,
+    MEMBER,
+    COLLABORATOR,
+    CONTRIBUTOR,
+    FIRST_TIME_CONTRIBUTOR,
+    FIRST_TIMER,
+    MANNEQUIN,
+    NONE,
+}
+
 data class PagedUsers(
     val totalCount: Int,
     val users: List<SimpleUser>,

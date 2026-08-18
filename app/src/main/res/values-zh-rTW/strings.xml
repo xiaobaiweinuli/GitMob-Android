@@ -462,4 +462,13 @@
     <string name="contributors_type_organization">組織</string>
     <string name="license_copy">複製授權條款文字</string>
     <string name="about_logo_desc">GitMob 標誌</string>
+    <string name="conversation_share">分享</string>
+    <string name="conversation_quote_reply">引用回覆</string>
+    <string name="conversation_author">作者</string>
+    <string name="conversation_owner">擁有者</string>
+    <string name="conversation_comment">評論</string>
+    <string name="conversation_write_comment">撰寫評論</string>
+    <string name="conversation_edit_comment">編輯評論</string>
+    <string name="conversation_markdown_body">Markdown 內容</string>
+    <string name="conversation_submitting">提交中…</string>
 </resources>

@@ -30,6 +30,7 @@ data class RepoIssueDetailUiState(
     val assignableUsers: List<SimpleUser> = emptyList(),
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
+    val isSubmittingComment: Boolean = false,
     val loadFailed: Boolean = false,
     val hasMoreComments: Boolean = false,
     val pendingDeleteComment: IssueComment? = null,
@@ -75,12 +76,26 @@ class RepoIssueDetailViewModel @Inject constructor(
     fun addComment(body: String, clear: () -> Unit) {
         val issue = _state.value.issue ?: return
         if (body.isBlank()) return
-        viewModelScope.launch { when (val result = repository.addComment(issue.id, body.trim())) { is ApiResult.Success -> { _state.update { it.copy(comments = it.comments + result.data, issue = it.issue?.copy(commentCount = issue.commentCount + 1)) }; clear() }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }
+        if (_state.value.isSubmittingComment) return
+        viewModelScope.launch {
+            _state.update { it.copy(isSubmittingComment = true) }
+            when (val result = repository.addComment(issue.id, body.trim())) {
+                is ApiResult.Success -> { _state.update { it.copy(comments = it.comments + result.data, issue = it.issue?.copy(commentCount = issue.commentCount + 1), isSubmittingComment = false) }; clear() }
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isSubmittingComment = false) } }
+            }
+        }
     }
 
     fun updateComment(comment: IssueComment, body: String, done: () -> Unit) {
         if (!comment.viewerCanUpdate || body.isBlank()) return
-        viewModelScope.launch { when (val result = repository.updateComment(comment.id, body.trim())) { is ApiResult.Success -> { _state.update { it.copy(comments = it.comments.map { old -> if (old.id == comment.id) result.data else old }) }; done() }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }
+        if (_state.value.isSubmittingComment) return
+        viewModelScope.launch {
+            _state.update { it.copy(isSubmittingComment = true) }
+            when (val result = repository.updateComment(comment.id, body.trim())) {
+                is ApiResult.Success -> { _state.update { it.copy(comments = it.comments.map { old -> if (old.id == comment.id) result.data else old }, isSubmittingComment = false) }; done() }
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isSubmittingComment = false) } }
+            }
+        }
     }
 
     fun confirmDeleteComment(value: IssueComment?) { _state.update { it.copy(pendingDeleteComment = value) } }

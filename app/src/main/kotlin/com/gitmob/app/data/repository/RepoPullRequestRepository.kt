@@ -27,15 +27,15 @@ class RepoPullRequestRepository @Inject constructor(
         after: String? = null,
     ): ApiResult<RepoPullRequestPage> = safeCall {
         val query = """
-            query RepoPullRequests(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String, ${'$'}states: [PullRequestState!], ${'$'}orderBy: IssueOrder!) {
+            query RepoPullRequests(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String, ${'$'}states: [PullRequestState!], ${'$'}orderBy: IssueOrder!, ${'$'}labels: [String!], ${'$'}baseRefName: String, ${'$'}headRefName: String) {
                 repository(owner: ${'$'}owner, name: ${'$'}name) {
                     id viewerPermission hasPullRequestsEnabled pullRequestCreationPolicy
                     defaultBranchRef { name }
                     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
                     pullRequests(
                         first: ${PageSize.REPO_ISSUES}, after: ${'$'}after,
-                        states: ${'$'}states, labels: ${jsonStringList(filter.labels)},
-                        baseRefName: ${jsonString(filter.baseRefName)}, headRefName: ${jsonString(filter.headRefName)},
+                        states: ${'$'}states, labels: ${'$'}labels,
+                        baseRefName: ${'$'}baseRefName, headRefName: ${'$'}headRefName,
                         orderBy: ${'$'}orderBy
                     ) {
                         totalCount nodes { ${pullRequestFields()} }
@@ -50,6 +50,9 @@ class RepoPullRequestRepository @Inject constructor(
             after?.let { put("after", JsonPrimitive(it)) }
             put("states", JsonArray(states(filter.state).map(::JsonPrimitive)))
             put("orderBy", order(filter.sort))
+            if (filter.labels.isNotEmpty()) put("labels", JsonArray(filter.labels.map(::JsonPrimitive)))
+            filter.baseRefName?.takeIf(String::isNotBlank)?.let { put("baseRefName", JsonPrimitive(it)) }
+            filter.headRefName?.takeIf(String::isNotBlank)?.let { put("headRefName", JsonPrimitive(it)) }
         }).repository ?: error("Repository not found")
         val permission = parsePermission(repository.viewerPermission)
         RepoPullRequestPage(
@@ -83,7 +86,7 @@ class RepoPullRequestRepository @Inject constructor(
                             nodes { ${commentFields()} }
                             pageInfo { hasNextPage endCursor }
                         }
-                        reviews(first: 30) { nodes { id author { login avatarUrl } bodyHTML state submittedAt viewerCanUpdate viewerCanDelete } }
+                        reviews(first: 30) { nodes { id url author { login avatarUrl } authorAssociation body bodyHTML state submittedAt viewerCanUpdate viewerCanDelete } }
                         reviewThreads(first: 50) {
                             nodes {
                                 id path line isResolved isOutdated viewerCanReply viewerCanResolve viewerCanUnresolve
@@ -396,21 +399,26 @@ class RepoPullRequestRepository @Inject constructor(
         viewerCanUpdateBranch = node.viewerCanUpdateBranch,
         viewerSubscription = node.viewerSubscription,
         autoMergeEnabled = node.autoMergeRequest != null,
+        url = node.url,
+        authorAssociation = association(node.authorAssociation),
     )
 
     private fun toComment(node: PullRequestCommentNode) = RepoPullRequestComment(
         node.id, node.author?.toDomain(), node.body, node.bodyHTML, node.createdAt, node.updatedAt,
-        node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact,
+        node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact, node.url, association(node.authorAssociation),
     )
 
     private fun toReview(node: PullRequestReviewNode) = RepoPullRequestReview(
-        node.id, node.author?.toDomain(), node.bodyHTML, node.state, node.submittedAt,
-        node.viewerCanUpdate, node.viewerCanDelete,
+        id = node.id, author = node.author?.toDomain(), body = node.body, bodyHtml = node.bodyHTML,
+        state = node.state, submittedAt = node.submittedAt, viewerCanUpdate = node.viewerCanUpdate,
+        viewerCanDelete = node.viewerCanDelete, url = node.url,
+        authorAssociation = association(node.authorAssociation),
     )
 
     private fun toReviewComment(node: PullRequestReviewCommentNode) = RepoPullRequestReviewComment(
         node.id, node.author?.toDomain(), node.body, node.bodyHTML, node.path, node.line, node.originalLine,
         node.outdated, node.createdAt, node.viewerCanUpdate, node.viewerCanDelete,
+        node.url, association(node.authorAssociation),
     )
 
     private fun toThread(node: PullRequestReviewThreadNode) = RepoPullRequestReviewThread(
@@ -419,6 +427,7 @@ class RepoPullRequestRepository @Inject constructor(
     )
 
     private fun ActorNode.toDomain() = SimpleUser(login, null, avatarUrl, null)
+    private fun association(value: String) = runCatching { CommentAuthorAssociation.valueOf(value) }.getOrDefault(CommentAuthorAssociation.NONE)
     private fun toUser(node: UserNode) = SimpleUser(node.login, node.name, node.avatarUrl, node.bio, node.id)
     private fun toLabel(node: LabelNode) = IssueLabel(node.id, node.name, node.color, node.description)
     private fun toMilestone(node: MilestoneNode) = IssueMilestone(node.id, node.number, node.title, node.state, node.dueOn)
@@ -441,12 +450,9 @@ class RepoPullRequestRepository @Inject constructor(
     }
 
     companion object {
-        private fun jsonString(value: String?) = value?.let { "\"${it.replace("\"", "\\\"")}\"" } ?: "null"
-        private fun jsonStringList(values: Set<String>) = values.joinToString(prefix = "[", postfix = "]") { jsonString(it) }
-
         private fun pullRequestFields() = """
-            id number title body bodyHTML state isDraft locked createdAt updatedAt
-            author { login avatarUrl }
+            id url number title body bodyHTML state isDraft locked createdAt updatedAt
+            author { login avatarUrl } authorAssociation
             baseRefName headRefName headRepository { nameWithOwner }
             totalCommentsCount additions deletions changedFiles mergeable mergeStateStatus reviewDecision
             labels(first: 20) { nodes { id name color description } }
@@ -459,12 +465,12 @@ class RepoPullRequestRepository @Inject constructor(
         """.trimIndent()
 
         private fun commentFields() = """
-            id author { login avatarUrl } body bodyHTML createdAt updatedAt
+            id url author { login avatarUrl } authorAssociation body bodyHTML createdAt updatedAt
             viewerCanUpdate viewerCanDelete viewerCanReact
         """.trimIndent()
 
         private fun reviewCommentFields() = """
-            id author { login avatarUrl } body bodyHTML path line originalLine outdated createdAt
+            id url author { login avatarUrl } authorAssociation body bodyHTML path line originalLine outdated createdAt
             viewerCanUpdate viewerCanDelete
         """.trimIndent()
     }
@@ -488,7 +494,9 @@ class RepoPullRequestRepository @Inject constructor(
 
 @Serializable private data class PullRequestCommentNode(
     val id: String,
+    val url: String = "",
     val author: ActorNode? = null,
+    val authorAssociation: String = "NONE",
     val body: String = "",
     val bodyHTML: String = "",
     val createdAt: String = "",
@@ -504,7 +512,10 @@ class RepoPullRequestRepository @Inject constructor(
 )
 @Serializable private data class PullRequestReviewNode(
     val id: String,
+    val url: String = "",
     val author: ActorNode? = null,
+    val authorAssociation: String = "NONE",
+    val body: String = "",
     val bodyHTML: String = "",
     val state: String = "COMMENTED",
     val submittedAt: String? = null,
@@ -514,7 +525,9 @@ class RepoPullRequestRepository @Inject constructor(
 @Serializable private data class PullRequestReviewConnectionNode(val nodes: List<PullRequestReviewNode> = emptyList())
 @Serializable private data class PullRequestReviewCommentNode(
     val id: String,
+    val url: String = "",
     val author: ActorNode? = null,
+    val authorAssociation: String = "NONE",
     val body: String = "",
     val bodyHTML: String = "",
     val path: String = "",
@@ -545,6 +558,7 @@ class RepoPullRequestRepository @Inject constructor(
 
 @Serializable private data class PullRequestNode(
     val id: String,
+    val url: String = "",
     val number: Int,
     val title: String,
     val body: String = "",
@@ -553,6 +567,7 @@ class RepoPullRequestRepository @Inject constructor(
     val isDraft: Boolean = false,
     val locked: Boolean = false,
     val author: ActorNode? = null,
+    val authorAssociation: String = "NONE",
     val createdAt: String,
     val updatedAt: String,
     val baseRefName: String,

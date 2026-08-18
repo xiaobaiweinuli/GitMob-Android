@@ -1,7 +1,6 @@
 package com.gitmob.app.ui.repoissues
 
 import androidx.annotation.StringRes
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,7 +8,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,8 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,7 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
-import com.gitmob.app.data.repository.IssueFormSubmissionBuilder
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,28 +37,11 @@ fun RepoIssueListScreen(
     viewerCanCreateIssues: Boolean?,
     onBack: () -> Unit,
     onIssueClick: (Int) -> Unit,
+    onCreate: (String?) -> Unit,
     viewModel: RepoIssueListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name, permission, viewerCanCreateIssues) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var templatePicker by remember { mutableStateOf(false) }
-    var templatePickerRequested by remember { mutableStateOf(false) }
-    var editorTemplate by remember { mutableStateOf<IssueTemplate?>(null) }
-    var editorOpen by remember { mutableStateOf(false) }
-
-    LaunchedEffect(templatePickerRequested, state.isLoadingTemplates, state.templatesLoaded, state.templatesLoadFailed) {
-        if (templatePickerRequested && !state.isLoadingTemplates && (state.templatesLoaded || state.templatesLoadFailed)) {
-            templatePickerRequested = false
-            if (state.templatesLoaded) {
-                if (state.templates.isEmpty() && state.blankIssuesEnabled && state.invalidTemplateCount == 0) {
-                    editorTemplate = null
-                    editorOpen = true
-                } else {
-                    templatePicker = true
-                }
-            }
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -69,16 +50,7 @@ fun RepoIssueListScreen(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     if (state.viewerCanCreateIssues) {
-                        IconButton(onClick = {
-                            templatePickerRequested = true
-                            viewModel.loadIssueTemplates()
-                        }, enabled = !state.isLoadingTemplates) {
-                            if (state.isLoadingTemplates) {
-                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Default.Add, stringResource(R.string.issue_new))
-                            }
-                        }
+                        IconButton(onClick = viewModel::beginCreate) { Icon(Icons.Default.Add, stringResource(R.string.issue_new)) }
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -124,55 +96,44 @@ fun RepoIssueListScreen(
         )
     }
 
-    if (templatePicker) {
+    LaunchedEffect(state.blankCreateRequested) {
+        if (state.blankCreateRequested) {
+            viewModel.consumeBlankCreateRequest()
+            onCreate(null)
+        }
+    }
+    if (state.templatePickerLoading || state.templatePickerVisible || state.templateLoadFailed) {
         AlertDialog(
-            onDismissRequest = { templatePicker = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.issue_template_picker_title), modifier = Modifier.weight(1f))
-                    IconButton(onClick = viewModel::loadIssueTemplates, enabled = !state.isLoadingTemplates) {
-                        if (state.isLoadingTemplates) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.Default.Refresh, stringResource(R.string.common_refresh))
-                    }
-                }
-            },
+            onDismissRequest = { if (!state.templatePickerLoading) viewModel.dismissTemplatePicker() },
+            title = { Text(stringResource(R.string.issue_template_picker_title)) },
             text = {
-                LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    if (state.blankIssuesEnabled) item {
-                        ListItem(headlineContent = { Text(stringResource(R.string.issue_template_blank)) }, leadingContent = { Icon(Icons.AutoMirrored.Filled.NoteAdd, null) }, modifier = Modifier.clickable { templatePicker = false; editorTemplate = null; editorOpen = true })
-                    }
-                    items(state.templates) { template ->
-                        ListItem(headlineContent = { Text(template.name) }, supportingContent = { template.about?.let { Text(it) } }, modifier = Modifier.clickable { templatePicker = false; editorTemplate = template; editorOpen = true })
-                    }
-                    if (state.invalidTemplateCount > 0) item {
-                        Text(
-                            pluralStringResource(R.plurals.issue_template_invalid_count, state.invalidTemplateCount, state.invalidTemplateCount),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(16.dp),
-                        )
-                    }
-                    if (!state.blankIssuesEnabled && state.templates.isEmpty()) item {
-                        Text(stringResource(R.string.issue_template_none_available), modifier = Modifier.padding(16.dp))
+                when {
+                    state.templatePickerLoading -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    state.templateLoadFailed -> Text(stringResource(R.string.common_load_failed))
+                    else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (state.blankIssuesEnabled) {
+                            TextButton(onClick = { viewModel.dismissTemplatePicker(); onCreate(null) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.issue_template_blank)) }
+                        }
+                        state.templates.forEach { template ->
+                            TextButton(onClick = { viewModel.dismissTemplatePicker(); onCreate(template.filename) }, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+                                    Text(template.name)
+                                    template.about?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                }
+                            }
+                        }
+                        if (!state.blankIssuesEnabled && state.templates.isEmpty()) Text(stringResource(R.string.issue_template_none_available), color = MaterialTheme.colorScheme.error)
+                        if (state.invalidTemplateCount > 0) Text(pluralStringResource(R.plurals.issue_template_invalid_count, state.invalidTemplateCount, state.invalidTemplateCount), color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { templatePicker = false }) { Text(stringResource(R.string.common_cancel)) } },
+            confirmButton = {
+                if (state.templateLoadFailed) TextButton(onClick = viewModel::beginCreate) { Text(stringResource(R.string.common_retry)) }
+                else if (!state.templatePickerLoading) TextButton(onClick = viewModel::dismissTemplatePicker) { Text(stringResource(R.string.common_cancel)) }
+            },
         )
     }
 
-    if (editorOpen) {
-        IssueEditorDialog(
-            template = editorTemplate,
-            labels = state.labels,
-            milestones = state.milestones,
-            assignees = state.assignableUsers,
-            onDismiss = { editorOpen = false },
-            onSubmit = { title, body, labelIds, assigneeIds, milestoneId ->
-                viewModel.createIssue(title, body, labelIds, assigneeIds, milestoneId) { issue -> editorOpen = false; onIssueClick(issue.number) }
-            },
-        )
-    }
 }
 
 @Composable
@@ -289,150 +250,6 @@ private fun IssueRow(issue: RepoIssue, onClick: () -> Unit) {
 @Composable private fun LabelPill(label: IssueLabel) { val fallback = MaterialTheme.colorScheme.secondaryContainer; val color = remember(label.color, fallback) { runCatching { Color(android.graphics.Color.parseColor("#${label.color}")) }.getOrDefault(fallback) }; Text(label.name, style = MaterialTheme.typography.labelSmall, modifier = Modifier.background(color.copy(alpha = .22f), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp)) }
 
 @Composable private fun ErrorState(retry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(retry, Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) } } }
-
-@Composable
-private fun IssueEditorDialog(template: IssueTemplate?, labels: List<IssueLabel>, milestones: List<IssueMilestone>, assignees: List<SimpleUser>, onDismiss: () -> Unit, onSubmit: (String, String, List<String>, List<String>, String?) -> Unit) {
-    var title by remember(template) { mutableStateOf(template?.title.orEmpty()) }
-    var body by remember(template) { mutableStateOf("") }
-    var textValues by remember(template) {
-        mutableStateOf(template?.fields.orEmpty().mapNotNull { field ->
-            when (field) {
-                is IssueFormField.Input -> field.id to field.value.orEmpty()
-                is IssueFormField.Textarea -> field.id to field.value.orEmpty()
-                else -> null
-            }
-        }.toMap())
-    }
-    var selections by remember(template) {
-        mutableStateOf(template?.fields.orEmpty().mapNotNull { field ->
-            when (field) {
-                is IssueFormField.Dropdown -> field.defaultIndex?.let { field.id to setOf(it) }
-                else -> null
-            }
-        }.toMap())
-    }
-    var selectedLabels by remember(template, labels) { mutableStateOf(labels.filter { it.name in template?.labels.orEmpty() }.map { it.id }.toSet()) }
-    var selectedAssignees by remember(template, assignees) { mutableStateOf(assignees.filter { it.login in template?.assignees.orEmpty() }.mapNotNull { it.id }.toSet()) }
-    var selectedMilestone by remember { mutableStateOf<String?>(null) }
-    val formComplete = template?.let { IssueFormSubmissionBuilder.isComplete(it, textValues, selections) } ?: true
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.issue_new)) },
-        text = { LazyColumn(Modifier.heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            if (template == null) {
-                item { OutlinedTextField(body, { body = it }, label = { Text(stringResource(R.string.issue_editor_body_label)) }, minLines = 6, modifier = Modifier.fillMaxWidth()) }
-            } else {
-                items(template.fields, key = { field -> "form-${field.id ?: "markdown-${template.fields.indexOf(field)}"}" }) { field ->
-                    when (field) {
-                        is IssueFormField.Markdown -> Text(field.value, style = MaterialTheme.typography.bodyMedium)
-                        is IssueFormField.Input -> IssueFormTextField(
-                            label = field.label,
-                            description = field.description,
-                            placeholder = field.placeholder,
-                            required = field.required,
-                            value = textValues[field.id].orEmpty(),
-                            singleLine = true,
-                            onValueChange = { value -> textValues = textValues + (field.id to value) },
-                        )
-                        is IssueFormField.Textarea -> IssueFormTextField(
-                            label = field.label,
-                            description = field.description,
-                            placeholder = field.placeholder,
-                            required = field.required,
-                            value = textValues[field.id].orEmpty(),
-                            singleLine = false,
-                            onValueChange = { value -> textValues = textValues + (field.id to value) },
-                        )
-                        is IssueFormField.Dropdown -> IssueFormDropdown(
-                            field = field,
-                            selected = selections[field.id].orEmpty(),
-                            onSelected = { value -> selections = selections + (field.id to value) },
-                        )
-                        is IssueFormField.Checkboxes -> IssueFormCheckboxes(
-                            field = field,
-                            selected = selections[field.id].orEmpty(),
-                            onSelected = { value -> selections = selections + (field.id to value) },
-                        )
-                    }
-                }
-            }
-            if (labels.isNotEmpty()) { item { Text(stringResource(R.string.issue_labels), fontWeight = FontWeight.SemiBold) }; items(labels, key = { "create-label-${it.id}" }) { label -> Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(label.id in selectedLabels, { checked -> selectedLabels = if (checked) selectedLabels + label.id else selectedLabels - label.id }); Text(label.name) } } }
-            item { Text(stringResource(R.string.issue_milestone), fontWeight = FontWeight.SemiBold) }
-            item { Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(selectedMilestone == null, { selectedMilestone = null }); Text(stringResource(R.string.issue_no_milestone)) } }
-            items(milestones, key = { "create-milestone-${it.id}" }) { milestone -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(selectedMilestone == milestone.id, { selectedMilestone = milestone.id }); Text(milestone.title) } }
-            if (assignees.isNotEmpty()) { item { Text(stringResource(R.string.issue_assignees), fontWeight = FontWeight.SemiBold) }; items(assignees, key = { "create-assignee-${it.login}" }) { user -> val id = user.id; if (id != null) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(id in selectedAssignees, { checked -> selectedAssignees = if (checked) selectedAssignees + id else selectedAssignees - id }); Text(user.login) } } }
-        } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val finalBody = template?.let { IssueFormSubmissionBuilder.build(it, textValues, selections) } ?: body
-                    onSubmit(title, finalBody, selectedLabels.toList(), selectedAssignees.toList(), selectedMilestone)
-                },
-                enabled = title.isNotBlank() && formComplete,
-            ) { Text(stringResource(R.string.issue_create)) }
-        },
-    )
-}
-
-@Composable
-private fun IssueFormTextField(
-    label: String,
-    description: String?,
-    placeholder: String?,
-    required: Boolean,
-    value: String,
-    singleLine: Boolean,
-    onValueChange: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            label = { Text(if (required) stringResource(R.string.issue_form_required_label, label) else label) },
-            placeholder = placeholder?.let { { Text(it) } },
-            singleLine = singleLine,
-            minLines = if (singleLine) 1 else 4,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        description?.takeIf(String::isNotBlank)?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun IssueFormDropdown(field: IssueFormField.Dropdown, selected: Set<Int>, onSelected: (Set<Int>) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(if (field.required) stringResource(R.string.issue_form_required_label, field.label) else field.label, fontWeight = FontWeight.SemiBold)
-        field.description?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        field.options.forEachIndexed { index, option ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (field.multiple) {
-                    Checkbox(index in selected, { checked -> onSelected(if (checked) selected + index else selected - index) })
-                } else {
-                    RadioButton(index in selected, { onSelected(setOf(index)) })
-                }
-                Text(option)
-            }
-        }
-    }
-}
-
-@Composable
-private fun IssueFormCheckboxes(field: IssueFormField.Checkboxes, selected: Set<Int>, onSelected: (Set<Int>) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(field.label, fontWeight = FontWeight.SemiBold)
-        field.description?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        field.options.forEachIndexed { index, option ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(index in selected, { checked -> onSelected(if (checked) selected + index else selected - index) })
-                Text(if (option.required) stringResource(R.string.issue_form_required_label, option.label) else option.label)
-            }
-        }
-    }
-}
 
 private val RepoIssueStateFilter.labelRes: Int
     @StringRes get() = when (this) {

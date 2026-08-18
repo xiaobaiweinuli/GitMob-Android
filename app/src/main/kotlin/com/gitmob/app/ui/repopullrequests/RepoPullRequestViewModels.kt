@@ -138,6 +138,7 @@ data class RepoPullRequestDetailUiState(
     val allowedMergeMethods: Set<RepoPullRequestMergeMethod> = emptySet(),
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
+    val isSubmittingComment: Boolean = false,
     val hasMoreComments: Boolean = false,
     val loadFailed: Boolean = false,
     val pendingDeleteComment: RepoPullRequestComment? = null,
@@ -209,33 +210,38 @@ class RepoPullRequestDetailViewModel @Inject constructor(
     fun addComment(body: String, done: () -> Unit) {
         val pullRequest = _state.value.pullRequest ?: return
         if (body.isBlank()) return
+        if (_state.value.isSubmittingComment) return
         viewModelScope.launch {
+            _state.update { it.copy(isSubmittingComment = true) }
             when (val result = repository.addComment(pullRequest.id, body.trim())) {
                 is ApiResult.Success -> {
                     _state.update {
                         it.copy(
                             comments = it.comments + result.data,
                             pullRequest = it.pullRequest?.copy(commentCount = pullRequest.commentCount + 1),
+                            isSubmittingComment = false,
                         )
                     }
                     done()
                 }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isSubmittingComment = false) } }
             }
         }
     }
 
     fun updateComment(comment: RepoPullRequestComment, body: String, done: () -> Unit) {
         if (!comment.viewerCanUpdate || body.isBlank()) return
+        if (_state.value.isSubmittingComment) return
         viewModelScope.launch {
+            _state.update { it.copy(isSubmittingComment = true) }
             when (val result = repository.updateComment(comment.id, body.trim())) {
                 is ApiResult.Success -> {
                     _state.update { state ->
-                        state.copy(comments = state.comments.map { if (it.id == comment.id) result.data else it })
+                        state.copy(comments = state.comments.map { if (it.id == comment.id) result.data else it }, isSubmittingComment = false)
                     }
                     done()
                 }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isSubmittingComment = false) } }
             }
         }
     }
@@ -383,130 +389,6 @@ class RepoPullRequestDetailViewModel @Inject constructor(
                 isLoading = false,
                 loadFailed = false,
             )
-        }
-    }
-
-    private suspend fun emitCount() {
-        val result = repository.getPullRequests(owner, name, RepoPullRequestFilter())
-        val count = (result as? ApiResult.Success)?.data?.totalCount ?: return
-        repoUpdateEventBus.emit(RepoUpdateEvent.PullRequestCountChanged(owner, name, count))
-    }
-}
-
-data class RepoPullRequestEditorUiState(
-    val metadata: RepoPullRequestCreateMetadata? = null,
-    val existing: RepoPullRequest? = null,
-    val isLoading: Boolean = false,
-    val loadFailed: Boolean = false,
-    val isSaving: Boolean = false,
-)
-
-@HiltViewModel
-class RepoPullRequestEditorViewModel @Inject constructor(
-    private val repository: RepoPullRequestRepository,
-    private val errorEventBus: ErrorEventBus,
-    private val repoUpdateEventBus: RepoUpdateEventBus,
-) : ViewModel() {
-    private val _state = MutableStateFlow(RepoPullRequestEditorUiState())
-    val state: StateFlow<RepoPullRequestEditorUiState> = _state.asStateFlow()
-    private var owner = ""
-    private var name = ""
-    private var number: Int? = null
-    private var initialized = false
-
-    fun init(owner: String, name: String, number: Int?) {
-        if (initialized) return
-        initialized = true
-        this.owner = owner
-        this.name = name
-        this.number = number
-        load()
-    }
-
-    fun load() {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, loadFailed = false) }
-            val metadata = repository.getCreateMetadata(owner, name)
-            if (metadata is ApiResult.Failure) {
-                errorEventBus.emit(metadata.error)
-                _state.update { it.copy(isLoading = false, loadFailed = true) }
-                return@launch
-            }
-            val existing = number?.let { repository.getPullRequest(owner, name, it) }
-            if (existing is ApiResult.Failure) {
-                errorEventBus.emit(existing.error)
-                _state.update { it.copy(isLoading = false, loadFailed = true) }
-                return@launch
-            }
-            _state.update {
-                it.copy(
-                    metadata = (metadata as ApiResult.Success).data,
-                    existing = (existing as? ApiResult.Success)?.data?.pullRequest,
-                    isLoading = false,
-                )
-            }
-        }
-    }
-
-    fun save(
-        title: String,
-        body: String,
-        baseRef: String,
-        headRepoId: String,
-        headRef: String,
-        draft: Boolean,
-        labelIds: List<String>,
-        assigneeIds: List<String>,
-        milestoneId: String?,
-        reviewerLogins: List<String>,
-        done: (RepoPullRequest) -> Unit,
-    ) {
-        val metadata = _state.value.metadata ?: return
-        if (title.isBlank() || baseRef.isBlank() || headRef.isBlank() || _state.value.isSaving) return
-        viewModelScope.launch {
-            _state.update { it.copy(isSaving = true) }
-            val existing = _state.value.existing
-            val initialResult = if (existing == null) {
-                repository.createPullRequest(
-                    CreateRepoPullRequestInput(
-                        repositoryId = metadata.repositoryId,
-                        baseRefName = baseRef,
-                        headRefName = headRef,
-                        headRepositoryId = headRepoId.takeUnless { it == metadata.repositoryId },
-                        title = title.trim(),
-                        body = body,
-                        draft = draft,
-                    ),
-                )
-            } else {
-                repository.updatePullRequest(
-                    UpdateRepoPullRequestInput(existing.id, title.trim(), body, baseRef, labelIds, assigneeIds, milestoneId),
-                )
-            }
-            when (initialResult) {
-                is ApiResult.Failure -> {
-                    errorEventBus.emit(initialResult.error)
-                    _state.update { it.copy(isSaving = false) }
-                }
-                is ApiResult.Success -> {
-                    var pullRequest = initialResult.data
-                    if (existing == null && (labelIds.isNotEmpty() || assigneeIds.isNotEmpty() || milestoneId != null)) {
-                        when (val update = repository.updatePullRequest(
-                            UpdateRepoPullRequestInput(pullRequest.id, pullRequest.title, pullRequest.body, pullRequest.baseRefName, labelIds, assigneeIds, milestoneId),
-                        )) {
-                            is ApiResult.Success -> pullRequest = update.data
-                            is ApiResult.Failure -> errorEventBus.emit(update.error)
-                        }
-                    }
-                    if (reviewerLogins.isNotEmpty()) {
-                        val request = repository.requestReviews(pullRequest.id, reviewerLogins)
-                        if (request is ApiResult.Failure) errorEventBus.emit(request.error)
-                    }
-                    if (existing == null) emitCount()
-                    _state.update { it.copy(existing = pullRequest, isSaving = false) }
-                    done(pullRequest)
-                }
-            }
         }
     }
 
