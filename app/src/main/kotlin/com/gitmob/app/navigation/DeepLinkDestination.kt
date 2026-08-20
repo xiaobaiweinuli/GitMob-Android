@@ -12,6 +12,8 @@ sealed class DeepLinkDestination : Serializable {
     data class RepoOverview(val owner: String, val repo: String) : DeepLinkDestination()
     data class FileView(val owner: String, val repo: String, val ref: String, val path: String) : DeepLinkDestination()
     data class DirView(val owner: String, val repo: String, val ref: String, val path: String) : DeepLinkDestination()
+    data class CommitDetail(val owner: String, val repo: String, val sha: String) : DeepLinkDestination()
+    data class CommitList(val owner: String, val repo: String, val ref: String, val path: String?) : DeepLinkDestination()
     data class IssueDetail(val owner: String, val repo: String, val number: Int) : DeepLinkDestination()
     data class IssueList(val owner: String, val repo: String) : DeepLinkDestination()
     data class PullRequestDetail(val owner: String, val repo: String, val number: Int) : DeepLinkDestination()
@@ -54,6 +56,15 @@ object DeepLinkRouter {
                 val ref = segments.getOrNull(3) ?: return DeepLinkDestination.Unsupported
                 val path = segments.drop(4).joinToString("/")
                 DeepLinkDestination.DirView(owner, repo, ref, path)
+            }
+            "commit" -> {
+                val sha = segments.getOrNull(3) ?: return DeepLinkDestination.Unsupported
+                DeepLinkDestination.CommitDetail(owner, repo, sha)
+            }
+            "commits" -> {
+                val ref = segments.getOrNull(3) ?: return DeepLinkDestination.Unsupported
+                val path = segments.drop(4).joinToString("/").ifBlank { null }
+                DeepLinkDestination.CommitList(owner, repo, ref, path)
             }
             "issues" -> {
                 val number = segments.getOrNull(3)?.toIntOrNull()

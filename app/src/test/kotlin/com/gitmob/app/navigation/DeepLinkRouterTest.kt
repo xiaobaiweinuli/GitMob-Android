@@ -27,6 +27,26 @@ class DeepLinkRouterTest {
     }
 
     @Test
+    fun `解析仓库tree路径保留目录`() {
+        assertEquals(
+            DeepLinkDestination.DirView("owner", "repo", "main", "docs/api"),
+            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/tree/main/docs/api")),
+        )
+    }
+
+    @Test
+    fun `解析提交和提交历史路径`() {
+        assertEquals(
+            DeepLinkDestination.CommitDetail("owner", "repo", "abcdef1"),
+            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/commit/abcdef1")),
+        )
+        assertEquals(
+            DeepLinkDestination.CommitList("owner", "repo", "main", "src"),
+            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/commits/main/src")),
+        )
+    }
+
+    @Test
     fun `orgs前缀路径解析为Profile目的地`() {
         val uri = Uri.parse("https://github.com/orgs/github")
         assertEquals(DeepLinkDestination.Profile("github"), DeepLinkRouter.parse(uri))

@@ -92,6 +92,14 @@ class GHApiClient @Inject constructor(
     // 拿原始内容（diff/patch/raw 文件等），不经过 JSON 解码
     suspend fun getRaw(path: String, accept: String): String = executeRestRaw("GET", path, accept)
 
+    /** 二进制文件和目录 ZIP 组装使用；不得先转 String，避免破坏任意字节内容。 */
+    suspend fun getRawBytes(path: String, accept: String): ByteArray =
+        rawCall("GET", path, body = null, accept = accept).use { response ->
+            val bytes = response.body.bytes()
+            if (!response.isSuccessful) throw HttpStatusException(response.code, bytes.decodeToString())
+            bytes
+        }
+
     /**
      * Resolve a GitHub REST download endpoint without following its redirect.
      * The returned signed URL is deliberately unauthenticated so it can be opened

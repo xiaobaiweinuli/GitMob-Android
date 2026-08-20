@@ -84,8 +84,41 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
 @Serializable data class RepoContributorsRoute(val owner: String, val name: String) : Route
 @Serializable data class RepoLicenseRoute(val owner: String, val name: String, val ref: String) : Route
 @Serializable data class RepoBranchesRoute(val owner: String, val name: String, val currentRef: String, val canManageBranchProtection: Boolean) : Route
-@Serializable data class RepoCodeRoute(val owner: String, val name: String, val ref: String) : Route
-@Serializable data class RepoCommitsRoute(val owner: String, val name: String, val ref: String) : Route
+@Serializable data class RepoCodeRoute(
+    val owner: String,
+    val name: String,
+    val ref: String,
+    val path: String = "",
+    val permission: RepoPermission? = null,
+) : Route
+@Serializable data class RepoCommitsRoute(
+    val owner: String,
+    val name: String,
+    val ref: String,
+    val path: String? = null,
+    val permission: RepoPermission? = null,
+) : Route
+@Serializable data class RepoCommitDetailRoute(
+    val owner: String,
+    val name: String,
+    val sha: String,
+    val ref: String = "",
+    val permission: RepoPermission? = null,
+) : Route
+@Serializable data class RepoFileDetailRoute(
+    val owner: String,
+    val name: String,
+    val ref: String,
+    val path: String,
+    val permission: RepoPermission? = null,
+) : Route
+@Serializable data class RepoFileEditorRoute(
+    val owner: String,
+    val name: String,
+    val ref: String,
+    val path: String? = null,
+    val permission: RepoPermission? = null,
+) : Route
 @Serializable data class RepoWatchersRoute(val owner: String, val name: String) : Route
 @Serializable data class RepoPlaceholderRoute(val label: String) : Route
 

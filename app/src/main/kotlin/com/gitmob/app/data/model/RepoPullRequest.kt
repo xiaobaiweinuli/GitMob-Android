@@ -137,12 +137,56 @@ data class RepoPullRequestCommit(
 
 data class RepoPullRequestFile(
     val path: String,
+    val previousPath: String? = null,
     val status: String,
     val additions: Int,
     val deletions: Int,
     val changes: Int,
     val patch: String?,
     val blobUrl: String?,
+)
+
+/** Maps the REST pull-request file shape to the shared repository Diff model. */
+fun RepoPullRequestFile.toRepoChangedFile(): RepoChangedFile = RepoChangedFile(
+    filename = path,
+    previousFilename = previousPath,
+    status = when (status.uppercase()) {
+        "ADDED" -> RepoChangedFileStatus.ADDED
+        "MODIFIED" -> RepoChangedFileStatus.MODIFIED
+        "DELETED" -> RepoChangedFileStatus.DELETED
+        "RENAMED" -> RepoChangedFileStatus.RENAMED
+        "COPIED" -> RepoChangedFileStatus.COPIED
+        else -> RepoChangedFileStatus.UNKNOWN
+    },
+    additions = additions,
+    deletions = deletions,
+    changes = changes,
+    patch = patch,
+    blobUrl = blobUrl,
+    rawUrl = null,
+    contentsUrl = null,
+    oid = null,
+)
+
+/** Maps a PR commit to the shared commit-row model used by repository history. */
+fun RepoPullRequestCommit.toRepoCommitSummary(): RepoCommitSummary = RepoCommitSummary(
+    oid = oid,
+    abbreviatedOid = oid.take(7),
+    headline = headline,
+    body = "",
+    authoredDate = committedAt,
+    committedDate = committedAt,
+    author = RepoGitActor(
+        login = authorLogin,
+        displayName = authorLogin,
+        email = null,
+        avatarUrl = authorAvatarUrl,
+        date = committedAt,
+    ),
+    committer = null,
+    additions = 0,
+    deletions = 0,
+    changedFiles = null,
 )
 
 data class RepoPullRequestDetail(

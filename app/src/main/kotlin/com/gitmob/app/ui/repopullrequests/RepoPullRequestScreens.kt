@@ -68,6 +68,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +80,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
+import com.gitmob.app.core.diff.UnifiedDiffParser
 import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.RepoPullRequest
 import com.gitmob.app.data.model.RepoPullRequestCreateMetadata
@@ -87,10 +89,16 @@ import com.gitmob.app.data.model.RepoPullRequestReviewEvent
 import com.gitmob.app.data.model.RepoPullRequestSort
 import com.gitmob.app.data.model.RepoPullRequestState
 import com.gitmob.app.data.model.RepoPullRequestStateFilter
+import com.gitmob.app.data.model.toRepoChangedFile
+import com.gitmob.app.data.model.toRepoCommitSummary
 import com.gitmob.app.navigation.ConversationComposerTarget
 import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
+import com.gitmob.app.ui.common.CommitStats
+import com.gitmob.app.ui.common.GitChangedFileRow
+import com.gitmob.app.ui.common.GitCommitRow
 import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.ui.common.UnifiedDiffViewer
 import com.gitmob.app.ui.common.quoteMarkdown
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -226,15 +234,17 @@ fun RepoPullRequestDetailScreen(
     permission: RepoPermission?,
     onBack: () -> Unit,
     onEdit: () -> Unit,
+    onCommitClick: (String, String) -> Unit,
     onCompose: (ConversationComposeRequest) -> Unit,
     viewModel: RepoPullRequestDetailViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name, number) { viewModel.init(owner, name, number, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
     var reviewOpen by remember { mutableStateOf(false) }
     var mergeOpen by remember { mutableStateOf(false) }
+    var selectedFilePath by rememberSaveable { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -345,8 +355,36 @@ fun RepoPullRequestDetailScreen(
                         }
                         if (state.hasMoreComments) item { LaunchedEffect(state.comments.size) { viewModel.loadMoreComments() } }
                     }
-                    1 -> LazyColumn { items(state.files, key = { it.path }) { file -> Column(Modifier.fillMaxWidth().padding(16.dp)) { Text(file.path, fontWeight = FontWeight.SemiBold); Text(stringResource(R.string.pr_file_stats, file.additions, file.deletions)); file.patch?.let { Text(it, style = MaterialTheme.typography.bodySmall) }; HorizontalDivider(Modifier.padding(top = 12.dp)) } } }
-                    2 -> LazyColumn { items(state.commits, key = { it.oid }) { commitItem -> Column(Modifier.fillMaxWidth().padding(16.dp)) { Text(commitItem.headline, fontWeight = FontWeight.SemiBold); Text("${commitItem.oid.take(7)} · ${commitItem.authorLogin ?: stringResource(R.string.common_deleted_user)} · ${commitItem.committedAt.take(10)}", style = MaterialTheme.typography.bodySmall); HorizontalDivider(Modifier.padding(top = 12.dp)) } } }
+                    1 -> LazyColumn {
+                        item {
+                            CommitStats(
+                                additions = state.pullRequest!!.additions,
+                                deletions = state.pullRequest!!.deletions,
+                                changedFiles = state.pullRequest!!.changedFiles,
+                            )
+                        }
+                        items(state.files, key = { it.path }) { file ->
+                            GitChangedFileRow(
+                                file = file.toRepoChangedFile(),
+                                onClick = {
+                                    selectedFilePath = if (selectedFilePath == file.path) null else file.path
+                                },
+                            )
+                            HorizontalDivider()
+                            if (selectedFilePath == file.path) {
+                                UnifiedDiffViewer(
+                                    UnifiedDiffParser.parse(file.patch),
+                                    Modifier.padding(bottom = 16.dp),
+                                )
+                            }
+                        }
+                    }
+                    2 -> LazyColumn {
+                        items(state.commits, key = { it.oid }) { commitItem ->
+                            GitCommitRow(commitItem.toRepoCommitSummary(), onClick = { onCommitClick(commitItem.oid, state.pullRequest!!.baseRefName) })
+                            HorizontalDivider()
+                        }
+                    }
                     else -> LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(state.reviews, key = { it.id }) { review ->
                             Column {

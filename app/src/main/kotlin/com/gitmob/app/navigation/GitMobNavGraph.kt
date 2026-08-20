@@ -53,6 +53,11 @@ import com.gitmob.app.ui.repoactions.RepoActionsScreen
 import com.gitmob.app.ui.repoactions.RepoWorkflowRunScreen
 import com.gitmob.app.ui.repocommunity.RepoContributorsScreen
 import com.gitmob.app.ui.repocommunity.RepoLicenseScreen
+import com.gitmob.app.ui.repocommits.RepoCommitDetailScreen
+import com.gitmob.app.ui.repocommits.RepoCommitsScreen
+import com.gitmob.app.ui.repocode.RepoCodeScreen
+import com.gitmob.app.ui.repocode.RepoFileDetailScreen
+import com.gitmob.app.ui.repocode.RepoFileEditorScreen
 import com.gitmob.app.ui.reporeleases.RepoReleaseDetailScreen
 import com.gitmob.app.ui.reporeleases.RepoReleaseEditorScreen
 import com.gitmob.app.ui.reporeleases.RepoReleaseListScreen
@@ -205,8 +210,10 @@ private fun LoggedInApp(
             is DeepLinkDestination.RepoOverview -> navigator.navigate(RepoDetailRoute(destination.owner, destination.repo))
             is DeepLinkDestination.IssueList -> navigator.navigate(RepoIssuesRoute(destination.owner, destination.repo))
             is DeepLinkDestination.IssueDetail -> navigator.navigate(RepoIssueDetailRoute(destination.owner, destination.repo, destination.number))
-            is DeepLinkDestination.FileView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref))
-            is DeepLinkDestination.DirView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref))
+            is DeepLinkDestination.FileView -> navigator.navigate(RepoFileDetailRoute(destination.owner, destination.repo, destination.ref, destination.path))
+            is DeepLinkDestination.DirView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref, destination.path))
+            is DeepLinkDestination.CommitDetail -> navigator.navigate(RepoCommitDetailRoute(destination.owner, destination.repo, destination.sha))
+            is DeepLinkDestination.CommitList -> navigator.navigate(RepoCommitsRoute(destination.owner, destination.repo, destination.ref, destination.path))
             is DeepLinkDestination.PullRequestDetail -> navigator.navigate(RepoPullRequestDetailRoute(destination.owner, destination.repo, destination.number))
             is DeepLinkDestination.PullRequestList -> navigator.navigate(RepoPullRequestsRoute(destination.owner, destination.repo))
             is DeepLinkDestination.DiscussionDetail -> navigator.navigate(RepoDiscussionDetailRoute(destination.owner, destination.repo, destination.number))
@@ -434,6 +441,7 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onEdit = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                onCommitClick = { sha, ref -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, ref, route.permission)) },
                 onCompose = { request ->
                     navigator.navigate(
                         ConversationComposerRoute(
@@ -593,8 +601,61 @@ private fun LoggedInApp(
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
         }
-        entry<RepoCodeRoute> { route -> PlaceholderScreen(stringResource(R.string.nav_code_browser, route.ref)) }
-        entry<RepoCommitsRoute> { route -> PlaceholderScreen(stringResource(R.string.nav_commit_history, route.ref)) }
+        entry<RepoCodeRoute> { route ->
+            RepoCodeScreen(
+                owner = route.owner,
+                name = route.name,
+                ref = route.ref,
+                path = route.path,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+                onAdd = { navigator.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, null, route.permission)) },
+                onDirectoryClick = { path -> navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, path, route.permission)) },
+                onFileClick = { path -> navigator.navigate(RepoFileDetailRoute(route.owner, route.name, route.ref, path, route.permission)) },
+            )
+        }
+        entry<RepoCommitsRoute> { route ->
+            RepoCommitsScreen(
+                owner = route.owner,
+                name = route.name,
+                ref = route.ref,
+                path = route.path,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+                onCommitClick = { sha -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, route.ref, route.permission)) },
+            )
+        }
+        entry<RepoCommitDetailRoute> { route ->
+            RepoCommitDetailScreen(
+                owner = route.owner,
+                name = route.name,
+                ref = route.ref,
+                sha = route.sha,
+                permission = route.permission,
+                onBack = { navigator.goBack() },
+            )
+        }
+        entry<RepoFileDetailRoute> { route ->
+            RepoFileDetailScreen(
+                owner = route.owner,
+                name = route.name,
+                ref = route.ref,
+                path = route.path,
+                onBack = { navigator.goBack() },
+                onEdit = { navigator.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
+                onHistory = { navigator.navigate(RepoCommitsRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
+            )
+        }
+        entry<RepoFileEditorRoute> { route ->
+            RepoFileEditorScreen(
+                owner = route.owner,
+                name = route.name,
+                ref = route.ref,
+                path = route.path,
+                onBack = { navigator.goBack() },
+                onSaved = { navigator.goBack() },
+            )
+        }
 
         // ========== 复用参数化 Screen 的 push 路由 ==========
 

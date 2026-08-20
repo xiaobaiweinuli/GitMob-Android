@@ -178,6 +178,13 @@ class RepoPullRequestDetailViewModel @Inject constructor(
                     if (event.owner == owner && event.name == name && event.number == number) load()
                 }
         }
+        viewModelScope.launch {
+            repoUpdateEventBus.events
+                .filterIsInstance<RepoUpdateEvent.CodeChanged>()
+                .collect { event ->
+                    if (event.owner == owner && event.name == name) load()
+                }
+        }
     }
 
     fun load() {

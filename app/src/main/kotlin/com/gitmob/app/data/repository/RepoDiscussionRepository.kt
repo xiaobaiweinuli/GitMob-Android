@@ -68,7 +68,7 @@ class RepoDiscussionRepository @Inject constructor(private val api: GHApiClient)
         api.graphQL<ClientMutationData>(
             "mutation DeleteDiscussion(${'$'}input: DeleteDiscussionInput!) { deleteDiscussion(input: ${'$'}input) { clientMutationId } }",
             mapOf("input" to JsonObject(mapOf("id" to JsonPrimitive(id)))),
-        ).run { Unit }
+        )
     }
     suspend fun addComment(discussionId: String, body: String, replyToId: String? = null): ApiResult<RepoDiscussionComment> = safeCall { val data = api.graphQL<AddDiscussionCommentData>("mutation AddDiscussionComment(${'$'}input: AddDiscussionCommentInput!) { addDiscussionComment(input: ${'$'}input) { comment { ${commentFields()} } } }", mapOf("input" to JsonObject(buildMap { put("discussionId", JsonPrimitive(discussionId)); put("body", JsonPrimitive(body)); replyToId?.let { put("replyToId", JsonPrimitive(it)) } }))); toComment(data.addDiscussionComment?.comment ?: error("Comment was not created")) }
     suspend fun updateComment(id: String, body: String): ApiResult<RepoDiscussionComment> = safeCall { val data = api.graphQL<UpdateDiscussionCommentData>("mutation UpdateDiscussionComment(${'$'}input: UpdateDiscussionCommentInput!) { updateDiscussionComment(input: ${'$'}input) { comment { ${commentFields()} } } }", mapOf("input" to JsonObject(mapOf("commentId" to JsonPrimitive(id), "body" to JsonPrimitive(body))))); toComment(data.updateDiscussionComment?.comment ?: error("Comment was not updated")) }
@@ -76,7 +76,7 @@ class RepoDiscussionRepository @Inject constructor(private val api: GHApiClient)
         api.graphQL<ClientMutationData>(
             "mutation DeleteDiscussionComment(${'$'}input: DeleteDiscussionCommentInput!) { deleteDiscussionComment(input: ${'$'}input) { clientMutationId } }",
             mapOf("input" to JsonObject(mapOf("id" to JsonPrimitive(id)))),
-        ).run { Unit }
+        )
     }
     suspend fun markAnswer(id: String, answer: Boolean): ApiResult<Unit> = safeCall {
         val name = if (answer) "markDiscussionCommentAsAnswer" else "unmarkDiscussionCommentAsAnswer"
@@ -84,7 +84,7 @@ class RepoDiscussionRepository @Inject constructor(private val api: GHApiClient)
         api.graphQL<ClientMutationData>(
             "mutation MarkAnswer(${'$'}input: $type!) { $name(input: ${'$'}input) { clientMutationId } }",
             mapOf("input" to JsonObject(mapOf("id" to JsonPrimitive(id)))),
-        ).run { Unit }
+        )
     }
     suspend fun updateSubscription(id: String, subscribed: Boolean): ApiResult<String?> = safeCall { val data = api.graphQL<SubscriptionData>("mutation UpdateDiscussionSubscription(${'$'}input: UpdateSubscriptionInput!) { updateSubscription(input: ${'$'}input) { subscribable { viewerSubscription } } }", mapOf("input" to JsonObject(mapOf("subscribableId" to JsonPrimitive(id), "state" to JsonPrimitive(if (subscribed) "SUBSCRIBED" else "UNSUBSCRIBED"))))); data.updateSubscription?.subscribable?.viewerSubscription }
 

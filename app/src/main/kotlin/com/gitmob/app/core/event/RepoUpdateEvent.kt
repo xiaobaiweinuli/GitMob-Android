@@ -62,6 +62,14 @@ sealed class RepoUpdateEvent {
         val runId: Long,
     ) : RepoUpdateEvent()
 
+    data class CodeChanged(
+        override val owner: String,
+        override val name: String,
+        val ref: String,
+        val commitOid: String,
+        val changedPaths: List<String>,
+    ) : RepoUpdateEvent()
+
     data class IssueCommentsChanged(
         override val owner: String,
         override val name: String,

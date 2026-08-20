@@ -128,7 +128,7 @@ class RepoPullRequestRepository @Inject constructor(
                 )
             },
             files = files.map {
-                RepoPullRequestFile(it.filename, it.status, it.additions, it.deletions, it.changes, it.patch, it.blobUrl)
+                RepoPullRequestFile(it.filename, it.previousFilename, it.status, it.additions, it.deletions, it.changes, it.patch, it.blobUrl)
             },
             commentsHasNextPage = node.comments?.pageInfo?.hasNextPage ?: false,
             commentsEndCursor = node.comments?.pageInfo?.endCursor,
@@ -677,6 +677,7 @@ class RepoPullRequestRepository @Inject constructor(
 @Serializable private data class RestPullRequestFile(
     val filename: String,
     val status: String,
+    @SerialName("previous_filename") val previousFilename: String? = null,
     val additions: Int = 0,
     val deletions: Int = 0,
     val changes: Int = 0,
