@@ -186,6 +186,7 @@
     <!-- 工作 · 议题/PR/讨论列表筛选 -->
     <string name="work_items_count">%1$d 条</string>
     <string name="work_select_filter">选择%1$s</string>
+    <string name="work_select_filter_value">选择%1$s，当前为%2$s</string>
     <string name="work_filter_state">状态</string>
     <string name="work_filter_relation">关系</string>
     <string name="work_filter_answer">回答</string>
@@ -261,6 +262,7 @@
     <string name="common_members">成员</string>
     <string name="profile_verified">已验证</string>
     <string name="inbox_title">收件箱</string>
+    <string name="inbox_filter_status">通知状态</string>
     <string name="inbox_filter_unread">未读</string>
     <string name="inbox_filter_read">已读</string>
     <string name="inbox_empty_all">没有通知</string>
@@ -295,21 +297,18 @@
     <string name="issue_labels">标签</string>
     <string name="issue_milestone">里程碑</string>
     <string name="issue_assignees">指派人</string>
+    <string name="issue_author_filter">创建者</string>
+    <string name="issue_updated_filter">更新时间</string>
     <string name="issue_filter_selected_count">已选 %1$d</string>
     <string name="issue_filter_clear_labels">清除标签</string>
-    <string name="issue_filter_more">更多筛选</string>
-    <string name="issue_filter_more_desc">里程碑 / 指派人</string>
     <string name="issue_filter_all_milestones">全部里程碑</string>
     <string name="issue_no_milestone">无里程碑</string>
     <string name="issue_filter_all_assignee_states">全部指派状态</string>
     <string name="issue_filter_assigned_any">已指派给任何人</string>
     <string name="issue_filter_assigned_none">无人指派</string>
     <string name="issue_filter_all_authors">全部创建者</string>
-    <string name="issue_filter_author_login">创建者 @%1$s</string>
     <string name="issue_filter_mentioned">被提及</string>
-    <string name="issue_filter_mentioned_off">取消：被提及</string>
     <string name="issue_filter_subscribed">已订阅</string>
-    <string name="issue_filter_subscribed_off">取消：已订阅</string>
     <string name="issue_filter_all_updated">全部更新时间</string>
     <string name="issue_filter_updated_7d">最近 7 天更新</string>
     <string name="issue_filter_updated_30d">最近 30 天更新</string>

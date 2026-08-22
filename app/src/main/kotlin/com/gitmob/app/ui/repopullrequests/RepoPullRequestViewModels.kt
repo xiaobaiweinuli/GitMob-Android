@@ -24,6 +24,7 @@ import javax.inject.Inject
 data class RepoPullRequestListUiState(
     val items: List<RepoPullRequest> = emptyList(),
     val filter: RepoPullRequestFilter = RepoPullRequestFilter(),
+    val labels: List<IssueLabel> = emptyList(),
     val permission: RepoPermission = RepoPermission.NONE,
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
     val hasPullRequestsEnabled: Boolean = true,
@@ -55,6 +56,12 @@ class RepoPullRequestListViewModel @Inject constructor(
         this.name = name
         permission?.let { value -> _state.update { it.copy(permission = value, capabilities = value.toCapabilities()) } }
         load()
+        viewModelScope.launch {
+            when (val result = repository.getLabels(owner, name)) {
+                is ApiResult.Success -> _state.update { it.copy(labels = result.data) }
+                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            }
+        }
     }
 
     fun load() {

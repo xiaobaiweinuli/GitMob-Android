@@ -3,9 +3,12 @@ package com.gitmob.app.ui.repoissues
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,6 +29,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
+import com.gitmob.app.ui.common.FilterCapsuleMenu
+import com.gitmob.app.ui.common.FilterMultiCapsuleMenu
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -139,73 +144,169 @@ fun RepoIssueListScreen(
 @Composable
 private fun FilterControls(state: RepoIssueListUiState, vm: RepoIssueListViewModel) {
     Column {
-        Row(Modifier.fillMaxWidth()) {
-            FilterMenu(R.string.work_filter_state, state.filter.state, RepoIssueStateFilter.entries, { it.labelRes }, vm::setState, Modifier.weight(1f))
-            FilterMenu(R.string.work_filter_sort, state.filter.sort, RepoIssueSort.entries, { it.labelRes }, vm::setSort, Modifier.weight(1f))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterCapsuleMenu(
+                selected = state.filter.state,
+                options = RepoIssueStateFilter.entries,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelected = vm::setState,
+                filterLabel = stringResource(R.string.work_filter_state),
+                neutralLabel = stringResource(R.string.work_filter_state),
+                isNeutral = { it == RepoIssueStateFilter.ALL },
+            )
+            FilterCapsuleMenu(
+                selected = state.filter.sort,
+                options = RepoIssueSort.entries,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelected = vm::setSort,
+                filterLabel = stringResource(R.string.work_filter_sort),
+            )
+            FilterMultiCapsuleMenu(
+                selected = state.filter.labels,
+                options = state.labels.map(IssueLabel::name),
+                emptyLabel = stringResource(R.string.common_all),
+                selectedCountRes = R.string.issue_filter_selected_count,
+                clearLabel = stringResource(R.string.issue_filter_clear_labels),
+                onSelect = vm::setLabels,
+                filterLabel = stringResource(R.string.issue_labels),
+            )
+            FilterCapsuleMenu(
+                selected = state.filter.milestone,
+                options = milestoneOptions(state),
+                optionLabel = { it.label(state.milestones) },
+                onSelected = vm::setMilestone,
+                filterLabel = stringResource(R.string.issue_milestone),
+                neutralLabel = stringResource(R.string.issue_milestone),
+                isNeutral = { it == RepoMilestoneFilter.ALL },
+            )
+            FilterCapsuleMenu(
+                selected = state.filter.assignee,
+                options = assigneeOptions(state),
+                optionLabel = { it.label() },
+                onSelected = vm::setAssignee,
+                filterLabel = stringResource(R.string.issue_assignees),
+                neutralLabel = stringResource(R.string.issue_assignees),
+                isNeutral = { it == RepoAssigneeFilter.ALL },
+            )
+            FilterCapsuleMenu(
+                selected = state.filter.author,
+                options = authorOptions(state),
+                optionLabel = { it.label() },
+                onSelected = vm::setAuthor,
+                filterLabel = stringResource(R.string.issue_author_filter),
+                neutralLabel = stringResource(R.string.issue_author_filter),
+                isNeutral = { it == RepoAuthorFilter.ALL },
+            )
+            FilterCapsuleMenu(
+                selected = state.updateWindow(),
+                options = UpdatedWindow.entries,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelected = vm::setUpdatedWindow,
+                filterLabel = stringResource(R.string.issue_updated_filter),
+                neutralLabel = stringResource(R.string.issue_updated_filter),
+                isNeutral = { it == UpdatedWindow.ANY },
+            )
+            ToggleFilterCapsule(
+                label = stringResource(R.string.issue_filter_mentioned),
+                active = state.filter.mentioned,
+                onClick = { vm.setMentioned(!state.filter.mentioned) },
+            )
+            ToggleFilterCapsule(
+                label = stringResource(R.string.issue_filter_subscribed),
+                active = state.filter.subscribed,
+                onClick = { vm.setSubscribed(!state.filter.subscribed) },
+            )
         }
-        Row(Modifier.fillMaxWidth()) {
-            MultiLabelMenu(state.labels, state.filter.labels, vm::setLabels, Modifier.weight(1f))
-            MoreFilterMenu(state, vm, Modifier.weight(1f))
-        }
-        Text(stringResource(R.string.work_items_count, state.totalCount), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+        Text(
+            text = stringResource(R.string.work_items_count, state.totalCount),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        )
         HorizontalDivider()
     }
 }
 
-@Composable
-private fun <T> FilterMenu(@StringRes label: Int, selected: T, options: List<T>, optionLabel: (T) -> Int, onSelected: (T) -> Unit, modifier: Modifier = Modifier) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier) {
-        Row(Modifier.fillMaxWidth().clickable { expanded = true }.padding(16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(stringResource(label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(stringResource(optionLabel(selected)), maxLines = 1) }
-            Icon(Icons.Default.ArrowDropDown, null)
-        }
-        DropdownMenu(expanded, { expanded = false }) { options.forEach { item -> DropdownMenuItem(text = { Text(stringResource(optionLabel(item))) }, onClick = { expanded = false; onSelected(item) }, leadingIcon = { if (item == selected) Icon(Icons.Default.Check, null) else Spacer(Modifier.size(24.dp)) }) } }
-    }
+/** 更新时间筛选的离散档位：全部 / 最近 7 天 / 最近 30 天（点击时换算成具体 Instant） */
+private enum class UpdatedWindow(@StringRes val labelRes: Int, val days: Long?) {
+    ANY(R.string.issue_filter_all_updated, null),
+    DAYS_7(R.string.issue_filter_updated_7d, 7),
+    DAYS_30(R.string.issue_filter_updated_30d, 30),
+}
+
+private fun UpdatedWindow.instant(): java.time.Instant? = days?.let { java.time.Instant.now().minusSeconds(it * 24 * 60 * 60) }
+
+/** 把模型里的 updatedSince 还原成分档，供胶囊显示当前选中项 */
+private fun RepoIssueListUiState.updateWindow(): UpdatedWindow {
+    val since = filter.updatedSince ?: return UpdatedWindow.ANY
+    val hours = java.time.Duration.between(since, java.time.Instant.now()).toHours()
+    return UpdatedWindow.entries.filter { it.days != null }.minBy { kotlin.math.abs(it.days!! * 24 - hours) }
+}
+
+private fun RepoIssueListViewModel.setUpdatedWindow(window: UpdatedWindow) = setUpdatedSince(window.instant())
+
+private fun milestoneOptions(state: RepoIssueListUiState): List<RepoMilestoneFilter> = buildList {
+    add(RepoMilestoneFilter.ALL)
+    add(RepoMilestoneFilter.NONE)
+    state.milestones.forEach { add(RepoMilestoneFilter.Number(it.number)) }
+}
+
+private fun assigneeOptions(state: RepoIssueListUiState): List<RepoAssigneeFilter> = buildList {
+    add(RepoAssigneeFilter.ALL)
+    add(RepoAssigneeFilter.ANY)
+    add(RepoAssigneeFilter.NONE)
+    state.assignableUsers.forEach { add(RepoAssigneeFilter.Login(it.login)) }
+}
+
+private fun authorOptions(state: RepoIssueListUiState): List<RepoAuthorFilter> = buildList {
+    add(RepoAuthorFilter.ALL)
+    state.assignableUsers.forEach { add(RepoAuthorFilter.Login(it.login)) }
 }
 
 @Composable
-private fun MultiLabelMenu(labels: List<IssueLabel>, selected: Set<String>, onSelected: (Set<String>) -> Unit, modifier: Modifier) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier) {
-        Row(Modifier.fillMaxWidth().clickable { expanded = true }.padding(16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(stringResource(R.string.issue_labels), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(if (selected.isEmpty()) stringResource(R.string.common_all) else stringResource(R.string.issue_filter_selected_count, selected.size), maxLines = 1) }
-            Icon(Icons.Default.ArrowDropDown, null)
-        }
-        DropdownMenu(expanded, { expanded = false }) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_clear_labels)) }, onClick = { onSelected(emptySet()); expanded = false })
-            labels.forEach { label -> DropdownMenuItem(text = { Text(label.name) }, onClick = { onSelected(if (label.name in selected) selected - label.name else selected + label.name) }, leadingIcon = { Checkbox(label.name in selected, null) }) }
-        }
-    }
+private fun RepoMilestoneFilter.label(milestones: List<IssueMilestone>): String = when (this) {
+    RepoMilestoneFilter.ALL -> stringResource(R.string.issue_filter_all_milestones)
+    RepoMilestoneFilter.NONE -> stringResource(R.string.issue_no_milestone)
+    is RepoMilestoneFilter.Number -> milestones.firstOrNull { it.number == value }?.title ?: "#$value"
 }
 
 @Composable
-private fun MoreFilterMenu(state: RepoIssueListUiState, vm: RepoIssueListViewModel, modifier: Modifier) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier) {
-        Row(Modifier.fillMaxWidth().clickable { expanded = true }.padding(16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(stringResource(R.string.issue_filter_more), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(stringResource(R.string.issue_filter_more_desc), maxLines = 1) }
-            Icon(Icons.Default.ArrowDropDown, null)
-        }
-        DropdownMenu(expanded, { expanded = false }) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_all_milestones)) }, onClick = { vm.setMilestone(RepoMilestoneFilter.ALL); expanded = false })
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_no_milestone)) }, onClick = { vm.setMilestone(RepoMilestoneFilter.NONE); expanded = false })
-            state.milestones.forEach { m -> DropdownMenuItem(text = { Text(m.title) }, onClick = { vm.setMilestone(RepoMilestoneFilter.Number(m.number)); expanded = false }) }
-            HorizontalDivider()
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_all_assignee_states)) }, onClick = { vm.setAssignee(RepoAssigneeFilter.ALL); expanded = false })
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_assigned_any)) }, onClick = { vm.setAssignee(RepoAssigneeFilter.ANY); expanded = false })
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_assigned_none)) }, onClick = { vm.setAssignee(RepoAssigneeFilter.NONE); expanded = false })
-            state.assignableUsers.forEach { user -> DropdownMenuItem(text = { Text(user.login) }, onClick = { vm.setAssignee(RepoAssigneeFilter.Login(user.login)); expanded = false }) }
-            HorizontalDivider()
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_all_authors)) }, onClick = { vm.setAuthor(RepoAuthorFilter.ALL); expanded = false })
-            state.assignableUsers.forEach { user -> DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_author_login, user.login)) }, onClick = { vm.setAuthor(RepoAuthorFilter.Login(user.login)); expanded = false }) }
-            HorizontalDivider()
-            DropdownMenuItem(text = { Text(stringResource(if (state.filter.mentioned) R.string.issue_filter_mentioned_off else R.string.issue_filter_mentioned)) }, onClick = { vm.setMentioned(!state.filter.mentioned); expanded = false }, leadingIcon = { Checkbox(state.filter.mentioned, null) })
-            DropdownMenuItem(text = { Text(stringResource(if (state.filter.subscribed) R.string.issue_filter_subscribed_off else R.string.issue_filter_subscribed)) }, onClick = { vm.setSubscribed(!state.filter.subscribed); expanded = false }, leadingIcon = { Checkbox(state.filter.subscribed, null) })
-            HorizontalDivider()
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_all_updated)) }, onClick = { vm.setUpdatedSince(null); expanded = false })
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_updated_7d)) }, onClick = { vm.setUpdatedSince(java.time.Instant.now().minusSeconds(7L * 24 * 60 * 60)); expanded = false })
-            DropdownMenuItem(text = { Text(stringResource(R.string.issue_filter_updated_30d)) }, onClick = { vm.setUpdatedSince(java.time.Instant.now().minusSeconds(30L * 24 * 60 * 60)); expanded = false })
+private fun RepoAssigneeFilter.label(): String = when (this) {
+    RepoAssigneeFilter.ALL -> stringResource(R.string.issue_filter_all_assignee_states)
+    RepoAssigneeFilter.ANY -> stringResource(R.string.issue_filter_assigned_any)
+    RepoAssigneeFilter.NONE -> stringResource(R.string.issue_filter_assigned_none)
+    is RepoAssigneeFilter.Login -> "@$value"
+}
+
+@Composable
+private fun RepoAuthorFilter.label(): String = when (this) {
+    RepoAuthorFilter.ALL -> stringResource(R.string.issue_filter_all_authors)
+    is RepoAuthorFilter.Login -> value
+}
+
+/** 布尔型筛选的切换胶囊：开启=主题容器色+勾，关闭=灰色 */
+@Composable
+private fun ToggleFilterCapsule(label: String, active: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            if (active) Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
         }
     }
 }

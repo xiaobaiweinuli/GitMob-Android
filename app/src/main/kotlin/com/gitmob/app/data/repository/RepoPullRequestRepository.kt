@@ -179,6 +179,12 @@ class RepoPullRequestRepository @Inject constructor(
         )
     }
 
+    /** 仓库全部标签，供列表筛选的「标签」多选胶囊使用 */
+    suspend fun getLabels(owner: String, name: String): ApiResult<List<IssueLabel>> = safeCall {
+        val query = "query RepoLabels(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) { labels(first: 100) { nodes { id name color description } } } }"
+        api.graphQL<RepoLabelsQueryData>(query, repoVariables(owner, name)).repository?.labels?.nodes.orEmpty().map(::toLabel)
+    }
+
     suspend fun createPullRequest(input: CreateRepoPullRequestInput): ApiResult<RepoPullRequest> = mutatePullRequest(
         "createPullRequest",
         "CreatePullRequestInput",
@@ -640,6 +646,9 @@ class RepoPullRequestRepository @Inject constructor(
     val assignableUsers: UserConnectionNode? = null,
     val mentionableUsers: UserConnectionNode? = null,
 )
+
+@Serializable private data class RepoLabelsQueryData(val repository: RepoLabelsRepositoryNode? = null)
+@Serializable private data class RepoLabelsRepositoryNode(val labels: LabelConnectionNode? = null)
 
 @Serializable private data class PullRequestPayload(val pullRequest: PullRequestNode? = null)
 @Serializable private data class PullRequestMutationsData(

@@ -27,15 +27,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.Adjust
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,9 +44,6 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -61,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.InboxNotification
 import com.gitmob.app.data.model.InboxReadFilter
+import com.gitmob.app.ui.common.FilterCapsuleMenu
 
 /**
  * 收件箱 Push 页（通知列表）。
@@ -105,9 +99,15 @@ fun InboxScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            InboxReadFilterMenu(
+            FilterCapsuleMenu(
                 selected = state.readFilter,
+                options = InboxReadFilter.entries,
+                optionLabel = { stringResource(it.labelRes) },
                 onSelected = viewModel::setReadFilter,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                filterLabel = stringResource(R.string.inbox_filter_status),
+                neutralLabel = stringResource(R.string.inbox_filter_status),
+                isNeutral = { it == InboxReadFilter.ALL },
             )
             HorizontalDivider()
 
@@ -189,60 +189,6 @@ fun InboxScreen(
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InboxReadFilterMenu(
-    selected: InboxReadFilter,
-    onSelected: (InboxReadFilter) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = true }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.work_filter_state),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(stringResource(selected.labelRes), style = MaterialTheme.typography.bodyMedium)
-            }
-            Icon(
-                Icons.Default.ArrowDropDown,
-                contentDescription = stringResource(
-                    R.string.work_select_filter,
-                    stringResource(R.string.work_filter_state),
-                ),
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            InboxReadFilter.entries.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(option.labelRes)) },
-                    onClick = {
-                        expanded = false
-                        onSelected(option)
-                    },
-                    leadingIcon = {
-                        if (option == selected) {
-                            Icon(Icons.Default.Check, contentDescription = null)
-                        } else {
-                            Spacer(Modifier.size(24.dp))
-                        }
-                    },
-                )
             }
         }
     }

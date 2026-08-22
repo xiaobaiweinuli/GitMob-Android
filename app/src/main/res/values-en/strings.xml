@@ -181,6 +181,7 @@
     <!-- Work · issue/PR/discussion list filters -->
     <string name="work_items_count">%1$d items</string>
     <string name="work_select_filter">Select %1$s</string>
+    <string name="work_select_filter_value">Select %1$s, current %2$s</string>
     <string name="work_filter_state">State</string>
     <string name="work_filter_relation">Relation</string>
     <string name="work_filter_answer">Answer</string>
@@ -256,6 +257,7 @@
     <string name="common_members">Members</string>
     <string name="profile_verified">Verified</string>
     <string name="inbox_title">Inbox</string>
+    <string name="inbox_filter_status">Notification status</string>
     <string name="inbox_filter_unread">Unread</string>
     <string name="inbox_filter_read">Read</string>
     <string name="inbox_empty_all">No notifications</string>
@@ -291,21 +293,18 @@
     <string name="issue_labels">Labels</string>
     <string name="issue_milestone">Milestone</string>
     <string name="issue_assignees">Assignees</string>
+    <string name="issue_author_filter">Author</string>
+    <string name="issue_updated_filter">Updated</string>
     <string name="issue_filter_selected_count">%1$d selected</string>
     <string name="issue_filter_clear_labels">Clear labels</string>
-    <string name="issue_filter_more">More filters</string>
-    <string name="issue_filter_more_desc">Milestone / assignees</string>
     <string name="issue_filter_all_milestones">All milestones</string>
     <string name="issue_no_milestone">No milestone</string>
     <string name="issue_filter_all_assignee_states">All assignee states</string>
     <string name="issue_filter_assigned_any">Assigned to anyone</string>
     <string name="issue_filter_assigned_none">Assigned to nobody</string>
     <string name="issue_filter_all_authors">All authors</string>
-    <string name="issue_filter_author_login">Author @%1$s</string>
     <string name="issue_filter_mentioned">Mentioned</string>
-    <string name="issue_filter_mentioned_off">Clear: mentioned</string>
     <string name="issue_filter_subscribed">Subscribed</string>
-    <string name="issue_filter_subscribed_off">Clear: subscribed</string>
     <string name="issue_filter_all_updated">Any update time</string>
     <string name="issue_filter_updated_7d">Updated in the last 7 days</string>
     <string name="issue_filter_updated_30d">Updated in the last 30 days</string>

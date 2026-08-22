@@ -3,6 +3,8 @@ package com.gitmob.app.ui.work
 import androidx.annotation.StringRes
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,12 +26,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
@@ -40,9 +38,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -57,6 +52,7 @@ import com.gitmob.app.data.model.UserDiscussionSortFilter
 import com.gitmob.app.data.model.UserDiscussionStateFilter
 import com.gitmob.app.data.model.UserDiscussionVisibilityFilter
 import com.gitmob.app.ui.common.DiscussionStateIcon
+import com.gitmob.app.ui.common.FilterCapsuleMenu
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,22 +163,56 @@ private fun DiscussionFilterControls(
     onSortSelected: (UserDiscussionSortFilter) -> Unit,
 ) {
     Column {
-        Row(Modifier.fillMaxWidth()) {
-            DiscussionFilterMenu(R.string.work_filter_state, state, UserDiscussionStateFilter.entries, { it.labelRes }, onStateSelected, Modifier.weight(1f))
-            DiscussionFilterMenu(R.string.work_filter_relation, relation, UserDiscussionRelationFilter.entries, { it.labelRes }, onRelationSelected, Modifier.weight(1f))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterCapsuleMenu(
+                selected = state,
+                options = UserDiscussionStateFilter.entries,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelected = onStateSelected,
+                filterLabel = stringResource(R.string.work_filter_state),
+                neutralLabel = stringResource(R.string.work_filter_state),
+                isNeutral = { it == UserDiscussionStateFilter.ALL },
+            )
+            FilterCapsuleMenu(
+                selected = relation,
+                options = UserDiscussionRelationFilter.entries,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelected = onRelationSelected,
+                filterLabel = stringResource(R.string.work_filter_relation),
+            )
+            FilterCapsuleMenu(
+                selected = answer,
+                options = UserDiscussionAnswerFilter.entries,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelected = onAnswerSelected,
+                filterLabel = stringResource(R.string.work_filter_answer),
+                neutralLabel = stringResource(R.string.work_filter_answer),
+                isNeutral = { it == UserDiscussionAnswerFilter.ALL },
+            )
+            FilterCapsuleMenu(
+                selected = visibility,
+                options = UserDiscussionVisibilityFilter.entries,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelected = onVisibilitySelected,
+                filterLabel = stringResource(R.string.work_filter_visibility),
+                neutralLabel = stringResource(R.string.work_filter_visibility),
+                isNeutral = { it == UserDiscussionVisibilityFilter.ALL },
+            )
+            FilterCapsuleMenu(
+                selected = sort,
+                options = UserDiscussionSortFilter.entries,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelected = onSortSelected,
+                filterLabel = stringResource(R.string.work_filter_sort),
+            )
         }
-        Row(Modifier.fillMaxWidth()) {
-            DiscussionFilterMenu(R.string.work_filter_answer, answer, UserDiscussionAnswerFilter.entries, { it.labelRes }, onAnswerSelected, Modifier.weight(1f))
-            DiscussionFilterMenu(R.string.work_filter_visibility, visibility, UserDiscussionVisibilityFilter.entries, { it.labelRes }, onVisibilitySelected, Modifier.weight(1f))
-        }
-        DiscussionFilterMenu(
-            label = R.string.work_filter_sort,
-            selected = sort,
-            options = UserDiscussionSortFilter.entries,
-            optionLabel = { it.labelRes },
-            onSelected = onSortSelected,
-            modifier = Modifier.fillMaxWidth(),
-        )
         Text(
             text = stringResource(R.string.work_items_count, totalCount),
             style = MaterialTheme.typography.labelMedium,
@@ -190,49 +220,6 @@ private fun DiscussionFilterControls(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
         )
         HorizontalDivider()
-    }
-}
-
-@Composable
-private fun <T> DiscussionFilterMenu(
-    @StringRes label: Int,
-    selected: T,
-    options: List<T>,
-    optionLabel: (T) -> Int,
-    onSelected: (T) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val labelText = stringResource(label)
-    Box(modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = true }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(labelText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(stringResource(optionLabel(selected)), style = MaterialTheme.typography.bodyMedium)
-            }
-            Icon(Icons.Default.ArrowDropDown, contentDescription = stringResource(R.string.work_select_filter, labelText))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(optionLabel(option))) },
-                    onClick = {
-                        expanded = false
-                        onSelected(option)
-                    },
-                    leadingIcon = {
-                        if (option == selected) Icon(Icons.Default.Check, contentDescription = null)
-                        else Spacer(Modifier.size(24.dp))
-                    },
-                )
-            }
-        }
     }
 }
 

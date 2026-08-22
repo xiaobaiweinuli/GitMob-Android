@@ -164,4 +164,7 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(platform(libs.androidx.compose.bom))
+    // Robolectric 下 createComposeRule() 需要 test-manifest 声明的测试 Activity
+    debugImplementation(platform(libs.androidx.compose.bom))
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

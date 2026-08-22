@@ -2,6 +2,7 @@ package com.gitmob.app.ui.repopullrequests
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,14 +22,13 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Difference
@@ -95,6 +95,8 @@ import com.gitmob.app.navigation.ConversationComposerTarget
 import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
 import com.gitmob.app.ui.common.CommitStats
+import com.gitmob.app.ui.common.FilterCapsuleMenu
+import com.gitmob.app.ui.common.FilterMultiCapsuleMenu
 import com.gitmob.app.ui.common.GitChangedFileRow
 import com.gitmob.app.ui.common.GitCommitRow
 import com.gitmob.app.ui.common.MarkdownWebView
@@ -160,28 +162,51 @@ fun RepoPullRequestListScreen(
 @Composable
 private fun PullRequestFilters(state: RepoPullRequestListUiState, viewModel: RepoPullRequestListViewModel) {
     Column {
-        Row(Modifier.fillMaxWidth()) {
-            PullRequestFilterMenu(R.string.work_filter_state, state.filter.state, RepoPullRequestStateFilter.entries, { it.label }, viewModel::setState, Modifier.weight(1f))
-            PullRequestFilterMenu(R.string.work_filter_sort, state.filter.sort, RepoPullRequestSort.entries, { it.label }, viewModel::setSort, Modifier.weight(1f))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterCapsuleMenu(
+                selected = state.filter.state,
+                options = RepoPullRequestStateFilter.entries,
+                optionLabel = { stringResource(it.label) },
+                onSelected = viewModel::setState,
+                filterLabel = stringResource(R.string.work_filter_state),
+                neutralLabel = stringResource(R.string.work_filter_state),
+                isNeutral = { it == RepoPullRequestStateFilter.ALL },
+            )
+            FilterCapsuleMenu(
+                selected = state.filter.sort,
+                options = RepoPullRequestSort.entries,
+                optionLabel = { stringResource(it.label) },
+                onSelected = viewModel::setSort,
+                filterLabel = stringResource(R.string.work_filter_sort),
+            )
+            FilterMultiCapsuleMenu(
+                selected = state.filter.labels,
+                options = state.labels.map { it.name },
+                emptyLabel = stringResource(R.string.common_all),
+                selectedCountRes = R.string.issue_filter_selected_count,
+                clearLabel = stringResource(R.string.issue_filter_clear_labels),
+                onSelect = viewModel::setLabels,
+                filterLabel = stringResource(R.string.issue_labels),
+            )
         }
         Row(Modifier.fillMaxWidth()) {
             RefFilter(R.string.pr_base_branch, state.filter.baseRefName, viewModel::setBase, Modifier.weight(1f))
             RefFilter(R.string.pr_head_branch, state.filter.headRefName, viewModel::setHead, Modifier.weight(1f))
         }
-        Text(stringResource(R.string.work_items_count, state.totalCount), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+        Text(
+            text = stringResource(R.string.work_items_count, state.totalCount),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        )
         HorizontalDivider()
-    }
-}
-
-@Composable
-private fun <T> PullRequestFilterMenu(@StringRes title: Int, selected: T, values: List<T>, label: (T) -> Int, onSelect: (T) -> Unit, modifier: Modifier) {
-    var open by remember { mutableStateOf(false) }
-    Box(modifier) {
-        Row(Modifier.fillMaxWidth().clickable { open = true }.padding(16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(stringResource(title), style = MaterialTheme.typography.labelSmall); Text(stringResource(label(selected)), maxLines = 1) }
-            Icon(Icons.Default.ArrowDropDown, null)
-        }
-        DropdownMenu(open, { open = false }) { values.forEach { value -> DropdownMenuItem(text = { Text(stringResource(label(value))) }, leadingIcon = { if (value == selected) Icon(Icons.Default.Check, null) }, onClick = { open = false; onSelect(value) }) } }
     }
 }
 
