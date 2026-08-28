@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.CommentAuthorAssociation
+import com.gitmob.app.data.model.ConversationEditSummary
 import com.gitmob.app.data.model.SimpleUser
 
 data class ConversationMenuItem(
@@ -63,10 +66,12 @@ fun ConversationContentCard(
     onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     extraMenuItems: List<ConversationMenuItem> = emptyList(),
+    editSummary: ConversationEditSummary = ConversationEditSummary(),
+    onEditHistoryClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
-    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, tonalElevation = 1.dp) {
+    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
@@ -76,10 +81,38 @@ fun ConversationContentCard(
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(author?.login ?: stringResource(R.string.common_deleted_user), fontWeight = FontWeight.SemiBold)
-                        if (isThreadAuthor) AssistChip(onClick = {}, label = { Text(stringResource(R.string.conversation_author)) })
-                        if (authorAssociation == CommentAuthorAssociation.OWNER) AssistChip(onClick = {}, label = { Text(stringResource(R.string.conversation_owner)) })
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            author?.login ?: stringResource(R.string.common_deleted_user),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                        if (isThreadAuthor) AssistChip(
+                            onClick = {},
+                            label = { Text(stringResource(R.string.conversation_author), maxLines = 1, softWrap = false) },
+                        )
+                        if (authorAssociation == CommentAuthorAssociation.OWNER) AssistChip(
+                            onClick = {},
+                            label = { Text(stringResource(R.string.conversation_owner), maxLines = 1, softWrap = false) },
+                        )
+                        if (editSummary.lastEditedAt != null) {
+                            AssistChip(
+                                onClick = { onEditHistoryClick?.invoke() },
+                                enabled = onEditHistoryClick != null,
+                                label = {
+                                    Text(
+                                        stringResource(R.string.conversation_edited),
+                                        maxLines = 1,
+                                        softWrap = false,
+                                    )
+                                },
+                            )
+                        }
                     }
                     Text(createdAt.take(10), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -114,7 +147,11 @@ fun ConversationContentCard(
                 }
             }
             bodyHtml?.takeIf(String::isNotBlank)?.let {
-                MarkdownWebView(it, Modifier.fillMaxWidth())
+                MarkdownWebView(
+                    bodyHtml = it,
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                )
             }
             HorizontalDivider(Modifier.padding(top = 8.dp))
         }

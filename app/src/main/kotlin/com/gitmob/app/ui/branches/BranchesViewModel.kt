@@ -7,6 +7,7 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.data.model.RepoBranch
+import com.gitmob.app.data.model.BranchCreationSpec
 import com.gitmob.app.data.repository.RepoDetailRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,7 @@ data class BranchesUiState(
     val isLoadingMore: Boolean = false,
     val hasNextPage: Boolean = false,
     val loadFailed: Boolean = false,
+    val isCreating: Boolean = false,
 )
 
 @HiltViewModel
@@ -98,6 +100,44 @@ class BranchesViewModel @Inject constructor(
     }
 
     fun retry() = load()
+
+    fun createBranch(
+        newBranchName: String,
+        spec: BranchCreationSpec,
+        onFinished: (Boolean) -> Unit = {},
+    ) {
+        if (_state.value.isCreating) return
+        viewModelScope.launch {
+            _state.update { it.copy(isCreating = true) }
+            when (val result = repoDetailRepository.createBranch(owner, name, newBranchName, spec)) {
+                is ApiResult.Success -> {
+                    _state.update { it.copy(isCreating = false) }
+                    load()
+                    onFinished(true)
+                }
+                is ApiResult.Failure -> {
+                    _state.update { it.copy(isCreating = false) }
+                    errorEventBus.emit(result.error)
+                    onFinished(false)
+                }
+            }
+        }
+    }
+
+    fun renameBranch(branchName: String, newBranchName: String, onFinished: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            when (val result = repoDetailRepository.renameBranch(owner, name, branchName, newBranchName)) {
+                is ApiResult.Success -> {
+                    load()
+                    onFinished(true)
+                }
+                is ApiResult.Failure -> {
+                    errorEventBus.emit(result.error)
+                    onFinished(false)
+                }
+            }
+        }
+    }
 
     /**
      * 切换分支：不需要发网络请求，纯本地状态广播——通过 RepoUpdateEventBus 通知

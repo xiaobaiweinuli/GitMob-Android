@@ -1,48 +1,27 @@
 package com.gitmob.app.ui.common
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fitInside
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.DataObject
-import androidx.compose.material.icons.filled.FormatBold
-import androidx.compose.material.icons.filled.FormatItalic
-import androidx.compose.material.icons.filled.FormatListNumbered
-import androidx.compose.material.icons.filled.FormatQuote
-import androidx.compose.material.icons.filled.StrikethroughS
-import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -53,11 +32,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -76,8 +52,6 @@ data class ConversationComposeRequest(
     val replyToId: String? = null,
     val reviewEvent: String? = null,
 )
-
-internal enum class MarkdownEditAction { BOLD, ITALIC, STRIKETHROUGH, HEADING, BULLET, NUMBERED, TASK, QUOTE, INLINE_CODE, CODE_BLOCK }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,20 +94,23 @@ fun ConversationComposerScreen(
         },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-            PrimaryTabRow(selectedTabIndex = state.selectedTab.ordinal) {
-                Tab(selected = state.selectedTab == ComposerTab.EDIT, onClick = { viewModel.selectTab(ComposerTab.EDIT) }, text = { Text(stringResource(R.string.conversation_edit_tab)) })
-                Tab(selected = state.selectedTab == ComposerTab.PREVIEW, onClick = { viewModel.selectTab(ComposerTab.PREVIEW) }, text = { Text(stringResource(R.string.conversation_preview_tab)) })
-            }
-            when (state.selectedTab) {
-                ComposerTab.EDIT -> MarkdownEditor(
-                    value = editorValue,
-                    onValueChange = { editorValue = it; viewModel.updateText(it.text) },
-                    onAction = { action -> editorValue = applyMarkdownEdit(editorValue, action).also { viewModel.updateText(it.text) } },
-                    modifier = Modifier.weight(1f),
-                )
-                ComposerTab.PREVIEW -> PreviewPane(state, Modifier.weight(1f))
-            }
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .consumeWindowInsets(padding)
+                .fitInside(WindowInsetsRulers.Ime.current),
+        ) {
+            MarkdownBodyEditor(
+                value = editorValue,
+                state = state.bodyEditor,
+                onValueChange = {
+                    editorValue = it
+                    viewModel.updateText(it.text)
+                },
+                onTabSelected = viewModel::selectTab,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 
@@ -155,96 +132,3 @@ private fun composerTitle(route: ConversationComposerRoute): String = stringReso
         else -> R.string.conversation_write_comment
     },
 )
-
-@Composable
-private fun MarkdownEditor(
-    value: TextFieldValue,
-    onValueChange: (TextFieldValue) -> Unit,
-    onAction: (MarkdownEditAction) -> Unit,
-    modifier: Modifier,
-) {
-    val requester = remember { FocusRequester() }
-    Column(modifier.fillMaxWidth()) {
-        Box(Modifier.weight(1f).fillMaxWidth().padding(16.dp)) {
-            if (value.text.isEmpty()) Text(stringResource(R.string.conversation_markdown_placeholder), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.fillMaxSize().focusRequester(requester),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            )
-        }
-        HorizontalDivider()
-        MarkdownToolbar(onAction)
-    }
-}
-
-@Composable
-private fun MarkdownToolbar(onAction: (MarkdownEditAction) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 6.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ToolButton(Icons.Default.FormatBold, R.string.conversation_tool_bold) { onAction(MarkdownEditAction.BOLD) }
-        ToolButton(Icons.Default.FormatItalic, R.string.conversation_tool_italic) { onAction(MarkdownEditAction.ITALIC) }
-        ToolButton(Icons.Default.StrikethroughS, R.string.conversation_tool_strikethrough) { onAction(MarkdownEditAction.STRIKETHROUGH) }
-        ToolButton(Icons.Default.Title, R.string.conversation_tool_heading) { onAction(MarkdownEditAction.HEADING) }
-        ToolButton(Icons.AutoMirrored.Filled.FormatListBulleted, R.string.conversation_tool_bullet) { onAction(MarkdownEditAction.BULLET) }
-        ToolButton(Icons.Default.FormatListNumbered, R.string.conversation_tool_numbered) { onAction(MarkdownEditAction.NUMBERED) }
-        ToolButton(Icons.Default.CheckBox, R.string.conversation_tool_task) { onAction(MarkdownEditAction.TASK) }
-        ToolButton(Icons.Default.FormatQuote, R.string.conversation_tool_quote) { onAction(MarkdownEditAction.QUOTE) }
-        ToolButton(Icons.Default.Code, R.string.conversation_tool_inline_code) { onAction(MarkdownEditAction.INLINE_CODE) }
-        ToolButton(Icons.Default.DataObject, R.string.conversation_tool_code_block) { onAction(MarkdownEditAction.CODE_BLOCK) }
-    }
-}
-
-@Composable
-private fun ToolButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: Int, onClick: () -> Unit) {
-    IconButton(onClick = onClick) { Icon(icon, stringResource(label)) }
-}
-
-@Composable
-private fun PreviewPane(state: ConversationComposerUiState, modifier: Modifier) {
-    when {
-        state.text.isBlank() -> Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.conversation_preview_empty), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        state.isRenderingPreview -> Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        state.previewFailed -> Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.conversation_preview_failed), color = MaterialTheme.colorScheme.error) }
-        else -> Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { MarkdownWebView(state.previewHtml) }
-    }
-}
-
-internal fun applyMarkdownEdit(value: TextFieldValue, action: MarkdownEditAction): TextFieldValue {
-    val selection = value.selection
-    val start = selection.min.coerceIn(0, value.text.length)
-    val end = selection.max.coerceIn(start, value.text.length)
-    val selected = value.text.substring(start, end)
-    val (replacement, innerStart, innerEnd) = when (action) {
-        MarkdownEditAction.BOLD -> wrap(selected, "**", "**", "bold")
-        MarkdownEditAction.ITALIC -> wrap(selected, "*", "*", "italic")
-        MarkdownEditAction.STRIKETHROUGH -> wrap(selected, "~~", "~~", "text")
-        MarkdownEditAction.INLINE_CODE -> wrap(selected, "`", "`", "code")
-        MarkdownEditAction.CODE_BLOCK -> wrap(selected, "```\n", "\n```", "code")
-        MarkdownEditAction.HEADING -> linePrefix(selected, "# ", "Heading")
-        MarkdownEditAction.BULLET -> linePrefix(selected, "- ", "List item")
-        MarkdownEditAction.NUMBERED -> linePrefix(selected, "1. ", "List item")
-        MarkdownEditAction.TASK -> linePrefix(selected, "- [ ] ", "Task")
-        MarkdownEditAction.QUOTE -> linePrefix(selected, "> ", "Quote")
-    }
-    val newText = value.text.replaceRange(start, end, replacement)
-    return value.copy(text = newText, selection = TextRange(start + innerStart, start + innerEnd))
-}
-
-private fun wrap(selected: String, before: String, after: String, placeholder: String): EditReplacement {
-    val content = selected.ifEmpty { placeholder }
-    return EditReplacement(before + content + after, before.length, before.length + content.length)
-}
-
-private fun linePrefix(selected: String, prefix: String, placeholder: String): EditReplacement {
-    val content = selected.ifEmpty { placeholder }.lineSequence().joinToString("\n") { prefix + it }
-    val selectionStart = prefix.length
-    return EditReplacement(content, selectionStart, content.length)
-}
-
-private data class EditReplacement(val text: String, val selectionStart: Int, val selectionEnd: Int)

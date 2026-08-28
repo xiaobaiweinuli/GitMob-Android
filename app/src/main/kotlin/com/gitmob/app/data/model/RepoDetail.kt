@@ -62,6 +62,11 @@ data class RepoBranch(
     val commitOid: String?,
 )
 
+sealed interface BranchCreationSpec {
+    data class FromExisting(val sourceBranch: String) : BranchCreationSpec
+    data object Empty : BranchCreationSpec
+}
+
 /**
  * 分支分页结果包装。
  * 不含 totalCount：getBranches 查询的 refs 未查 totalCount，

@@ -93,6 +93,35 @@ data class RepoCommitDetail(
     val changedFilesTruncated: Boolean,
 )
 
+data class RepoComparisonRefs(
+    val baseOwner: String,
+    val baseRepository: String,
+    val baseRef: String,
+    val headOwner: String,
+    val headRepository: String,
+    val headRef: String,
+)
+
+data class RepoComparison(
+    val refs: RepoComparisonRefs,
+    val status: String,
+    val aheadBy: Int,
+    val behindBy: Int,
+    val totalCommits: Int,
+    val commits: List<RepoCommitSummary>,
+    val files: List<RepoChangedFile>,
+    val additions: Int,
+    val deletions: Int,
+    val filesTruncated: Boolean,
+    val commitsPage: Int,
+    val commitsHasNextPage: Boolean,
+)
+
+sealed interface RepoComparisonResult {
+    data class Available(val comparison: RepoComparison) : RepoComparisonResult
+    data object NoCommonAncestor : RepoComparisonResult
+}
+
 data class PagedRepoCommits(
     val repositoryId: String,
     val permission: RepoPermission,

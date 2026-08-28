@@ -30,6 +30,12 @@ object PageSize {
     /** 分支列表（refs） */
     const val BRANCHES = 50
 
+    /** REST compare commits/files page. GitHub returns at most 300 files overall. */
+    const val COMPARE_COMMITS = 30
+
+    /** Labels, assignees, milestones and reviewer candidate connections. */
+    const val METADATA = 20
+
     /** 收件箱通知（REST per_page） */
     const val NOTIFICATIONS = 30
 
@@ -39,6 +45,9 @@ object PageSize {
     /** Repository issue and issue comment connections. */
     const val REPO_ISSUES = 20
     const val ISSUE_COMMENTS = 20
+
+    /** User content edit history connections. */
+    const val CONTENT_EDITS = 20
 
     /** Gist 列表底层扫描页和 UI 目标页尺寸 */
     const val GISTS = 20

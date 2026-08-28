@@ -8,6 +8,7 @@ import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
 import com.gitmob.app.data.repository.RepoIssueRepository
+import com.gitmob.app.data.repository.ConversationEditRepository
 import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -18,7 +19,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class RepoIssueDetailViewModelTest {
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
@@ -27,7 +30,7 @@ class RepoIssueDetailViewModelTest {
         val repository = repositoryMock()
         coEvery { repository.getIssue("o", "r", 1, null) } returns ApiResult.Success(detail())
         coEvery { repository.addComment("I1", "hello") } returns ApiResult.Success(comment())
-        val vm = RepoIssueDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val vm = RepoIssueDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk<ConversationEditRepository>())
         vm.init("o", "r", 1, RepoPermission.READ); advanceUntilIdle()
         vm.addComment("hello") {}; advanceUntilIdle()
         assertEquals("Title", vm.state.value.issue?.title)
@@ -39,7 +42,7 @@ class RepoIssueDetailViewModelTest {
     fun `close mutation is not called without node permission`() = runTest {
         val repository = repositoryMock()
         coEvery { repository.getIssue("o", "r", 1, null) } returns ApiResult.Success(detail())
-        val vm = RepoIssueDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val vm = RepoIssueDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk<ConversationEditRepository>())
         vm.init("o", "r", 1, null); advanceUntilIdle()
         vm.closeIssue(IssueStateReason.COMPLETED); advanceUntilIdle()
         coVerify(exactly = 0) { repository.closeIssue(any(), any()) }

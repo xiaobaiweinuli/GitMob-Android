@@ -74,7 +74,7 @@ fun RepoDetailScreen(
     onBack: () -> Unit,
     onOwnerClick: (login: String) -> Unit,
     onForkSourceClick: (owner: String, name: String) -> Unit,
-    onNavigateBranches: (currentRef: String, canManageBranchProtection: Boolean) -> Unit,
+    onNavigateBranches: (currentRef: String, canPush: Boolean, canManageBranchProtection: Boolean) -> Unit,
     onNavigateCode: (ref: String) -> Unit,
     onNavigateCommits: (ref: String) -> Unit,
     onNavigateWatchers: () -> Unit,
@@ -153,7 +153,7 @@ fun RepoDetailScreen(
                             currentRef = state.currentRef ?: detail.defaultBranchName ?: "main",
                             onNavigateBranches = {
                                 val ref = state.currentRef ?: detail.defaultBranchName ?: "main"
-                                onNavigateBranches(ref, detail.capabilities.canManageBranchProtection)
+                                onNavigateBranches(ref, detail.capabilities.canPush, detail.capabilities.canManageBranchProtection)
                             },
                             onNavigateCode = onNavigateCode,
                             onNavigateCommits = onNavigateCommits,
@@ -316,15 +316,21 @@ private fun RepoMenu(
     val contributorsLabel = stringResource(R.string.repo_contributors)
     val licenseLabel = stringResource(R.string.repo_license)
     Column {
-        MenuRow(Icons.Default.Adjust, stringResource(R.string.common_issues), detail.openIssueCount, onClick = onNavigateIssues)
-        MenuRow(Icons.AutoMirrored.Default.CallSplit, pullRequestsLabel, detail.openPrCount, onClick = onNavigatePullRequests)
+        if (detail.hasIssuesEnabled) {
+            MenuRow(Icons.Default.Adjust, stringResource(R.string.common_issues), detail.openIssueCount, onClick = onNavigateIssues)
+        }
+        if (detail.hasPullRequestsEnabled) {
+            MenuRow(Icons.AutoMirrored.Default.CallSplit, pullRequestsLabel, detail.openPrCount, onClick = onNavigatePullRequests)
+        }
         MenuRow(Icons.Default.PlayCircle, actionsLabel, null, onClick = onNavigateActions)
         MenuRow(
             Icons.Default.Sell, releasesLabel, detail.releaseCount,
             subtitle = detail.latestReleaseTag,
             onClick = onNavigateReleases,
         )
-        MenuRow(Icons.Default.ChatBubble, discussionsLabel, detail.openDiscussionCount, onClick = onNavigateDiscussions)
+        if (detail.hasDiscussionsEnabled) {
+            MenuRow(Icons.Default.ChatBubble, discussionsLabel, detail.openDiscussionCount, onClick = onNavigateDiscussions)
+        }
         MenuRow(Icons.Default.Groups, contributorsLabel, null, onClick = onNavigateContributors)
         MenuRow(Icons.Default.Visibility, stringResource(R.string.common_watchers), detail.watcherCount, onClick = onNavigateWatchers)
         detail.licenseName?.let {

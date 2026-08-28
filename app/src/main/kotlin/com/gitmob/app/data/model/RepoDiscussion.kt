@@ -38,6 +38,7 @@ data class RepoDiscussion(
     val viewerSubscription: String?,
     val url: String = "",
     val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
+    val editSummary: ConversationEditSummary = ConversationEditSummary(),
 )
 
 data class RepoDiscussionComment(
@@ -56,6 +57,7 @@ data class RepoDiscussionComment(
     val viewerCanUnmarkAsAnswer: Boolean,
     val url: String = "",
     val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
+    val editSummary: ConversationEditSummary = ConversationEditSummary(),
 )
 
 data class RepoDiscussionFilter(

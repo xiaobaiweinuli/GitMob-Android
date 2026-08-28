@@ -100,4 +100,100 @@ class RepoDetailRepositoryTest {
 
         assertTrue(result is ApiResult.Success)
     }
+
+    @Test
+    fun `createBranch读取来源提交并创建完整heads引用`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ref":"refs/heads/feature/source","object":{"sha":"abc123"}}""",
+            ),
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(201).setBody(
+                """{"ref":"refs/heads/feature/new","object":{"sha":"abc123"}}""",
+            ),
+        )
+
+        val result = repository.createBranch(
+            owner = "xiaobaiweinuli",
+            name = "GitMob-Android",
+            newBranchName = "feature/new",
+            spec = com.gitmob.app.data.model.BranchCreationSpec.FromExisting("feature/source"),
+        )
+
+        assertTrue(result is ApiResult.Success)
+        val sourceRequest = server.takeRequest()
+        assertEquals("GET", sourceRequest.method)
+        assertEquals(
+            "/repos/xiaobaiweinuli/GitMob-Android/git/ref/heads/feature%2Fsource",
+            sourceRequest.requestUrl?.encodedPath,
+        )
+        val createRequest = server.takeRequest()
+        assertEquals("POST", createRequest.method)
+        assertEquals("/repos/xiaobaiweinuli/GitMob-Android/git/refs", createRequest.path)
+        val createBody = createRequest.body.readUtf8()
+        assertTrue(createBody.contains("\"ref\":\"refs/heads/feature/new\""))
+        assertTrue(createBody.contains("\"sha\":\"abc123\""))
+    }
+
+    @Test
+    fun `createEmptyBranch使用REST创建空tree根提交和引用`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"sha":"tree123"}"""))
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"sha":"commit123"}"""))
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"ref":"refs/heads/empty"}"""))
+
+        val result = repository.createBranch(
+            owner = "xiaobaiweinuli",
+            name = "GitMob-Android",
+            newBranchName = "empty",
+            spec = com.gitmob.app.data.model.BranchCreationSpec.Empty,
+        )
+
+        assertTrue(result is ApiResult.Success)
+        val treeRequest = server.takeRequest()
+        assertEquals("POST", treeRequest.method)
+        assertEquals("/repos/xiaobaiweinuli/GitMob-Android/git/trees", treeRequest.path)
+        assertEquals("{\"tree\":[]}", treeRequest.body.readUtf8())
+
+        val commitRequest = server.takeRequest()
+        assertEquals("POST", commitRequest.method)
+        assertEquals("/repos/xiaobaiweinuli/GitMob-Android/git/commits", commitRequest.path)
+        assertEquals(
+            "{\"message\":\"Create empty branch\",\"tree\":\"tree123\",\"parents\":[]}",
+            commitRequest.body.readUtf8(),
+        )
+
+        val refRequest = server.takeRequest()
+        assertEquals("POST", refRequest.method)
+        assertEquals("/repos/xiaobaiweinuli/GitMob-Android/git/refs", refRequest.path)
+        assertEquals(
+            "{\"ref\":\"refs/heads/empty\",\"sha\":\"commit123\"}",
+            refRequest.body.readUtf8(),
+        )
+    }
+
+    @Test
+    fun `renameBranch使用REST并编码含斜杠的旧分支名`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(201).setBody(
+                """{"name":"feature/renamed"}""",
+            ),
+        )
+
+        val result = repository.renameBranch(
+            owner = "xiaobaiweinuli",
+            name = "GitMob-Android",
+            branchName = "feature/old",
+            newBranchName = "feature/renamed",
+        )
+
+        assertTrue(result is ApiResult.Success)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals(
+            "/repos/xiaobaiweinuli/GitMob-Android/branches/feature%2Fold/rename",
+            request.requestUrl?.encodedPath,
+        )
+        assertEquals("{\"new_name\":\"feature/renamed\"}", request.body.readUtf8())
+    }
 }

@@ -15,6 +15,7 @@ import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.PagedBranches
 import com.gitmob.app.data.model.PagedUsers
 import com.gitmob.app.data.model.RepoBranch
+import com.gitmob.app.data.model.BranchCreationSpec
 import com.gitmob.app.data.model.RepoBranchesQueryData
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.data.model.RepoDetailQueryData
@@ -23,6 +24,8 @@ import com.gitmob.app.data.model.RepoReadmeQueryData
 import com.gitmob.app.data.model.RepoWatchersQueryData
 import com.gitmob.app.data.model.SimpleUser
 import kotlinx.serialization.json.JsonPrimitive
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -284,6 +287,67 @@ class RepoDetailRepository @Inject constructor(
         // 设默认分支后，isDefault 标记会变化，失效缓存
         branchesCache.invalidate("$owner/$name")
     }
+
+    /** Create a new branch at the source branch's current head commit. */
+    suspend fun createBranch(
+        owner: String,
+        name: String,
+        newBranchName: String,
+        spec: BranchCreationSpec,
+    ): ApiResult<Unit> = safeCall {
+        when (spec) {
+            is BranchCreationSpec.FromExisting -> {
+                val sourceName = spec.sourceBranch
+                val source = api.get<RestGitRefResponse>(
+                    "/repos/$owner/$name/git/ref/heads/${encodePathSegment(sourceName)}",
+                )
+                val sourceSha = source.objectInfo?.sha
+                    ?: throw IllegalStateException("Source branch commit is unavailable")
+                api.post<RestGitRefResponse, CreateRefBody>(
+                    path = "/repos/$owner/$name/git/refs",
+                    body = CreateRefBody(ref = "refs/heads/$newBranchName", sha = sourceSha),
+                )
+            }
+            BranchCreationSpec.Empty -> {
+                val tree = api.post<RestGitTreeResponse, CreateTreeBody>(
+                    path = "/repos/$owner/$name/git/trees",
+                    body = CreateTreeBody(tree = emptyList()),
+                )
+                val treeSha = tree.sha ?: throw IllegalStateException("Empty tree was not created")
+                val commit = api.post<RestGitCommitResponse, CreateCommitBody>(
+                    path = "/repos/$owner/$name/git/commits",
+                    body = CreateCommitBody(
+                        message = "Create empty branch",
+                        tree = treeSha,
+                        parents = emptyList(),
+                    ),
+                )
+                val commitSha = commit.sha ?: throw IllegalStateException("Root commit was not created")
+                api.post<RestGitRefResponse, CreateRefBody>(
+                    path = "/repos/$owner/$name/git/refs",
+                    body = CreateRefBody(ref = "refs/heads/$newBranchName", sha = commitSha),
+                )
+            }
+        }
+        branchesCache.invalidate("$owner/$name")
+    }
+
+    /** Rename a branch through the REST endpoint verified in the bundled OpenAPI schema. */
+    suspend fun renameBranch(
+        owner: String,
+        name: String,
+        branchName: String,
+        newBranchName: String,
+    ): ApiResult<Unit> = safeCall {
+        with(api.post<RestBranchResponse, RenameBranchBody>(
+            path = "/repos/$owner/$name/branches/${encodePathSegment(branchName)}/rename",
+            body = RenameBranchBody(newName = newBranchName),
+        )) { }
+        branchesCache.invalidate("$owner/$name")
+    }
+
+    private fun encodePathSegment(value: String): String =
+        URLEncoder.encode(value, StandardCharsets.UTF_8.toString()).replace("+", "%20")
 }
 
 @kotlinx.serialization.Serializable
@@ -294,4 +358,62 @@ private data class SetDefaultBranchBody(
 @kotlinx.serialization.Serializable
 private data class SetDefaultBranchResponse(
     @kotlinx.serialization.SerialName("default_branch") val defaultBranch: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+private data class CreateRefBody(
+    val ref: String,
+    val sha: String,
+)
+
+@kotlinx.serialization.Serializable
+private data class CreateTreeBody(
+    val tree: List<RestGitTreeEntry>,
+)
+
+@kotlinx.serialization.Serializable
+private data class RestGitTreeEntry(
+    val path: String = "",
+    val mode: String = "100644",
+    val type: String = "blob",
+    val sha: String? = null,
+    val content: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+private data class RestGitTreeResponse(
+    val sha: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+private data class CreateCommitBody(
+    val message: String,
+    val tree: String,
+    val parents: List<String>,
+)
+
+@kotlinx.serialization.Serializable
+private data class RestGitCommitResponse(
+    val sha: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+private data class RenameBranchBody(
+    @kotlinx.serialization.SerialName("new_name") val newName: String,
+)
+
+@kotlinx.serialization.Serializable
+private data class RestGitRefResponse(
+    val ref: String? = null,
+    @kotlinx.serialization.SerialName("object") val objectInfo: RestGitObject? = null,
+)
+
+@kotlinx.serialization.Serializable
+private data class RestGitObject(
+    val sha: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+private data class RestBranchResponse(
+    val name: String? = null,
 )

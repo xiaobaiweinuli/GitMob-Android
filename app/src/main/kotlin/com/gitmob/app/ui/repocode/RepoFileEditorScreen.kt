@@ -5,15 +5,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.fitInside
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Save
@@ -33,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -63,27 +62,33 @@ fun RepoFileEditorScreen(
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
         },
-        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { padding ->
+        val contentModifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .consumeWindowInsets(padding)
+            .fitInside(WindowInsetsRulers.Ime.current)
         when {
             state.isLoading -> Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = contentModifier,
                 contentAlignment = androidx.compose.ui.Alignment.Center,
             ) { CircularProgressIndicator() }
             state.loadFailed -> Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = contentModifier,
                 contentAlignment = androidx.compose.ui.Alignment.Center,
             ) { Text(stringResource(R.string.common_load_failed)) }
-            else -> Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            else -> Column(contentModifier.padding(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(state.path, viewModel::updatePath, label = { Text(stringResource(R.string.repo_file_path)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(message, { message = it }, label = { Text(stringResource(R.string.repo_commit_message)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = state.content,
                     onValueChange = viewModel::updateContent,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                     label = { Text(stringResource(R.string.repo_file_content)) },
                     placeholder = { Text(stringResource(R.string.repo_file_content_placeholder)) },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
+                    maxLines = Int.MAX_VALUE,
                 )
             }
         }

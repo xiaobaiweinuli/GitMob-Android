@@ -6,6 +6,10 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.core.markdown.MarkdownRenderer
+import com.gitmob.app.core.markdown.CommonMarkRenderer
+import com.gitmob.app.ui.common.MarkdownEditorTab
+import com.gitmob.app.ui.common.MarkdownEditorUiState
 import com.gitmob.app.data.model.*
 import com.gitmob.app.data.repository.RepoIssueRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +33,7 @@ data class RepoIssueEditorUiState(
     val isLoading: Boolean = false,
     val loadFailed: Boolean = false,
     val isSaving: Boolean = false,
+    val bodyEditor: MarkdownEditorUiState = MarkdownEditorUiState(),
 )
 
 @HiltViewModel
@@ -36,7 +41,9 @@ class RepoIssueEditorViewModel @Inject constructor(
     private val repository: RepoIssueRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
+    private val markdownRenderer: MarkdownRenderer,
 ) : ViewModel() {
+    constructor(repository: RepoIssueRepository, errorEventBus: ErrorEventBus, repoUpdateEventBus: RepoUpdateEventBus) : this(repository, errorEventBus, repoUpdateEventBus, CommonMarkRenderer())
     private val _state = MutableStateFlow(RepoIssueEditorUiState())
     val state: StateFlow<RepoIssueEditorUiState> = _state.asStateFlow()
     private var owner = ""
@@ -44,6 +51,7 @@ class RepoIssueEditorViewModel @Inject constructor(
     private var number: Int? = null
     private var templateFilename: String? = null
     private var initialized = false
+    private var previewJob: kotlinx.coroutines.Job? = null
 
     fun init(owner: String, name: String, number: Int?, templateFilename: String? = null) {
         if (initialized) return
@@ -85,8 +93,32 @@ class RepoIssueEditorViewModel @Inject constructor(
                     assignees = (assignees as ApiResult.Success).data,
                     isLoading = false,
                     loadFailed = false,
+                    bodyEditor = MarkdownEditorUiState(),
                 )
             }
+        }
+    }
+
+    fun selectBodyEditorTab(tab: MarkdownEditorTab, markdown: String = "") {
+        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, previewFailed = false)) }
+        if (tab == MarkdownEditorTab.PREVIEW) renderBodyPreview(markdown)
+    }
+
+    fun renderBodyPreview(markdown: String) {
+        previewJob?.cancel()
+        if (markdown.isBlank()) {
+            _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = "", isRenderingPreview = false, previewFailed = false)) }
+            return
+        }
+        previewJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(120)
+            _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = true, previewFailed = false)) }
+            runCatching { markdownRenderer.renderToHtml(markdown) }
+                .onSuccess { html -> _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = html, isRenderingPreview = false)) } }
+                .onFailure { error ->
+                    errorEventBus.emit(com.gitmob.app.core.error.ApiError.Unknown(error.message ?: "Markdown preview failed"))
+                    _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = false, previewFailed = true)) }
+                }
         }
     }
 

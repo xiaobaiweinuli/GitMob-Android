@@ -85,18 +85,35 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
     }
 
     suspend fun getLabels(owner: String, name: String): ApiResult<List<IssueLabel>> = cached(labelsCache, "$owner/$name") {
-        val query = "query RepoLabels(${'$'}owner: String!, ${'$'}name: String!) { repository(owner: ${'$'}owner, name: ${'$'}name) { labels(first: 100) { nodes { id name color description } } } }"
-        api.graphQL<RepoLabelsQueryData>(query, repoVariables(owner, name)).repository?.labels?.nodes.orEmpty().map(::toLabel)
+        collectPages { after ->
+            val query = "query RepoLabels(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String) { repository(owner: ${'$'}owner, name: ${'$'}name) { labels(first: ${PageSize.METADATA}, after: ${'$'}after) { nodes { id name color description } pageInfo { hasNextPage endCursor } } } }"
+            api.graphQL<RepoLabelsQueryData>(query, repoVariables(owner, name) + mapOf("after" to (after?.let(::JsonPrimitive) ?: JsonNull))).repository?.labels?.let { RepoIssuePageConnection(it.nodes, it.pageInfo) }
+        }.map(::toLabel)
     }
 
     suspend fun getMilestones(owner: String, name: String): ApiResult<List<IssueMilestone>> = cached(milestonesCache, "$owner/$name") {
-        val query = "query RepoMilestones(${'$'}owner: String!, ${'$'}name: String!) { repository(owner: ${'$'}owner, name: ${'$'}name) { milestones(first: 100, states: [OPEN]) { nodes { id number title state dueOn } } } }"
-        api.graphQL<RepoMilestonesQueryData>(query, repoVariables(owner, name)).repository?.milestones?.nodes.orEmpty().map(::toMilestone)
+        collectPages { after ->
+            val query = "query RepoMilestones(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String) { repository(owner: ${'$'}owner, name: ${'$'}name) { milestones(first: ${PageSize.METADATA}, after: ${'$'}after, states: [OPEN]) { nodes { id number title state dueOn } pageInfo { hasNextPage endCursor } } } }"
+            api.graphQL<RepoMilestonesQueryData>(query, repoVariables(owner, name) + mapOf("after" to (after?.let(::JsonPrimitive) ?: JsonNull))).repository?.milestones?.let { RepoIssuePageConnection(it.nodes, it.pageInfo) }
+        }.map(::toMilestone)
     }
 
     suspend fun getAssignableUsers(owner: String, name: String): ApiResult<List<SimpleUser>> = cached(assigneesCache, "$owner/$name") {
-        val query = "query RepoAssignableUsers(${'$'}owner: String!, ${'$'}name: String!) { repository(owner: ${'$'}owner, name: ${'$'}name) { assignableUsers(first: 100) { nodes { id login name avatarUrl bio } } } }"
-        api.graphQL<RepoAssignableUsersQueryData>(query, repoVariables(owner, name)).repository?.assignableUsers?.nodes.orEmpty().map(::toUser)
+        collectPages { after ->
+            val query = "query RepoAssignableUsers(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String) { repository(owner: ${'$'}owner, name: ${'$'}name) { assignableUsers(first: ${PageSize.METADATA}, after: ${'$'}after) { nodes { id login name avatarUrl bio } pageInfo { hasNextPage endCursor } } } }"
+            api.graphQL<RepoAssignableUsersQueryData>(query, repoVariables(owner, name) + mapOf("after" to (after?.let(::JsonPrimitive) ?: JsonNull))).repository?.assignableUsers?.let { RepoIssuePageConnection(it.nodes, it.pageInfo) }
+        }.map(::toUser)
+    }
+
+    private suspend fun <T> collectPages(load: suspend (String?) -> RepoIssuePageConnection<T>?): List<T> {
+        val result = mutableListOf<T>()
+        var cursor: String? = null
+        do {
+            val page = load(cursor) ?: break
+            result += page.nodes
+            cursor = page.pageInfo.endCursor
+        } while (page.pageInfo.hasNextPage && cursor != null)
+        return result
     }
 
     suspend fun getIssueTemplates(owner: String, name: String): ApiResult<IssueTemplateLoadResult> = safeCall {
@@ -249,7 +266,7 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
     companion object {
         private const val MAX_ISSUE_FORM_BYTES = 256 * 1024
         private fun issueFields(commentsFirst: Int, commentsAfter: String? = null): String = """
-            id url number title body bodyHTML state stateReason author { login avatarUrl } authorAssociation createdAt updatedAt locked
+            id url number title body bodyHTML state stateReason author { login avatarUrl } authorAssociation createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } locked
             comments(first: $commentsFirst${commentsAfter?.let { ", after: $it" }.orEmpty()}) { totalCount nodes { ${commentFields()} } pageInfo { hasNextPage endCursor } }
             labels(first: 20) { nodes { id name color description } }
             assignees(first: 20) { nodes { id login name avatarUrl bio } }
@@ -257,13 +274,13 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
             viewerCanClose viewerCanDelete viewerCanLabel viewerCanSetMilestone viewerCanUpdate viewerCanSubscribe viewerCanReopen viewerSubscription
         """.trimIndent()
 
-        private fun commentFields() = "id url author { login avatarUrl } authorAssociation body bodyHTML createdAt updatedAt viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanReact"
+        private fun commentFields() = "id url author { login avatarUrl } authorAssociation body bodyHTML createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanReact"
         private fun parsePermission(value: String?) = value?.let { runCatching { RepoPermission.valueOf(it) }.getOrDefault(RepoPermission.NONE) } ?: RepoPermission.NONE
         private fun toUser(node: SimpleUserNode) = SimpleUser(node.login, node.name, node.avatarUrl, node.bio, node.id)
         private fun toLabel(node: RepoIssueLabelNode) = IssueLabel(node.id, node.name, node.color, node.description)
         private fun toMilestone(node: RepoIssueMilestoneNode) = IssueMilestone(node.id, node.number, node.title, node.state, node.dueOn)
         private fun association(value: String) = runCatching { CommentAuthorAssociation.valueOf(value) }.getOrDefault(CommentAuthorAssociation.NONE)
-        private fun toComment(node: RepoIssueCommentNode) = IssueComment(node.id, node.author?.let(::toUser), node.body, node.bodyHTML, node.createdAt, node.updatedAt, node.viewerDidAuthor, node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact, node.url, association(node.authorAssociation))
+        private fun toComment(node: RepoIssueCommentNode) = IssueComment(node.id, node.author?.let(::toUser), node.body, node.bodyHTML, node.createdAt, node.updatedAt, node.viewerDidAuthor, node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact, node.url, association(node.authorAssociation), ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.let(::toUser)))
         private fun toCommentPage(node: RepoIssueCommentConnectionNode) = IssueCommentPage(node.nodes.map(::toComment), node.pageInfo?.hasNextPage ?: false, node.pageInfo?.endCursor)
         private fun toIssue(node: RepoIssueNode) = RepoIssue(
             id = node.id, number = node.number, title = node.title, body = node.body, bodyHtml = node.bodyHTML,
@@ -274,6 +291,9 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
             viewerCanSetMilestone = node.viewerCanSetMilestone, viewerCanUpdate = node.viewerCanUpdate, viewerCanSubscribe = node.viewerCanSubscribe,
             viewerCanReopen = node.viewerCanReopen, viewerSubscription = node.viewerSubscription, url = node.url,
             authorAssociation = association(node.authorAssociation),
+            editSummary = ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.let(::toUser)),
         )
     }
 }
+
+private data class RepoIssuePageConnection<T>(val nodes: List<T>, val pageInfo: com.gitmob.app.data.model.PageInfoNode)

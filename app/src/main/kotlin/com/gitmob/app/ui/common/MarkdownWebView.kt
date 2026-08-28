@@ -34,15 +34,17 @@ import kotlin.math.abs
  */
 @SuppressLint("ClickableViewAccessibility")
 @Composable
-fun MarkdownWebView(bodyHtml: String, modifier: Modifier = Modifier) {
-    val colorScheme = MaterialTheme.colorScheme
-    val background = colorScheme.background
-    val cssFileName = if (background.luminance() < 0.5f) {
+fun MarkdownWebView(
+    bodyHtml: String,
+    modifier: Modifier = Modifier,
+    backgroundColor: Color = MaterialTheme.colorScheme.background,
+) {
+    val cssFileName = if (backgroundColor.luminance() < 0.5f) {
         "github-markdown-dark.css"
     } else {
         "github-markdown-light.css"
     }
-    val backgroundCss = background.toCssHex()
+    val backgroundCss = backgroundColor.toCssHex()
 
     // Markdown 正文可能很大，只有正文或主题实际变化时才重新拼装完整文档。
     val fullHtml = remember(

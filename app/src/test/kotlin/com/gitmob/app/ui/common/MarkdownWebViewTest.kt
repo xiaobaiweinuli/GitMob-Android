@@ -65,6 +65,18 @@ class MarkdownWebViewTest {
     }
 
     @Test
+    fun `生成的Markdown文档使用调用方传入的容器背景`() {
+        val document = buildMarkdownDocument(
+            bodyHtml = "<p>Comment</p>",
+            cssFileName = "github-markdown-dark.css",
+            backgroundCss = "#202124",
+        )
+
+        assertTrue(document.contains("background-color: #202124 !important;"))
+        assertTrue(document.contains("github-markdown-dark.css"))
+    }
+
+    @Test
     fun `内部垂直滚动被钳死为零`() {
         val webView = NoVerticalScrollWebView(RuntimeEnvironment.getApplication())
 

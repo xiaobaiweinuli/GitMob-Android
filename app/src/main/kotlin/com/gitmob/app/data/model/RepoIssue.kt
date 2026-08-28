@@ -127,6 +127,7 @@ data class IssueComment(
     val viewerCanReact: Boolean,
     val url: String = "",
     val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
+    val editSummary: ConversationEditSummary = ConversationEditSummary(),
 )
 
 data class RepoIssue(
@@ -155,6 +156,7 @@ data class RepoIssue(
     val viewerSubscription: String?,
     val url: String = "",
     val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
+    val editSummary: ConversationEditSummary = ConversationEditSummary(),
 )
 
 data class RepoIssuePage(

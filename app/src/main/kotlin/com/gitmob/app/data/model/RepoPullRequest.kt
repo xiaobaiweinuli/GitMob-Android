@@ -13,8 +13,6 @@ data class RepoPullRequestFilter(
     val state: RepoPullRequestStateFilter = RepoPullRequestStateFilter.OPEN,
     val sort: RepoPullRequestSort = RepoPullRequestSort.UPDATED_DESC,
     val labels: Set<String> = emptySet(),
-    val baseRefName: String? = null,
-    val headRefName: String? = null,
 )
 
 data class RepoPullRequest(
@@ -56,6 +54,7 @@ data class RepoPullRequest(
     val autoMergeEnabled: Boolean,
     val url: String = "",
     val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
+    val editSummary: ConversationEditSummary = ConversationEditSummary(),
 )
 
 data class RepoPullRequestPage(
@@ -84,6 +83,7 @@ data class RepoPullRequestComment(
     val viewerCanReact: Boolean,
     val url: String = "",
     val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
+    val editSummary: ConversationEditSummary = ConversationEditSummary(),
 )
 
 data class RepoPullRequestReview(
@@ -97,6 +97,7 @@ data class RepoPullRequestReview(
     val viewerCanDelete: Boolean,
     val url: String = "",
     val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
+    val editSummary: ConversationEditSummary = ConversationEditSummary(),
 )
 
 data class RepoPullRequestReviewComment(
@@ -113,6 +114,7 @@ data class RepoPullRequestReviewComment(
     val viewerCanDelete: Boolean,
     val url: String = "",
     val authorAssociation: CommentAuthorAssociation = CommentAuthorAssociation.NONE,
+    val editSummary: ConversationEditSummary = ConversationEditSummary(),
 )
 
 data class RepoPullRequestReviewThread(
@@ -222,6 +224,70 @@ data class RepoPullRequestCreateMetadata(
     val reviewers: List<SimpleUser>,
 )
 
+data class ExistingRepoPullRequest(
+    val number: Int,
+    val title: String,
+    val url: String,
+    val state: RepoPullRequestState = RepoPullRequestState.OPEN,
+    val isDraft: Boolean = false,
+    val author: SimpleUser? = null,
+    val updatedAt: String = "",
+    val baseRefName: String = "",
+    val headRefName: String = "",
+    val commentCount: Int = 0,
+    val labels: List<IssueLabel> = emptyList(),
+)
+
+data class RepoPullRequestListItem(
+    val number: Int,
+    val title: String,
+    val state: RepoPullRequestState,
+    val isDraft: Boolean,
+    val author: SimpleUser?,
+    val updatedAt: String,
+    val baseRefName: String,
+    val headRefName: String,
+    val commentCount: Int,
+    val labels: List<IssueLabel>,
+)
+
+fun RepoPullRequest.toListItem() = RepoPullRequestListItem(
+    number = number,
+    title = title,
+    state = state,
+    isDraft = isDraft,
+    author = author,
+    updatedAt = updatedAt,
+    baseRefName = baseRefName,
+    headRefName = headRefName,
+    commentCount = commentCount,
+    labels = labels,
+)
+
+fun ExistingRepoPullRequest.toListItem() = RepoPullRequestListItem(
+    number = number,
+    title = title,
+    state = state,
+    isDraft = isDraft,
+    author = author,
+    updatedAt = updatedAt,
+    baseRefName = baseRefName,
+    headRefName = headRefName,
+    commentCount = commentCount,
+    labels = labels,
+)
+
+data class RepoPullRequestCreateSelection(
+    val baseOwner: String,
+    val baseRepository: String,
+    val baseRepositoryId: String,
+    val baseRef: String,
+    val headOwner: String,
+    val headRepository: String,
+    val headRepositoryId: String,
+    val headRef: String,
+)
+
 data class CreateRepoPullRequestInput(
     val repositoryId: String,
     val baseRefName: String,
@@ -230,6 +296,8 @@ data class CreateRepoPullRequestInput(
     val title: String,
     val body: String,
     val draft: Boolean,
+    /** Owner of a cross-repository head. Repository converts this to owner:branch. */
+    val headOwner: String? = null,
 )
 
 data class UpdateRepoPullRequestInput(

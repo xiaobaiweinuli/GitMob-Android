@@ -357,9 +357,9 @@ private fun LoggedInApp(
                 onForkSourceClick = { forkOwner, forkName ->
                     navigator.navigate(RepoDetailRoute(forkOwner, forkName))
                 },
-                onNavigateBranches = { currentRef, canManageBranchProtection ->
+                onNavigateBranches = { currentRef, canPush, canManageBranchProtection ->
                     navigator.navigate(
-                        RepoBranchesRoute(route.owner, route.name, currentRef, canManageBranchProtection)
+                        RepoBranchesRoute(route.owner, route.name, currentRef, canPush, canManageBranchProtection)
                     )
                 },
                 onNavigateCode = { ref -> navigator.navigate(RepoCodeRoute(route.owner, route.name, ref)) },
@@ -430,7 +430,26 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onPullRequestClick = { number -> navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
-                onCreate = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, permission = route.permission)) },
+                onCreate = { selection ->
+                    navigator.navigate(
+                        RepoPullRequestEditorRoute(
+                            owner = selection.baseOwner,
+                            name = selection.baseRepository,
+                            permission = route.permission,
+                            baseOwner = selection.baseOwner,
+                            baseName = selection.baseRepository,
+                            baseRef = selection.baseRef,
+                            headOwner = selection.headOwner,
+                            headName = selection.headRepository,
+                            headRef = selection.headRef,
+                            headRepositoryId = selection.headRepositoryId,
+                        ),
+                    )
+                },
+                onCreateCommitClick = { commitOwner, commitName, ref, sha -> navigator.navigate(RepoCommitDetailRoute(commitOwner, commitName, sha, ref, route.permission)) },
+                onExistingPullRequestClick = { existingOwner, existingName, number ->
+                    navigator.navigate(RepoPullRequestDetailRoute(existingOwner, existingName, number, route.permission))
+                },
             )
         }
         entry<RepoPullRequestDetailRoute> { route ->
@@ -464,6 +483,13 @@ private fun LoggedInApp(
                 owner = route.owner,
                 name = route.name,
                 number = route.number,
+                baseOwner = route.baseOwner,
+                baseName = route.baseName,
+                baseRef = route.baseRef,
+                headOwner = route.headOwner,
+                headName = route.headName,
+                headRef = route.headRef,
+                headRepositoryId = route.headRepositoryId,
                 onBack = { navigator.goBack() },
                 onSaved = { number -> navigator.goBack(); navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
             )
@@ -589,6 +615,7 @@ private fun LoggedInApp(
                 owner = route.owner,
                 name = route.name,
                 currentRef = route.currentRef,
+                canPush = route.canPush,
                 canManageBranchProtection = route.canManageBranchProtection,
                 onBack = { navigator.goBack() },
             )

@@ -22,18 +22,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class ComposerTab { EDIT, PREVIEW }
+typealias ComposerTab = MarkdownEditorTab
 
 data class ConversationComposerUiState(
     val text: String = "",
-    val selectedTab: ComposerTab = ComposerTab.EDIT,
-    val previewHtml: String = "",
-    val isRenderingPreview: Boolean = false,
-    val previewFailed: Boolean = false,
+    val bodyEditor: MarkdownEditorUiState = MarkdownEditorUiState(),
     val isSubmitting: Boolean = false,
     val submitted: Boolean = false,
     val allowsEmptySubmission: Boolean = false,
-)
+) {
+    val selectedTab: MarkdownEditorTab get() = bodyEditor.selectedTab
+    val previewHtml: String get() = bodyEditor.previewHtml
+    val isRenderingPreview: Boolean get() = bodyEditor.isRenderingPreview
+    val previewFailed: Boolean get() = bodyEditor.previewFailed
+}
 
 @HiltViewModel
 class ConversationComposerViewModel @Inject constructor(
@@ -87,30 +89,30 @@ class ConversationComposerViewModel @Inject constructor(
     }
 
     fun updateText(value: String) {
-        _state.update { it.copy(text = value, previewFailed = false) }
-        if (_state.value.selectedTab == ComposerTab.PREVIEW) renderPreview()
+        _state.update { it.copy(text = value, bodyEditor = it.bodyEditor.copy(previewFailed = false)) }
+        if (_state.value.bodyEditor.selectedTab == MarkdownEditorTab.PREVIEW) renderPreview()
     }
 
     fun selectTab(tab: ComposerTab) {
-        _state.update { it.copy(selectedTab = tab) }
-        if (tab == ComposerTab.PREVIEW) renderPreview()
+        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab)) }
+        if (tab == MarkdownEditorTab.PREVIEW) renderPreview()
     }
 
     fun renderPreview() {
         previewJob?.cancel()
         val markdown = _state.value.text
         if (markdown.isBlank()) {
-            _state.update { it.copy(previewHtml = "", isRenderingPreview = false, previewFailed = false) }
+            _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = "", isRenderingPreview = false, previewFailed = false)) }
             return
         }
         previewJob = viewModelScope.launch {
             delay(120)
-            _state.update { it.copy(isRenderingPreview = true, previewFailed = false) }
+            _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = true, previewFailed = false)) }
             runCatching { markdownRenderer.renderToHtml(markdown) }
-                .onSuccess { html -> _state.update { it.copy(previewHtml = html, isRenderingPreview = false) } }
+                .onSuccess { html -> _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = html, isRenderingPreview = false)) } }
                 .onFailure { error ->
                     errorEventBus.emit(com.gitmob.app.core.error.ApiError.Unknown(error.message ?: "Markdown preview failed"))
-                    _state.update { it.copy(isRenderingPreview = false, previewFailed = true) }
+                    _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = false, previewFailed = true)) }
                 }
         }
     }

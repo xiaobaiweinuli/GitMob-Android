@@ -11,6 +11,8 @@ import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
 import com.gitmob.app.data.repository.RepoIssueRepository
+import com.gitmob.app.data.repository.ConversationEditRepository
+import com.gitmob.app.ui.common.ConversationEditHistoryUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +38,7 @@ data class RepoIssueDetailUiState(
     val hasMoreComments: Boolean = false,
     val pendingDeleteComment: IssueComment? = null,
     val pendingDeleteIssue: Boolean = false,
+    val editHistory: ConversationEditHistoryUiState = ConversationEditHistoryUiState(),
 )
 
 @HiltViewModel
@@ -43,10 +46,12 @@ class RepoIssueDetailViewModel @Inject constructor(
     private val repository: RepoIssueRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
+    private val editRepository: ConversationEditRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(RepoIssueDetailUiState())
     val state: StateFlow<RepoIssueDetailUiState> = _state.asStateFlow()
     private var owner = ""; private var name = ""; private var number = 0; private var cursor: String? = null; private var initialized = false
+    private var editJob: kotlinx.coroutines.Job? = null
 
     fun init(owner: String, name: String, number: Int, permission: RepoPermission?) {
         if (initialized) return
@@ -73,6 +78,38 @@ class RepoIssueDetailViewModel @Inject constructor(
 
     fun load() { cursor = null; viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getIssue(owner, name, number)) { is ApiResult.Success -> apply(result.data); is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun retry() = load()
+
+    fun openEditHistory(nodeId: String) {
+        editJob?.cancel()
+        val current = _state.value.editHistory
+        if (current.targetNodeId == nodeId && current.items.isNotEmpty()) {
+            _state.update { it.copy(editHistory = current.copy(isOpen = true, selectedEdit = null)) }
+            return
+        }
+        editJob = viewModelScope.launch {
+            _state.update { it.copy(editHistory = ConversationEditHistoryUiState(targetNodeId = nodeId, isOpen = true, isLoading = true)) }
+            when (val result = editRepository.getEdits(nodeId)) {
+                is ApiResult.Success -> _state.update { it.copy(editHistory = it.editHistory.copy(items = result.data.items, hasNextPage = result.data.hasNextPage, endCursor = result.data.endCursor, isLoading = false)) }
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(editHistory = it.editHistory.copy(isLoading = false, loadFailed = true)) } }
+            }
+        }
+    }
+    fun loadMoreEditHistory() {
+        val history = _state.value.editHistory
+        val nodeId = history.targetNodeId ?: return
+        if (history.isLoadingMore || !history.hasNextPage) return
+        viewModelScope.launch {
+            _state.update { it.copy(editHistory = it.editHistory.copy(isLoadingMore = true)) }
+            when (val result = editRepository.getEdits(nodeId, history.endCursor)) {
+                is ApiResult.Success -> _state.update { it.copy(editHistory = it.editHistory.copy(items = it.editHistory.items + result.data.items, hasNextPage = result.data.hasNextPage, endCursor = result.data.endCursor, isLoadingMore = false)) }
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(editHistory = it.editHistory.copy(isLoadingMore = false)) } }
+            }
+        }
+    }
+    fun selectEdit(edit: ConversationEdit) = _state.update { it.copy(editHistory = it.editHistory.copy(selectedEdit = edit)) }
+    fun clearSelectedEdit() = _state.update { it.copy(editHistory = it.editHistory.copy(selectedEdit = null)) }
+    fun closeEditHistory() = _state.update { it.copy(editHistory = it.editHistory.copy(isOpen = false, selectedEdit = null)) }
+    fun retryEditHistory() { _state.value.editHistory.targetNodeId?.let(::openEditHistory) }
 
     fun loadMoreComments() {
         if (_state.value.isLoadingMore || !_state.value.hasMoreComments) return

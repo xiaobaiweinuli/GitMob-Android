@@ -103,6 +103,45 @@ data class RestRepoCommitResponse(
 )
 
 @Serializable
+data class RestRepoCompareResponse(
+    val status: String = "",
+    @SerialName("ahead_by") val aheadBy: Int = 0,
+    @SerialName("behind_by") val behindBy: Int = 0,
+    @SerialName("total_commits") val totalCommits: Int = 0,
+    val commits: List<RestRepoCompareCommit> = emptyList(),
+    val files: List<RestRepoCommitFile> = emptyList(),
+)
+
+@Serializable
+data class RestRepoCompareCommit(
+    val sha: String,
+    val commit: RestRepoCompareCommitData,
+    val author: RestRepoCompareActor? = null,
+    val committer: RestRepoCompareActor? = null,
+    @SerialName("html_url") val htmlUrl: String? = null,
+)
+
+@Serializable
+data class RestRepoCompareCommitData(
+    val message: String = "",
+    @SerialName("author") val authorData: RestRepoCompareSignature? = null,
+    @SerialName("committer") val committerData: RestRepoCompareSignature? = null,
+)
+
+@Serializable
+data class RestRepoCompareSignature(
+    val name: String? = null,
+    val email: String? = null,
+    val date: String? = null,
+)
+
+@Serializable
+data class RestRepoCompareActor(
+    val login: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+)
+
+@Serializable
 data class RestRepoCommitFile(
     val sha: String? = null,
     val filename: String,

@@ -639,6 +639,9 @@ data class RepoIssueNode(
     val authorAssociation: String = "NONE",
     val createdAt: String,
     val updatedAt: String,
+    val includesCreatedEdit: Boolean = false,
+    val lastEditedAt: String? = null,
+    val editor: SimpleUserNode? = null,
     val comments: RepoIssueCommentConnectionNode,
     val labels: RepoIssueLabelConnectionNode? = null,
     val assignees: RepoIssueAssigneeConnectionNode? = null,
@@ -671,15 +674,18 @@ data class RepoIssueCommentNode(
     val bodyHTML: String = "",
     val createdAt: String,
     val updatedAt: String,
+    val includesCreatedEdit: Boolean = false,
+    val lastEditedAt: String? = null,
+    val editor: SimpleUserNode? = null,
     val viewerDidAuthor: Boolean = false,
     val viewerCanUpdate: Boolean = false,
     val viewerCanDelete: Boolean = false,
     val viewerCanReact: Boolean = false,
 )
 
-@Serializable data class RepoIssueLabelConnectionNode(val nodes: List<RepoIssueLabelNode> = emptyList())
+@Serializable data class RepoIssueLabelConnectionNode(val nodes: List<RepoIssueLabelNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode(false, null))
 @Serializable data class RepoIssueLabelNode(val id: String, val name: String, val color: String, val description: String? = null)
-@Serializable data class RepoIssueAssigneeConnectionNode(val nodes: List<SimpleUserNode> = emptyList())
+@Serializable data class RepoIssueAssigneeConnectionNode(val nodes: List<SimpleUserNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode(false, null))
 @Serializable data class RepoIssueMilestoneNode(val id: String, val number: Int, val title: String, val state: String, val dueOn: String? = null)
 
 @Serializable
@@ -696,7 +702,7 @@ data class RepoIssueDetailRepositoryNode(
 @Serializable data class RepoLabelsRepositoryNode(val labels: RepoIssueLabelConnectionNode? = null)
 @Serializable data class RepoMilestonesQueryData(val repository: RepoMilestonesRepositoryNode? = null)
 @Serializable data class RepoMilestonesRepositoryNode(val milestones: RepoMilestoneConnectionNode? = null)
-@Serializable data class RepoMilestoneConnectionNode(val nodes: List<RepoIssueMilestoneNode> = emptyList())
+@Serializable data class RepoMilestoneConnectionNode(val nodes: List<RepoIssueMilestoneNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode(false, null))
 @Serializable data class RepoAssignableUsersQueryData(val repository: RepoAssignableUsersRepositoryNode? = null)
 @Serializable data class RepoAssignableUsersRepositoryNode(val assignableUsers: RepoIssueAssigneeConnectionNode? = null)
 @Serializable data class RepoIssueFormContextQueryData(val repository: RepoIssueFormContextRepositoryNode? = null)

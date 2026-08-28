@@ -22,6 +22,7 @@ import com.gitmob.app.data.model.*
 import com.gitmob.app.navigation.ConversationComposerTarget
 import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
+import com.gitmob.app.ui.common.ConversationEditHistorySheet
 import com.gitmob.app.ui.common.quoteMarkdown
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,6 +41,7 @@ fun RepoIssueDetailScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var pageMenuOpen by remember { mutableStateOf(false) }
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.issue_title_number, number)) },
@@ -88,6 +90,7 @@ fun RepoIssueDetailScreen(
                 onEditComment = { onCompose(ConversationComposeRequest(ConversationComposerTarget.ISSUE_COMMENT, state.issue!!.id, it.body.orEmpty(), commentId = it.id)) },
                 onQuoteComment = { onCompose(ConversationComposeRequest(ConversationComposerTarget.ISSUE_COMMENT, state.issue!!.id, quoteMarkdown(it.body.orEmpty()))) },
                 onDeleteComment = viewModel::confirmDeleteComment,
+                onEditHistory = viewModel::openEditHistory,
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
         }
@@ -109,6 +112,20 @@ fun RepoIssueDetailScreen(
         dismissButton = { TextButton({ viewModel.confirmDeleteIssue(false) }) { Text(stringResource(R.string.common_cancel)) } },
         confirmButton = { TextButton({ viewModel.deleteIssue(onBack) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.common_delete)) } },
     )
+
+    if (state.editHistory.isOpen) ConversationEditHistorySheet(
+        edits = state.editHistory.items,
+        isLoading = state.editHistory.isLoading,
+        isLoadingMore = state.editHistory.isLoadingMore,
+        loadFailed = state.editHistory.loadFailed,
+        hasNextPage = state.editHistory.hasNextPage,
+        selectedEdit = state.editHistory.selectedEdit,
+        onDismiss = viewModel::closeEditHistory,
+        onLoadMore = viewModel::loadMoreEditHistory,
+        onRetry = viewModel::retryEditHistory,
+        onSelect = viewModel::selectEdit,
+        onClearSelected = viewModel::clearSelectedEdit,
+    )
 }
 
 @Composable
@@ -122,6 +139,7 @@ private fun IssueConversation(
     onEditComment: (IssueComment) -> Unit,
     onQuoteComment: (IssueComment) -> Unit,
     onDeleteComment: (IssueComment?) -> Unit,
+    onEditHistory: (String) -> Unit,
     modifier: Modifier,
 ) {
     LazyColumn(modifier, contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -136,6 +154,8 @@ private fun IssueConversation(
                 isThreadAuthor = true,
                 onQuoteReply = onQuoteIssue,
                 onEdit = onEditIssue.takeIf { issue.viewerCanUpdate },
+                editSummary = issue.editSummary,
+                onEditHistoryClick = { onEditHistory(issue.id) },
             )
         }
         item { Text(stringResource(R.string.issue_comments_count, issue.commentCount), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
@@ -150,6 +170,8 @@ private fun IssueConversation(
                 onQuoteReply = { onQuoteComment(comment) },
                 onEdit = ({ onEditComment(comment) }).takeIf { comment.viewerCanUpdate },
                 onDelete = ({ onDeleteComment(comment) }).takeIf { comment.viewerCanDelete },
+                editSummary = comment.editSummary,
+                onEditHistoryClick = { onEditHistory(comment.id) },
             )
         }
         if (hasMoreComments) item { LaunchedEffect(comments.size) { onLoadMore() } }

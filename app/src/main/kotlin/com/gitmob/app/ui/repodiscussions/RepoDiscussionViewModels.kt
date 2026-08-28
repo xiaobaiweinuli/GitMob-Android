@@ -11,6 +11,8 @@ import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
 import com.gitmob.app.data.repository.RepoDiscussionRepository
+import com.gitmob.app.data.repository.ConversationEditRepository
+import com.gitmob.app.ui.common.ConversationEditHistoryUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -82,6 +84,7 @@ data class RepoDiscussionDetailUiState(
     val loadFailed: Boolean = false,
     val pendingDeleteComment: RepoDiscussionComment? = null,
     val pendingDeleteDiscussion: Boolean = false,
+    val editHistory: ConversationEditHistoryUiState = ConversationEditHistoryUiState(),
 )
 
 @HiltViewModel
@@ -89,14 +92,47 @@ class RepoDiscussionDetailViewModel @Inject constructor(
     private val repository: RepoDiscussionRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
+    private val editRepository: ConversationEditRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(RepoDiscussionDetailUiState())
     val state: StateFlow<RepoDiscussionDetailUiState> = _state.asStateFlow()
     private var owner = ""; private var name = ""; private var number = 0; private var cursor: String? = null; private var initialized = false
+    private var editJob: Job? = null
     fun init(owner: String, name: String, number: Int, permission: RepoPermission?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; this.number = number; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } }; observeCommentChanges(); load() }
     private fun observeCommentChanges() { viewModelScope.launch { repoUpdateEventBus.events.filterIsInstance<RepoUpdateEvent.DiscussionCommentsChanged>().collect { event -> if (event.owner == owner && event.name == name && event.number == number) load() } } }
     fun load() { cursor = null; viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getDiscussion(owner, name, number)) { is ApiResult.Success -> apply(result.data); is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun retry() = load()
+    fun openEditHistory(nodeId: String) {
+        editJob?.cancel()
+        val current = _state.value.editHistory
+        if (current.targetNodeId == nodeId && current.items.isNotEmpty()) {
+            _state.update { it.copy(editHistory = current.copy(isOpen = true, selectedEdit = null)) }
+            return
+        }
+        editJob = viewModelScope.launch {
+            _state.update { it.copy(editHistory = ConversationEditHistoryUiState(targetNodeId = nodeId, isOpen = true, isLoading = true)) }
+            when (val result = editRepository.getEdits(nodeId)) {
+                is ApiResult.Success -> _state.update { it.copy(editHistory = it.editHistory.copy(items = result.data.items, hasNextPage = result.data.hasNextPage, endCursor = result.data.endCursor, isLoading = false, loadFailed = false)) }
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(editHistory = it.editHistory.copy(isLoading = false, loadFailed = true)) } }
+            }
+        }
+    }
+    fun loadMoreEditHistory() {
+        val history = _state.value.editHistory
+        val nodeId = history.targetNodeId ?: return
+        if (history.isLoadingMore || !history.hasNextPage) return
+        viewModelScope.launch {
+            _state.update { it.copy(editHistory = it.editHistory.copy(isLoadingMore = true)) }
+            when (val result = editRepository.getEdits(nodeId, history.endCursor)) {
+                is ApiResult.Success -> _state.update { it.copy(editHistory = it.editHistory.copy(items = it.editHistory.items + result.data.items, hasNextPage = result.data.hasNextPage, endCursor = result.data.endCursor, isLoadingMore = false)) }
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(editHistory = it.editHistory.copy(isLoadingMore = false, loadFailed = true)) } }
+            }
+        }
+    }
+    fun selectEdit(edit: ConversationEdit) = _state.update { it.copy(editHistory = it.editHistory.copy(selectedEdit = edit)) }
+    fun clearSelectedEdit() = _state.update { it.copy(editHistory = it.editHistory.copy(selectedEdit = null)) }
+    fun closeEditHistory() = _state.update { it.copy(editHistory = it.editHistory.copy(isOpen = false, selectedEdit = null)) }
+    fun retryEditHistory() { _state.value.editHistory.targetNodeId?.let(::openEditHistory) }
     fun loadMoreComments() { val state = _state.value; if (!state.hasMoreComments) return; viewModelScope.launch { when (val result = repository.getDiscussion(owner, name, number, cursor)) { is ApiResult.Success -> { cursor = result.data.commentsEndCursor; _state.update { it.copy(comments = it.comments + result.data.comments, hasMoreComments = result.data.hasNextComments) } }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
     fun addComment(body: String, replyToId: String? = null, done: () -> Unit = {}) { val d = _state.value.discussion ?: return; if (body.isBlank() || _state.value.isSubmittingComment) return; viewModelScope.launch { _state.update { it.copy(isSubmittingComment = true) }; when (val result = repository.addComment(d.id, body.trim(), replyToId)) { is ApiResult.Success -> { _state.update { it.copy(comments = it.comments + result.data, discussion = it.discussion?.copy(commentCount = it.discussion.commentCount + 1), isSubmittingComment = false) }; done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isSubmittingComment = false) } } } } }
     fun updateComment(comment: RepoDiscussionComment, body: String, done: () -> Unit = {}) { if (!comment.viewerCanUpdate || body.isBlank() || _state.value.isSubmittingComment) return; viewModelScope.launch { _state.update { it.copy(isSubmittingComment = true) }; when (val result = repository.updateComment(comment.id, body.trim())) { is ApiResult.Success -> { _state.update { it.copy(comments = it.comments.map { value -> if (value.id == comment.id) result.data else value }, isSubmittingComment = false) }; done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isSubmittingComment = false) } } } } }

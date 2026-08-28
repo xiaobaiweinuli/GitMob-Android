@@ -32,6 +32,52 @@ import javax.inject.Singleton
 @Singleton
 class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
 
+    /** REST commit comparison. Pagination is deliberately hidden in this repository API. */
+    suspend fun compare(
+        baseOwner: String,
+        baseRepository: String,
+        baseRef: String,
+        headOwner: String,
+        headRepository: String,
+        headRef: String,
+        page: Int = 1,
+    ): ApiResult<RepoComparisonResult> = safeCall {
+        require(baseRef.isNotBlank() && headRef.isNotBlank()) { "Compare refs must not be blank" }
+        val sameRepository = baseOwner == headOwner && baseRepository == headRepository
+        fun refPath(value: String) = value.replace("%", "%25").replace("/", "%2F").replace(" ", "%20")
+        val basehead = if (sameRepository) {
+            "${refPath(baseRef)}...${refPath(headRef)}"
+        } else {
+            "$baseOwner:${refPath(baseRef)}...$headOwner:${refPath(headRef)}"
+        }
+        val response = try {
+            api.get<RestRepoCompareResponse>(
+                "/repos/$baseOwner/$baseRepository/compare/$basehead?page=$page&per_page=${PageSize.COMPARE_COMMITS}",
+            )
+        } catch (error: HttpStatusException) {
+            if (error.code == 404 && error.message.orEmpty().contains("No common ancestor", ignoreCase = true)) {
+                return@safeCall RepoComparisonResult.NoCommonAncestor
+            }
+            throw error
+        }
+        val files = response.files.take(300).map(::toChangedFile)
+        val commits = response.commits.map(::toCompareCommit)
+        RepoComparisonResult.Available(RepoComparison(
+            refs = RepoComparisonRefs(baseOwner, baseRepository, baseRef, headOwner, headRepository, headRef),
+            status = response.status,
+            aheadBy = response.aheadBy,
+            behindBy = response.behindBy,
+            totalCommits = response.totalCommits,
+            commits = commits,
+            files = files,
+            additions = files.sumOf { it.additions },
+            deletions = files.sumOf { it.deletions },
+            filesTruncated = response.files.size >= 300,
+            commitsPage = page,
+            commitsHasNextPage = page * PageSize.COMPARE_COMMITS < response.totalCommits,
+        ))
+    }
+
     suspend fun getCodeTree(owner: String, name: String, ref: String, path: String = ""): ApiResult<RepoCodeTree> = safeCall {
         val expression = if (path.isBlank()) "$ref:" else "$ref:$path"
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
@@ -390,6 +436,21 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
         rawUrl = file.rawUrl,
         contentsUrl = file.contentsUrl,
         oid = file.sha,
+    )
+
+    private fun toCompareCommit(commit: RestRepoCompareCommit) = RepoCommitSummary(
+        oid = commit.sha,
+        abbreviatedOid = commit.sha.take(7),
+        headline = commit.commit.message.lineSequence().firstOrNull().orEmpty(),
+        body = commit.commit.message.lineSequence().drop(1).joinToString("\n").trim(),
+        authoredDate = commit.commit.authorData?.date,
+        committedDate = commit.commit.committerData?.date,
+        author = commit.author?.let { RepoGitActor(it.login, it.login, null, it.avatarUrl, commit.commit.authorData?.date) },
+        committer = commit.committer?.let { RepoGitActor(it.login, it.login, null, it.avatarUrl, commit.commit.committerData?.date) },
+        additions = 0,
+        deletions = 0,
+        changedFiles = null,
+        url = commit.htmlUrl,
     )
 
     private fun commitFields(includeHistory: Boolean = true) = buildString {

@@ -15,11 +15,49 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 @Singleton
 class RepoPullRequestRepository @Inject constructor(
     private val api: GHApiClient,
 ) {
+    suspend fun getBranches(owner: String, name: String): ApiResult<List<RepoBranch>> = safeCall {
+        val query = "query PullRequestBranches(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) { defaultBranchRef { name } refs(refPrefix: \"refs/heads/\", first: ${PageSize.BRANCHES}) { nodes { id name target { oid } } } } }"
+        val repository = api.graphQL<PullRequestMetadataQueryData>(query, repoVariables(owner, name)).repository ?: error("Repository not found")
+        val defaultName = repository.defaultBranchRef?.name
+        repository.refs?.nodes.orEmpty().map { RepoBranch(it.id, it.name, it.name == defaultName, it.target?.oid) }.sortedByDescending(RepoBranch::isDefault)
+    }
+    suspend fun findOpenPullRequest(
+        baseOwner: String,
+        baseRepository: String,
+        baseRef: String,
+        headOwner: String,
+        headRef: String,
+    ): ApiResult<ExistingRepoPullRequest?> = safeCall {
+        val base = encode(baseRef)
+        val head = encode("$headOwner:$headRef")
+        api.get<List<RestOpenPullRequest>>(
+            "/repos/$baseOwner/$baseRepository/pulls?state=open&base=$base&head=$head&per_page=1",
+        ).firstOrNull()?.let {
+            ExistingRepoPullRequest(
+                number = it.number,
+                title = it.title,
+                url = it.htmlUrl,
+                state = when (it.state.uppercase()) {
+                    "CLOSED" -> RepoPullRequestState.CLOSED
+                    else -> RepoPullRequestState.OPEN
+                },
+                isDraft = it.draft,
+                author = it.user?.let { user -> SimpleUser(user.login, null, user.avatarUrl, null, user.nodeId) },
+                updatedAt = it.updatedAt,
+                baseRefName = it.base?.ref.orEmpty(),
+                headRefName = it.head?.ref.orEmpty(),
+                commentCount = it.comments,
+                labels = it.labels.map { label -> IssueLabel(label.nodeId, label.name, label.color, label.description) },
+            )
+        }
+    }
     suspend fun getPullRequests(
         owner: String,
         name: String,
@@ -27,7 +65,7 @@ class RepoPullRequestRepository @Inject constructor(
         after: String? = null,
     ): ApiResult<RepoPullRequestPage> = safeCall {
         val query = """
-            query RepoPullRequests(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String, ${'$'}states: [PullRequestState!], ${'$'}orderBy: IssueOrder!, ${'$'}labels: [String!], ${'$'}baseRefName: String, ${'$'}headRefName: String) {
+            query RepoPullRequests(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String, ${'$'}states: [PullRequestState!], ${'$'}orderBy: IssueOrder!, ${'$'}labels: [String!]) {
                 repository(owner: ${'$'}owner, name: ${'$'}name) {
                     id viewerPermission hasPullRequestsEnabled pullRequestCreationPolicy
                     defaultBranchRef { name }
@@ -35,7 +73,6 @@ class RepoPullRequestRepository @Inject constructor(
                     pullRequests(
                         first: ${PageSize.REPO_ISSUES}, after: ${'$'}after,
                         states: ${'$'}states, labels: ${'$'}labels,
-                        baseRefName: ${'$'}baseRefName, headRefName: ${'$'}headRefName,
                         orderBy: ${'$'}orderBy
                     ) {
                         totalCount nodes { ${pullRequestFields()} }
@@ -51,8 +88,6 @@ class RepoPullRequestRepository @Inject constructor(
             put("states", JsonArray(states(filter.state).map(::JsonPrimitive)))
             put("orderBy", order(filter.sort))
             if (filter.labels.isNotEmpty()) put("labels", JsonArray(filter.labels.map(::JsonPrimitive)))
-            filter.baseRefName?.takeIf(String::isNotBlank)?.let { put("baseRefName", JsonPrimitive(it)) }
-            filter.headRefName?.takeIf(String::isNotBlank)?.let { put("headRefName", JsonPrimitive(it)) }
         }).repository ?: error("Repository not found")
         val permission = parsePermission(repository.viewerPermission)
         RepoPullRequestPage(
@@ -86,7 +121,7 @@ class RepoPullRequestRepository @Inject constructor(
                             nodes { ${commentFields()} }
                             pageInfo { hasNextPage endCursor }
                         }
-                        reviews(first: 30) { nodes { id url author { login avatarUrl } authorAssociation body bodyHTML state submittedAt viewerCanUpdate viewerCanDelete } }
+                        reviews(first: 30) { nodes { id url author { login avatarUrl } authorAssociation body bodyHTML state submittedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } viewerCanUpdate viewerCanDelete } }
                         reviewThreads(first: 50) {
                             nodes {
                                 id path line isResolved isOutdated viewerCanReply viewerCanResolve viewerCanUnresolve
@@ -141,49 +176,108 @@ class RepoPullRequestRepository @Inject constructor(
                 viewer { login }
                 repository(owner: ${'$'}owner, name: ${'$'}name) {
                     id defaultBranchRef { name }
-                    refs(refPrefix: "refs/heads/", first: 100) { nodes { id name target { oid } } }
-                    forks(first: 20, ownerAffiliations: [OWNER]) {
-                        nodes { id name owner { login } refs(refPrefix: "refs/heads/", first: 100) { nodes { id name target { oid } } } }
-                    }
-                    labels(first: 100) { nodes { id name color description } }
-                    milestones(first: 100, states: [OPEN]) { nodes { id number title state dueOn } }
-                    assignableUsers(first: 100) { nodes { id login name avatarUrl bio } }
-                    mentionableUsers(first: 100) { nodes { id login name avatarUrl bio } }
+                    refs(refPrefix: "refs/heads/", first: ${PageSize.BRANCHES}) { nodes { id name target { oid } } pageInfo { hasNextPage endCursor } }
+                    labels(first: ${PageSize.METADATA}) { nodes { id name color description } pageInfo { hasNextPage endCursor } }
+                    milestones(first: ${PageSize.METADATA}, states: [OPEN]) { nodes { id number title state dueOn } pageInfo { hasNextPage endCursor } }
+                    assignableUsers(first: ${PageSize.METADATA}) { nodes { id login name avatarUrl bio } pageInfo { hasNextPage endCursor } }
+                    mentionableUsers(first: ${PageSize.METADATA}) { nodes { id login name avatarUrl bio } pageInfo { hasNextPage endCursor } }
                 }
             }
         """.trimIndent()
         val data = api.graphQL<PullRequestMetadataQueryData>(query, repoVariables(owner, name))
         val repository = data.repository ?: error("Repository not found")
-        val repositories = buildList {
-            add(repository.toHeadRepository(owner, name))
-            repository.forks?.nodes.orEmpty().forEach { fork ->
-                add(
-                    RepoPullRequestHeadRepository(
-                        id = fork.id,
-                        owner = fork.owner.login,
-                        name = fork.name,
-                        branches = fork.refs?.nodes.orEmpty().map(::toBranch),
-                    ),
-                )
-            }
-        }
+        val repositories = listOf(repository.toHeadRepository(owner, name))
+        val branches = loadAllRefs(owner, name, repository.refs?.nodes.orEmpty(), repository.refs?.pageInfo)
+        val labels = loadAllLabels(owner, name, repository.labels?.nodes.orEmpty(), repository.labels?.pageInfo)
+        val milestones = loadAllMilestones(owner, name, repository.milestones?.nodes.orEmpty(), repository.milestones?.pageInfo)
+        val assignees = loadAllUsers(owner, name, "assignableUsers", repository.assignableUsers?.nodes.orEmpty(), repository.assignableUsers?.pageInfo)
+        val reviewers = loadAllUsers(owner, name, "mentionableUsers", repository.mentionableUsers?.nodes.orEmpty(), repository.mentionableUsers?.pageInfo)
         RepoPullRequestCreateMetadata(
             repositoryId = repository.id,
             viewerLogin = data.viewer.login,
             defaultBranchName = repository.defaultBranchRef?.name,
-            repositories = repositories,
-            labels = repository.labels?.nodes.orEmpty().map(::toLabel),
-            milestones = repository.milestones?.nodes.orEmpty().map(::toMilestone),
-            assignees = repository.assignableUsers?.nodes.orEmpty().map(::toUser),
-            reviewers = repository.mentionableUsers?.nodes.orEmpty().map(::toUser),
+            repositories = repositories.map { it.copy(branches = branches) },
+            labels = labels,
+            milestones = milestones,
+            assignees = assignees,
+            reviewers = reviewers,
         )
     }
 
     /** 仓库全部标签，供列表筛选的「标签」多选胶囊使用 */
     suspend fun getLabels(owner: String, name: String): ApiResult<List<IssueLabel>> = safeCall {
-        val query = "query RepoLabels(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) { labels(first: 100) { nodes { id name color description } } } }"
-        api.graphQL<RepoLabelsQueryData>(query, repoVariables(owner, name)).repository?.labels?.nodes.orEmpty().map(::toLabel)
+        val query = "query RepoLabels(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { labels(first: ${PageSize.METADATA}, after: \$after) { nodes { id name color description } pageInfo { hasNextPage endCursor } } } }"
+        val labels = mutableListOf<IssueLabel>()
+        var after: String? = null
+        do {
+            val variables = buildMap {
+                put("owner", JsonPrimitive(owner))
+                put("name", JsonPrimitive(name))
+                after?.let { put("after", JsonPrimitive(it)) }
+            }
+            val page = api.graphQL<RepoLabelsQueryData>(query, variables).repository?.labels ?: break
+            labels += page.nodes.map(::toLabel)
+            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
+        } while (after != null)
+        labels
     }
+
+    private suspend fun loadAllRefs(owner: String, name: String, initial: List<RefNode>, pageInfo: PageInfoNode?): List<RepoBranch> {
+        val nodes = initial.toMutableList()
+        var after = pageInfo?.endCursor.takeIf { pageInfo?.hasNextPage == true }
+        val query = "query PullRequestBranches(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { refs(refPrefix: \"refs/heads/\", first: ${PageSize.BRANCHES}, after: \$after) { nodes { id name target { oid } } pageInfo { hasNextPage endCursor } } } }"
+        while (after != null) {
+            val page = api.graphQL<PullRequestMetadataQueryData>(query, metadataVariables(owner, name, after)).repository?.refs ?: break
+            nodes += page.nodes
+            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
+        }
+        return nodes.distinctBy(RefNode::id).map(::toBranch)
+    }
+
+    private suspend fun loadAllLabels(owner: String, name: String, initial: List<LabelNode>, pageInfo: PageInfoNode?): List<IssueLabel> {
+        val nodes = initial.toMutableList()
+        var after = pageInfo?.endCursor.takeIf { pageInfo?.hasNextPage == true }
+        val query = "query PullRequestLabels(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { labels(first: ${PageSize.METADATA}, after: \$after) { nodes { id name color description } pageInfo { hasNextPage endCursor } } } }"
+        while (after != null) {
+            val page = api.graphQL<PullRequestMetadataQueryData>(query, metadataVariables(owner, name, after)).repository?.labels ?: break
+            nodes += page.nodes
+            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
+        }
+        return nodes.distinctBy(LabelNode::id).map(::toLabel)
+    }
+
+    private suspend fun loadAllMilestones(owner: String, name: String, initial: List<MilestoneNode>, pageInfo: PageInfoNode?): List<IssueMilestone> {
+        val nodes = initial.toMutableList()
+        var after = pageInfo?.endCursor.takeIf { pageInfo?.hasNextPage == true }
+        val query = "query PullRequestMilestones(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { milestones(first: ${PageSize.METADATA}, after: \$after, states: [OPEN]) { nodes { id number title state dueOn } pageInfo { hasNextPage endCursor } } } }"
+        while (after != null) {
+            val page = api.graphQL<PullRequestMetadataQueryData>(query, metadataVariables(owner, name, after)).repository?.milestones ?: break
+            nodes += page.nodes
+            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
+        }
+        return nodes.distinctBy(MilestoneNode::id).map(::toMilestone)
+    }
+
+    private suspend fun loadAllUsers(owner: String, name: String, field: String, initial: List<UserNode>, pageInfo: PageInfoNode?): List<SimpleUser> {
+        require(field == "assignableUsers" || field == "mentionableUsers")
+        val nodes = initial.toMutableList()
+        var after = pageInfo?.endCursor.takeIf { pageInfo?.hasNextPage == true }
+        val query = "query PullRequestUsers(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { $field(first: ${PageSize.METADATA}, after: \$after) { nodes { id login name avatarUrl bio } pageInfo { hasNextPage endCursor } } } }"
+        while (after != null) {
+            val repository = api.graphQL<PullRequestMetadataQueryData>(query, metadataVariables(owner, name, after)).repository ?: break
+            val page = if (field == "assignableUsers") repository.assignableUsers else repository.mentionableUsers
+            page ?: break
+            nodes += page.nodes
+            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
+        }
+        return nodes.distinctBy(UserNode::id).map(::toUser)
+    }
+
+    private fun metadataVariables(owner: String, name: String, after: String) = mapOf(
+        "owner" to JsonPrimitive(owner),
+        "name" to JsonPrimitive(name),
+        "after" to JsonPrimitive(after),
+    )
 
     suspend fun createPullRequest(input: CreateRepoPullRequestInput): ApiResult<RepoPullRequest> = mutatePullRequest(
         "createPullRequest",
@@ -191,7 +285,10 @@ class RepoPullRequestRepository @Inject constructor(
         JsonObject(buildMap {
             put("repositoryId", JsonPrimitive(input.repositoryId))
             put("baseRefName", JsonPrimitive(input.baseRefName))
-            put("headRefName", JsonPrimitive(input.headRefName))
+            val headRef = input.headOwner?.takeIf { input.headRepositoryId != null }
+                ?.let { "$it:${input.headRefName}" }
+                ?: input.headRefName
+            put("headRefName", JsonPrimitive(headRef))
             input.headRepositoryId?.let { put("headRepositoryId", JsonPrimitive(it)) }
             put("title", JsonPrimitive(input.title))
             put("body", JsonPrimitive(input.body))
@@ -293,10 +390,14 @@ class RepoPullRequestRepository @Inject constructor(
         toReview(review)
     }
 
-    suspend fun requestReviews(id: String, logins: List<String>): ApiResult<Unit> = safeCall {
-        val mutation = "mutation RequestPullRequestReviews(${'$'}input: RequestReviewsByLoginInput!) { requestReviewsByLogin(input: ${'$'}input) { clientMutationId } }"
+    suspend fun requestReviews(id: String, userIds: List<String>): ApiResult<Unit> = safeCall {
+        val mutation = "mutation RequestPullRequestReviews(${'$'}input: RequestReviewsInput!) { requestReviews(input: ${'$'}input) { clientMutationId } }"
         with(api.graphQL<RequestReviewsData>(mutation, mapOf("input" to JsonObject(mapOf(
-            "pullRequestId" to JsonPrimitive(id), "userLogins" to JsonArray(logins.map(::JsonPrimitive)),
+            "pullRequestId" to JsonPrimitive(id),
+            "userIds" to JsonArray(userIds.map(::JsonPrimitive)),
+            "botIds" to JsonArray(emptyList()),
+            "teamIds" to JsonArray(emptyList()),
+            "union" to JsonPrimitive(false),
         ))))) { }
     }
 
@@ -347,6 +448,7 @@ class RepoPullRequestRepository @Inject constructor(
     private fun repoVariables(owner: String, name: String) = mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name))
 
     private fun parsePermission(value: String?) = value?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() } ?: RepoPermission.NONE
+    private fun encode(value: String) = URLEncoder.encode(value, StandardCharsets.UTF_8.toString()).replace("+", "%20")
     private fun parseCreationPolicy(value: String?) = value?.let { runCatching { PullRequestCreationPolicy.valueOf(it) }.getOrNull() } ?: PullRequestCreationPolicy.UNKNOWN
 
     private fun states(value: RepoPullRequestStateFilter) = when (value) {
@@ -407,11 +509,13 @@ class RepoPullRequestRepository @Inject constructor(
         autoMergeEnabled = node.autoMergeRequest != null,
         url = node.url,
         authorAssociation = association(node.authorAssociation),
+        editSummary = ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.toDomain()),
     )
 
     private fun toComment(node: PullRequestCommentNode) = RepoPullRequestComment(
         node.id, node.author?.toDomain(), node.body, node.bodyHTML, node.createdAt, node.updatedAt,
         node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact, node.url, association(node.authorAssociation),
+        ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.toDomain()),
     )
 
     private fun toReview(node: PullRequestReviewNode) = RepoPullRequestReview(
@@ -419,12 +523,14 @@ class RepoPullRequestRepository @Inject constructor(
         state = node.state, submittedAt = node.submittedAt, viewerCanUpdate = node.viewerCanUpdate,
         viewerCanDelete = node.viewerCanDelete, url = node.url,
         authorAssociation = association(node.authorAssociation),
+        editSummary = ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.toDomain()),
     )
 
     private fun toReviewComment(node: PullRequestReviewCommentNode) = RepoPullRequestReviewComment(
         node.id, node.author?.toDomain(), node.body, node.bodyHTML, node.path, node.line, node.originalLine,
         node.outdated, node.createdAt, node.viewerCanUpdate, node.viewerCanDelete,
         node.url, association(node.authorAssociation),
+        ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.toDomain()),
     )
 
     private fun toThread(node: PullRequestReviewThreadNode) = RepoPullRequestReviewThread(
@@ -457,7 +563,7 @@ class RepoPullRequestRepository @Inject constructor(
 
     companion object {
         private fun pullRequestFields() = """
-            id url number title body bodyHTML state isDraft locked createdAt updatedAt
+            id url number title body bodyHTML state isDraft locked createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl }
             author { login avatarUrl } authorAssociation
             baseRefName headRefName headRepository { nameWithOwner }
             totalCommentsCount additions deletions changedFiles mergeable mergeStateStatus reviewDecision
@@ -471,12 +577,12 @@ class RepoPullRequestRepository @Inject constructor(
         """.trimIndent()
 
         private fun commentFields() = """
-            id url author { login avatarUrl } authorAssociation body bodyHTML createdAt updatedAt
+            id url author { login avatarUrl } authorAssociation body bodyHTML createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl }
             viewerCanUpdate viewerCanDelete viewerCanReact
         """.trimIndent()
 
         private fun reviewCommentFields() = """
-            id url author { login avatarUrl } authorAssociation body bodyHTML path line originalLine outdated createdAt
+            id url author { login avatarUrl } authorAssociation body bodyHTML path line originalLine outdated createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl }
             viewerCanUpdate viewerCanDelete
         """.trimIndent()
     }
@@ -489,11 +595,11 @@ class RepoPullRequestRepository @Inject constructor(
 @Serializable private data class MilestoneNode(val id: String, val number: Int, val title: String, val state: String, val dueOn: String? = null)
 @Serializable private data class RefTargetNode(val oid: String? = null)
 @Serializable private data class RefNode(val id: String, val name: String, val target: RefTargetNode? = null)
-@Serializable private data class RefConnectionNode(val nodes: List<RefNode> = emptyList())
+@Serializable private data class RefConnectionNode(val nodes: List<RefNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
 @Serializable private data class DefaultBranchNode(val name: String)
-@Serializable private data class LabelConnectionNode(val nodes: List<LabelNode> = emptyList())
-@Serializable private data class UserConnectionNode(val nodes: List<UserNode> = emptyList())
-@Serializable private data class MilestoneConnectionNode(val nodes: List<MilestoneNode> = emptyList())
+@Serializable private data class LabelConnectionNode(val nodes: List<LabelNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
+@Serializable private data class UserConnectionNode(val nodes: List<UserNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
+@Serializable private data class MilestoneConnectionNode(val nodes: List<MilestoneNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
 @Serializable private data class HeadRepositoryNode(val nameWithOwner: String? = null)
 @Serializable private data class StatusCheckRollupNode(val state: String? = null)
 @Serializable private data class AutoMergeRequestNode(val enabledAt: String? = null)
@@ -507,6 +613,9 @@ class RepoPullRequestRepository @Inject constructor(
     val bodyHTML: String = "",
     val createdAt: String = "",
     val updatedAt: String = "",
+    val includesCreatedEdit: Boolean = false,
+    val lastEditedAt: String? = null,
+    val editor: ActorNode? = null,
     val viewerCanUpdate: Boolean = false,
     val viewerCanDelete: Boolean = false,
     val viewerCanReact: Boolean = false,
@@ -525,6 +634,11 @@ class RepoPullRequestRepository @Inject constructor(
     val bodyHTML: String = "",
     val state: String = "COMMENTED",
     val submittedAt: String? = null,
+    val createdAt: String = "",
+    val updatedAt: String = "",
+    val includesCreatedEdit: Boolean = false,
+    val lastEditedAt: String? = null,
+    val editor: ActorNode? = null,
     val viewerCanUpdate: Boolean = false,
     val viewerCanDelete: Boolean = false,
 )
@@ -541,6 +655,10 @@ class RepoPullRequestRepository @Inject constructor(
     val originalLine: Int? = null,
     val outdated: Boolean = false,
     val createdAt: String = "",
+    val updatedAt: String = "",
+    val includesCreatedEdit: Boolean = false,
+    val lastEditedAt: String? = null,
+    val editor: ActorNode? = null,
     val viewerCanUpdate: Boolean = false,
     val viewerCanDelete: Boolean = false,
 )
@@ -576,6 +694,9 @@ class RepoPullRequestRepository @Inject constructor(
     val authorAssociation: String = "NONE",
     val createdAt: String,
     val updatedAt: String,
+    val includesCreatedEdit: Boolean = false,
+    val lastEditedAt: String? = null,
+    val editor: ActorNode? = null,
     val baseRefName: String,
     val headRefName: String,
     val headRepository: HeadRepositoryNode? = null,
@@ -631,13 +752,13 @@ class RepoPullRequestRepository @Inject constructor(
     val pullRequest: PullRequestNode? = null,
 )
 
-@Serializable private data class ViewerNode(val login: String)
+@Serializable private data class ViewerNode(val login: String = "")
 @Serializable private data class OwnerNode(val login: String)
 @Serializable private data class ForkNode(val id: String, val name: String, val owner: OwnerNode, val refs: RefConnectionNode? = null)
-@Serializable private data class ForkConnectionNode(val nodes: List<ForkNode> = emptyList())
-@Serializable private data class PullRequestMetadataQueryData(val viewer: ViewerNode, val repository: PullRequestMetadataRepositoryNode? = null)
+@Serializable private data class ForkConnectionNode(val nodes: List<ForkNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
+@Serializable private data class PullRequestMetadataQueryData(val viewer: ViewerNode = ViewerNode(), val repository: PullRequestMetadataRepositoryNode? = null)
 @Serializable private data class PullRequestMetadataRepositoryNode(
-    val id: String,
+    val id: String = "",
     val defaultBranchRef: DefaultBranchNode? = null,
     val refs: RefConnectionNode? = null,
     val forks: ForkConnectionNode? = null,
@@ -673,7 +794,7 @@ class RepoPullRequestRepository @Inject constructor(
 @Serializable private data class ClientMutationPayload(val clientMutationId: String? = null)
 @Serializable private data class AddReviewPayload(val pullRequestReview: PullRequestReviewNode? = null)
 @Serializable private data class AddPullRequestReviewData(val addPullRequestReview: AddReviewPayload? = null)
-@Serializable private data class RequestReviewsData(val requestReviewsByLogin: ClientMutationPayload? = null)
+@Serializable private data class RequestReviewsData(val requestReviews: ClientMutationPayload? = null)
 @Serializable private data class ReplyThreadPayload(val comment: PullRequestReviewCommentNode? = null)
 @Serializable private data class ReplyThreadData(val addPullRequestReviewThreadReply: ReplyThreadPayload? = null)
 @Serializable private data class ReviewThreadMutationData(val resolveReviewThread: ReviewThreadPayload? = null, val unresolveReviewThread: ReviewThreadPayload? = null)
@@ -692,4 +813,35 @@ class RepoPullRequestRepository @Inject constructor(
     val changes: Int = 0,
     val patch: String? = null,
     @SerialName("blob_url") val blobUrl: String? = null,
+)
+
+@Serializable private data class RestOpenPullRequest(
+    val number: Int,
+    val title: String = "",
+    @SerialName("html_url") val htmlUrl: String = "",
+    val state: String = "open",
+    val draft: Boolean = false,
+    val user: RestPullRequestUser? = null,
+    @SerialName("updated_at") val updatedAt: String = "",
+    val base: RestPullRequestRef? = null,
+    val head: RestPullRequestRef? = null,
+    val comments: Int = 0,
+    val labels: List<RestPullRequestLabel> = emptyList(),
+)
+
+@Serializable private data class RestPullRequestUser(
+    val login: String = "",
+    @SerialName("node_id") val nodeId: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+)
+
+@Serializable private data class RestPullRequestRef(
+    val ref: String? = null,
+)
+
+@Serializable private data class RestPullRequestLabel(
+    @SerialName("node_id") val nodeId: String = "",
+    val name: String = "",
+    val color: String = "",
+    val description: String? = null,
 )

@@ -58,7 +58,19 @@ sealed interface Route : NavKey
 @Serializable data class RepoIssueEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null, val templateFilename: String? = null) : Route
 @Serializable data class RepoPullRequestsRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoPullRequestDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
-@Serializable data class RepoPullRequestEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoPullRequestEditorRoute(
+    val owner: String,
+    val name: String,
+    val number: Int? = null,
+    val permission: RepoPermission? = null,
+    val baseOwner: String? = null,
+    val baseName: String? = null,
+    val baseRef: String? = null,
+    val headOwner: String? = null,
+    val headName: String? = null,
+    val headRef: String? = null,
+    val headRepositoryId: String? = null,
+) : Route
 @Serializable data class RepoDiscussionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoDiscussionDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoDiscussionEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null) : Route
@@ -83,7 +95,13 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
 @Serializable data class RepoReleaseEditorRoute(val owner: String, val name: String, val releaseId: Long? = null, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoContributorsRoute(val owner: String, val name: String) : Route
 @Serializable data class RepoLicenseRoute(val owner: String, val name: String, val ref: String) : Route
-@Serializable data class RepoBranchesRoute(val owner: String, val name: String, val currentRef: String, val canManageBranchProtection: Boolean) : Route
+@Serializable data class RepoBranchesRoute(
+    val owner: String,
+    val name: String,
+    val currentRef: String,
+    val canPush: Boolean = false,
+    val canManageBranchProtection: Boolean = false,
+) : Route
 @Serializable data class RepoCodeRoute(
     val owner: String,
     val name: String,

@@ -84,6 +84,7 @@ import com.gitmob.app.core.diff.UnifiedDiffParser
 import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.RepoPullRequest
 import com.gitmob.app.data.model.RepoPullRequestCreateMetadata
+import com.gitmob.app.data.model.RepoPullRequestListItem
 import com.gitmob.app.data.model.RepoPullRequestMergeMethod
 import com.gitmob.app.data.model.RepoPullRequestReviewEvent
 import com.gitmob.app.data.model.RepoPullRequestSort
@@ -91,9 +92,11 @@ import com.gitmob.app.data.model.RepoPullRequestState
 import com.gitmob.app.data.model.RepoPullRequestStateFilter
 import com.gitmob.app.data.model.toRepoChangedFile
 import com.gitmob.app.data.model.toRepoCommitSummary
+import com.gitmob.app.data.model.toListItem
 import com.gitmob.app.navigation.ConversationComposerTarget
 import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
+import com.gitmob.app.ui.common.ConversationEditHistorySheet
 import com.gitmob.app.ui.common.CommitStats
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.FilterMultiCapsuleMenu
@@ -111,20 +114,24 @@ fun RepoPullRequestListScreen(
     permission: RepoPermission?,
     onBack: () -> Unit,
     onPullRequestClick: (Int) -> Unit,
-    onCreate: () -> Unit,
+    onCreate: (com.gitmob.app.data.model.RepoPullRequestCreateSelection) -> Unit,
+    onCreateCommitClick: (owner: String, name: String, ref: String, sha: String) -> Unit,
+    onExistingPullRequestClick: (owner: String, name: String, number: Int) -> Unit,
     viewModel: RepoPullRequestListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val canCreate = state.hasPullRequestsEnabled &&
         (state.creationPolicy == PullRequestCreationPolicy.ALL || state.capabilities.canPush)
+    var showCreateSheet by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.common_pull_requests)) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
-                actions = { if (canCreate) IconButton(onClick = onCreate) { Icon(Icons.Default.Add, stringResource(R.string.pr_new)) } },
+                actions = { if (canCreate) IconButton(onClick = { showCreateSheet = true }) { Icon(Icons.Default.Add, stringResource(R.string.pr_new)) } },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
         },
@@ -144,7 +151,10 @@ fun RepoPullRequestListScreen(
                     state.items.isEmpty() -> Text(stringResource(R.string.pr_empty), modifier = Modifier.align(Alignment.Center))
                     else -> LazyColumn(Modifier.fillMaxSize()) {
                         items(state.items, key = { it.id }) { pullRequest ->
-                            PullRequestRow(pullRequest) { onPullRequestClick(pullRequest.number) }
+                            PullRequestListItemRow(
+                                pullRequest = pullRequest.toListItem(),
+                                onClick = { onPullRequestClick(pullRequest.number) },
+                            )
                             HorizontalDivider()
                         }
                         if (state.hasNextPage) item("more") {
@@ -157,8 +167,22 @@ fun RepoPullRequestListScreen(
             }
         }
     }
+    if (showCreateSheet) {
+        RepoPullRequestCreateScreen(
+            owner = owner,
+            name = name,
+            onDismiss = { showCreateSheet = false },
+            onCreate = { selection -> showCreateSheet = false; onCreate(selection) },
+            onCommitClick = { commitOwner, commitName, ref, sha -> showCreateSheet = false; onCreateCommitClick(commitOwner, commitName, ref, sha) },
+            onExistingPullRequestClick = { existingOwner, existingName, number ->
+                showCreateSheet = false
+                onExistingPullRequestClick(existingOwner, existingName, number)
+            },
+        )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PullRequestFilters(state: RepoPullRequestListUiState, viewModel: RepoPullRequestListViewModel) {
     Column {
@@ -196,10 +220,6 @@ private fun PullRequestFilters(state: RepoPullRequestListUiState, viewModel: Rep
                 filterLabel = stringResource(R.string.issue_labels),
             )
         }
-        Row(Modifier.fillMaxWidth()) {
-            RefFilter(R.string.pr_base_branch, state.filter.baseRefName, viewModel::setBase, Modifier.weight(1f))
-            RefFilter(R.string.pr_head_branch, state.filter.headRefName, viewModel::setHead, Modifier.weight(1f))
-        }
         Text(
             text = stringResource(R.string.work_items_count, state.totalCount),
             style = MaterialTheme.typography.labelMedium,
@@ -211,21 +231,8 @@ private fun PullRequestFilters(state: RepoPullRequestListUiState, viewModel: Rep
 }
 
 @Composable
-private fun RefFilter(@StringRes title: Int, value: String?, onChange: (String?) -> Unit, modifier: Modifier) {
-    var text by remember(value) { mutableStateOf(value.orEmpty()) }
-    OutlinedTextField(
-        value = text,
-        onValueChange = { next -> text = next; onChange(next.trim().ifBlank { null }) },
-        label = { Text(stringResource(title)) },
-        placeholder = { Text(stringResource(R.string.common_all)) },
-        singleLine = true,
-        modifier = modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-    )
-}
-
-@Composable
-private fun PullRequestRow(pullRequest: RepoPullRequest, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+internal fun PullRequestListItemRow(pullRequest: RepoPullRequestListItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             Icon(
                 when {
@@ -272,6 +279,7 @@ fun RepoPullRequestDetailScreen(
     var selectedFilePath by rememberSaveable { mutableStateOf<String?>(null) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.pr_number, number)) },
@@ -343,8 +351,10 @@ fun RepoPullRequestDetailScreen(
                                         ),
                                     )
                                 },
-                                onEdit = onEdit.takeIf { state.pullRequest!!.viewerCanUpdate },
-                                modifier = Modifier.padding(12.dp),
+                                 onEdit = onEdit.takeIf { state.pullRequest!!.viewerCanUpdate },
+                                 editSummary = state.pullRequest!!.editSummary,
+                                 onEditHistoryClick = { viewModel.openEditHistory(state.pullRequest!!.id) },
+                                 modifier = Modifier.padding(12.dp),
                             )
                         }
                         items(state.comments, key = { it.id }) { item ->
@@ -374,8 +384,10 @@ fun RepoPullRequestDetailScreen(
                                         ),
                                     )
                                 }).takeIf { item.viewerCanUpdate },
-                                onDelete = ({ viewModel.confirmDeleteComment(item) }).takeIf { item.viewerCanDelete },
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                 onDelete = ({ viewModel.confirmDeleteComment(item) }).takeIf { item.viewerCanDelete },
+                                 editSummary = item.editSummary,
+                                 onEditHistoryClick = { viewModel.openEditHistory(item.id) },
+                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
                             )
                         }
                         if (state.hasMoreComments) item { LaunchedEffect(state.comments.size) { viewModel.loadMoreComments() } }
@@ -421,7 +433,7 @@ fun RepoPullRequestDetailScreen(
                                     url = review.url,
                                     authorAssociation = review.authorAssociation,
                                     isThreadAuthor = review.author?.login == state.pullRequest!!.author?.login,
-                                    onQuoteReply = {
+                                     onQuoteReply = {
                                         onCompose(
                                             ConversationComposeRequest(
                                                 target = ConversationComposerTarget.PULL_REQUEST_COMMENT,
@@ -429,8 +441,10 @@ fun RepoPullRequestDetailScreen(
                                                 initialText = quoteMarkdown(review.body),
                                             ),
                                         )
-                                    },
-                                )
+                                     },
+                                     editSummary = review.editSummary,
+                                     onEditHistoryClick = { viewModel.openEditHistory(review.id) },
+                                 )
                             }
                         }
                         items(state.threads, key = { it.id }) { thread ->
@@ -453,6 +467,8 @@ fun RepoPullRequestDetailScreen(
                                                 ),
                                             )
                                         },
+                                        editSummary = item.editSummary,
+                                        onEditHistoryClick = { viewModel.openEditHistory(item.id) },
                                     )
                                 }
                                 if (thread.viewerCanResolve || thread.viewerCanUnresolve) {
@@ -482,6 +498,19 @@ fun RepoPullRequestDetailScreen(
     }
     if (mergeOpen) MergeDialog(state.allowedMergeMethods, state.pullRequest?.autoMergeEnabled == true, { mergeOpen = false }, viewModel::merge, viewModel::toggleAutoMerge)
     state.pendingDeleteComment?.let { AlertDialog(onDismissRequest = { viewModel.confirmDeleteComment(null) }, title = { Text(stringResource(R.string.issue_delete_comment_title)) }, text = { Text(stringResource(R.string.common_cannot_be_undone)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteComment(null) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = viewModel::deletePendingComment) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } }) }
+    if (state.editHistory.isOpen) ConversationEditHistorySheet(
+        edits = state.editHistory.items,
+        isLoading = state.editHistory.isLoading,
+        isLoadingMore = state.editHistory.isLoadingMore,
+        loadFailed = state.editHistory.loadFailed,
+        hasNextPage = state.editHistory.hasNextPage,
+        selectedEdit = state.editHistory.selectedEdit,
+        onDismiss = viewModel::closeEditHistory,
+        onLoadMore = viewModel::loadMoreEditHistory,
+        onRetry = viewModel::retryEditHistory,
+        onSelect = viewModel::selectEdit,
+        onClearSelected = viewModel::clearSelectedEdit,
+    )
 }
 
 @Composable
