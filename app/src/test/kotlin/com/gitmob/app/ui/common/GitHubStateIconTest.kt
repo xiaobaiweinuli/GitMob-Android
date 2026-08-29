@@ -83,6 +83,10 @@ class GitHubStateIconTest {
         assertTrue(
             GitHubStateBadge.ANSWERED in discussionStateVisual(null, isAnswered = true).badges,
         )
+        assertEquals(
+            OcticonName.DISCUSSION_RESOLVED,
+            discussionStateVisual(null, isAnswered = false, isClosed = true).icon,
+        )
     }
 
     @Test

@@ -23,6 +23,10 @@ import com.gitmob.app.navigation.ConversationComposerTarget
 import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
 import com.gitmob.app.ui.common.ConversationEditHistorySheet
+import com.gitmob.app.ui.common.IssueStateIcon
+import com.gitmob.app.ui.common.issueStateVisual
+import com.gitmob.app.ui.icons.Octicon
+import com.gitmob.app.ui.icons.OcticonName
 import com.gitmob.app.ui.common.quoteMarkdown
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -183,8 +187,33 @@ private fun IssueHeader(issue: RepoIssue) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(issue.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            AssistChip(onClick = {}, label = { Text(stringResource(if (issue.state == IssueState.OPEN) R.string.work_filter_open else R.string.common_state_closed)) }, leadingIcon = { Icon(if (issue.state == IssueState.OPEN) Icons.Default.RadioButtonChecked else Icons.Default.CheckCircle, null, Modifier.size(16.dp)) })
-            if (issue.locked) { Spacer(Modifier.width(8.dp)); AssistChip(onClick = {}, label = { Text(stringResource(R.string.state_locked)) }, leadingIcon = { Icon(Icons.Default.Lock, null, Modifier.size(16.dp)) }) }
+            val visual = issueStateVisual(issue.state, issue.stateReason)
+            AssistChip(
+                onClick = {},
+                label = { Text(stringResource(visual.labelRes)) },
+                leadingIcon = {
+                    IssueStateIcon(
+                        state = issue.state,
+                        stateReason = issue.stateReason,
+                        locked = false,
+                        size = 16.dp,
+                    )
+                },
+            )
+            if (issue.locked) {
+                Spacer(Modifier.width(8.dp))
+                AssistChip(
+                    onClick = {},
+                    label = { Text(stringResource(R.string.state_locked)) },
+                    leadingIcon = {
+                        Octicon(
+                            name = OcticonName.LOCKED,
+                            contentDescription = stringResource(R.string.state_locked),
+                            size = 16.dp,
+                        )
+                    },
+                )
+            }
         }
         if (issue.labels.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { issue.labels.forEach { AssistChip(onClick = {}, label = { Text(it.name) }) } }
         issue.milestone?.let { Text(stringResource(R.string.issue_detail_milestone, it.title), style = MaterialTheme.typography.bodyMedium) }

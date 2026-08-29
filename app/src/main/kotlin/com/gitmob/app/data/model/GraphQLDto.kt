@@ -65,7 +65,7 @@ data class PinnedItemsConnection(val nodes: List<PinnedRepoNode>)
 data class PinnedRepoNode(
     val name: String,
     val url: String,
-    val shortDescriptionHTML: String? = null,
+    val description: String? = null,
     val stargazerCount: Int = 0,
     val forkCount: Int = 0,
     val primaryLanguage: LanguageNode? = null,

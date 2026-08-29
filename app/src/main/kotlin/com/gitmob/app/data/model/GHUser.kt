@@ -53,7 +53,7 @@ data class SocialAccount(
 data class PinnedRepo(
     val name: String,
     val url: String,
-    val descriptionHTML: String?,
+    val description: String?,
     val stargazerCount: Int,
     val forkCount: Int,
     val languageName: String?,

@@ -24,6 +24,7 @@ object OcticonPainterProvider {
         OcticonName.STAR -> R.drawable.oct_star_16
         OcticonName.ORGANIZATION -> R.drawable.oct_organization_16
         OcticonName.PEOPLE -> R.drawable.oct_people_16
+        OcticonName.LOCKED -> R.drawable.oct_lock_16
 
         OcticonName.ISSUE_OPENED -> R.drawable.oct_issue_opened_16
         OcticonName.ISSUE_REOPENED -> R.drawable.oct_issue_reopened_16

@@ -25,16 +25,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Difference
-import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.FilePresent
-import androidx.compose.material.icons.filled.Merge
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsNone
@@ -82,6 +78,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.diff.UnifiedDiffParser
 import com.gitmob.app.data.model.PullRequestCreationPolicy
+import com.gitmob.app.data.model.PullRequestState
 import com.gitmob.app.data.model.RepoPullRequest
 import com.gitmob.app.data.model.RepoPullRequestCreateMetadata
 import com.gitmob.app.data.model.RepoPullRequestListItem
@@ -103,7 +100,9 @@ import com.gitmob.app.ui.common.FilterMultiCapsuleMenu
 import com.gitmob.app.ui.common.GitChangedFileRow
 import com.gitmob.app.ui.common.GitCommitRow
 import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.ui.common.PullRequestStateIcon
 import com.gitmob.app.ui.common.UnifiedDiffViewer
+import com.gitmob.app.ui.common.pullRequestStateVisual
 import com.gitmob.app.ui.common.quoteMarkdown
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -234,16 +233,11 @@ private fun PullRequestFilters(state: RepoPullRequestListUiState, viewModel: Rep
 internal fun PullRequestListItemRow(pullRequest: RepoPullRequestListItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.Top) {
-            Icon(
-                when {
-                    pullRequest.state == RepoPullRequestState.MERGED -> Icons.Default.Merge
-                    pullRequest.state == RepoPullRequestState.CLOSED -> Icons.Default.CheckCircle
-                    pullRequest.isDraft -> Icons.Default.Drafts
-                    else -> Icons.AutoMirrored.Filled.CallSplit
-                },
-                null,
-                tint = if (pullRequest.state == RepoPullRequestState.OPEN) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
+            PullRequestStateIcon(
+                state = pullRequest.state.toPullRequestState(),
+                isDraft = pullRequest.isDraft,
+                locked = pullRequest.locked,
+                size = 20.dp,
             )
             Spacer(Modifier.size(10.dp))
             Column(Modifier.weight(1f)) {
@@ -519,8 +513,41 @@ private fun PullRequestHeader(pullRequest: RepoPullRequest) {
         Text(pullRequest.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         Text(stringResource(R.string.pr_author_meta, pullRequest.author?.login ?: stringResource(R.string.common_deleted_user), pullRequest.createdAt.take(10)))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AssistChip(onClick = {}, label = { Text(stringResource(pullRequest.state.label)) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.CallSplit, null, Modifier.size(16.dp)) })
-            if (pullRequest.isDraft) AssistChip(onClick = {}, label = { Text(stringResource(R.string.pr_draft)) }, leadingIcon = { Icon(Icons.Default.Drafts, null, Modifier.size(16.dp)) })
+            val visual = pullRequestStateVisual(
+                state = pullRequest.state.toPullRequestState(),
+                isDraft = false,
+                locked = pullRequest.locked,
+            )
+            AssistChip(
+                onClick = {},
+                label = { Text(stringResource(visual.labelRes)) },
+                leadingIcon = {
+                    PullRequestStateIcon(
+                        state = pullRequest.state.toPullRequestState(),
+                        isDraft = false,
+                        locked = pullRequest.locked,
+                        size = 16.dp,
+                    )
+                },
+            )
+            if (pullRequest.isDraft) {
+                val draftVisual = pullRequestStateVisual(
+                    state = pullRequest.state.toPullRequestState(),
+                    isDraft = true,
+                )
+                AssistChip(
+                    onClick = {},
+                    label = { Text(stringResource(draftVisual.labelRes)) },
+                    leadingIcon = {
+                        PullRequestStateIcon(
+                            state = pullRequest.state.toPullRequestState(),
+                            isDraft = true,
+                            locked = false,
+                            size = 16.dp,
+                        )
+                    },
+                )
+            }
             pullRequest.reviewDecision?.let { AssistChip(onClick = {}, label = { Text(pullRequestReviewStateLabel(it)) }) }
         }
         Text("${pullRequest.headRepositoryNameWithOwner.orEmpty()}:${pullRequest.headRefName} -> ${pullRequest.baseRefName}", style = MaterialTheme.typography.bodySmall)
@@ -566,6 +593,10 @@ private fun RetryContent(onRetry: () -> Unit) { Column(Modifier.fillMaxSize(), h
 private val RepoPullRequestStateFilter.label: Int @StringRes get() = when (this) { RepoPullRequestStateFilter.OPEN -> R.string.work_filter_open; RepoPullRequestStateFilter.CLOSED -> R.string.common_state_closed; RepoPullRequestStateFilter.MERGED -> R.string.pr_merged; RepoPullRequestStateFilter.ALL -> R.string.common_all }
 private val RepoPullRequestSort.label: Int @StringRes get() = when (this) { RepoPullRequestSort.UPDATED_DESC -> R.string.work_sort_updated_desc; RepoPullRequestSort.UPDATED_ASC -> R.string.work_sort_updated_asc; RepoPullRequestSort.CREATED_DESC -> R.string.work_sort_created_desc; RepoPullRequestSort.CREATED_ASC -> R.string.work_sort_created_asc; RepoPullRequestSort.COMMENTS_DESC -> R.string.work_sort_comments_desc; RepoPullRequestSort.COMMENTS_ASC -> R.string.work_sort_comments_asc }
 private val RepoPullRequestReviewEvent.label: Int @StringRes get() = when (this) { RepoPullRequestReviewEvent.COMMENT -> R.string.pr_review_comment; RepoPullRequestReviewEvent.APPROVE -> R.string.pr_review_approve; RepoPullRequestReviewEvent.REQUEST_CHANGES -> R.string.pr_review_request_changes }
-private val RepoPullRequestState.label: Int @StringRes get() = when (this) { RepoPullRequestState.OPEN -> R.string.work_filter_open; RepoPullRequestState.CLOSED -> R.string.common_state_closed; RepoPullRequestState.MERGED -> R.string.pr_merged }
+private fun RepoPullRequestState.toPullRequestState(): PullRequestState = when (this) {
+    RepoPullRequestState.OPEN -> PullRequestState.OPEN
+    RepoPullRequestState.CLOSED -> PullRequestState.CLOSED
+    RepoPullRequestState.MERGED -> PullRequestState.MERGED
+}
 private val RepoPullRequestMergeMethod.label: Int @StringRes get() = when (this) { RepoPullRequestMergeMethod.MERGE -> R.string.pr_merge_method_merge; RepoPullRequestMergeMethod.SQUASH -> R.string.pr_merge_method_squash; RepoPullRequestMergeMethod.REBASE -> R.string.pr_merge_method_rebase }
 @Composable private fun pullRequestReviewStateLabel(value: String): String = stringResource(when (value) { "COMMENTED" -> R.string.pr_review_state_commented; "APPROVED" -> R.string.pr_review_state_approved; "CHANGES_REQUESTED" -> R.string.pr_review_state_changes_requested; "DISMISSED" -> R.string.pr_review_state_dismissed; "PENDING" -> R.string.pr_review_state_pending; "REVIEW_REQUIRED" -> R.string.pr_review_required; else -> R.string.pr_review_state_pending })

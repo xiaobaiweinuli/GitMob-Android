@@ -32,6 +32,10 @@ import com.gitmob.app.ui.common.ConversationEditHistorySheet
 import com.gitmob.app.ui.common.ConversationMenuItem
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.GitHubEmojiLabel
+import com.gitmob.app.ui.common.DiscussionStateIcon
+import com.gitmob.app.ui.common.discussionStateVisual
+import com.gitmob.app.ui.icons.Octicon
+import com.gitmob.app.ui.icons.OcticonName
 import com.gitmob.app.ui.common.quoteMarkdown
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -177,7 +181,44 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
     )
 }
 
-@Composable private fun DiscussionHeader(d: RepoDiscussion) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(d.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); GitHubEmojiLabel(d.category.emoji, d.category.name, color = MaterialTheme.colorScheme.onSurfaceVariant); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { AssistChip(onClick = {}, label = { Text(stringResource(if (d.state == RepoDiscussionState.OPEN) R.string.work_filter_open else R.string.common_state_closed)) }); if (d.locked) AssistChip(onClick = {}, label = { Text(stringResource(R.string.state_locked)) }, leadingIcon = { Icon(Icons.Default.Lock, null, Modifier.size(16.dp)) }) } } }
+@Composable private fun DiscussionHeader(d: RepoDiscussion) {
+    val visual = discussionStateVisual(
+        stateReason = d.stateReason,
+        isAnswered = d.answerChosenAt != null,
+        locked = false,
+        isClosed = d.state == RepoDiscussionState.CLOSED,
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(d.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        GitHubEmojiLabel(d.category.emoji, d.category.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = {},
+                label = { Text(stringResource(visual.labelRes)) },
+                leadingIcon = {
+                    DiscussionStateIcon(
+                        stateReason = d.stateReason,
+                        isAnswered = d.answerChosenAt != null,
+                        locked = false,
+                        isClosed = d.state == RepoDiscussionState.CLOSED,
+                        size = 16.dp,
+                    )
+                },
+            )
+            if (d.locked) AssistChip(
+                onClick = {},
+                label = { Text(stringResource(R.string.state_locked)) },
+                leadingIcon = {
+                    Octicon(
+                        name = OcticonName.LOCKED,
+                        contentDescription = stringResource(R.string.state_locked),
+                        size = 16.dp,
+                    )
+                },
+            )
+        }
+    }
+}
 @Composable private fun DiscussionFilters(state: RepoDiscussionListUiState, vm: RepoDiscussionListViewModel) {
     Column {
         Row(
@@ -250,7 +291,27 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
         HorizontalDivider()
     }
 }
-@Composable private fun DiscussionRow(item: RepoDiscussion, canDelete: Boolean, delete: () -> Unit, click: () -> Unit) { Column(Modifier.fillMaxWidth().clickable(onClick = click).padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Row { Icon(if (item.state == RepoDiscussionState.OPEN) Icons.Default.Forum else Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f)) { Text(item.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis); GitHubEmojiLabel(item.category.emoji, "${item.category.name} · #${item.number} · ${item.updatedAt.take(10)}", style = MaterialTheme.typography.bodySmall, iconSize = 16.dp) }; if (item.commentCount > 0) Text(item.commentCount.toString()) }; if (item.answerChosenAt != null) Text(stringResource(R.string.discussion_answered), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium); if (canDelete) TextButton(onClick = delete, modifier = Modifier.align(Alignment.End)) { Icon(Icons.Default.Delete, null); Text(stringResource(R.string.common_delete)) } } }
+@Composable private fun DiscussionRow(item: RepoDiscussion, canDelete: Boolean, delete: () -> Unit, click: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = click).padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            DiscussionStateIcon(
+                stateReason = item.stateReason,
+                isAnswered = item.answerChosenAt != null,
+                locked = item.locked,
+                isClosed = item.state == RepoDiscussionState.CLOSED,
+                size = 20.dp,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                GitHubEmojiLabel(item.category.emoji, "${item.category.name} · #${item.number} · ${item.updatedAt.take(10)}", style = MaterialTheme.typography.bodySmall, iconSize = 16.dp)
+            }
+            if (item.commentCount > 0) Text(item.commentCount.toString())
+        }
+        if (item.answerChosenAt != null) Text(stringResource(R.string.discussion_answered), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+        if (canDelete) TextButton(onClick = delete, modifier = Modifier.align(Alignment.End)) { Icon(Icons.Default.Delete, null); Text(stringResource(R.string.common_delete)) }
+    }
+}
 @Composable private fun DiscussionRetry(modifier: Modifier, retry: () -> Unit) { Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = retry) { Text(stringResource(R.string.common_retry)) } } }
 private val RepoDiscussionStateFilter.label: Int @StringRes get() = when (this) { RepoDiscussionStateFilter.OPEN -> R.string.work_filter_open; RepoDiscussionStateFilter.CLOSED -> R.string.common_state_closed; RepoDiscussionStateFilter.ALL -> R.string.common_all }
 private val RepoDiscussionSort.label: Int @StringRes get() = when (this) { RepoDiscussionSort.UPDATED_DESC -> R.string.work_sort_updated_desc; RepoDiscussionSort.UPDATED_ASC -> R.string.work_sort_updated_asc; RepoDiscussionSort.CREATED_DESC -> R.string.work_sort_created_desc; RepoDiscussionSort.CREATED_ASC -> R.string.work_sort_created_asc }

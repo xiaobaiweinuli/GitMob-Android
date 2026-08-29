@@ -19,6 +19,7 @@ enum class OcticonName {
     STAR,
     ORGANIZATION,
     PEOPLE,
+    LOCKED,
 
     // Issue 状态
     ISSUE_OPENED,

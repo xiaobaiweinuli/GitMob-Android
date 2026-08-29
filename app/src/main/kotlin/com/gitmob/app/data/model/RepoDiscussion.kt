@@ -22,6 +22,7 @@ data class RepoDiscussion(
     val body: String,
     val bodyHtml: String,
     val state: RepoDiscussionState,
+    val stateReason: DiscussionStateReason? = null,
     val category: RepoDiscussionCategory,
     val author: SimpleUser?,
     val createdAt: String,

@@ -60,7 +60,7 @@ class UserRepositoryTest {
             "starredRepositories":{"totalCount":20},
             "gists":{"totalCount":4},
             "pinnedItems":{"nodes":[
-                {"name":"repo1","url":"https://github.com/octocat/repo1","shortDescriptionHTML":"desc",
+                {"name":"repo1","url":"https://github.com/octocat/repo1","description":"desc :rocket:",
                  "stargazerCount":100,"forkCount":4,"primaryLanguage":{"name":"Kotlin","color":"#A97BFF"},
                  "owner":{"login":"octocat","avatarUrl":"https://x/a.png"}}
             ]}
@@ -95,6 +95,7 @@ class UserRepositoryTest {
         assertEquals(4, profile.gistCount)
         assertEquals(1, profile.pinnedRepos.size)
         assertEquals("repo1", profile.pinnedRepos.first().name)
+        assertEquals("desc :rocket:", profile.pinnedRepos.first().description)
         assertTrue(profile.followState.isViewer)
         assertEquals(3, profile.involvedIssueCount)
         assertEquals(1, profile.involvedPrCount)
@@ -170,7 +171,7 @@ class UserRepositoryProfileOwnerTest {
                     "gists":{"totalCount":6},
                     "websiteUrl":"https://x.dev","repositories":{"totalCount":5},
                     "pinnedItems":{"nodes":[{
-                        "name":"repo1","url":"https://github.com/octocat/repo1","shortDescriptionHTML":"desc",
+                        "name":"repo1","url":"https://github.com/octocat/repo1","description":"desc",
                         "stargazerCount":10,"forkCount":2,"primaryLanguage":{"name":"Kotlin","color":"#A97BFF"},
                         "owner":{"login":"octocat","avatarUrl":"https://x/a.png"}
                     }]}
@@ -234,7 +235,7 @@ class UserRepositoryProfileOwnerTest {
                     "websiteUrl":"https://github.com","membersWithRole":{"totalCount":100},
                     "repositories":{"totalCount":300},
                     "pinnedItems":{"nodes":[{
-                        "name":"docs","url":"https://github.com/github/docs","shortDescriptionHTML":"docs",
+                        "name":"docs","url":"https://github.com/github/docs","description":"docs",
                         "stargazerCount":20,"forkCount":3,"primaryLanguage":null,
                         "owner":{"login":"github","avatarUrl":"https://x/o.png"}
                     }]}

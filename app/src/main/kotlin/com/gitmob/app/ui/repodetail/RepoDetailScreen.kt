@@ -63,6 +63,7 @@ import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.ui.common.GitHubEmojiText
 import com.gitmob.app.ui.common.RepositoryTopicsRow
 import com.gitmob.app.ui.common.StatusChip
 
@@ -240,7 +241,11 @@ private fun RepoHeader(
         }
 
         detail.description?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+            GitHubEmojiText(
+                text = it,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
 
         // 状态标签行：模板 / 私有 / 已归档

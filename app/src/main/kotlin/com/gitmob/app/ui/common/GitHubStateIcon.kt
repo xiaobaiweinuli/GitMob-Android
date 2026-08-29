@@ -6,9 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -109,13 +106,22 @@ fun discussionStateVisual(
     stateReason: DiscussionStateReason?,
     isAnswered: Boolean,
     locked: Boolean = false,
+    isClosed: Boolean = false,
 ): GitHubStateVisual {
     val visual = when (stateReason) {
-        null -> GitHubStateVisual(
-            OcticonName.DISCUSSION_OPENED,
-            GitHubStateColor.OPEN,
-            R.string.state_open,
-        )
+        null -> if (isClosed) {
+            GitHubStateVisual(
+                OcticonName.DISCUSSION_RESOLVED,
+                GitHubStateColor.DONE,
+                R.string.common_state_closed,
+            )
+        } else {
+            GitHubStateVisual(
+                OcticonName.DISCUSSION_OPENED,
+                GitHubStateColor.OPEN,
+                R.string.state_open,
+            )
+        }
         DiscussionStateReason.REOPENED -> GitHubStateVisual(
             OcticonName.DISCUSSION_OPENED,
             GitHubStateColor.OPEN,
@@ -187,10 +193,11 @@ fun DiscussionStateIcon(
     stateReason: DiscussionStateReason?,
     isAnswered: Boolean,
     locked: Boolean,
+    isClosed: Boolean = false,
     modifier: Modifier = Modifier,
     size: Dp = 24.dp,
 ) {
-    GitHubStateIcon(discussionStateVisual(stateReason, isAnswered, locked), modifier, size)
+    GitHubStateIcon(discussionStateVisual(stateReason, isAnswered, locked, isClosed), modifier, size)
 }
 
 @Composable
@@ -232,8 +239,8 @@ private fun GitHubStateIcon(
             )
         }
         if (GitHubStateBadge.LOCKED in visual.badges) {
-            Icon(
-                imageVector = Icons.Default.Lock,
+            Octicon(
+                name = OcticonName.LOCKED,
                 contentDescription = stringResource(R.string.state_locked),
                 modifier = Modifier.padding(start = 1.dp).size(12.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -53,8 +53,8 @@ class RepoDiscussionRepositoryTest {
         assertEquals(CommentAuthorAssociation.CONTRIBUTOR, detail.comments.single().authorAssociation)
 
         val requestBody = server.takeRequest().body.readUtf8()
-        assertTrue(requestBody.contains("bodyHTML closed category"))
-        assertFalse(requestBody.contains("bodyHTML state category"))
+        assertTrue(requestBody.contains("bodyHTML closed stateReason category"))
+        assertFalse(requestBody.contains("bodyHTML closed category"))
         assertFalse(requestBody.contains("comments { totalCount }"))
         assertTrue(requestBody.contains("comments(first: 20, after: ${'$'}after)"))
     }
@@ -78,6 +78,7 @@ class RepoDiscussionRepositoryTest {
                 "body": "root",
                 "bodyHTML": "<p>root</p>",
                 "closed": true,
+                "stateReason": null,
                 "category": {"id":"CAT1","name":"General","emoji":"💬","description":null,"isAnswerable":true},
                 "author": {"login":"octo","avatarUrl":"https://example.com/octo.png"},
                 "authorAssociation": "OWNER",

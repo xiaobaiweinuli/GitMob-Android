@@ -92,8 +92,8 @@ private fun PinnedRepoCard(
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(top = 6.dp),
             )
-            repo.descriptionHTML?.let { description ->
-                Text(
+            repo.description?.let { description ->
+                GitHubEmojiText(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,

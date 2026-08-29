@@ -84,8 +84,8 @@ fun RepoCard(
 
             // ---- 3. 简介 ----
             repo.description?.let {
-                Text(
-                    it,
+                GitHubEmojiText(
+                    text = it,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     modifier = Modifier.padding(top = 6.dp),

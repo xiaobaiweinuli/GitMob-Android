@@ -68,7 +68,7 @@ class UserRepository @Inject constructor(
                 ... on Repository {
                     name
                     url
-                    shortDescriptionHTML
+                    description
                     stargazerCount
                     forkCount
                     primaryLanguage { name color }
@@ -488,7 +488,7 @@ class UserRepository @Inject constructor(
         PinnedRepo(
             name = it.name,
             url = it.url,
-            descriptionHTML = it.shortDescriptionHTML,
+            description = it.description,
             stargazerCount = it.stargazerCount,
             forkCount = it.forkCount,
             languageName = it.primaryLanguage?.name,

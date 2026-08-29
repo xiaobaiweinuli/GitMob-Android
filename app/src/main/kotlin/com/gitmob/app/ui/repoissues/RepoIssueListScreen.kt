@@ -31,6 +31,7 @@ import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.FilterMultiCapsuleMenu
+import com.gitmob.app.ui.common.IssueStateIcon
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -334,7 +335,12 @@ private fun IssueSwipeRow(issue: RepoIssue, canDelete: Boolean, onDelete: () -> 
 private fun IssueRow(issue: RepoIssue, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.Top) {
-            Icon(if (issue.state == IssueState.OPEN) Icons.Default.RadioButtonChecked else Icons.Default.CheckCircle, null, tint = if (issue.state == IssueState.OPEN) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            IssueStateIcon(
+                state = issue.state,
+                stateReason = issue.stateReason,
+                locked = issue.locked,
+                size = 20.dp,
+            )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(issue.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
