@@ -39,6 +39,7 @@ fun RepoIssueDetailScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onCompose: (ConversationComposeRequest) -> Unit,
+    onUserClick: (String) -> Unit,
     viewModel: RepoIssueDetailViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name, number) { viewModel.init(owner, name, number, permission) }
@@ -95,6 +96,7 @@ fun RepoIssueDetailScreen(
                 onQuoteComment = { onCompose(ConversationComposeRequest(ConversationComposerTarget.ISSUE_COMMENT, state.issue!!.id, quoteMarkdown(it.body.orEmpty()))) },
                 onDeleteComment = viewModel::confirmDeleteComment,
                 onEditHistory = viewModel::openEditHistory,
+                onUserClick = onUserClick,
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
         }
@@ -144,6 +146,7 @@ private fun IssueConversation(
     onQuoteComment: (IssueComment) -> Unit,
     onDeleteComment: (IssueComment?) -> Unit,
     onEditHistory: (String) -> Unit,
+    onUserClick: (String) -> Unit,
     modifier: Modifier,
 ) {
     LazyColumn(modifier, contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -160,6 +163,7 @@ private fun IssueConversation(
                 onEdit = onEditIssue.takeIf { issue.viewerCanUpdate },
                 editSummary = issue.editSummary,
                 onEditHistoryClick = { onEditHistory(issue.id) },
+                onAuthorClick = onUserClick,
             )
         }
         item { Text(stringResource(R.string.issue_comments_count, issue.commentCount), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
@@ -176,6 +180,7 @@ private fun IssueConversation(
                 onDelete = ({ onDeleteComment(comment) }).takeIf { comment.viewerCanDelete },
                 editSummary = comment.editSummary,
                 onEditHistoryClick = { onEditHistory(comment.id) },
+                onAuthorClick = onUserClick,
             )
         }
         if (hasMoreComments) item { LaunchedEffect(comments.size) { onLoadMore() } }

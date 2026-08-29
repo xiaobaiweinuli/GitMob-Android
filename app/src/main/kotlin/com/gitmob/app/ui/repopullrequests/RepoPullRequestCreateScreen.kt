@@ -38,6 +38,7 @@ fun RepoPullRequestCreateScreen(
     onDismiss: () -> Unit,
     onCreate: (RepoPullRequestCreateSelection) -> Unit,
     onCommitClick: (owner: String, name: String, ref: String, sha: String) -> Unit,
+    onUserClick: (String) -> Unit,
     onExistingPullRequestClick: (owner: String, name: String, number: Int) -> Unit,
     viewModel: RepoPullRequestCreateViewModel = hiltViewModel(),
 ) {
@@ -66,6 +67,7 @@ fun RepoPullRequestCreateScreen(
                         viewModel.resetCreateSession()
                         onCommitClick(commitOwner, commitName, ref, sha)
                     },
+                    onUserClick = onUserClick,
                 )
             }
         }
@@ -290,12 +292,16 @@ private fun ColumnScope.FilesPage(state: RepoPullRequestCreateUiState, onBack: (
 }
 
 @Composable
-private fun ColumnScope.CommitsPage(state: RepoPullRequestCreateUiState, onBack: () -> Unit, onLoadMore: () -> Unit, onCommitClick: (String, String, String, String) -> Unit) {
+private fun ColumnScope.CommitsPage(state: RepoPullRequestCreateUiState, onBack: () -> Unit, onLoadMore: () -> Unit, onCommitClick: (String, String, String, String) -> Unit, onUserClick: (String) -> Unit) {
     SheetHeader(stringResource(R.string.pr_create_compare_commits), onBack = onBack)
     val comparison = state.comparison
     LazyColumn(Modifier.weight(1f)) {
         items(comparison?.commits.orEmpty(), key = { it.oid }) { commit ->
-            GitCommitRow(commit, onClick = { comparison?.let { onCommitClick(it.refs.headOwner, it.refs.headRepository, it.refs.headRef, commit.oid) } })
+            GitCommitRow(
+                commit,
+                onClick = { comparison?.let { onCommitClick(it.refs.headOwner, it.refs.headRepository, it.refs.headRef, commit.oid) } },
+                onAuthorClick = onUserClick,
+            )
         }
         if (comparison?.commitsHasNextPage == true) item { LaunchedEffect(comparison.commits.size) { onLoadMore() }; CircularProgressIndicator(Modifier.padding(16.dp)) }
     }

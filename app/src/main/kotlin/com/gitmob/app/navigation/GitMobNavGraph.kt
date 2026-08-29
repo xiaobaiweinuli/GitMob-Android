@@ -396,6 +396,7 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onEdit = { navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
                 onCompose = { request ->
                     navigator.navigate(
                         ConversationComposerRoute(
@@ -430,6 +431,7 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onPullRequestClick = { number -> navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
+                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
                 onCreate = { selection ->
                     navigator.navigate(
                         RepoPullRequestEditorRoute(
@@ -460,6 +462,7 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onEdit = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
                 onCommitClick = { sha, ref -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, ref, route.permission)) },
                 onCompose = { request ->
                     navigator.navigate(
@@ -512,6 +515,7 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onEdit = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
                 onCompose = { request ->
                     navigator.navigate(
                         ConversationComposerRoute(
@@ -650,6 +654,7 @@ private fun LoggedInApp(
                 permission = route.permission,
                 onBack = { navigator.goBack() },
                 onCommitClick = { sha -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, route.ref, route.permission)) },
+                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
         }
         entry<RepoCommitDetailRoute> { route ->
@@ -660,6 +665,7 @@ private fun LoggedInApp(
                 sha = route.sha,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
         }
         entry<RepoFileDetailRoute> { route ->

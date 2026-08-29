@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.width
 import androidx.test.core.app.ApplicationProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.data.model.CommentAuthorAssociation
 import com.gitmob.app.data.model.ConversationEditSummary
@@ -64,5 +66,25 @@ class ConversationContentCardTest {
 
         composeRule.onNodeWithText("a-very-long-user-name").assertExists()
         composeRule.onNodeWithText(context.getString(com.gitmob.app.R.string.conversation_edited)).assertExists()
+    }
+
+    @Test
+    fun `author avatar opens profile callback`() {
+        var clickedLogin: String? = null
+        composeRule.setContent {
+            ConversationContentCard(
+                author = SimpleUser("octocat", null, "https://example.com/avatar.png", null),
+                createdAt = "2026-08-25T00:00:00Z",
+                bodyHtml = null,
+                url = "",
+                authorAssociation = CommentAuthorAssociation.NONE,
+                isThreadAuthor = false,
+                onQuoteReply = {},
+                onAuthorClick = { clickedLogin = it },
+            )
+        }
+
+        composeRule.onNodeWithContentDescription("octocat").performClick()
+        assertEquals("octocat", clickedLogin)
     }
 }

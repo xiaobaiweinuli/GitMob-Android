@@ -66,7 +66,7 @@ fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermis
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permission: RepoPermission?, onBack: () -> Unit, onEdit: () -> Unit, onCompose: (ConversationComposeRequest) -> Unit, viewModel: RepoDiscussionDetailViewModel = hiltViewModel()) {
+fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permission: RepoPermission?, onBack: () -> Unit, onEdit: () -> Unit, onCompose: (ConversationComposeRequest) -> Unit, onUserClick: (String) -> Unit, viewModel: RepoDiscussionDetailViewModel = hiltViewModel()) {
     LaunchedEffect(owner, name, number) { viewModel.init(owner, name, number, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuOpen by remember { mutableStateOf(false) }
@@ -119,6 +119,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
                             onEdit = onEdit.takeIf { discussion.viewerCanUpdate },
                             editSummary = discussion.editSummary,
                             onEditHistoryClick = { viewModel.openEditHistory(discussion.id) },
+                            onAuthorClick = onUserClick,
                         )
                     }
                     item { Text(stringResource(R.string.issue_comments_count, discussion.commentCount), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
@@ -156,6 +157,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
                             extraMenuItems = answerActions,
                             editSummary = comment.editSummary,
                             onEditHistoryClick = { viewModel.openEditHistory(comment.id) },
+                            onAuthorClick = onUserClick,
                         )
                     }
                     if (state.hasMoreComments) item { LaunchedEffect(state.comments.size) { viewModel.loadMoreComments() } }

@@ -1,14 +1,18 @@
 package com.gitmob.app.ui.repocommits
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -35,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -44,6 +49,7 @@ import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.ui.common.CommitStats
 import com.gitmob.app.ui.common.GitChangedFileRow
 import com.gitmob.app.ui.common.UnifiedDiffViewer
+import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,6 +60,7 @@ fun RepoCommitDetailScreen(
     sha: String,
     permission: RepoPermission?,
     onBack: () -> Unit,
+    onUserClick: (String) -> Unit,
     viewModel: RepoCommitDetailViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name, ref, sha) { viewModel.init(owner, name, ref, sha, permission) }
@@ -99,7 +106,31 @@ fun RepoCommitDetailScreen(
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(detail.commit.headline, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
                             Text(detail.commit.oid, style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
-                            Text(detail.commit.author?.login ?: detail.commit.author?.displayName ?: stringResource(R.string.common_unknown), style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
+                            val actor = detail.commit.author ?: detail.commit.committer
+                            val authorLogin = actor?.login?.takeIf(String::isNotBlank)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(
+                                        if (authorLogin != null) {
+                                            Modifier.clickable { onUserClick(authorLogin) }
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                AsyncImage(
+                                    model = actor?.avatarUrl,
+                                    contentDescription = authorLogin,
+                                    modifier = Modifier.size(36.dp).clip(CircleShape),
+                                )
+                                Text(
+                                    actor?.login ?: actor?.displayName ?: stringResource(R.string.common_unknown),
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(start = 10.dp),
+                                )
+                            }
                             CommitStats(detail.commit.additions, detail.commit.deletions, detail.commit.changedFiles)
                             Text(stringResource(R.string.git_commit_changed_files), style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
                         }

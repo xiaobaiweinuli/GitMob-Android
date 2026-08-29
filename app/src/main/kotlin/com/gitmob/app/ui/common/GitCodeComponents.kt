@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
@@ -23,6 +25,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -32,13 +36,38 @@ import com.gitmob.app.core.diff.DiffLineType
 import com.gitmob.app.core.diff.UnifiedDiff
 import com.gitmob.app.data.model.RepoChangedFile
 import com.gitmob.app.data.model.RepoCommitSummary
+import coil3.compose.AsyncImage
 
 @Composable
-fun GitCommitRow(commit: RepoCommitSummary, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun GitCommitRow(
+    commit: RepoCommitSummary,
+    onClick: () -> Unit,
+    onAuthorClick: ((String) -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val actor = commit.author ?: commit.committer
+    val authorLogin = actor?.login?.takeIf(String::isNotBlank)
+    val authorLabel = actor?.login ?: actor?.displayName ?: stringResource(R.string.common_unknown)
+    val authorClickModifier = if (authorLogin != null && onAuthorClick != null) {
+        Modifier.clickable { onAuthorClick(authorLogin) }
+    } else {
+        Modifier
+    }
     Column(modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(commit.headline.ifBlank { commit.oid.take(7) }, style = MaterialTheme.typography.titleMedium)
-        val author = commit.author?.login ?: commit.author?.displayName ?: stringResource(R.string.common_unknown)
-        Text("$author · ${commit.committedDate ?: commit.authoredDate.orEmpty()} · ${commit.abbreviatedOid}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(
+                model = actor?.avatarUrl,
+                contentDescription = authorLogin,
+                modifier = Modifier.size(28.dp).clip(CircleShape).then(authorClickModifier),
+            )
+            Text(
+                "$authorLabel · ${commit.committedDate ?: commit.authoredDate.orEmpty()} · ${commit.abbreviatedOid}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 8.dp).then(authorClickModifier),
+            )
+        }
         if (commit.changedFiles != null || commit.additions != 0 || commit.deletions != 0) {
             Text(stringResource(R.string.git_commit_stats, commit.additions, commit.deletions, commit.changedFiles?.toString() ?: stringResource(R.string.git_commit_files_unknown)), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -68,16 +69,23 @@ fun ConversationContentCard(
     extraMenuItems: List<ConversationMenuItem> = emptyList(),
     editSummary: ConversationEditSummary = ConversationEditSummary(),
     onEditHistoryClick: (() -> Unit)? = null,
+    onAuthorClick: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
+    val authorLogin = author?.login?.takeIf(String::isNotBlank)
+    val authorClickModifier = if (authorLogin != null && onAuthorClick != null) {
+        Modifier.clickable { onAuthorClick(authorLogin) }
+    } else {
+        Modifier
+    }
     Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
                     model = author?.avatarUrl,
                     contentDescription = author?.login,
-                    modifier = Modifier.size(36.dp).clip(CircleShape),
+                    modifier = Modifier.size(36.dp).clip(CircleShape).then(authorClickModifier),
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
@@ -91,6 +99,7 @@ fun ConversationContentCard(
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             softWrap = false,
+                            modifier = authorClickModifier,
                         )
                         if (isThreadAuthor) AssistChip(
                             onClick = {},

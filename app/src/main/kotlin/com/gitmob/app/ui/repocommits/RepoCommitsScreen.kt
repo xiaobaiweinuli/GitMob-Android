@@ -48,6 +48,7 @@ fun RepoCommitsScreen(
     permission: RepoPermission?,
     onBack: () -> Unit,
     onCommitClick: (String) -> Unit,
+    onUserClick: (String) -> Unit,
     viewModel: RepoCommitsViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name, ref, path) { viewModel.init(owner, name, ref, path, permission) }
@@ -72,7 +73,11 @@ fun RepoCommitsScreen(
                 state.loadFailed && state.items.isEmpty() -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); androidx.compose.material3.TextButton(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) } }
                 state.items.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.common_empty), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(state.items, key = { it.oid }) { commit -> GitCommitRow(commit, { onCommitClick(commit.oid) }); HorizontalDivider() }
+                    items(state.items, key = { it.oid }) {
+                        commit ->
+                        GitCommitRow(commit, { onCommitClick(commit.oid) }, onAuthorClick = onUserClick)
+                        HorizontalDivider()
+                    }
                     if (state.hasNextPage) item(key = "more") { LaunchedEffect(state.items.size) { viewModel.loadMore() }; Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
                     item(key = "bottom") { androidx.compose.foundation.layout.Spacer(Modifier.padding(WindowInsets.navigationBars.asPaddingValues())) }
                 }

@@ -116,6 +116,7 @@ fun RepoPullRequestListScreen(
     onCreate: (com.gitmob.app.data.model.RepoPullRequestCreateSelection) -> Unit,
     onCreateCommitClick: (owner: String, name: String, ref: String, sha: String) -> Unit,
     onExistingPullRequestClick: (owner: String, name: String, number: Int) -> Unit,
+    onUserClick: (String) -> Unit,
     viewModel: RepoPullRequestListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name, permission) }
@@ -173,6 +174,7 @@ fun RepoPullRequestListScreen(
             onDismiss = { showCreateSheet = false },
             onCreate = { selection -> showCreateSheet = false; onCreate(selection) },
             onCommitClick = { commitOwner, commitName, ref, sha -> showCreateSheet = false; onCreateCommitClick(commitOwner, commitName, ref, sha) },
+            onUserClick = onUserClick,
             onExistingPullRequestClick = { existingOwner, existingName, number ->
                 showCreateSheet = false
                 onExistingPullRequestClick(existingOwner, existingName, number)
@@ -262,6 +264,7 @@ fun RepoPullRequestDetailScreen(
     onEdit: () -> Unit,
     onCommitClick: (String, String) -> Unit,
     onCompose: (ConversationComposeRequest) -> Unit,
+    onUserClick: (String) -> Unit,
     viewModel: RepoPullRequestDetailViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name, number) { viewModel.init(owner, name, number, permission) }
@@ -348,6 +351,7 @@ fun RepoPullRequestDetailScreen(
                                  onEdit = onEdit.takeIf { state.pullRequest!!.viewerCanUpdate },
                                  editSummary = state.pullRequest!!.editSummary,
                                  onEditHistoryClick = { viewModel.openEditHistory(state.pullRequest!!.id) },
+                                 onAuthorClick = onUserClick,
                                  modifier = Modifier.padding(12.dp),
                             )
                         }
@@ -381,6 +385,7 @@ fun RepoPullRequestDetailScreen(
                                  onDelete = ({ viewModel.confirmDeleteComment(item) }).takeIf { item.viewerCanDelete },
                                  editSummary = item.editSummary,
                                  onEditHistoryClick = { viewModel.openEditHistory(item.id) },
+                                 onAuthorClick = onUserClick,
                                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
                             )
                         }
@@ -412,7 +417,11 @@ fun RepoPullRequestDetailScreen(
                     }
                     2 -> LazyColumn {
                         items(state.commits, key = { it.oid }) { commitItem ->
-                            GitCommitRow(commitItem.toRepoCommitSummary(), onClick = { onCommitClick(commitItem.oid, state.pullRequest!!.baseRefName) })
+                            GitCommitRow(
+                                commitItem.toRepoCommitSummary(),
+                                onClick = { onCommitClick(commitItem.oid, state.pullRequest!!.baseRefName) },
+                                onAuthorClick = onUserClick,
+                            )
                             HorizontalDivider()
                         }
                     }
@@ -438,6 +447,7 @@ fun RepoPullRequestDetailScreen(
                                      },
                                      editSummary = review.editSummary,
                                      onEditHistoryClick = { viewModel.openEditHistory(review.id) },
+                                     onAuthorClick = onUserClick,
                                  )
                             }
                         }
@@ -463,6 +473,7 @@ fun RepoPullRequestDetailScreen(
                                         },
                                         editSummary = item.editSummary,
                                         onEditHistoryClick = { viewModel.openEditHistory(item.id) },
+                                        onAuthorClick = onUserClick,
                                     )
                                 }
                                 if (thread.viewerCanResolve || thread.viewerCanUnresolve) {
