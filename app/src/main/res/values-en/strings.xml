@@ -570,4 +570,6 @@
     <string name="repo_folder_download_complete">Folder ZIP saved</string>
     <string name="repo_folder_save_failed">Couldn\'t save the folder ZIP</string>
     <string name="repo_download_archive">Download repository archive</string>
+    <string name="repository_context_open_owner">Open %1$s profile</string>
+    <string name="repository_context_open_repository">Open repository %1$s/%2$s</string>
 </resources>

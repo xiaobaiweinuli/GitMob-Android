@@ -28,6 +28,7 @@ import com.gitmob.app.data.repository.IssueFormSubmissionBuilder
 import com.gitmob.app.ui.common.MarkdownBodyEditor
 import com.gitmob.app.ui.common.MarkdownEditorTab
 import com.gitmob.app.ui.common.MarkdownEditorUiState
+import com.gitmob.app.ui.common.RepositoryContextTitle
 
 private enum class IssueMetadataSheet { LABELS, ASSIGNEES, MILESTONE }
 
@@ -39,6 +40,8 @@ fun RepoIssueEditorScreen(
     number: Int?,
     templateFilename: String? = null,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onSaved: (Int) -> Unit,
     viewModel: RepoIssueEditorViewModel = hiltViewModel(),
 ) {
@@ -48,7 +51,15 @@ fun RepoIssueEditorScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(if (number == null) R.string.issue_new else R.string.issue_edit)) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = owner,
+                        repository = name,
+                        pageTitle = stringResource(if (number == null) R.string.issue_new else R.string.issue_edit),
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     IconButton(onClick = { saveAction?.invoke() }, enabled = saveAction != null && !state.isSaving) {

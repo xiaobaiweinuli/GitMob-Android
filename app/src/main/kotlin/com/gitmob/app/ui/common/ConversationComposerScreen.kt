@@ -58,6 +58,8 @@ data class ConversationComposeRequest(
 fun ConversationComposerScreen(
     route: ConversationComposerRoute,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     viewModel: ConversationComposerViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(route) {
@@ -81,7 +83,15 @@ fun ConversationComposerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(composerTitle(route)) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = route.owner,
+                        repository = route.name,
+                        pageTitle = composerTitle(route),
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = ::requestBack, enabled = !state.isSubmitting) { Icon(Icons.Default.Close, stringResource(R.string.common_cancel)) } },
                 actions = {
                     IconButton(onClick = viewModel::submit, enabled = (state.text.isNotBlank() || state.allowsEmptySubmission) && !state.isSubmitting) {

@@ -24,6 +24,7 @@ import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
 import com.gitmob.app.ui.common.ConversationEditHistorySheet
 import com.gitmob.app.ui.common.IssueStateIcon
+import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.issueStateVisual
 import com.gitmob.app.ui.icons.Octicon
 import com.gitmob.app.ui.icons.OcticonName
@@ -37,6 +38,8 @@ fun RepoIssueDetailScreen(
     number: Int,
     permission: RepoPermission?,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onEdit: () -> Unit,
     onCompose: (ConversationComposeRequest) -> Unit,
     onUserClick: (String) -> Unit,
@@ -49,7 +52,15 @@ fun RepoIssueDetailScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.issue_title_number, number)) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = owner,
+                        repository = name,
+                        pageTitle = stringResource(R.string.issue_title_number, number),
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     state.issue?.let { issue ->

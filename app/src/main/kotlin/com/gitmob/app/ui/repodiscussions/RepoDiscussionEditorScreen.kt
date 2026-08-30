@@ -27,6 +27,7 @@ import com.gitmob.app.ui.common.GitHubEmojiLabel
 import com.gitmob.app.ui.common.MarkdownBodyEditor
 import com.gitmob.app.ui.common.MarkdownEditorTab
 import com.gitmob.app.ui.common.MarkdownEditorUiState
+import com.gitmob.app.ui.common.RepositoryContextTitle
 
 private enum class DiscussionMetadataSheet { CATEGORY, LABELS }
 
@@ -37,6 +38,8 @@ fun RepoDiscussionEditorScreen(
     name: String,
     number: Int?,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onSaved: (Int) -> Unit,
     viewModel: RepoDiscussionEditorViewModel = hiltViewModel(),
 ) {
@@ -44,7 +47,7 @@ fun RepoDiscussionEditorScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var saveAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(if (number == null) R.string.discussion_new else R.string.discussion_edit)) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { IconButton(onClick = { saveAction?.invoke() }, enabled = saveAction != null && !state.isSaving) { if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
+        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(if (number == null) R.string.discussion_new else R.string.discussion_edit), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { IconButton(onClick = { saveAction?.invoke() }, enabled = saveAction != null && !state.isSaving) { if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { padding ->
         val contentModifier = Modifier

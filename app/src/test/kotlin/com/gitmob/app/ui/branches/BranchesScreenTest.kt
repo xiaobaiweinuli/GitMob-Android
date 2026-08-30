@@ -52,6 +52,8 @@ class BranchesScreenTest {
                 canPush = true,
                 canManageBranchProtection = false,
                 onBack = {},
+                onOwnerClick = {},
+                onRepositoryClick = { _, _ -> },
                 viewModel = viewModel,
             )
         }
@@ -76,6 +78,8 @@ class BranchesScreenTest {
                 canPush = false,
                 canManageBranchProtection = false,
                 onBack = {},
+                onOwnerClick = {},
+                onRepositoryClick = { _, _ -> },
                 viewModel = viewModel,
             )
         }

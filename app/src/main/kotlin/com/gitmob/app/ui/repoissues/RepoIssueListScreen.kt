@@ -32,6 +32,7 @@ import com.gitmob.app.data.model.*
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.FilterMultiCapsuleMenu
 import com.gitmob.app.ui.common.IssueStateIcon
+import com.gitmob.app.ui.common.RepositoryContextTitle
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,6 +43,8 @@ fun RepoIssueListScreen(
     permission: RepoPermission?,
     viewerCanCreateIssues: Boolean?,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onIssueClick: (Int) -> Unit,
     onCreate: (String?) -> Unit,
     viewModel: RepoIssueListViewModel = hiltViewModel(),
@@ -52,7 +55,15 @@ fun RepoIssueListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.common_issues)) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = owner,
+                        repository = name,
+                        pageTitle = stringResource(R.string.common_issues),
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     if (state.viewerCanCreateIssues) {

@@ -574,4 +574,6 @@
     <string name="repo_folder_download_complete">文件夹 ZIP 已保存</string>
     <string name="repo_folder_save_failed">无法保存文件夹 ZIP</string>
     <string name="repo_download_archive">下载仓库归档</string>
+    <string name="repository_context_open_owner">打开 %1$s 的主页</string>
+    <string name="repository_context_open_repository">打开仓库 %1$s/%2$s</string>
 </resources>

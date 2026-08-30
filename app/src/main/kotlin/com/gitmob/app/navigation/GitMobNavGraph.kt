@@ -384,6 +384,8 @@ private fun LoggedInApp(
                 permission = route.permission,
                 viewerCanCreateIssues = route.viewerCanCreateIssues,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onIssueClick = { number -> navigator.navigate(RepoIssueDetailRoute(route.owner, route.name, number, route.permission)) },
                 onCreate = { templateFilename -> navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, permission = route.permission, templateFilename = templateFilename)) },
             )
@@ -395,6 +397,8 @@ private fun LoggedInApp(
                 number = route.number,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onEdit = { navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, route.number, route.permission)) },
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
                 onCompose = { request ->
@@ -421,6 +425,8 @@ private fun LoggedInApp(
                 number = route.number,
                 templateFilename = route.templateFilename,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { number -> navigator.goBack(); navigator.navigate(RepoIssueDetailRoute(route.owner, route.name, number, route.permission)) },
             )
         }
@@ -430,6 +436,8 @@ private fun LoggedInApp(
                 name = route.name,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onPullRequestClick = { number -> navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
                 onCreate = { selection ->
@@ -461,6 +469,8 @@ private fun LoggedInApp(
                 number = route.number,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onEdit = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, route.number, route.permission)) },
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
                 onCommitClick = { sha, ref -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, ref, route.permission)) },
@@ -494,6 +504,8 @@ private fun LoggedInApp(
                 headRef = route.headRef,
                 headRepositoryId = route.headRepositoryId,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { number -> navigator.goBack(); navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
             )
         }
@@ -503,6 +515,8 @@ private fun LoggedInApp(
                 name = route.name,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onDiscussionClick = { number -> navigator.navigate(RepoDiscussionDetailRoute(route.owner, route.name, number, route.permission)) },
                 onCreate = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, permission = route.permission)) },
             )
@@ -514,6 +528,8 @@ private fun LoggedInApp(
                 number = route.number,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onEdit = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, route.number, route.permission)) },
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
                 onCompose = { request ->
@@ -539,6 +555,8 @@ private fun LoggedInApp(
                 name = route.name,
                 number = route.number,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { number -> navigator.goBack(); navigator.navigate(RepoDiscussionDetailRoute(route.owner, route.name, number, route.permission)) },
             )
         }
@@ -546,6 +564,8 @@ private fun LoggedInApp(
             ConversationComposerScreen(
                 route = route,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
             )
         }
         entry<RepoActionsRoute> { route ->
@@ -555,6 +575,8 @@ private fun LoggedInApp(
                 permission = route.permission,
                 defaultRef = route.defaultRef,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onRunClick = { runId -> navigator.navigate(RepoWorkflowRunRoute(route.owner, route.name, runId, route.permission)) },
             )
         }
@@ -565,6 +587,8 @@ private fun LoggedInApp(
                 runId = route.runId,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
             )
         }
         entry<RepoReleasesRoute> { route ->
@@ -573,6 +597,8 @@ private fun LoggedInApp(
                 name = route.name,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onReleaseClick = { tag -> navigator.navigate(RepoReleaseDetailRoute(route.owner, route.name, tag, route.permission)) },
                 onCreate = { navigator.navigate(RepoReleaseEditorRoute(route.owner, route.name, permission = route.permission)) },
             )
@@ -585,6 +611,8 @@ private fun LoggedInApp(
                 releaseId = null,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onEdit = { releaseId -> navigator.navigate(RepoReleaseEditorRoute(route.owner, route.name, releaseId, route.permission)) },
             )
         }
@@ -595,6 +623,8 @@ private fun LoggedInApp(
                 releaseId = route.releaseId,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { tag -> navigator.goBack(); navigator.navigate(RepoReleaseDetailRoute(route.owner, route.name, tag, route.permission)) },
             )
         }
@@ -603,6 +633,8 @@ private fun LoggedInApp(
                 owner = route.owner,
                 name = route.name,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
         }
@@ -612,6 +644,8 @@ private fun LoggedInApp(
                 name = route.name,
                 ref = route.ref,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
             )
         }
         entry<RepoBranchesRoute> { route ->
@@ -622,6 +656,8 @@ private fun LoggedInApp(
                 canPush = route.canPush,
                 canManageBranchProtection = route.canManageBranchProtection,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
             )
         }
         entry<RepoWatchersRoute> { route ->
@@ -629,6 +665,8 @@ private fun LoggedInApp(
                 owner = route.owner,
                 name = route.name,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
         }
@@ -640,6 +678,8 @@ private fun LoggedInApp(
                 path = route.path,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onAdd = { navigator.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, null, route.permission)) },
                 onDirectoryClick = { path -> navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, path, route.permission)) },
                 onFileClick = { path -> navigator.navigate(RepoFileDetailRoute(route.owner, route.name, route.ref, path, route.permission)) },
@@ -653,6 +693,8 @@ private fun LoggedInApp(
                 path = route.path,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onCommitClick = { sha -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, route.ref, route.permission)) },
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
@@ -665,6 +707,8 @@ private fun LoggedInApp(
                 sha = route.sha,
                 permission = route.permission,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
         }
@@ -675,6 +719,8 @@ private fun LoggedInApp(
                 ref = route.ref,
                 path = route.path,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onEdit = { navigator.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
                 onHistory = { navigator.navigate(RepoCommitsRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
             )
@@ -686,6 +732,8 @@ private fun LoggedInApp(
                 ref = route.ref,
                 path = route.path,
                 onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { navigator.goBack() },
             )
         }

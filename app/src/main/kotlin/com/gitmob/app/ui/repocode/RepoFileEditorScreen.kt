@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.ui.common.RepositoryContextTitle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +48,8 @@ fun RepoFileEditorScreen(
     ref: String,
     path: String?,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onSaved: () -> Unit,
     viewModel: RepoFileEditorViewModel = hiltViewModel(),
 ) {
@@ -56,7 +59,15 @@ fun RepoFileEditorScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.repo_code)) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = owner,
+                        repository = name,
+                        pageTitle = stringResource(R.string.repo_code),
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = onBack, enabled = !state.isSaving) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
             actions = { IconButton(onClick = { viewModel.save(message, onSaved) }, enabled = !state.isSaving && state.capabilities.canPush && state.capabilities.canPushToProtectedBranch) { if (state.isSaving) CircularProgressIndicator() else Icon(Icons.Default.Save, stringResource(R.string.common_save)) } },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),

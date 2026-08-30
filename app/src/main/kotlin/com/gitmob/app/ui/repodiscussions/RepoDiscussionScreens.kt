@@ -32,6 +32,7 @@ import com.gitmob.app.ui.common.ConversationEditHistorySheet
 import com.gitmob.app.ui.common.ConversationMenuItem
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.GitHubEmojiLabel
+import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.DiscussionStateIcon
 import com.gitmob.app.ui.common.discussionStateVisual
 import com.gitmob.app.ui.icons.Octicon
@@ -40,12 +41,12 @@ import com.gitmob.app.ui.common.quoteMarkdown
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermission?, onBack: () -> Unit, onDiscussionClick: (Int) -> Unit, onCreate: () -> Unit, viewModel: RepoDiscussionListViewModel = hiltViewModel()) {
+fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermission?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onDiscussionClick: (Int) -> Unit, onCreate: () -> Unit, viewModel: RepoDiscussionListViewModel = hiltViewModel()) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.common_discussions)) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { if (state.hasDiscussionsEnabled && state.categories.isNotEmpty()) IconButton(onClick = onCreate) { Icon(Icons.Default.Add, stringResource(R.string.discussion_new)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
+        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(R.string.common_discussions), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { if (state.hasDiscussionsEnabled && state.categories.isNotEmpty()) IconButton(onClick = onCreate) { Icon(Icons.Default.Add, stringResource(R.string.discussion_new)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -66,14 +67,14 @@ fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermis
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permission: RepoPermission?, onBack: () -> Unit, onEdit: () -> Unit, onCompose: (ConversationComposeRequest) -> Unit, onUserClick: (String) -> Unit, viewModel: RepoDiscussionDetailViewModel = hiltViewModel()) {
+fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permission: RepoPermission?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onEdit: () -> Unit, onCompose: (ConversationComposeRequest) -> Unit, onUserClick: (String) -> Unit, viewModel: RepoDiscussionDetailViewModel = hiltViewModel()) {
     LaunchedEffect(owner, name, number) { viewModel.init(owner, name, number, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.discussion_number, number)) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { state.discussion?.let { d -> if (d.viewerCanSubscribe) IconButton(onClick = viewModel::toggleSubscription) { Icon(if (d.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe)) }; Box { IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }; DropdownMenu(menuOpen, { menuOpen = false }) { if (d.state == RepoDiscussionState.OPEN && d.viewerCanClose) DropdownMenuItem(text = { Text(stringResource(R.string.discussion_close)) }, onClick = { menuOpen = false; viewModel.close() }); if (d.state == RepoDiscussionState.CLOSED && d.viewerCanReopen) DropdownMenuItem(text = { Text(stringResource(R.string.discussion_reopen)) }, onClick = { menuOpen = false; viewModel.reopen() }); if (state.capabilities.canManageIssuesAndPRs && d.viewerCanDelete) DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; viewModel.confirmDeleteDiscussion(true) }) } } } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
+        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(R.string.discussion_number, number), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { state.discussion?.let { d -> if (d.viewerCanSubscribe) IconButton(onClick = viewModel::toggleSubscription) { Icon(if (d.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe)) }; Box { IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }; DropdownMenu(menuOpen, { menuOpen = false }) { if (d.state == RepoDiscussionState.OPEN && d.viewerCanClose) DropdownMenuItem(text = { Text(stringResource(R.string.discussion_close)) }, onClick = { menuOpen = false; viewModel.close() }); if (d.state == RepoDiscussionState.CLOSED && d.viewerCanReopen) DropdownMenuItem(text = { Text(stringResource(R.string.discussion_reopen)) }, onClick = { menuOpen = false; viewModel.reopen() }); if (state.capabilities.canManageIssuesAndPRs && d.viewerCanDelete) DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; viewModel.confirmDeleteDiscussion(true) }) } } } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
         floatingActionButton = {
             state.discussion?.let { discussion ->
                 ExtendedFloatingActionButton(

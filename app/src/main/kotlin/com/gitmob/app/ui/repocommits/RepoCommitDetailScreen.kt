@@ -48,6 +48,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.ui.common.CommitStats
 import com.gitmob.app.ui.common.GitChangedFileRow
+import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.UnifiedDiffViewer
 import coil3.compose.AsyncImage
 
@@ -60,6 +61,8 @@ fun RepoCommitDetailScreen(
     sha: String,
     permission: RepoPermission?,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onUserClick: (String) -> Unit,
     viewModel: RepoCommitDetailViewModel = hiltViewModel(),
 ) {
@@ -73,7 +76,15 @@ fun RepoCommitDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.git_commit_detail, sha.take(7))) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = owner,
+                        repository = name,
+                        pageTitle = stringResource(R.string.git_commit_detail, sha.take(7)),
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     if (state.detail != null && state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && !state.detail!!.isArchived) {

@@ -101,6 +101,7 @@ import com.gitmob.app.ui.common.GitChangedFileRow
 import com.gitmob.app.ui.common.GitCommitRow
 import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.common.PullRequestStateIcon
+import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.UnifiedDiffViewer
 import com.gitmob.app.ui.common.pullRequestStateVisual
 import com.gitmob.app.ui.common.quoteMarkdown
@@ -112,6 +113,8 @@ fun RepoPullRequestListScreen(
     name: String,
     permission: RepoPermission?,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onPullRequestClick: (Int) -> Unit,
     onCreate: (com.gitmob.app.data.model.RepoPullRequestCreateSelection) -> Unit,
     onCreateCommitClick: (owner: String, name: String, ref: String, sha: String) -> Unit,
@@ -129,7 +132,15 @@ fun RepoPullRequestListScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.common_pull_requests)) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = owner,
+                        repository = name,
+                        pageTitle = stringResource(R.string.common_pull_requests),
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = { if (canCreate) IconButton(onClick = { showCreateSheet = true }) { Icon(Icons.Default.Add, stringResource(R.string.pr_new)) } },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -261,6 +272,8 @@ fun RepoPullRequestDetailScreen(
     number: Int,
     permission: RepoPermission?,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onEdit: () -> Unit,
     onCommitClick: (String, String) -> Unit,
     onCompose: (ConversationComposeRequest) -> Unit,
@@ -279,7 +292,15 @@ fun RepoPullRequestDetailScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.pr_number, number)) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = owner,
+                        repository = name,
+                        pageTitle = stringResource(R.string.pr_number, number),
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     state.pullRequest?.let { pullRequest ->

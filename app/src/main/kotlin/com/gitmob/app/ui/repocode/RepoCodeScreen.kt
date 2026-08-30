@@ -54,6 +54,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.RepoEntryType
 import com.gitmob.app.core.storage.SafFileReader
+import com.gitmob.app.ui.common.RepositoryContextTitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -67,6 +68,8 @@ fun RepoCodeScreen(
     path: String,
     permission: RepoPermission?,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onAdd: () -> Unit,
     onDirectoryClick: (String) -> Unit,
     onFileClick: (String) -> Unit,
@@ -103,7 +106,15 @@ fun RepoCodeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(path.ifBlank { name }) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = owner,
+                        repository = name,
+                        pageTitle = path.ifBlank { stringResource(R.string.repo_code) },
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     IconButton(onClick = viewModel::downloadArchive, enabled = !state.openingDownload && !state.isFolderExporting) {

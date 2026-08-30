@@ -26,6 +26,7 @@ import com.gitmob.app.data.model.RepoPullRequestCreateMetadata
 import com.gitmob.app.ui.common.MarkdownBodyEditor
 import com.gitmob.app.ui.common.MarkdownEditorTab
 import com.gitmob.app.ui.common.MarkdownEditorUiState
+import com.gitmob.app.ui.common.RepositoryContextTitle
 
 private enum class PullRequestMetadataSheet { LABELS, ASSIGNEES, MILESTONE, REVIEWERS }
 
@@ -43,6 +44,8 @@ fun RepoPullRequestEditorScreen(
     headRef: String? = null,
     headRepositoryId: String? = null,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onSaved: (Int) -> Unit,
     viewModel: RepoPullRequestEditorViewModel = hiltViewModel(),
 ) {
@@ -52,7 +55,7 @@ fun RepoPullRequestEditorScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var saveAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(if (number == null) R.string.pr_new else R.string.pr_edit)) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { IconButton(onClick = { saveAction?.invoke() }, enabled = saveAction != null && !state.isSaving) { if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
+        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(if (number == null) R.string.pr_new else R.string.pr_edit), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { IconButton(onClick = { saveAction?.invoke() }, enabled = saveAction != null && !state.isSaving) { if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { padding ->
         val contentModifier = Modifier

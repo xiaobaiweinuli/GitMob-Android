@@ -45,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.SimpleUser
+import com.gitmob.app.ui.common.RepositoryContextTitle
 
 /**
  * 关注者/关注共用这一个 Screen，靠 mode 参数区分标题和数据来源（ViewModel 内部已经分流）。
@@ -73,7 +74,7 @@ fun UserListScreen(
         },
     )
     UserListBody(
-        title = title,
+        titleContent = { Text(title) },
         viewModel = viewModel,
         onUserClick = onUserClick,
         onBack = onBack,
@@ -87,11 +88,26 @@ fun RepoWatchersScreen(
     owner: String,
     name: String,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onUserClick: (String) -> Unit,
     viewModel: UserListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name) { viewModel.initForRepoWatchers(owner, name) }
-    UserListBody(title = stringResource(R.string.common_watchers), viewModel = viewModel, onUserClick = onUserClick, onBack = onBack)
+    UserListBody(
+        titleContent = {
+            RepositoryContextTitle(
+                owner = owner,
+                repository = name,
+                pageTitle = stringResource(R.string.common_watchers),
+                onOwnerClick = onOwnerClick,
+                onRepositoryClick = onRepositoryClick,
+            )
+        },
+        viewModel = viewModel,
+        onUserClick = onUserClick,
+        onBack = onBack,
+    )
 }
 
 /**
@@ -107,13 +123,18 @@ fun OrgMembersScreen(
     viewModel: UserListViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(orgLogin) { viewModel.initForOrgMembers(orgLogin) }
-    UserListBody(title = stringResource(R.string.common_members), viewModel = viewModel, onUserClick = onUserClick, onBack = onBack)
+    UserListBody(
+        titleContent = { Text(stringResource(R.string.common_members)) },
+        viewModel = viewModel,
+        onUserClick = onUserClick,
+        onBack = onBack,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun UserListBody(
-    title: String,
+    titleContent: @Composable () -> Unit,
     viewModel: UserListViewModel,
     onUserClick: (String) -> Unit,
     onBack: () -> Unit,
@@ -123,7 +144,7 @@ private fun UserListBody(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = titleContent,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))

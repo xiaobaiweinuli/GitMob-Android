@@ -42,6 +42,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.ui.common.RepositoryContextTitle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +52,8 @@ fun RepoFileDetailScreen(
     ref: String,
     path: String,
     onBack: () -> Unit,
+    onOwnerClick: (String) -> Unit,
+    onRepositoryClick: (String, String) -> Unit,
     onEdit: () -> Unit,
     onHistory: () -> Unit,
     viewModel: RepoFileDetailViewModel = hiltViewModel(),
@@ -62,7 +65,15 @@ fun RepoFileDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(path) },
+                title = {
+                    RepositoryContextTitle(
+                        owner = owner,
+                        repository = name,
+                        pageTitle = path,
+                        onOwnerClick = onOwnerClick,
+                        onRepositoryClick = onRepositoryClick,
+                    )
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     IconButton(onClick = onHistory) { Icon(Icons.Default.History, stringResource(R.string.repo_commits)) }
