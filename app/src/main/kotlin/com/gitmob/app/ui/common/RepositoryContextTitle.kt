@@ -2,6 +2,7 @@ package com.gitmob.app.ui.common
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
@@ -16,7 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.gitmob.app.R
 
 /**
- * 仓库子页面共用的单行路径标题。只负责渲染与点击语义，不持有导航或业务状态。
+ * 仓库子页面共用的双行上下文标题。只负责渲染与点击语义，不持有导航或业务状态。
  */
 @Composable
 fun RepositoryContextTitle(
@@ -34,42 +35,55 @@ fun RepositoryContextTitle(
         repository,
     )
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        modifier = modifier.fillMaxWidth(),
     ) {
-        Text(
-            text = owner,
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Clip,
-            modifier = Modifier.clickable(
-                onClickLabel = ownerClickLabel,
-                role = Role.Button,
-                onClick = { onOwnerClick(owner) },
-            ),
-        )
-        Text(text = " / ", maxLines = 1, softWrap = false)
-        Text(
-            text = repository,
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Clip,
-            modifier = Modifier.clickable(
-                onClickLabel = repositoryClickLabel,
-                role = Role.Button,
-                onClick = { onRepositoryClick(owner, repository) },
-            ),
-        )
-        Text(
-            text = " · $pageTitle",
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Clip,
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = owner,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.clickable(
+                    onClickLabel = ownerClickLabel,
+                    role = Role.Button,
+                    onClick = { onOwnerClick(owner) },
+                ),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = repository,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.clickable(
+                    onClickLabel = repositoryClickLabel,
+                    role = Role.Button,
+                    onClick = { onRepositoryClick(owner, repository) },
+                ),
+            )
+            Text(
+                text = " · $pageTitle",
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+            )
+        }
     }
 }
