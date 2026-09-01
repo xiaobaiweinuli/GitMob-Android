@@ -6,6 +6,7 @@ import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
 import kotlinx.serialization.SerialName
@@ -29,15 +30,21 @@ class RepoActionsRepository @Inject constructor(
     }
 
     suspend fun getActions(owner: String, name: String, page: Int = 1): ApiResult<RepoActionsPage> = safeCall {
-        val workflows = api.get<RestWorkflowsResponse>("/repos/$owner/$name/actions/workflows?per_page=100&page=1")
-        val runs = api.get<RestRunsResponse>("/repos/$owner/$name/actions/runs?per_page=30&page=$page")
-        RepoActionsPage(runs.totalCount, workflows.workflows.map(::toWorkflow), runs.runs.map(::toRun), page, runs.runs.size >= 30)
+        val workflows = api.get<RestWorkflowsResponse>("/repos/$owner/$name/actions/workflows?per_page=${PageSize.ACTION_WORKFLOWS}&page=1")
+        val runs = api.get<RestRunsResponse>("/repos/$owner/$name/actions/runs?per_page=${PageSize.ACTION_RUNS}&page=$page")
+        RepoActionsPage(
+            runs.totalCount,
+            workflows.workflows.map(::toWorkflow),
+            runs.runs.map(::toRun),
+            page,
+            runs.runs.size >= PageSize.ACTION_RUNS,
+        )
     }
 
     suspend fun getRun(owner: String, name: String, runId: Long): ApiResult<RepoWorkflowRunDetail> = safeCall {
         val run = api.get<RestWorkflowRun>("/repos/$owner/$name/actions/runs/$runId")
-        val jobs = api.get<RestJobsResponse>("/repos/$owner/$name/actions/runs/$runId/jobs?per_page=100")
-        val artifacts = api.get<RestArtifactsResponse>("/repos/$owner/$name/actions/runs/$runId/artifacts?per_page=100")
+        val jobs = api.get<RestJobsResponse>("/repos/$owner/$name/actions/runs/$runId/jobs?per_page=${PageSize.ACTION_JOBS}")
+        val artifacts = api.get<RestArtifactsResponse>("/repos/$owner/$name/actions/runs/$runId/artifacts?per_page=${PageSize.ACTION_ARTIFACTS}")
         RepoWorkflowRunDetail(toRun(run), jobs.jobs.map(::toJob), artifacts.artifacts.map(::toArtifact))
     }
 

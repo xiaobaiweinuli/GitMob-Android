@@ -571,4 +571,18 @@
     <string name="repo_download_archive">下載儲存庫封存檔</string>
     <string name="repository_context_open_owner">開啟 %1$s 的個人資料</string>
     <string name="repository_context_open_repository">開啟儲存庫 %1$s/%2$s</string>
+    <string name="repo_create_title">建立儲存庫</string>
+    <string name="repo_create_action">建立</string>
+    <string name="repo_create_owner">擁有者</string>
+    <string name="repo_create_name">儲存庫名稱</string>
+    <string name="repo_create_description">儲存庫描述</string>
+    <string name="repo_create_private">私人儲存庫</string>
+    <string name="repo_create_readme">新增 README</string>
+    <string name="repo_create_gitignore">.gitignore</string>
+    <string name="repo_create_license">授權條款</string>
+    <string name="repo_create_none">無</string>
+    <string name="repo_create_no_permission">沒有建立權限</string>
+    <string name="repo_create_owner_picker">選擇擁有者</string>
+    <string name="repo_create_gitignore_picker">選擇 .gitignore</string>
+    <string name="repo_create_license_picker">選擇授權條款</string>
 </resources>

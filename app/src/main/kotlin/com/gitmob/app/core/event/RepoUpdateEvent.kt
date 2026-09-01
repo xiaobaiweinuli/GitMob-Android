@@ -13,6 +13,11 @@ sealed class RepoUpdateEvent {
     abstract val owner: String
     abstract val name: String
 
+    data class RepositoryCreated(
+        override val owner: String,
+        override val name: String,
+    ) : RepoUpdateEvent()
+
     /** 当前查看的分支变了（仓库详情 Header、代码/提交入口都要联动） */
     data class BranchSwitched(
         override val owner: String,

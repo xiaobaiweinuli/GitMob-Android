@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
@@ -46,6 +47,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.ProfileOwner
+import com.gitmob.app.data.model.RepositoryCreateOwner
+import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.ui.common.OrganizationsBottomSheet
 import com.gitmob.app.ui.common.PinnedReposSection
 import com.gitmob.app.ui.common.ProfilePersonHeader
@@ -67,6 +70,7 @@ fun ProfileScreen(
     onMembersClick: (login: String) -> Unit = {},
     onOrgClick: (login: String) -> Unit = {},
     onPinnedRepoClick: (owner: String, name: String) -> Unit = { _, _ -> },
+    onCreateRepository: (RepositoryCreateOwner) -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(login) { viewModel.init(login) }
@@ -82,6 +86,23 @@ fun ProfileScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                    }
+                },
+                actions = {
+                    val org = state.owner as? ProfileOwner.Org
+                    if (org?.viewerCanCreateRepositories == true) {
+                        IconButton(onClick = {
+                            onCreateRepository(
+                                RepositoryCreateOwner(
+                                    id = org.id,
+                                    login = org.login,
+                                    name = org.name,
+                                    avatarUrl = org.avatarUrl,
+                                    type = RepositoryCreateOwnerType.ORGANIZATION,
+                                    canCreateRepository = true,
+                                ),
+                            )
+                        }) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.repo_create_title)) }
                     }
                 },
             )
@@ -154,6 +175,7 @@ fun ProfileScreen(
             },
         )
     }
+
 }
 
 @Composable

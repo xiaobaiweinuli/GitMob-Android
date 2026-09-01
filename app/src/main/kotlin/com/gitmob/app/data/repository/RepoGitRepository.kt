@@ -209,7 +209,7 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
                 ref(qualifiedName: ${'$'}qualifiedRef) { name target { oid } }
                 object(expression: ${'$'}sha) {
                   __typename
-                  ... on Commit { ${commitFields(includeHistory = false)} parents(first: 20) { nodes { oid } } }
+                  ... on Commit { ${commitFields(includeHistory = false)} parents(first: ${PageSize.COMMIT_PARENTS}) { nodes { oid } } }
                 }
               }
             }
@@ -252,6 +252,7 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
         message: String,
         previousPath: String? = null,
     ): ApiResult<RepoCommitSummary> = safeCall {
+        // 父提交对探测：只需区分零、一个或多个父提交，不是分页列表。
         val parentOids = api.graphQL<RepoGitQueryData>("""
             query CommitParent(${'$'}owner: String!, ${'$'}name: String!, ${'$'}sha: String!) {
               repository(owner: ${'$'}owner, name: ${'$'}name) { object(expression: ${'$'}sha) { ... on Commit { parents(first: 2) { nodes { oid } } } } }
@@ -455,6 +456,6 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
 
     private fun commitFields(includeHistory: Boolean = true) = buildString {
         append("oid abbreviatedOid messageHeadline messageBody authoredDate committedDate author { name email date avatarUrl user { login avatarUrl } } committer { name email date avatarUrl user { login avatarUrl } } additions deletions changedFilesIfAvailable url ")
-        if (includeHistory) append("parents(first: 20) { nodes { oid } } ")
+        if (includeHistory) append("parents(first: ${PageSize.COMMIT_PARENTS}) { nodes { oid } } ")
     }
 }

@@ -572,4 +572,18 @@
     <string name="repo_download_archive">Download repository archive</string>
     <string name="repository_context_open_owner">Open %1$s profile</string>
     <string name="repository_context_open_repository">Open repository %1$s/%2$s</string>
+    <string name="repo_create_title">New repository</string>
+    <string name="repo_create_action">Create</string>
+    <string name="repo_create_owner">Owner</string>
+    <string name="repo_create_name">Repository name</string>
+    <string name="repo_create_description">Description</string>
+    <string name="repo_create_private">Private repository</string>
+    <string name="repo_create_readme">Add README</string>
+    <string name="repo_create_gitignore">.gitignore</string>
+    <string name="repo_create_license">License</string>
+    <string name="repo_create_none">None</string>
+    <string name="repo_create_no_permission">No creation permission</string>
+    <string name="repo_create_owner_picker">Choose owner</string>
+    <string name="repo_create_gitignore_picker">Choose .gitignore</string>
+    <string name="repo_create_license_picker">Choose license</string>
 </resources>

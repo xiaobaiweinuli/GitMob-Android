@@ -20,9 +20,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.ui.common.RepoCard
 
 /**
@@ -54,21 +62,43 @@ import com.gitmob.app.ui.common.RepoCard
  * @param onRepoClick 点击某张仓库卡片的回调，传 ownerLogin + repoName 跳仓库详情
  * @param viewModel ReposViewModel（两种模式共用同一个 Hilt ViewModel）
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReposScreen(
     login: String? = null,
     onRepoClick: (owner: String, name: String) -> Unit = { _, _ -> },
     onForkSourceClick: (owner: String, name: String) -> Unit = { _, _ -> },
     onHomepageClick: (url: String) -> Unit = {},
+    onBack: (() -> Unit)? = null,
+    onCreateRepository: (RepositoryCreateOwner) -> Unit = {},
     viewModel: ReposViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(login) { viewModel.init(login) }
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     Scaffold(
-        // 无 TopAppBar → innerPadding.top = statusBar 高度
-        contentWindowInsets = WindowInsets.safeDrawing
-            .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+        topBar = {
+            TopAppBar(
+                title = { Text(state.ownerContext?.name ?: state.ownerContext?.login ?: stringResource(R.string.common_repository)) },
+                navigationIcon = {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        }
+                    }
+                },
+                actions = {
+                    val owner = state.ownerContext
+                    if (owner?.canCreateRepository == true) {
+                        IconButton(onClick = { onCreateRepository(owner) }) {
+                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.repo_create_title))
+                        }
+                    }
+                },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when {
@@ -131,4 +161,5 @@ fun ReposScreen(
             }
         }
     }
+
 }

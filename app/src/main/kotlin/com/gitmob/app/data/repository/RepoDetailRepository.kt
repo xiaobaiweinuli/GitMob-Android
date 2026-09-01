@@ -45,6 +45,7 @@ class RepoDetailRepository @Inject constructor(
         branchesCache.invalidateAll()
     }
     suspend fun getRepoDetail(owner: String, name: String): ApiResult<RepoDetail> = safeCall {
+        // first: 0 只取连接计数；first: 1 只取最新一条 Release，不是列表分页。
         val query = """
             query RepoDetail(${'$'}owner: String!, ${'$'}name: String!) {
                 repository(owner: ${'$'}owner, name: ${'$'}name) {
@@ -73,7 +74,7 @@ class RepoDetailRepository @Inject constructor(
                         nodes { name tagName }
                     }
                     primaryLanguage { name color }
-                    repositoryTopics(first: 10) { nodes { topic { name } } } # TOPICS_PER_REPO
+                    repositoryTopics(first: ${PageSize.TOPICS_PER_REPO}) { nodes { topic { name } } }
                     viewerPermission
                     viewerCanCreateIssues
                     hasIssuesEnabled

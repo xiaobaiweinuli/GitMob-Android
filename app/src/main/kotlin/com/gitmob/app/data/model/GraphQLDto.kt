@@ -97,7 +97,7 @@ data class PagedUserConnection(
 data class SimpleUserNode(val login: String, val name: String? = null, val avatarUrl: String? = null, val bio: String? = null, val id: String? = null)
 
 @Serializable
-data class PageInfoNode(val hasNextPage: Boolean, val endCursor: String? = null)
+data class PageInfoNode(val hasNextPage: Boolean = false, val endCursor: String? = null)
 
 // ---- Follow/Unfollow mutation ----
 // 对齐 GitHub 官方 App 做法：mutation 只查询 clientMutationId 验证请求成功，
@@ -139,7 +139,7 @@ data class OrganizationsQueryData(val viewer: OrgListHolder)
  * 配合 UserRepository.getOrganizations(login:) 使用——哪种模式查询，哪个根字段会被
  * GraphQL 服务端实际填充，另一个保持 null。
  *
- * 不分页，返回简单的 nodes 列表（与 OrganizationsBottomSheet 配合，BottomSheet 只需要 first:30）。
+ * 不分页，返回简单的 nodes 列表（与 OrganizationsBottomSheet 配合，容量由 PageSize.ORGS_PREVIEW 决定）。
  */
 @Serializable
 data class UnifiedOrganizationsQueryData(
@@ -247,6 +247,7 @@ data class RepositoryOwnerNode(
     val description: String? = null,
     val isVerified: Boolean = false,
     val membersWithRole: TotalCountNode? = null,
+    val viewerCanCreateRepositories: Boolean = false,
     // ================================
     // 两者共有
     // ================================
@@ -272,8 +273,29 @@ data class ViewerRepoListQueryData(val viewer: RepoListHolder)
  */
 @Serializable
 data class UnifiedRepoListQueryData(
-    val viewer: RepoListHolder? = null,
-    val repositoryOwner: RepoListHolder? = null,
+    val viewer: RepoListViewerHolder? = null,
+    val repositoryOwner: RepoListOwnerHolder? = null,
+)
+
+@Serializable
+data class RepoListViewerHolder(
+    val id: String = "",
+    val login: String = "",
+    val name: String? = null,
+    val avatarUrl: String? = null,
+    val repositories: RepoListConnection = RepoListConnection(),
+)
+
+@Serializable
+data class RepoListOwnerHolder(
+    val __typename: String = "",
+    val id: String = "",
+    val login: String = "",
+    val name: String? = null,
+    val avatarUrl: String? = null,
+    val isViewer: Boolean = false,
+    val viewerCanCreateRepositories: Boolean = false,
+    val repositories: RepoListConnection = RepoListConnection(),
 )
 
 @Serializable
@@ -281,9 +303,38 @@ data class RepoListHolder(val repositories: RepoListConnection)
 
 @Serializable
 data class RepoListConnection(
-    val totalCount: Int,
-    val nodes: List<RepoListItemNode>,
-    val pageInfo: PageInfoNode,
+    val totalCount: Int = 0,
+    val nodes: List<RepoListItemNode> = emptyList(),
+    val pageInfo: PageInfoNode = PageInfoNode(),
+)
+
+@Serializable
+data class RepositoryCreateOwnersQueryData(
+    val viewer: RepositoryCreateViewerNode = RepositoryCreateViewerNode(),
+)
+
+@Serializable
+data class RepositoryCreateViewerNode(
+    val id: String = "",
+    val login: String = "",
+    val name: String? = null,
+    val avatarUrl: String? = null,
+    val organizations: RepositoryCreateOrganizationConnection = RepositoryCreateOrganizationConnection(),
+)
+
+@Serializable
+data class RepositoryCreateOrganizationConnection(
+    val nodes: List<RepositoryCreateOrganizationNode> = emptyList(),
+    val pageInfo: PageInfoNode = PageInfoNode(),
+)
+
+@Serializable
+data class RepositoryCreateOrganizationNode(
+    val id: String = "",
+    val login: String = "",
+    val name: String? = null,
+    val avatarUrl: String? = null,
+    val viewerCanCreateRepositories: Boolean = false,
 )
 
 @Serializable

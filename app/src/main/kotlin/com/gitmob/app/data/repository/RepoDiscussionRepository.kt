@@ -22,7 +22,7 @@ class RepoDiscussionRepository @Inject constructor(private val api: GHApiClient)
             query RepoDiscussions(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String, ${'$'}states: [DiscussionState!], ${'$'}orderBy: DiscussionOrder, ${'$'}categoryId: ID, ${'$'}answered: Boolean) {
                 repository(owner: ${'$'}owner, name: ${'$'}name) {
                     id viewerPermission hasDiscussionsEnabled
-                    categories: discussionCategories(first: 100) { nodes { ${categoryFields()} } }
+                    categories: discussionCategories(first: ${PageSize.DISCUSSION_CATEGORIES}) { nodes { ${categoryFields()} } }
                     discussions(first: ${PageSize.REPO_ISSUES}, after: ${'$'}after, states: ${'$'}states, orderBy: ${'$'}orderBy, categoryId: ${'$'}categoryId, answered: ${'$'}answered) {
                         totalCount nodes { ${discussionFields(includeCommentCount = true)} }
                         pageInfo { hasNextPage endCursor }
@@ -46,7 +46,7 @@ class RepoDiscussionRepository @Inject constructor(private val api: GHApiClient)
         val query = """
             query RepoDiscussionDetail(${'$'}owner: String!, ${'$'}name: String!, ${'$'}number: Int!, ${'$'}after: String) {
                 repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id viewerPermission categories: discussionCategories(first: 100) { nodes { ${categoryFields()} } }
+                    id viewerPermission categories: discussionCategories(first: ${PageSize.DISCUSSION_CATEGORIES}) { nodes { ${categoryFields()} } }
                     discussion(number: ${'$'}number) {
                         ${discussionFields()}
                         comments(first: ${PageSize.ISSUE_COMMENTS}, after: ${'$'}after) { totalCount nodes { ${commentFields()} } pageInfo { hasNextPage endCursor } }
@@ -129,7 +129,7 @@ class RepoDiscussionRepository @Inject constructor(private val api: GHApiClient)
         private fun discussionFields(includeCommentCount: Boolean = false) = buildString {
             append("id url number title body bodyHTML closed stateReason category { ${categoryFields()} } author { login avatarUrl } authorAssociation createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } ")
             if (includeCommentCount) append("comments { totalCount } ")
-            append("labels(first: 20) { nodes { id name color description } } locked answerChosenAt viewerCanUpdate viewerCanDelete viewerCanClose viewerCanReopen viewerCanSubscribe viewerSubscription")
+            append("labels(first: ${PageSize.METADATA}) { nodes { id name color description } } locked answerChosenAt viewerCanUpdate viewerCanDelete viewerCanClose viewerCanReopen viewerCanSubscribe viewerSubscription")
         }
         private fun commentFields() = "id url body bodyHTML author { login avatarUrl } authorAssociation createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } isAnswer replyTo { id } viewerCanUpdate viewerCanDelete viewerCanReact viewerCanMarkAsAnswer viewerCanUnmarkAsAnswer"
     }

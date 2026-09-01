@@ -6,6 +6,7 @@ import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
 import kotlinx.serialization.SerialName
@@ -30,8 +31,8 @@ class RepoReleaseRepository @Inject constructor(
     }
 
     suspend fun getReleases(owner: String, name: String, page: Int = 1): ApiResult<RepoReleasePage> = safeCall {
-        val values = api.get<List<RestRelease>>("/repos/$owner/$name/releases?per_page=30&page=$page", "application/vnd.github.full+json")
-        RepoReleasePage(values.map(::toRelease), page, values.size >= 30)
+        val values = api.get<List<RestRelease>>("/repos/$owner/$name/releases?per_page=${PageSize.RELEASES}&page=$page", "application/vnd.github.full+json")
+        RepoReleasePage(values.map(::toRelease), page, values.size >= PageSize.RELEASES)
     }
     suspend fun getRelease(owner: String, name: String, releaseId: Long): ApiResult<RepoRelease> = safeCall { toRelease(api.get("/repos/$owner/$name/releases/$releaseId", "application/vnd.github.full+json")) }
     suspend fun getReleaseByTag(owner: String, name: String, tag: String): ApiResult<RepoRelease> = safeCall { toRelease(api.get("/repos/$owner/$name/releases/tags/${encode(tag)}", "application/vnd.github.full+json")) }

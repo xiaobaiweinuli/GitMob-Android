@@ -6,6 +6,10 @@ import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.data.model.*
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -76,7 +80,7 @@ class RepoRepository @Inject constructor(
             stargazerCount
             forkCount
             issues(states: [OPEN]) { totalCount }
-            repositoryTopics(first: 10) { nodes { topic { name } } } # TOPICS_PER_REPO
+            repositoryTopics(first: ${PageSize.TOPICS_PER_REPO}) { nodes { topic { name } } }
             defaultBranchRef { name }
         """.trimIndent()
 
@@ -84,6 +88,10 @@ class RepoRepository @Inject constructor(
             """
                 query ViewerRepos(${'$'}after: String) {
                     viewer {
+                        id
+                        login
+                        name
+                        avatarUrl
                         repositories(first: ${PageSize.REPOS}, after: ${'$'}after, ownerAffiliations: [OWNER]) {
                             totalCount
                             nodes { $repoFields }
@@ -96,6 +104,12 @@ class RepoRepository @Inject constructor(
             """
                 query OwnerRepos(${'$'}login: String!, ${'$'}after: String) {
                     repositoryOwner(login: ${'$'}login) {
+                        __typename
+                        id
+                        login
+                        avatarUrl
+                        ... on User { name isViewer }
+                        ... on Organization { name viewerCanCreateRepositories }
                         repositories(first: ${PageSize.REPOS}, after: ${'$'}after, ownerAffiliations: [OWNER]) {
                             totalCount
                             nodes { $repoFields }
@@ -115,14 +129,159 @@ class RepoRepository @Inject constructor(
         // GraphQL 服务端只会返回对应查询的那一个，另一个保持 null，
         // 这样就不需要维护两份结构完全重复的 ViewerRepoListQueryData / UserRepoListQueryData。
         val data = api.graphQL<UnifiedRepoListQueryData>(query, variables)
-        val conn = data.viewer?.repositories
-            ?: data.repositoryOwner?.repositories
+        val viewer = data.viewer
+        val repositoryOwner = data.repositoryOwner
+        val conn = viewer?.repositories
+            ?: repositoryOwner?.repositories
             ?: throw IllegalStateException("仓库查询根字段缺失（viewer/repositoryOwner 均为 null）")
+        val owner = if (viewer != null) {
+            RepositoryCreateOwner(
+                id = viewer.id,
+                login = viewer.login,
+                name = viewer.name,
+                avatarUrl = viewer.avatarUrl,
+                type = RepositoryCreateOwnerType.USER,
+                canCreateRepository = true,
+            )
+        } else {
+            val ownerType = if (repositoryOwner?.__typename == "Organization") {
+                RepositoryCreateOwnerType.ORGANIZATION
+            } else {
+                RepositoryCreateOwnerType.USER
+            }
+            RepositoryCreateOwner(
+                id = repositoryOwner?.id.orEmpty(),
+                login = repositoryOwner?.login.orEmpty(),
+                name = repositoryOwner?.name,
+                avatarUrl = repositoryOwner?.avatarUrl,
+                type = ownerType,
+                canCreateRepository = if (ownerType == RepositoryCreateOwnerType.ORGANIZATION) {
+                    repositoryOwner?.viewerCanCreateRepositories == true
+                } else {
+                    repositoryOwner?.isViewer == true
+                },
+            )
+        }
         RepoList(
             totalCount = conn.totalCount,
             items = conn.nodes.map { it.toDomain() },
             hasNextPage = conn.pageInfo.hasNextPage,
             endCursor = conn.pageInfo.endCursor,
+            ownerContext = RepositoryListOwnerContext(owner),
         )
     }
+
+    /** Loads the viewer and one page of organizations for the create-repository owner picker. */
+    suspend fun getRepositoryCreateOwners(after: String? = null): ApiResult<RepositoryCreateOwnerPage> = safeCall {
+        val query = """
+            query RepositoryCreateOwners(${'$'}after: String) {
+                viewer {
+                    id
+                    login
+                    name
+                    avatarUrl
+                    organizations(first: ${PageSize.ORGS}, after: ${'$'}after) {
+                        nodes {
+                            id
+                            login
+                            name
+                            avatarUrl
+                            viewerCanCreateRepositories
+                        }
+                        pageInfo { hasNextPage endCursor }
+                    }
+                }
+            }
+        """.trimIndent()
+        val data = api.graphQL<RepositoryCreateOwnersQueryData>(
+            query,
+            buildMap { after?.let { put("after", JsonPrimitive(it)) } },
+        )
+        val viewer = data.viewer
+        RepositoryCreateOwnerPage(
+            viewer = RepositoryCreateOwner(
+                id = viewer.id,
+                login = viewer.login,
+                name = viewer.name,
+                avatarUrl = viewer.avatarUrl,
+                type = RepositoryCreateOwnerType.USER,
+                canCreateRepository = true,
+            ),
+            organizations = viewer.organizations.nodes.map { organization ->
+                RepositoryCreateOwner(
+                    id = organization.id,
+                    login = organization.login,
+                    name = organization.name,
+                    avatarUrl = organization.avatarUrl,
+                    type = RepositoryCreateOwnerType.ORGANIZATION,
+                    canCreateRepository = organization.viewerCanCreateRepositories,
+                )
+            },
+            hasNextPage = viewer.organizations.pageInfo.hasNextPage,
+            endCursor = viewer.organizations.pageInfo.endCursor,
+        )
+    }
+
+    suspend fun getLicenseTemplates(): ApiResult<List<RepositoryLicense>> = safeCall {
+        api.get<List<RestLicenseTemplate>>("/licenses").map { RepositoryLicense(it.key, it.name) }
+    }
+
+    suspend fun getGitignoreTemplates(): ApiResult<List<String>> = safeCall {
+        api.get<List<String>>("/gitignore/templates")
+    }
+
+    suspend fun createRepository(input: RepositoryCreateInput): ApiResult<CreatedRepository> = safeCall {
+        val request = RepositoryCreateRequest(
+            name = input.name,
+            description = input.description,
+            isPrivate = input.isPrivate,
+            autoInit = input.addReadme,
+            licenseTemplate = input.licenseTemplate,
+            gitignoreTemplate = input.gitignoreTemplate,
+        )
+        val path = if (input.owner.type == RepositoryCreateOwnerType.ORGANIZATION) {
+            "/orgs/${input.owner.login}/repos"
+        } else {
+            "/user/repos"
+        }
+        val response = api.post<RestCreatedRepository, RepositoryCreateRequest>(path, request)
+        if (input.owner.type == RepositoryCreateOwnerType.USER) {
+            viewerReposCache.invalidateAll()
+        }
+        CreatedRepository(owner = response.owner.login, name = response.name)
+    }
+
+    @Serializable
+    private data class RestLicenseTemplate(
+        val key: String = "",
+        val name: String = "",
+    )
+
+    @OptIn(ExperimentalSerializationApi::class)
+    @Serializable
+    private data class RepositoryCreateRequest(
+        val name: String,
+        val description: String? = null,
+        @SerialName("private")
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        val isPrivate: Boolean = false,
+        @SerialName("auto_init")
+        @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+        val autoInit: Boolean = false,
+        @SerialName("license_template")
+        val licenseTemplate: String? = null,
+        @SerialName("gitignore_template")
+        val gitignoreTemplate: String? = null,
+    )
+
+    @Serializable
+    private data class RestCreatedRepository(
+        val name: String = "",
+        val owner: RestRepositoryOwner = RestRepositoryOwner(),
+    )
+
+    @Serializable
+    private data class RestRepositoryOwner(
+        val login: String = "",
+    )
 }

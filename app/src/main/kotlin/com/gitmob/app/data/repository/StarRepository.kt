@@ -29,7 +29,7 @@ private const val STARRED_REPO_FIELDS = """
     stargazerCount
     forkCount
     issues(states: [OPEN]) { totalCount }
-    repositoryTopics(first: 10) { nodes { topic { name } } } # TOPICS_PER_REPO
+    repositoryTopics(first: ${PageSize.TOPICS_PER_REPO}) { nodes { topic { name } } }
     defaultBranchRef { name }
 """
 
@@ -64,6 +64,7 @@ class StarRepository @Inject constructor(
 
     /** 下拉刷新/增删改后强制重新拉取列表，不走缓存 */
     suspend fun getListsFresh(): ApiResult<List<UserListSummary>> = safeCall {
+        // 每个列表这里只读取 totalCount；单节点容量不是列表分页。
         val query = """
             query ViewerLists {
                 viewer {
@@ -204,6 +205,7 @@ class StarRepository @Inject constructor(
     suspend fun createList(name: String, description: String?, isPrivate: Boolean): ApiResult<UserListSummary> = safeCall {
         // 新建列表后，横排 Chip 列表数量变了，主动失效缓存
         listsCache.invalidate(Unit)
+        // Mutation 返回体只读取列表项目总数，不加载列表项目。
         val mutation = """
             mutation CreateList(${'$'}name: String!, ${'$'}description: String, ${'$'}isPrivate: Boolean) {
                 createUserList(input: { name: ${'$'}name, description: ${'$'}description, isPrivate: ${'$'}isPrivate }) {
@@ -247,6 +249,7 @@ class StarRepository @Inject constructor(
         description: String?,
         isPrivate: Boolean?,
     ): ApiResult<UserListSummary> = safeCall {
+        // Mutation 返回体只读取列表项目总数，不加载列表项目。
         val mutation = """
             mutation UpdateList(${'$'}listId: ID!, ${'$'}name: String, ${'$'}description: String, ${'$'}isPrivate: Boolean) {
                 updateUserList(input: { listId: ${'$'}listId, name: ${'$'}name, description: ${'$'}description, isPrivate: ${'$'}isPrivate }) {

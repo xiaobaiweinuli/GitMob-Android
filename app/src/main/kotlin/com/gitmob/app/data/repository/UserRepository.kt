@@ -308,7 +308,7 @@ class UserRepository @Inject constructor(
     /**
      * 统一的组织列表查询入口：自己的主页弹底部 OrganizationsBottomSheet + 他人个人主页弹底部 OrganizationsBottomSheet。
      *
-     * BottomSheet 设计是轻量预览（不分页，最多 first:30 够了），不是独立分页列表页，
+     * BottomSheet 设计是轻量预览（容量由 PageSize.ORGS_PREVIEW 决定），不是独立分页列表页，
      * 因此只需要 nodes（login/name/avatarUrl）不需要 totalCount/pageInfo 分页结构。
      *
      * @param login `null` 时走 `viewer.organizations`（当前登录用户，HomeScreen 底部弹窗）；
@@ -389,6 +389,7 @@ class UserRepository @Inject constructor(
                         isVerified
                         websiteUrl
                         membersWithRole { totalCount }
+                        viewerCanCreateRepositories
                         repositories(ownerAffiliations: [OWNER]) { totalCount }
                         viewerIsFollowing
                         $pinnedRepositoryFields
@@ -443,6 +444,7 @@ class UserRepository @Inject constructor(
                 isVerified = node.isVerified,
                 membersCount = node.membersWithRole?.totalCount ?: 0,
                 viewerIsFollowing = node.viewerIsFollowing,
+                viewerCanCreateRepositories = node.viewerCanCreateRepositories,
                 pinnedRepos = node.pinnedItems.toPinnedRepos(),
             )
             else -> throw IllegalStateException("未知的 owner 类型: ${node.__typename}")
@@ -526,7 +528,7 @@ class UserRepository @Inject constructor(
                             stargazerCount
                             forkCount
                             issues(states: [OPEN]) { totalCount }
-                            repositoryTopics(first: 10) { nodes { topic { name } } } # TOPICS_PER_REPO
+                            repositoryTopics(first: ${PageSize.TOPICS_PER_REPO}) { nodes { topic { name } } }
                             defaultBranchRef { name }
                         }
                         pageInfo { hasNextPage endCursor }
@@ -577,7 +579,7 @@ class UserRepository @Inject constructor(
                                 stargazerCount
                                 forkCount
                                 issues(states: [OPEN]) { totalCount }
-                                repositoryTopics(first: 10) { nodes { topic { name } } } # TOPICS_PER_REPO
+                                repositoryTopics(first: ${PageSize.TOPICS_PER_REPO}) { nodes { topic { name } } }
                                 defaultBranchRef { name }
                             }
                         }

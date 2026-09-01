@@ -37,6 +37,7 @@ class RepoPullRequestRepository @Inject constructor(
     ): ApiResult<ExistingRepoPullRequest?> = safeCall {
         val base = encode(baseRef)
         val head = encode("$headOwner:$headRef")
+        // 存在性探测：只需要第一条匹配的开放 PR，不是分页列表。
         api.get<List<RestOpenPullRequest>>(
             "/repos/$baseOwner/$baseRepository/pulls?state=open&base=$base&head=$head&per_page=1",
         ).firstOrNull()?.let {
@@ -121,14 +122,14 @@ class RepoPullRequestRepository @Inject constructor(
                             nodes { ${commentFields()} }
                             pageInfo { hasNextPage endCursor }
                         }
-                        reviews(first: 30) { nodes { id url author { login avatarUrl } authorAssociation body bodyHTML state submittedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } viewerCanUpdate viewerCanDelete } }
-                        reviewThreads(first: 50) {
+                        reviews(first: ${PageSize.PULL_REQUEST_REVIEWS}) { nodes { id url author { login avatarUrl } authorAssociation body bodyHTML state submittedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } viewerCanUpdate viewerCanDelete } }
+                        reviewThreads(first: ${PageSize.PULL_REQUEST_REVIEW_THREADS}) {
                             nodes {
                                 id path line isResolved isOutdated viewerCanReply viewerCanResolve viewerCanUnresolve
-                                comments(first: 50) { nodes { ${reviewCommentFields()} } }
+                                comments(first: ${PageSize.PULL_REQUEST_REVIEW_COMMENTS}) { nodes { ${reviewCommentFields()} } }
                             }
                         }
-                        commits(first: 50) {
+                        commits(first: ${PageSize.PULL_REQUEST_COMMITS}) {
                             nodes { commit { oid messageHeadline committedDate author { user { login avatarUrl } } } }
                         }
                     }
@@ -142,7 +143,7 @@ class RepoPullRequestRepository @Inject constructor(
             commentsAfter?.let { put("after", JsonPrimitive(it)) }
         }).repository ?: error("Repository not found")
         val node = repository.pullRequest ?: error("Pull request not found")
-        val files = api.get<List<RestPullRequestFile>>("/repos/$owner/$name/pulls/$number/files?per_page=100")
+        val files = api.get<List<RestPullRequestFile>>("/repos/$owner/$name/pulls/$number/files?per_page=${PageSize.PULL_REQUEST_FILES}")
         val permission = parsePermission(repository.viewerPermission)
         RepoPullRequestDetail(
             repositoryId = repository.id,
@@ -567,8 +568,8 @@ class RepoPullRequestRepository @Inject constructor(
             author { login avatarUrl } authorAssociation
             baseRefName headRefName headRepository { nameWithOwner }
             totalCommentsCount additions deletions changedFiles mergeable mergeStateStatus reviewDecision
-            labels(first: 20) { nodes { id name color description } }
-            assignees(first: 20) { nodes { id login name avatarUrl bio } }
+            labels(first: ${PageSize.METADATA}) { nodes { id name color description } }
+            assignees(first: ${PageSize.METADATA}) { nodes { id login name avatarUrl bio } }
             milestone { id number title state dueOn }
             statusCheckRollup { state }
             autoMergeRequest { enabledAt }

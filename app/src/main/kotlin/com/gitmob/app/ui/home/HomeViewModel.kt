@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.event.RepoUpdateEvent
+import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.data.model.ViewerProfile
 import com.gitmob.app.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +30,7 @@ data class HomeUiState(
 class HomeViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val errorEventBus: ErrorEventBus,
+    private val repoUpdateEventBus: RepoUpdateEventBus = RepoUpdateEventBus(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeUiState())
@@ -35,6 +38,17 @@ class HomeViewModel @Inject constructor(
 
     init {
         load()
+        observeRepositoryCreated()
+    }
+
+    private fun observeRepositoryCreated() {
+        viewModelScope.launch {
+            repoUpdateEventBus.events.collect { event ->
+                if (event is RepoUpdateEvent.RepositoryCreated && event.owner == _state.value.profile?.user?.login) {
+                    _state.update { state -> state.copy(profile = state.profile?.copy(repoCount = state.profile.repoCount + 1)) }
+                }
+            }
+        }
     }
 
     /**

@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.event.RepoUpdateEvent
+import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.data.model.ProfileOwner
 import com.gitmob.app.data.model.SimpleOrg
 import com.gitmob.app.data.repository.UserRepository
@@ -34,10 +36,32 @@ data class ProfileUiState(
 class ProfileViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val errorEventBus: ErrorEventBus,
+    private val repoUpdateEventBus: RepoUpdateEventBus = RepoUpdateEventBus(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ProfileUiState())
     val state: StateFlow<ProfileUiState> = _state.asStateFlow()
+
+    init {
+        observeRepositoryCreated()
+    }
+
+    private fun observeRepositoryCreated() {
+        viewModelScope.launch {
+            repoUpdateEventBus.events.collect { event ->
+                if (event is RepoUpdateEvent.RepositoryCreated && event.owner == _state.value.owner?.login) {
+                    _state.update { state ->
+                        state.owner?.let { owner ->
+                            state.copy(owner = when (owner) {
+                                is ProfileOwner.Person -> owner.copy(repoCount = owner.repoCount + 1)
+                                is ProfileOwner.Org -> owner.copy(repoCount = owner.repoCount + 1)
+                            })
+                        } ?: state
+                    }
+                }
+            }
+        }
+    }
 
     /** 当前正在查看的用户/组织 login（retry / openOrganizations 都需要用到） */
     private var currentLogin: String = ""

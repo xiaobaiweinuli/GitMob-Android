@@ -19,14 +19,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Adjust
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -40,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.data.model.RepositoryCreateOwner
+import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.data.model.ViewerProfile
 import com.gitmob.app.ui.common.OrganizationsBottomSheet
 import com.gitmob.app.ui.common.PinnedReposSection
@@ -56,6 +62,7 @@ import com.gitmob.app.ui.icons.OcticonName
  * 避免内容压在状态栏上；底部 NavigationBar 高度由外层 NavDisplay 的
  * Modifier.padding(bottom = navBarBottom) 统一处理，不需要 Screen 内部再挂 Spacer。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onFollowersClick: (login: String) -> Unit = {},
@@ -69,19 +76,39 @@ fun HomeScreen(
     onWorkDiscussionsClick: () -> Unit = {},
     onInboxClick: () -> Unit = {},
     onPinnedRepoClick: (owner: String, name: String) -> Unit = { _, _ -> },
+    onCreateRepository: (RepositoryCreateOwner) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     Scaffold(
-        // 无 topBar → innerPadding.top = statusBar 高度，不含 AppBar；
-        // bottom / vertical 不让 Scaffold 处理（避免跟外层 MainTabHost 的 NavigationBar 叠加）
-        contentWindowInsets = WindowInsets.safeDrawing
-            .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.nav_tab_home)) },
+                actions = {
+                    if (state.profile != null) {
+                        IconButton(onClick = {
+                            val profile = state.profile ?: return@IconButton
+                            onCreateRepository(
+                                RepositoryCreateOwner(
+                                    id = profile.user.id,
+                                    login = profile.user.login,
+                                    name = profile.user.name,
+                                    avatarUrl = profile.user.avatarUrl,
+                                    type = RepositoryCreateOwnerType.USER,
+                                    canCreateRepository = true,
+                                ),
+                            )
+                        }) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.repo_create_title)) }
+                    }
+                },
+                windowInsets = WindowInsets.safeDrawing
+                    .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
-        val statusBarTop = innerPadding.calculateTopPadding()
-
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when {
                 state.isLoading && state.profile == null -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
@@ -89,7 +116,7 @@ fun HomeScreen(
                 state.loadFailed -> {
                     RetryContent(
                         onRetry = viewModel::retry,
-                        topPadding = statusBarTop,
+                        topPadding = 0.dp,
                     )
                 }
                 state.profile != null -> {
@@ -100,7 +127,7 @@ fun HomeScreen(
                     ) {
                         ProfileContent(
                             profile = state.profile!!,
-                            topPadding = statusBarTop,
+                            topPadding = 0.dp,
                             onFollowClick = viewModel::toggleFollow,
                             onFollowersClick = { onFollowersClick(state.profile!!.user.login) },
                             onFollowingClick = { onFollowingClick(state.profile!!.user.login) },
@@ -132,6 +159,7 @@ fun HomeScreen(
             },
         )
     }
+
 }
 
 /**

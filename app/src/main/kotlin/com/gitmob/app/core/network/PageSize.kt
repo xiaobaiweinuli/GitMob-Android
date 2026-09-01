@@ -52,14 +52,53 @@ object PageSize {
     /** Gist 列表底层扫描页和 UI 目标页尺寸 */
     const val GISTS = 20
 
-    /** 组织列表（user.organizations 分页） */
+    /** 普通组织列表，以及创建仓库时的所有者组织选择器。 */
     const val ORGS = 20
+
+    /** Releases REST pages. */
+    const val RELEASES = 30
+
+    /** Pull request review connection capacity. */
+    const val PULL_REQUEST_REVIEWS = 30
+
+    /** Pull request review thread connection capacity. */
+    const val PULL_REQUEST_REVIEW_THREADS = 50
+
+    /** Pull request review comment connection capacity. */
+    const val PULL_REQUEST_REVIEW_COMMENTS = 50
+
+    /** Pull request commit connection capacity. */
+    const val PULL_REQUEST_COMMITS = 50
+
+    /** Pull request files REST page capacity. */
+    const val PULL_REQUEST_FILES = 100
+
+    /** Commit parent connection capacity for commit detail data. */
+    const val COMMIT_PARENTS = 20
+
+    /** Repository discussion category connection capacity. */
+    const val DISCUSSION_CATEGORIES = 100
+
+    /** Repository contributors REST page capacity. */
+    const val CONTRIBUTORS = 50
+
+    /** GitHub Actions workflow REST list capacity. */
+    const val ACTION_WORKFLOWS = 100
+
+    /** GitHub Actions run REST page capacity. */
+    const val ACTION_RUNS = 30
+
+    /** GitHub Actions job REST list capacity. */
+    const val ACTION_JOBS = 100
+
+    /** GitHub Actions artifact REST list capacity. */
+    const val ACTION_ARTIFACTS = 100
 
     // ──────────────── 固定容量（非分页，不可随意调大）────────────────
 
     /**
      * 仓库话题标签上限（repositoryTopics）。
-     * GitHub 每个仓库最多 20 个 topic，first:10 已足够展示；不分页。
+     * GitHub 每个仓库最多 20 个 topic；此处使用固定展示容量，不分页。
      */
     const val TOPICS_PER_REPO = 10
 

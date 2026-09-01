@@ -6,13 +6,13 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.data.model.RepoListItem
 import com.gitmob.app.data.repository.RepoRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -25,6 +25,7 @@ data class ReposUiState(
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
     val hasNextPage: Boolean = false,
+    val ownerContext: RepositoryCreateOwner? = null,
 )
 
 @HiltViewModel
@@ -65,9 +66,14 @@ class ReposViewModel @Inject constructor(
     /** 仓库详情页星标切换后，这里同步更新对应卡片的星标数，不用整页重新拉取 */
     private fun observeRepoUpdates() {
         viewModelScope.launch {
-            repoUpdateEventBus.events
-                .filterIsInstance<RepoUpdateEvent.StarChanged>()
+        repoUpdateEventBus.events
                 .collect { event ->
+                    if (event is RepoUpdateEvent.RepositoryCreated) {
+                        val owner = _state.value.ownerContext?.login
+                        if (owner != null && owner == event.owner) refresh()
+                        return@collect
+                    }
+                    if (event !is RepoUpdateEvent.StarChanged) return@collect
                     _state.update { state ->
                         state.copy(repos = state.repos.map {
                             if (it.ownerLogin == event.owner && it.name == event.name) {
@@ -135,6 +141,7 @@ class ReposViewModel @Inject constructor(
                     it.copy(
                         repos = result.data.items,
                         totalCount = result.data.totalCount,
+                        ownerContext = result.data.ownerContext?.owner,
                         hasNextPage = result.data.hasNextPage,
                         isLoading = false,
                         isRefreshing = false,

@@ -24,4 +24,5 @@ data class RepoList(
     val items: List<RepoListItem>,
     val hasNextPage: Boolean,
     val endCursor: String?,
+    val ownerContext: RepositoryListOwnerContext? = null,
 )

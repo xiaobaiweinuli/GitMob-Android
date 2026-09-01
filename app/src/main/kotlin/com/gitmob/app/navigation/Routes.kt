@@ -30,6 +30,17 @@ sealed interface Route : NavKey
  */
 @Serializable data class UserRepoListRoute(val login: String) : Route
 
+/** 创建仓库全屏表单；完整默认所有者快照避免为恢复组织上下文额外扫描分页。 */
+@Serializable
+data class RepoCreateRoute(
+    val ownerId: String,
+    val ownerLogin: String,
+    val ownerName: String? = null,
+    val ownerAvatarUrl: String? = null,
+    val ownerIsOrganization: Boolean,
+    val ownerCanCreateRepository: Boolean,
+) : Route
+
 /**
  * 指定 login 用户的星标仓库列表（只读、轻量）。
  * 指向新建的轻量 UserStarredReposScreen/ViewModel（不带列表管理的状态机），

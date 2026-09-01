@@ -47,6 +47,8 @@ import androidx.navigation3.ui.NavDisplay
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ErrorBannerHost
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.data.model.RepositoryCreateOwner
+import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.ui.branches.BranchesScreen
 import com.gitmob.app.ui.common.ConversationComposerScreen
 import com.gitmob.app.ui.repoactions.RepoActionsScreen
@@ -77,6 +79,7 @@ import com.gitmob.app.ui.repoissues.RepoIssueListScreen
 import com.gitmob.app.ui.repopullrequests.RepoPullRequestDetailScreen
 import com.gitmob.app.ui.repopullrequests.RepoPullRequestEditorScreen
 import com.gitmob.app.ui.repopullrequests.RepoPullRequestListScreen
+import com.gitmob.app.ui.repos.RepoCreateScreen
 import com.gitmob.app.ui.repos.ReposScreen
 import com.gitmob.app.ui.settings.AboutScreen
 import com.gitmob.app.ui.settings.AppearanceScreen
@@ -92,6 +95,15 @@ import com.gitmob.app.ui.work.WorkIssueListScreen
 import com.gitmob.app.ui.work.WorkPullRequestListScreen
 
 private data class BottomTab(val route: Route, @StringRes val labelRes: Int, val icon: ImageVector)
+
+private fun RepositoryCreateOwner.toRepoCreateRoute() = RepoCreateRoute(
+    ownerId = id,
+    ownerLogin = login,
+    ownerName = name,
+    ownerAvatarUrl = avatarUrl,
+    ownerIsOrganization = type == RepositoryCreateOwnerType.ORGANIZATION,
+    ownerCanCreateRepository = canCreateRepository,
+)
 
 /**
  * 全站统一的页面转场：淡入淡出（draw 阶段 alpha，无位移）。
@@ -247,6 +259,7 @@ private fun LoggedInApp(
                 onPinnedRepoClick = { owner, name ->
                     navigator.navigate(RepoDetailRoute(owner, name))
                 },
+                onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
             )
         }
         entry<ReposRoute> {
@@ -254,6 +267,7 @@ private fun LoggedInApp(
                 onRepoClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onForkSourceClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onHomepageClick = openExternalUrl,
+                onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
             )
         }
         entry<StarsRoute> {
@@ -332,6 +346,27 @@ private fun LoggedInApp(
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
         }
+        entry<RepoCreateRoute> { route ->
+            RepoCreateScreen(
+                defaultOwner = RepositoryCreateOwner(
+                    id = route.ownerId,
+                    login = route.ownerLogin,
+                    name = route.ownerName,
+                    avatarUrl = route.ownerAvatarUrl,
+                    type = if (route.ownerIsOrganization) {
+                        RepositoryCreateOwnerType.ORGANIZATION
+                    } else {
+                        RepositoryCreateOwnerType.USER
+                    },
+                    canCreateRepository = route.ownerCanCreateRepository,
+                ),
+                onBack = { navigator.goBack() },
+                onCreated = { owner, name ->
+                    navigator.goBack()
+                    navigator.navigate(RepoDetailRoute(owner, name))
+                },
+            )
+        }
         entry<ProfileRoute> { route ->
             ProfileScreen(
                 login = route.login,
@@ -346,6 +381,7 @@ private fun LoggedInApp(
                 onPinnedRepoClick = { owner, name ->
                     navigator.navigate(RepoDetailRoute(owner, name))
                 },
+                onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
             )
         }
         entry<RepoDetailRoute> { route ->
@@ -743,9 +779,11 @@ private fun LoggedInApp(
         entry<UserRepoListRoute> { route ->
             ReposScreen(
                 login = route.login,
+                onBack = { navigator.goBack() },
                 onRepoClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onForkSourceClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
                 onHomepageClick = openExternalUrl,
+                onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
             )
         }
 

@@ -268,8 +268,8 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
         private fun issueFields(commentsFirst: Int, commentsAfter: String? = null): String = """
             id url number title body bodyHTML state stateReason author { login avatarUrl } authorAssociation createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } locked
             comments(first: $commentsFirst${commentsAfter?.let { ", after: $it" }.orEmpty()}) { totalCount nodes { ${commentFields()} } pageInfo { hasNextPage endCursor } }
-            labels(first: 20) { nodes { id name color description } }
-            assignees(first: 20) { nodes { id login name avatarUrl bio } }
+            labels(first: ${PageSize.METADATA}) { nodes { id name color description } }
+            assignees(first: ${PageSize.METADATA}) { nodes { id login name avatarUrl bio } }
             milestone { id number title state dueOn }
             viewerCanClose viewerCanDelete viewerCanLabel viewerCanSetMilestone viewerCanUpdate viewerCanSubscribe viewerCanReopen viewerSubscription
         """.trimIndent()

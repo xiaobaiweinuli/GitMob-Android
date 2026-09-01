@@ -576,4 +576,18 @@
     <string name="repo_download_archive">下载仓库归档</string>
     <string name="repository_context_open_owner">打开 %1$s 的主页</string>
     <string name="repository_context_open_repository">打开仓库 %1$s/%2$s</string>
+    <string name="repo_create_title">新建仓库</string>
+    <string name="repo_create_action">创建</string>
+    <string name="repo_create_owner">所有者</string>
+    <string name="repo_create_name">仓库名称</string>
+    <string name="repo_create_description">仓库描述</string>
+    <string name="repo_create_private">私有仓库</string>
+    <string name="repo_create_readme">添加 README</string>
+    <string name="repo_create_gitignore">.gitignore</string>
+    <string name="repo_create_license">许可证</string>
+    <string name="repo_create_none">无</string>
+    <string name="repo_create_no_permission">无创建权限</string>
+    <string name="repo_create_owner_picker">选择所有者</string>
+    <string name="repo_create_gitignore_picker">选择 .gitignore</string>
+    <string name="repo_create_license_picker">选择许可证</string>
 </resources>

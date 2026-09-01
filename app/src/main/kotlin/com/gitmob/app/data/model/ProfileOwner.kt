@@ -80,6 +80,7 @@ sealed class ProfileOwner {
         val isVerified: Boolean,
         val membersCount: Int,
         val viewerIsFollowing: Boolean,
+        val viewerCanCreateRepositories: Boolean = false,
         override val pinnedRepos: List<PinnedRepo> = emptyList(),
     ) : ProfileOwner()
 }
