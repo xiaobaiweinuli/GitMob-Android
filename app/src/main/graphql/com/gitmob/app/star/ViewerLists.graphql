@@ -1,0 +1,17 @@
+# "我的列表"横排 chip：每个列表只读 totalCount，不加载项目。first: 20 = PageSize.STAR_LISTS。
+query ViewerLists {
+    viewer {
+        lists(first: 20) {
+            nodes {
+                id
+                name
+                slug
+                description
+                isPrivate
+                items(first: 1) {
+                    totalCount
+                }
+            }
+        }
+    }
+}

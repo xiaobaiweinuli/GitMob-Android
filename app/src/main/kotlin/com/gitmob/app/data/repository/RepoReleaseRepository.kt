@@ -8,10 +8,12 @@ import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.permission.RepoPermission
+import com.apollographql.apollo.ApolloClient
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.*
+import com.gitmob.app.graphql.RepositoryPermissionQuery
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonPrimitive
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject
@@ -20,15 +22,18 @@ import javax.inject.Singleton
 @Singleton
 class RepoReleaseRepository @Inject constructor(
     private val api: GHApiClient,
+    private val apolloClient: ApolloClient,
     private val downloadLauncher: ExternalDownloadLauncher,
 ) {
-    suspend fun getRepositoryPermission(owner: String, name: String): ApiResult<RepoPermission> = safeCall {
-        val data = api.graphQL<ReleasePermissionData>(
-            "query ReleaseRepositoryPermission(\u0024owner: String!, \u0024name: String!) { repository(owner: \u0024owner, name: \u0024name) { viewerPermission } }",
-            mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name)),
-        )
-        data.repository?.viewerPermission?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() } ?: RepoPermission.NONE
-    }
+    suspend fun getRepositoryPermission(owner: String, name: String): ApiResult<RepoPermission> =
+        when (val result = apolloClient.query(RepositoryPermissionQuery(owner, name)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                result.data.repository?.viewerPermission?.rawValue
+                    ?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() }
+                    ?: RepoPermission.NONE
+            }
+        }
 
     suspend fun getReleases(owner: String, name: String, page: Int = 1): ApiResult<RepoReleasePage> = safeCall {
         val values = api.get<List<RestRelease>>("/repos/$owner/$name/releases?per_page=${PageSize.RELEASES}&page=$page", "application/vnd.github.full+json")
@@ -65,5 +70,3 @@ class RepoReleaseRepository @Inject constructor(
 @Serializable private data class ReleaseRestActor(val login: String = "", @SerialName("avatar_url") val avatarUrl: String? = null, val name: String? = null)
 @Serializable private data class RestAsset(val id: Long, val name: String, val label: String? = null, @SerialName("content_type") val contentType: String = "application/octet-stream", val state: String = "uploaded", val size: Long = 0, @SerialName("download_count") val downloadCount: Int = 0, @SerialName("created_at") val createdAt: String = "", @SerialName("updated_at") val updatedAt: String = "")
 @Serializable private data class RestRelease(val id: Long, @SerialName("node_id") val nodeId: String = "", @SerialName("tag_name") val tagName: String, @SerialName("target_commitish") val targetCommitish: String = "", val name: String? = null, val body: String? = null, @SerialName("body_html") val bodyHtml: String? = null, val draft: Boolean = false, val prerelease: Boolean = false, @SerialName("created_at") val createdAt: String = "", @SerialName("published_at") val publishedAt: String? = null, val author: ReleaseRestActor? = null, @SerialName("upload_url") val uploadUrl: String = "", val assets: List<RestAsset> = emptyList(), @SerialName("tarball_url") val tarballUrl: String? = null, @SerialName("zipball_url") val zipballUrl: String? = null)
-@Serializable private data class ReleasePermissionData(val repository: ReleasePermissionRepository? = null)
-@Serializable private data class ReleasePermissionRepository(val viewerPermission: String? = null)

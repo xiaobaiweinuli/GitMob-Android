@@ -1,0 +1,20 @@
+# 某个具体列表内的仓库，用 node(id:) 通用查询（UserList 实现了 Node 接口）。
+# first: 20 = PageSize.LIST_ITEMS。
+query ListItems($listId: ID!, $after: String) {
+    node(id: $listId) {
+        ... on UserList {
+            items(first: 20, after: $after) {
+                totalCount
+                nodes {
+                    ... on Repository {
+                        ...StarredRepoFields
+                    }
+                }
+                pageInfo {
+                    hasNextPage
+                    endCursor
+                }
+            }
+        }
+    }
+}

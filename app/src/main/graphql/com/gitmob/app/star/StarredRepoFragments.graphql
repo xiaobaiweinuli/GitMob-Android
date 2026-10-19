@@ -1,0 +1,42 @@
+# 星标仓库卡片公共字段片段，"全部星标"和"某个列表内"两个查询字段结构完全一样。
+# first: 10 对应 PageSize.TOPICS_PER_REPO。
+fragment StarredRepoFields on Repository {
+    id
+    name
+    url
+    description
+    homepageUrl
+    owner {
+        login
+        avatarUrl
+    }
+    isPrivate
+    isArchived
+    isFork
+    parent {
+        name
+        owner {
+            login
+            avatarUrl
+        }
+    }
+    primaryLanguage {
+        name
+        color
+    }
+    stargazerCount
+    forkCount
+    issues(states: [OPEN]) {
+        totalCount
+    }
+    repositoryTopics(first: 10) {
+        nodes {
+            topic {
+                name
+            }
+        }
+    }
+    defaultBranchRef {
+        name
+    }
+}

@@ -1,10 +1,13 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.RepoActionArtifact
 import com.gitmob.app.data.model.RepoWorkflow
@@ -44,6 +47,17 @@ class RepoActionsRepositoryTest {
                 restBaseUrl = baseUrl,
                 graphQLUrl = "$baseUrl/graphql",
             ),
+            ApolloClient.Builder()
+                .serverUrl("$baseUrl/graphql")
+                .okHttpClient(OkHttpClient())
+                .addHttpInterceptor(
+                    AuthHttpInterceptor(
+                        object : AccessTokenProvider {
+                            override suspend fun getToken() = "fake-token"
+                        },
+                    ),
+                )
+                .build(),
             downloadLauncher,
         )
     }

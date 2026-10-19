@@ -1,0 +1,45 @@
+# 新建列表。返回体只读列表项目总数，不加载列表项目。
+mutation CreateList($name: String!, $description: String, $isPrivate: Boolean) {
+    createUserList(input: { name: $name, description: $description, isPrivate: $isPrivate }) {
+        list {
+            id
+            name
+            slug
+            description
+            isPrivate
+            items(first: 1) {
+                totalCount
+            }
+        }
+    }
+}
+
+# 编辑列表：改名/改描述/切私有，只传要改的字段，其余传 null 表示不改。
+mutation UpdateList($listId: ID!, $name: String, $description: String, $isPrivate: Boolean) {
+    updateUserList(input: { listId: $listId, name: $name, description: $description, isPrivate: $isPrivate }) {
+        list {
+            id
+            name
+            slug
+            description
+            isPrivate
+            items(first: 1) {
+                totalCount
+            }
+        }
+    }
+}
+
+# 删除列表。
+mutation DeleteList($listId: ID!) {
+    deleteUserList(input: { listId: $listId }) {
+        clientMutationId
+    }
+}
+
+# 给某个仓库分配所属列表——"全量覆盖"语义：listIds 传什么就变成什么，不是增量 add/remove。
+mutation UpdateListsForItem($itemId: ID!, $listIds: [ID!]!) {
+    updateUserListsForItem(input: { itemId: $itemId, listIds: $listIds }) {
+        clientMutationId
+    }
+}

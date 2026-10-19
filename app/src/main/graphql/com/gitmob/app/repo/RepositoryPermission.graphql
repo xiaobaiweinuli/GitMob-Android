@@ -1,0 +1,7 @@
+# 仓库权限探测：RepoActionsRepository / RepoReleaseRepository 共用的轻量查询。
+# viewerPermission 是五级枚举（ADMIN/MAINTAIN/WRITE/TRIA/READ），客户端映射为 RepoPermission。
+query RepositoryPermission($owner: String!, $name: String!) {
+    repository(owner: $owner, name: $name) {
+        viewerPermission
+    }
+}

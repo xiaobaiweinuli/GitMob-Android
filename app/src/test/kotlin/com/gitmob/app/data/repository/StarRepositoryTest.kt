@@ -1,10 +1,11 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
-import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -14,6 +15,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
+private fun buildApolloClient(baseUrl: String): ApolloClient =
+    ApolloClient.Builder()
+        .serverUrl("$baseUrl/graphql")
+        .okHttpClient(OkHttpClient())
+        .addHttpInterceptor(
+            AuthHttpInterceptor(
+                object : AccessTokenProvider {
+                    override suspend fun getToken() = "fake-token"
+                },
+            ),
+        )
+        .build()
+
+/**
+ * 用 MockWebServer 模拟真实 HTTP 响应。
+ * 注意：Apollo 对非空字段与接口/联合类型有严格校验——owner、parent.owner 是
+ * RepositoryOwner 接口，items 内嵌 ... on Repository，都必须带 __typename；
+ * avatarUrl 在 schema 中是非空 String!，mock 不能给 null。
+ */
 class StarRepositoryTest {
     private lateinit var server: MockWebServer
     private lateinit var repository: StarRepository
@@ -22,16 +42,7 @@ class StarRepositoryTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
-        val api = GHApiClient(
-            okHttpClient = OkHttpClient(),
-            json = Json { ignoreUnknownKeys = true },
-            tokenProvider = object : AccessTokenProvider {
-                override suspend fun getToken() = "fake-token"
-            },
-            restBaseUrl = baseUrl,
-            graphQLUrl = "$baseUrl/graphql",
-        )
-        repository = StarRepository(api)
+        repository = StarRepository(buildApolloClient(baseUrl))
     }
 
     @After
@@ -67,8 +78,11 @@ class StarRepositoryTest {
             MockResponse().setBody(
                 """
                 {"data":{"viewer":{"lists":{"nodes":[
-                    {"id":"L1","items":{"nodes":[{"id":"R1"},{"id":"R2"}]}},
-                    {"id":"L2","items":{"nodes":[{"id":"R3"}]}}
+                    {"id":"L1","items":{"nodes":[
+                        {"__typename":"Repository","id":"R1"},
+                        {"__typename":"Repository","id":"R2"}
+                    ]}},
+                    {"id":"L2","items":{"nodes":[{"__typename":"Repository","id":"R3"}]}}
                 ]}}}}
                 """.trimIndent(),
             ),
@@ -89,11 +103,12 @@ class StarRepositoryTest {
                 {"data":{"viewer":{"starredRepositories":{
                     "totalCount":1,
                     "edges":[{"node":{
+                        "__typename":"Repository",
                         "id":"R1","name":"edgetunnel","url":"https://github.com/cmliu/edgetunnel",
                         "description":"desc","homepageUrl":null,
-                        "owner":{"login":"cmliu","avatarUrl":null},
+                        "owner":{"__typename":"User","login":"cmliu","avatarUrl":"https://a/1.png"},
                         "isPrivate":false,"isArchived":false,"isFork":true,
-                        "parent":{"name":"origin","owner":{"login":"upstream","avatarUrl":null}},
+                        "parent":{"name":"origin","owner":{"__typename":"User","login":"upstream","avatarUrl":"https://a/2.png"}},
                         "primaryLanguage":{"name":"JavaScript","color":"#f1e05a"},
                         "stargazerCount":40624,"forkCount":100,
                         "issues":{"totalCount":1},

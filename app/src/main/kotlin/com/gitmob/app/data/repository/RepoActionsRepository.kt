@@ -8,7 +8,10 @@ import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.permission.RepoPermission
+import com.apollographql.apollo.ApolloClient
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.*
+import com.gitmob.app.graphql.RepositoryPermissionQuery
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -19,15 +22,18 @@ import javax.inject.Singleton
 @Singleton
 class RepoActionsRepository @Inject constructor(
     private val api: GHApiClient,
+    private val apolloClient: ApolloClient,
     private val downloadLauncher: ExternalDownloadLauncher,
 ) {
-    suspend fun getRepositoryPermission(owner: String, name: String): ApiResult<RepoPermission> = safeCall {
-        val data = api.graphQL<ActionsPermissionData>(
-            "query ActionsRepositoryPermission(\u0024owner: String!, \u0024name: String!) { repository(owner: \u0024owner, name: \u0024name) { viewerPermission } }",
-            mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name)),
-        )
-        data.repository?.viewerPermission?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() } ?: RepoPermission.NONE
-    }
+    suspend fun getRepositoryPermission(owner: String, name: String): ApiResult<RepoPermission> =
+        when (val result = apolloClient.query(RepositoryPermissionQuery(owner, name)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                result.data.repository?.viewerPermission?.rawValue
+                    ?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() }
+                    ?: RepoPermission.NONE
+            }
+        }
 
     suspend fun getActions(owner: String, name: String, page: Int = 1): ApiResult<RepoActionsPage> = safeCall {
         val workflows = api.get<RestWorkflowsResponse>("/repos/$owner/$name/actions/workflows?per_page=${PageSize.ACTION_WORKFLOWS}&page=1")
@@ -119,8 +125,6 @@ class RepoActionsRepository @Inject constructor(
 @Serializable private data class RestStep(val name: String = "", val status: String = "", val conclusion: String? = null, val number: Int = 0)
 @Serializable private data class RestArtifactsResponse(val artifacts: List<RestArtifact> = emptyList())
 @Serializable private data class RestArtifact(val id: Long, val name: String = "", @SerialName("size_in_bytes") val sizeInBytes: Long = 0, val expired: Boolean = false, @SerialName("expires_at") val expiresAt: String? = null)
-@Serializable private data class ActionsPermissionData(val repository: ActionsPermissionRepository? = null)
-@Serializable private data class ActionsPermissionRepository(val viewerPermission: String? = null)
 @Serializable private data class ActionWorkflowYamlData(val repository: ActionWorkflowYamlRepository? = null)
 @Serializable private data class ActionWorkflowYamlRepository(
     @SerialName("object") val objectNode: ActionWorkflowYamlBlob? = null,

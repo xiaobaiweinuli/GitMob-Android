@@ -1,0 +1,13 @@
+# 加星标。
+mutation AddStar($starrableId: ID!) {
+    addStar(input: { starrableId: $starrableId }) {
+        clientMutationId
+    }
+}
+
+# 取消星标（不影响该仓库在已有列表里的归属，由 GitHub 服务端决定）。
+mutation RemoveStar($starrableId: ID!) {
+    removeStar(input: { starrableId: $starrableId }) {
+        clientMutationId
+    }
+}

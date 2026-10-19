@@ -50,21 +50,6 @@ sealed class StarFilter {
 }
 
 /**
- * StarredRepoNode → StarredRepo 公共映射，StarRepository 和 UserRepository.getUserStars 都需要用到。
- * 从 StarRepository 的 private 扩展提升到 internal，避免两个仓库各自写一份同样的字段映射代码。
- */
-internal fun StarredRepoNode.toDomain() = StarredRepo(
-    id = id, name = name, url = url, description = description, homepageUrl = homepageUrl,
-    ownerLogin = owner.login, ownerAvatarUrl = owner.avatarUrl,
-    isPrivate = isPrivate, isArchived = isArchived,
-    isFork = isFork, forkedFromOwner = parent?.owner?.login, forkedFromName = parent?.name,
-    languageName = primaryLanguage?.name, languageColor = primaryLanguage?.color,
-    stargazerCount = stargazerCount, forkCount = forkCount, openIssueCount = issues.totalCount,
-    topics = repositoryTopics.nodes.map { it.topic.name },
-    defaultBranchName = defaultBranchRef?.name,
-)
-
-/**
  * RepoListItemNode → RepoListItem 公共映射，RepoRepository 和 UserRepository.getUserRepos 都需要用到。
  * 与 StarredRepoNode.toDomain() 对称，提取到领域模型层，避免重复字段映射代码。
  */
