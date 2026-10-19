@@ -4,6 +4,25 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.apollo)
+}
+
+apollo {
+    service("github") {
+        packageName.set("com.gitmob.app.graphql")
+        schemaFile.set(file("src/main/graphql/schema.graphqls"))
+        // 只对 union/interface 注入 __typename（默认 ifFragments 会要求具体类型也返回 __typename）
+        addTypename.set("ifAbstract")
+        // GitHub schema 自定义标量先映射 String（DateTime 是否强类型在 B0 决策）
+        mapScalar("URI", "kotlin.String")
+        mapScalar("DateTime", "kotlin.String")
+        mapScalar("GitObjectID", "kotlin.String")
+        mapScalar("GitTimestamp", "kotlin.String")
+        mapScalar("HTML", "kotlin.String")
+        mapScalar("X509Certificate", "kotlin.String")
+        mapScalar("GitSSHRemote", "kotlin.String")
+        mapScalar("PreciseDateTime", "kotlin.String")
+    }
 }
 
 android {
@@ -100,6 +119,8 @@ ksp {
 }
 
 dependencies {
+    implementation(libs.apollo.runtime)
+    implementation(libs.apollo.api)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle.runtime.ktx)

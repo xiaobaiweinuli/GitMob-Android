@@ -1,0 +1,42 @@
+# 置顶仓库节点字段片段：User.pinnedItems 与 Organization.pinnedItems 共用
+fragment PinnedRepoFields on Repository {
+  name
+  url
+  description
+  stargazerCount
+  forkCount
+  primaryLanguage { name color }
+  owner { login avatarUrl }
+}
+
+# 用户资料字段片段：viewer{} 和 user(login:){} 两个根字段返回的都是 User 类型，字段集合完全一致。
+# 不查 achievements（公开 Schema 不存在）；徽章严格只查公开 Schema 真实存在的 4 个 is* 布尔字段。
+fragment ProfileFields on User {
+  id
+  login
+  name
+  avatarUrl
+  bio
+  company
+  location
+  websiteUrl
+  email
+  pronouns
+  isDeveloperProgramMember
+  isBountyHunter
+  isCampusExpert
+  isGitHubStar
+  isViewer
+  viewerCanFollow
+  viewerIsFollowing
+  status { emoji message }
+  socialAccounts(first: 10) { nodes { displayName provider url } }
+  followers { totalCount }
+  following { totalCount }
+  organizations { totalCount }
+  repositories(ownerAffiliations: [OWNER]) { totalCount }
+  starredRepositories { totalCount }
+  pinnedItems(first: 6, types: [REPOSITORY]) {
+    nodes { ...PinnedRepoFields }
+  }
+}

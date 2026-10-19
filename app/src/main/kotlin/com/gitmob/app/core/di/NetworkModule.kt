@@ -1,5 +1,9 @@
 package com.gitmob.app.core.di
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
+import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -41,5 +45,22 @@ object NetworkModule {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+
+    /**
+     * Apollo GraphQL 通道（B0 基建）。复用现有 OkHttpClient（超时/连接池一致），
+     * 鉴权与 UA 头由 AuthHttpInterceptor 注入，与 GHApiClient 的 GraphQL 分支语义对齐。
+     */
+    @Provides
+    @Singleton
+    fun provideApolloClient(
+        okHttpClient: OkHttpClient,
+        tokenProvider: AccessTokenProvider,
+        @Named("graphQLUrl") graphQLUrl: String,
+    ): ApolloClient =
+        ApolloClient.Builder()
+            .serverUrl(graphQLUrl)
+            .okHttpClient(okHttpClient)
+            .addHttpInterceptor(AuthHttpInterceptor(tokenProvider))
             .build()
 }

@@ -1,54 +1,59 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.api.Optional
 import com.gitmob.app.R
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
-import com.gitmob.app.core.network.GHApiClient
-import com.gitmob.app.core.network.PageSize
-import com.gitmob.app.data.model.FollowOrganizationMutationData
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.FollowState
-import com.gitmob.app.data.model.FollowUserMutationData
 import com.gitmob.app.data.model.GHUser
-import com.gitmob.app.data.model.OrgMembersQueryData
-import com.gitmob.app.data.model.OrganizationsQueryData
 import com.gitmob.app.data.model.PagedOrgs
 import com.gitmob.app.data.model.PagedUsers
 import com.gitmob.app.data.model.PagedStarredRepos
 import com.gitmob.app.data.model.PinnedRepo
-import com.gitmob.app.data.model.PinnedItemsConnection
 import com.gitmob.app.data.model.ProfileExtra
-import com.gitmob.app.data.model.ProfileNode
 import com.gitmob.app.data.model.ProfileOwner
 import com.gitmob.app.data.model.RepoList
-import com.gitmob.app.data.model.RepositoryOwnerQueryData
+import com.gitmob.app.data.model.RepoListItem
 import com.gitmob.app.data.model.SimpleOrg
 import com.gitmob.app.data.model.SimpleUser
 import com.gitmob.app.data.model.SocialAccount
-import com.gitmob.app.data.model.UnfollowOrganizationMutationData
-import com.gitmob.app.data.model.UnifiedOrganizationsQueryData
-import com.gitmob.app.data.model.UnfollowUserMutationData
-import com.gitmob.app.data.model.UserListQueryData
-import com.gitmob.app.data.model.UserOrgsQueryData
-import com.gitmob.app.data.model.UserProfileQueryData
-import com.gitmob.app.data.model.UserRepoListQueryData
-import com.gitmob.app.data.model.UserStarsQueryData
+import com.gitmob.app.data.model.StarredRepo
 import com.gitmob.app.data.model.UserStatus
 import com.gitmob.app.data.model.ViewerProfile
-import com.gitmob.app.data.model.ViewerProfileWithWorkQueryData
-import com.gitmob.app.data.model.toDomain
-import kotlinx.serialization.json.JsonPrimitive
+import com.gitmob.app.graphql.FollowOrganizationMutation
+import com.gitmob.app.graphql.FollowUserMutation
+import com.gitmob.app.graphql.FollowersQuery
+import com.gitmob.app.graphql.FollowingQuery
+import com.gitmob.app.graphql.OrgMembersQuery
+import com.gitmob.app.graphql.ProfileOwnerQuery
+import com.gitmob.app.graphql.UnfollowOrganizationMutation
+import com.gitmob.app.graphql.UnfollowUserMutation
+import com.gitmob.app.graphql.UserOrganizationsQuery
+import com.gitmob.app.graphql.UserOrgsQuery
+import com.gitmob.app.graphql.UserProfileQuery
+import com.gitmob.app.graphql.UserReposQuery
+import com.gitmob.app.graphql.UserStarsQuery
+import com.gitmob.app.graphql.ViewerOrganizationsQuery
+import com.gitmob.app.graphql.ViewerProfileQuery
+import com.gitmob.app.graphql.fragment.PinnedRepoFields
+import com.gitmob.app.graphql.fragment.ProfileFields
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * 只用 GraphQL，不用 REST——本项目主页/用户资料统一走 GraphQL 单一查询，
  * 一次往返拿全部数据（基础资料 + pronouns/status/socialAccounts/置顶仓库/关注状态 + 统计数字）。
+ *
+ * B1 起切换 Apollo：查询语句与模型由 .graphql 文件 + 官方 schema 生成，
+ * 手写 query 字符串与手写 DTO 已全部移除。
  */
 @Singleton
 class UserRepository @Inject constructor(
-    private val api: GHApiClient,
+    private val apolloClient: ApolloClient,
 ) {
 
     // ── 缓存实例 ──────────────────────────────────────────────
@@ -62,57 +67,6 @@ class UserRepository @Inject constructor(
     fun invalidateAllCaches() {
         viewerProfileCache.invalidateAll()
     }
-    private val pinnedRepositoryFields = """
-        pinnedItems(first: ${PageSize.PINNED_ITEMS}, types: [REPOSITORY]) {
-            nodes {
-                ... on Repository {
-                    name
-                    url
-                    description
-                    stargazerCount
-                    forkCount
-                    primaryLanguage { name color }
-                    owner { login avatarUrl }
-                }
-            }
-        }
-    """.trimIndent()
-
-    // 公共字段片段：viewer{} 和 user(login:){} 两个根字段返回的都是 User 类型，字段集合完全一致。
-    // 不查 achievements（User 上不存在于公开 Schema）、不查 Repository.lists/isDiscussionsEnabled
-    // （公开 Schema 不支持），这几个是之前抓包分析里确认过的官方 App 内部专属字段。
-    // 徽章公开 Schema 只有 4 个 is* 布尔字段，严格只查这 4 个，不造假、不查不存在字段：
-    //   isDeveloperProgramMember → BADGE_DEVELOPER_PROGRAM
-    //   isBountyHunter          → BADGE_SECURITY_BOUNTY_HUNTER
-    //   isCampusExpert          → BADGE_CAMPUS_EXPERT
-    //   isGitHubStar            → BADGE_GITHUB_STAR
-    private val profileFields = """
-        id
-        login
-        name
-        avatarUrl
-        bio
-        company
-        location
-        websiteUrl
-        email
-        pronouns
-        isDeveloperProgramMember
-        isBountyHunter
-        isCampusExpert
-        isGitHubStar
-        isViewer
-        viewerCanFollow
-        viewerIsFollowing
-        status { emoji message }
-        socialAccounts(first: ${PageSize.SOCIAL_ACCOUNTS}) { nodes { displayName provider url } }
-        followers { totalCount }
-        following { totalCount }
-        organizations { totalCount }
-        repositories(ownerAffiliations: [OWNER]) { totalCount }
-        starredRepositories { totalCount }
-        $pinnedRepositoryFields
-    """.trimIndent()
 
     /**
      * 主页（当前登录用户自己）用这个，同时也是登录校验用的那次请求（成功即 token 有效）。
@@ -131,42 +85,32 @@ class UserRepository @Inject constructor(
      * 下拉刷新专用：绕过缓存，强制走网络，成功后刷新缓存时间戳。
      * 与 [getViewerProfile] 的唯一区别就是跳过缓存 get 这一步。
      */
-    suspend fun getViewerProfileFresh(): ApiResult<ViewerProfile> = safeCall {
-        val query = """
-            query ViewerProfile {
-                viewer {
-                    $profileFields
-                    gists(privacy: ALL) { totalCount }
-                }
-                issuesInvolvingMe: search(query: "involves:@me is:issue is:open", type: ISSUE) { issueCount }
-                prsInvolvingMe: search(query: "involves:@me is:pr is:open", type: ISSUE) { issueCount }
-                discussionsInvolvingMe: search(query: "involves:@me", type: DISCUSSION) { discussionCount }
+    suspend fun getViewerProfileFresh(): ApiResult<ViewerProfile> =
+        when (val result = apolloClient.query(ViewerProfileQuery()).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val data = result.data
+                val profile = data.viewer.profileFields.toDomain(
+                    gistCount = data.viewer.gists.totalCount,
+                ).copy(
+                    involvedIssueCount = data.issuesInvolvingMe.issueCount ?: 0,
+                    involvedPrCount = data.prsInvolvingMe.issueCount ?: 0,
+                    involvedDiscussionCount = data.discussionsInvolvingMe.discussionCount ?: 0,
+                )
+                viewerProfileCache.set(Unit, profile)
+                profile
             }
-        """.trimIndent()
-        val data = api.graphQL<ViewerProfileWithWorkQueryData>(query)
-        val profile = data.viewer.toDomain().copy(
-            involvedIssueCount = data.issuesInvolvingMe.issueCount ?: 0,
-            involvedPrCount = data.prsInvolvingMe.issueCount ?: 0,
-            involvedDiscussionCount = data.discussionsInvolvingMe.discussionCount ?: 0,
-        )
-        viewerProfileCache.set(Unit, profile)
-        profile
-    }
+        }
 
     /** 查看别人（或用 login 查自己也可以）资料用这个，Follow 按钮要用到的 viewerCanFollow 等字段同一套 */
-    suspend fun getUserProfile(login: String): ApiResult<ViewerProfile> = safeCall {
-        val query = """
-            query UserProfile(${'$'}login: String!) {
-                user(login: ${'$'}login) {
-                    $profileFields
-                    gists(privacy: PUBLIC) { totalCount }
-                }
+    suspend fun getUserProfile(login: String): ApiResult<ViewerProfile> =
+        when (val result = apolloClient.query(UserProfileQuery(login)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val node = result.data.user ?: throw UserVisibleException(R.string.error_user_not_found)
+                node.profileFields.toDomain(gistCount = node.gists.totalCount)
             }
-        """.trimIndent()
-        val data = api.graphQL<UserProfileQueryData>(query, mapOf("login" to JsonPrimitive(login)))
-        val node = data.user ?: throw UserVisibleException(R.string.error_user_not_found)
-        node.toDomain()
-    }
+        }
 
     /**
      * 关注用户
@@ -178,16 +122,15 @@ class UserRepository @Inject constructor(
      *
      * @param userId 用户的 GraphQL 全局 ID
      */
-    suspend fun followUser(userId: String): ApiResult<Unit> = safeCall {
-        val mutation = """
-            mutation FollowUser(${'$'}userId: ID!) {
-                followUser(input: { userId: ${'$'}userId }) { clientMutationId }
+    suspend fun followUser(userId: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(FollowUserMutation(userId)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> {
+                // 关注后 viewer.following.totalCount 可能变化，主动失效 profile 缓存，下次打开主页重新拉
+                viewerProfileCache.invalidate(Unit)
+                ApiResult.Success(Unit)
             }
-        """.trimIndent()
-        with(api.graphQL<FollowUserMutationData>(mutation, mapOf("userId" to JsonPrimitive(userId)))) { }
-        // 关注后 viewer.following.totalCount 可能变化，主动失效 profile 缓存，下次打开主页重新拉
-        viewerProfileCache.invalidate(Unit)
-    }
+        }
 
     /**
      * 取消关注用户
@@ -196,114 +139,73 @@ class UserRepository @Inject constructor(
      *
      * @param userId 用户的 GraphQL 全局 ID
      */
-    suspend fun unfollowUser(userId: String): ApiResult<Unit> = safeCall {
-        val mutation = """
-            mutation UnfollowUser(${'$'}userId: ID!) {
-                unfollowUser(input: { userId: ${'$'}userId }) { clientMutationId }
+    suspend fun unfollowUser(userId: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(UnfollowUserMutation(userId)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> {
+                // 取消关注后 viewer.following.totalCount 可能变化，主动失效 profile 缓存
+                viewerProfileCache.invalidate(Unit)
+                ApiResult.Success(Unit)
             }
-        """.trimIndent()
-        with(api.graphQL<UnfollowUserMutationData>(mutation, mapOf("userId" to JsonPrimitive(userId)))) { }
-        // 取消关注后 viewer.following.totalCount 可能变化，主动失效 profile 缓存
-        viewerProfileCache.invalidate(Unit)
-    }
+        }
 
     /**
      * 关注组织
      *
      * @param organizationId 组织的 GraphQL 全局 ID
      */
-    suspend fun followOrganization(organizationId: String): ApiResult<Unit> = safeCall {
-        val mutation = """
-            mutation FollowOrganization(${'$'}organizationId: ID!) {
-                followOrganization(input: { organizationId: ${'$'}organizationId }) {
-                    clientMutationId
-                }
-            }
-        """.trimIndent()
-        with(
-            api.graphQL<FollowOrganizationMutationData>(
-                mutation,
-                mapOf("organizationId" to JsonPrimitive(organizationId)),
-            ),
-        ) { }
-    }
+    suspend fun followOrganization(organizationId: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(FollowOrganizationMutation(organizationId)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> ApiResult.Success(Unit)
+        }
 
     /**
      * 取消关注组织
      *
      * @param organizationId 组织的 GraphQL 全局 ID
      */
-    suspend fun unfollowOrganization(organizationId: String): ApiResult<Unit> = safeCall {
-        val mutation = """
-            mutation UnfollowOrganization(${'$'}organizationId: ID!) {
-                unfollowOrganization(input: { organizationId: ${'$'}organizationId }) {
-                    clientMutationId
-                }
-            }
-        """.trimIndent()
-        with(
-            api.graphQL<UnfollowOrganizationMutationData>(
-                mutation,
-                mapOf("organizationId" to JsonPrimitive(organizationId)),
-            ),
-        ) { }
-    }
+    suspend fun unfollowOrganization(organizationId: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(UnfollowOrganizationMutation(organizationId)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> ApiResult.Success(Unit)
+        }
 
-    suspend fun getFollowers(login: String, after: String? = null): ApiResult<PagedUsers> = safeCall {
-        val query = """
-            query Followers(${'$'}login: String!, ${'$'}after: String) {
-                user(login: ${'$'}login) {
-                    followers(first: ${PageSize.USER_LIST}, after: ${'$'}after) {
-                        totalCount
-                        nodes { login name avatarUrl bio }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    suspend fun getFollowers(login: String, after: String? = null): ApiResult<PagedUsers> =
+        when (val result = apolloClient.query(
+            FollowersQuery(login, Optional.presentIfNotNull(after)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val conn = result.data.user?.followers
+                    ?: throw UserVisibleException(R.string.error_user_not_found)
+                PagedUsers(
+                    totalCount = conn.totalCount,
+                    users = conn.nodes.orEmpty().filterNotNull()
+                        .map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
+                    hasNextPage = conn.pageInfo.hasNextPage,
+                    endCursor = conn.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val data = api.graphQL<UserListQueryData>(
-            query,
-            buildMap {
-                put("login", JsonPrimitive(login))
-                after?.let { put("after", JsonPrimitive(it)) }
-            },
-        )
-        val conn = data.user?.followers ?: throw UserVisibleException(R.string.error_user_not_found)
-        PagedUsers(
-            totalCount = conn.totalCount,
-            users = conn.nodes.map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
-            hasNextPage = conn.pageInfo.hasNextPage,
-            endCursor = conn.pageInfo.endCursor,
-        )
-    }
+        }
 
-    suspend fun getFollowing(login: String, after: String? = null): ApiResult<PagedUsers> = safeCall {
-        val query = """
-            query Following(${'$'}login: String!, ${'$'}after: String) {
-                user(login: ${'$'}login) {
-                    following(first: ${PageSize.USER_LIST}, after: ${'$'}after) {
-                        totalCount
-                        nodes { login name avatarUrl bio }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    suspend fun getFollowing(login: String, after: String? = null): ApiResult<PagedUsers> =
+        when (val result = apolloClient.query(
+            FollowingQuery(login, Optional.presentIfNotNull(after)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val conn = result.data.user?.following
+                    ?: throw UserVisibleException(R.string.error_user_not_found)
+                PagedUsers(
+                    totalCount = conn.totalCount,
+                    users = conn.nodes.orEmpty().filterNotNull()
+                        .map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
+                    hasNextPage = conn.pageInfo.hasNextPage,
+                    endCursor = conn.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val data = api.graphQL<UserListQueryData>(
-            query,
-            buildMap {
-                put("login", JsonPrimitive(login))
-                after?.let { put("after", JsonPrimitive(it)) }
-            },
-        )
-        val conn = data.user?.following ?: throw UserVisibleException(R.string.error_user_not_found)
-        PagedUsers(
-            totalCount = conn.totalCount,
-            users = conn.nodes.map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
-            hasNextPage = conn.pageInfo.hasNextPage,
-            endCursor = conn.pageInfo.endCursor,
-        )
-    }
+        }
 
     /**
      * 统一的组织列表查询入口：自己的主页弹底部 OrganizationsBottomSheet + 他人个人主页弹底部 OrganizationsBottomSheet。
@@ -314,144 +216,92 @@ class UserRepository @Inject constructor(
      * @param login `null` 时走 `viewer.organizations`（当前登录用户，HomeScreen 底部弹窗）；
      *              非空时走 `user(login:).organizations`（他人 ProfileScreen 底部弹窗）。
      */
-    suspend fun getOrganizations(login: String? = null): ApiResult<List<SimpleOrg>> = safeCall {
-        val query = if (login == null) {
-            """
-                query ViewerOrganizations {
-                    viewer { organizations(first: ${PageSize.ORGS_PREVIEW}) { nodes { login name avatarUrl } } }
-                }
-            """.trimIndent()
-        } else {
-            """
-                query UserOrganizations(${'$'}login: String!) {
-                    user(login: ${'$'}login) { organizations(first: ${PageSize.ORGS_PREVIEW}) { nodes { login name avatarUrl } } }
-                }
-            """.trimIndent()
+    suspend fun getOrganizations(login: String? = null): ApiResult<List<SimpleOrg>> {
+        if (login == null) {
+            return when (val result = apolloClient.query(ViewerOrganizationsQuery()).executeAsApiResult()) {
+                is ApiResult.Failure -> result
+                is ApiResult.Success -> ApiResult.Success(
+                    result.data.viewer.organizations.nodes.orEmpty().filterNotNull()
+                        .map { SimpleOrg(it.login, it.name, it.avatarUrl) },
+                )
+            }
         }
-        val variables = login?.let { mapOf("login" to JsonPrimitive(it)) } ?: emptyMap()
-
-        // 两种模式共用 DTO：viewer/user 两个 nullable 根，实际查询到的那个非 null。
-        val data = api.graphQL<UnifiedOrganizationsQueryData>(query, variables)
-        val nodes = data.viewer?.organizations?.nodes
-            ?: data.user?.organizations?.nodes
-            ?: emptyList()
-        nodes.map { SimpleOrg(it.login, it.name, it.avatarUrl) }
+        return when (val result = apolloClient.query(UserOrganizationsQuery(login)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> ApiResult.Success(
+                result.data.user?.organizations?.nodes.orEmpty().filterNotNull()
+                    .map { SimpleOrg(it.login, it.name, it.avatarUrl) },
+            )
+        }
     }
 
     /**
      * 用户/组织统一资料查询——只有一个 login 时无法预先判断类型，
      * 用 repositoryOwner(login:) + __typename 分流，一次查询搞定两种情况。
      */
-    suspend fun getProfileOwner(login: String): ApiResult<ProfileOwner> = safeCall {
-        val query = """
-            query ProfileOwner(${'$'}login: String!) {
-                viewer {
-                    login
-                    gists(privacy: ALL) { totalCount }
-                }
-                repositoryOwner(login: ${'$'}login) {
-                    __typename
-                    id
-                    login
-                    avatarUrl
-                    url
-                    ... on User {
-                        name
-                        bio
-                        company
-                        location
-                        email
-                        pronouns
-                        status { emoji message }
-                        socialAccounts(first: ${PageSize.SOCIAL_ACCOUNTS}) {
-                            nodes { displayName provider url }
-                        }
-                        # 徽章：公开 Schema 真实存在的 4 个 is* 布尔字段
-                        isDeveloperProgramMember
-                        isBountyHunter
-                        isCampusExpert
-                        isGitHubStar
-                        isViewer
-                        viewerCanFollow
-                        viewerIsFollowing
-                        followers { totalCount }
-                        following { totalCount }
-                        organizations { totalCount }
-                        starredRepositories { totalCount }
-                        gists(privacy: PUBLIC) { totalCount }
-                        websiteUrl
-                        repositories(ownerAffiliations: [OWNER]) { totalCount }
-                        $pinnedRepositoryFields
-                    }
-                    ... on Organization {
-                        name
-                        description
-                        isVerified
-                        websiteUrl
-                        membersWithRole { totalCount }
-                        viewerCanCreateRepositories
-                        repositories(ownerAffiliations: [OWNER]) { totalCount }
-                        viewerIsFollowing
-                        $pinnedRepositoryFields
-                    }
+    suspend fun getProfileOwner(login: String): ApiResult<ProfileOwner> =
+        when (val result = apolloClient.query(ProfileOwnerQuery(login)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val data = result.data
+                val node = data.repositoryOwner
+                    ?: throw UserVisibleException(R.string.error_owner_not_found)
+                val onUser = node.onUser
+                val onOrg = node.onOrganization
+                when {
+                    onUser != null -> ProfileOwner.Person(
+                        id = node.id,
+                        login = node.login,
+                        avatarUrl = node.avatarUrl,
+                        name = onUser.name,
+                        repoCount = onUser.repositories.totalCount,
+                        websiteUrl = onUser.websiteUrl,
+                        bio = onUser.bio,
+                        email = onUser.email,
+                        company = onUser.company,
+                        location = onUser.location,
+                        pronouns = onUser.pronouns,
+                        status = onUser.status?.let { UserStatus(it.emoji, it.message) },
+                        socialAccounts = onUser.socialAccounts.nodes.orEmpty().filterNotNull().map {
+                            SocialAccount(it.displayName, it.provider.rawValue, it.url)
+                        },
+                        isViewer = onUser.isViewer,
+                        followState = FollowState(onUser.isViewer, onUser.viewerCanFollow, onUser.viewerIsFollowing),
+                        followersCount = onUser.followers.totalCount,
+                        followingCount = onUser.following.totalCount,
+                        organizationsCount = onUser.organizations.totalCount,
+                        starredCount = onUser.starredRepositories.totalCount,
+                        gistCount = if (onUser.isViewer) {
+                            data.viewer.gists.totalCount
+                        } else {
+                            onUser.gists.totalCount
+                        },
+                        isDeveloperProgramMember = onUser.isDeveloperProgramMember,
+                        isBountyHunter = onUser.isBountyHunter,
+                        isCampusExpert = onUser.isCampusExpert,
+                        isGitHubStar = onUser.isGitHubStar,
+                        pinnedRepos = onUser.pinnedItems.toPinnedRepos(),
+                    )
+                    onOrg != null -> ProfileOwner.Org(
+                        id = node.id,
+                        login = node.login,
+                        avatarUrl = node.avatarUrl,
+                        name = onOrg.name,
+                        repoCount = onOrg.repositories.totalCount,
+                        websiteUrl = onOrg.websiteUrl,
+                        description = onOrg.description,
+                        isVerified = onOrg.isVerified,
+                        membersCount = onOrg.membersWithRole.totalCount,
+                        viewerIsFollowing = onOrg.viewerIsFollowing,
+                        viewerCanCreateRepositories = onOrg.viewerCanCreateRepositories,
+                        pinnedRepos = onOrg.pinnedItems.toPinnedRepos(),
+                    )
+                    else -> throw IllegalStateException("未知的 owner 类型: ${node.__typename}")
                 }
             }
-        """.trimIndent()
-        val data = api.graphQL<RepositoryOwnerQueryData>(query, mapOf("login" to JsonPrimitive(login)))
-        val node = data.repositoryOwner ?: throw UserVisibleException(R.string.error_owner_not_found)
-        when (node.__typename) {
-            "User" -> ProfileOwner.Person(
-                id = node.id,
-                login = node.login,
-                avatarUrl = node.avatarUrl,
-                name = node.name,
-                repoCount = node.repositories?.totalCount ?: 0,
-                websiteUrl = node.websiteUrl,
-                bio = node.bio,
-                email = node.email,
-                company = node.company,
-                location = node.location,
-                pronouns = node.pronouns,
-                status = node.status?.let { UserStatus(it.emoji, it.message) },
-                socialAccounts = node.socialAccounts?.nodes?.map {
-                    SocialAccount(it.displayName, it.provider, it.url)
-                }.orEmpty(),
-                isViewer = node.isViewer,
-                followState = FollowState(node.isViewer, node.viewerCanFollow, node.viewerIsFollowing),
-                followersCount = node.followers?.totalCount ?: 0,
-                followingCount = node.following?.totalCount ?: 0,
-                organizationsCount = node.organizations?.totalCount ?: 0,
-                starredCount = node.starredRepositories?.totalCount ?: 0,
-                gistCount = if (node.isViewer) {
-                    data.viewer?.gists?.totalCount ?: node.gists?.totalCount ?: 0
-                } else {
-                    node.gists?.totalCount ?: 0
-                },
-                isDeveloperProgramMember = node.isDeveloperProgramMember,
-                isBountyHunter = node.isBountyHunter,
-                isCampusExpert = node.isCampusExpert,
-                isGitHubStar = node.isGitHubStar,
-                pinnedRepos = node.pinnedItems.toPinnedRepos(),
-            )
-            "Organization" -> ProfileOwner.Org(
-                id = node.id,
-                login = node.login,
-                avatarUrl = node.avatarUrl,
-                name = node.name,
-                repoCount = node.repositories?.totalCount ?: 0,
-                websiteUrl = node.websiteUrl,
-                description = node.description,
-                isVerified = node.isVerified,
-                membersCount = node.membersWithRole?.totalCount ?: 0,
-                viewerIsFollowing = node.viewerIsFollowing,
-                viewerCanCreateRepositories = node.viewerCanCreateRepositories,
-                pinnedRepos = node.pinnedItems.toPinnedRepos(),
-            )
-            else -> throw IllegalStateException("未知的 owner 类型: ${node.__typename}")
         }
-    }
 
-    private fun ProfileNode.toDomain(): ViewerProfile = ViewerProfile(
+    private fun ProfileFields.toDomain(gistCount: Int): ViewerProfile = ViewerProfile(
         user = GHUser(
             id = id,
             login = login,
@@ -473,11 +323,13 @@ class UserRepository @Inject constructor(
         extra = ProfileExtra(
             pronouns = pronouns,
             status = status?.let { UserStatus(it.emoji, it.message) },
-            socialAccounts = socialAccounts.nodes.map { SocialAccount(it.displayName, it.provider, it.url) },
+            socialAccounts = socialAccounts.nodes.orEmpty().filterNotNull().map {
+                SocialAccount(it.displayName, it.provider.rawValue, it.url)
+            },
         ),
         repoCount = repositories.totalCount,
         starredCount = starredRepositories.totalCount,
-        gistCount = gists?.totalCount ?: 0,
+        gistCount = gistCount,
         pinnedRepos = pinnedItems.toPinnedRepos(),
         followState = FollowState(
             isViewer = isViewer,
@@ -486,19 +338,26 @@ class UserRepository @Inject constructor(
         ),
     )
 
-    private fun PinnedItemsConnection?.toPinnedRepos(): List<PinnedRepo> = this?.nodes.orEmpty().map {
-        PinnedRepo(
-            name = it.name,
-            url = it.url,
-            description = it.description,
-            stargazerCount = it.stargazerCount,
-            forkCount = it.forkCount,
-            languageName = it.primaryLanguage?.name,
-            languageColor = it.primaryLanguage?.color,
-            ownerLogin = it.owner.login,
-            ownerAvatarUrl = it.owner.avatarUrl,
-        )
-    }
+    private fun com.gitmob.app.graphql.fragment.ProfileFields.PinnedItems.toPinnedRepos(): List<PinnedRepo> =
+        nodes.orEmpty().filterNotNull().mapNotNull { it.pinnedRepoFields }.map { it.toPinnedRepo() }
+
+    private fun ProfileOwnerQuery.PinnedItems.toPinnedRepos(): List<PinnedRepo> =
+        nodes.orEmpty().filterNotNull().mapNotNull { it.pinnedRepoFields }.map { it.toPinnedRepo() }
+
+    private fun ProfileOwnerQuery.PinnedItems1.toPinnedRepos(): List<PinnedRepo> =
+        nodes.orEmpty().filterNotNull().mapNotNull { it.pinnedRepoFields }.map { it.toPinnedRepo() }
+
+    private fun PinnedRepoFields.toPinnedRepo() = PinnedRepo(
+        name = name,
+        url = url,
+        description = description,
+        stargazerCount = stargazerCount,
+        forkCount = forkCount,
+        languageName = primaryLanguage?.name,
+        languageColor = primaryLanguage?.color,
+        ownerLogin = owner.login,
+        ownerAvatarUrl = owner.avatarUrl,
+    )
 
     // ================================
     // 他人主页统计行跳转：4 个列表查询
@@ -509,164 +368,128 @@ class UserRepository @Inject constructor(
      * 与 RepoRepository.getViewerRepos() 的区别：根字段是 user(login:) 不是 viewer，
      * 可以查任意 login 的公开仓库；ownerAffiliations 只传 OWNER（组织仓库不属于个人名下）。
      */
-    suspend fun getUserRepos(login: String, after: String? = null): ApiResult<RepoList> = safeCall {
-        val query = """
-            query UserRepos(${'$'}login: String!, ${'$'}after: String) {
-                user(login: ${'$'}login) {
-                    repositories(first: ${PageSize.REPOS}, after: ${'$'}after, ownerAffiliations: [OWNER]) {
-                        totalCount
-                        nodes {
-                            name
-                            owner { login avatarUrl }
-                            description
-                            homepageUrl
-                            isPrivate
-                            isArchived
-                            isFork
-                            parent { name owner { login avatarUrl } }
-                            primaryLanguage { name color }
-                            stargazerCount
-                            forkCount
-                            issues(states: [OPEN]) { totalCount }
-                            repositoryTopics(first: ${PageSize.TOPICS_PER_REPO}) { nodes { topic { name } } }
-                            defaultBranchRef { name }
-                        }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    suspend fun getUserRepos(login: String, after: String? = null): ApiResult<RepoList> =
+        when (val result = apolloClient.query(
+            UserReposQuery(login, Optional.presentIfNotNull(after)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val conn = result.data.user?.repositories
+                    ?: throw UserVisibleException(R.string.error_user_not_found)
+                RepoList(
+                    totalCount = conn.totalCount,
+                    items = conn.nodes.orEmpty().filterNotNull().map { it.toRepoListItem() },
+                    hasNextPage = conn.pageInfo.hasNextPage,
+                    endCursor = conn.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val data = api.graphQL<UserRepoListQueryData>(
-            query,
-            buildMap {
-                put("login", JsonPrimitive(login))
-                after?.let { put("after", JsonPrimitive(it)) }
-            },
-        )
-        val conn = data.user?.repositories ?: throw UserVisibleException(R.string.error_user_not_found)
-        RepoList(
-            totalCount = conn.totalCount,
-            items = conn.nodes.map { it.toDomain() },
-            hasNextPage = conn.pageInfo.hasNextPage,
-            endCursor = conn.pageInfo.endCursor,
-        )
-    }
+        }
+
+    private fun UserReposQuery.Node.toRepoListItem() = RepoListItem(
+        name = name,
+        ownerLogin = owner.login,
+        description = description,
+        homepageUrl = homepageUrl,
+        isPrivate = isPrivate,
+        isArchived = isArchived,
+        isFork = isFork,
+        forkedFromOwner = parent?.owner?.login,
+        forkedFromName = parent?.name,
+        languageName = primaryLanguage?.name,
+        languageColor = primaryLanguage?.color,
+        stargazerCount = stargazerCount,
+        forkCount = forkCount,
+        openIssueCount = issues.totalCount,
+        topics = repositoryTopics.nodes.orEmpty().filterNotNull().map { it.topic.name },
+        defaultBranchName = defaultBranchRef?.name,
+    )
 
     /**
      * 指定用户的星标仓库列表（他人主页 → 点击"星标"统计项）。
      * 与 StarRepository.getViewerStarred() 的区别：根字段是 user(login:) 不是 viewer，
      * 可以查任意 login 的公开星标仓库；orderBy 走 STARRED_AT DESC 与 GitHub 官方一致。
      */
-    suspend fun getUserStars(login: String, after: String? = null): ApiResult<PagedStarredRepos> = safeCall {
-        val query = """
-            query UserStars(${'$'}login: String!, ${'$'}after: String) {
-                user(login: ${'$'}login) {
-                    starredRepositories(first: ${PageSize.STARRED_REPOS}, after: ${'$'}after, orderBy: { field: STARRED_AT, direction: DESC }) {
-                        totalCount
-                        edges {
-                            node {
-                                id
-                                name
-                                url
-                                description
-                                homepageUrl
-                                owner { login avatarUrl }
-                                isPrivate
-                                isArchived
-                                isFork
-                                parent { name owner { login avatarUrl } }
-                                primaryLanguage { name color }
-                                stargazerCount
-                                forkCount
-                                issues(states: [OPEN]) { totalCount }
-                                repositoryTopics(first: ${PageSize.TOPICS_PER_REPO}) { nodes { topic { name } } }
-                                defaultBranchRef { name }
-                            }
-                        }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    suspend fun getUserStars(login: String, after: String? = null): ApiResult<PagedStarredRepos> =
+        when (val result = apolloClient.query(
+            UserStarsQuery(login, Optional.presentIfNotNull(after)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val conn = result.data.user?.starredRepositories
+                    ?: throw UserVisibleException(R.string.error_user_not_found)
+                PagedStarredRepos(
+                    totalCount = conn.totalCount,
+                    items = conn.edges.orEmpty().filterNotNull().mapNotNull { it.node }.map { it.toStarredRepo() },
+                    hasNextPage = conn.pageInfo.hasNextPage,
+                    endCursor = conn.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val data = api.graphQL<UserStarsQueryData>(
-            query,
-            buildMap {
-                put("login", JsonPrimitive(login))
-                after?.let { put("after", JsonPrimitive(it)) }
-            },
-        )
-        val conn = data.user?.starredRepositories ?: throw UserVisibleException(R.string.error_user_not_found)
-        PagedStarredRepos(
-            totalCount = conn.totalCount,
-            items = conn.edges.map { it.node.toDomain() },
-            hasNextPage = conn.pageInfo.hasNextPage,
-            endCursor = conn.pageInfo.endCursor,
-        )
-    }
+        }
+
+    private fun UserStarsQuery.Node.toStarredRepo() = StarredRepo(
+        id = id,
+        name = name,
+        url = url,
+        description = description,
+        homepageUrl = homepageUrl,
+        ownerLogin = owner.login,
+        ownerAvatarUrl = owner.avatarUrl,
+        isPrivate = isPrivate,
+        isArchived = isArchived,
+        isFork = isFork,
+        forkedFromOwner = parent?.owner?.login,
+        forkedFromName = parent?.name,
+        languageName = primaryLanguage?.name,
+        languageColor = primaryLanguage?.color,
+        stargazerCount = stargazerCount,
+        forkCount = forkCount,
+        openIssueCount = issues.totalCount,
+        topics = repositoryTopics.nodes.orEmpty().filterNotNull().map { it.topic.name },
+        defaultBranchName = defaultBranchRef?.name,
+    )
 
     /**
      * 指定用户的组织列表（他人主页 → 点击"组织"统计项）。
      * 与 getOrganizations() 的区别：根字段是 user(login:) 不是 viewer，
      * 带 totalCount + pageInfo 分页，支持查任意 login 的公开组织。
      */
-    suspend fun getUserOrgs(login: String, after: String? = null): ApiResult<PagedOrgs> = safeCall {
-        val query = """
-            query UserOrgs(${'$'}login: String!, ${'$'}after: String) {
-                user(login: ${'$'}login) {
-                    organizations(first: ${PageSize.ORGS}, after: ${'$'}after) {
-                        totalCount
-                        nodes { login name avatarUrl }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    suspend fun getUserOrgs(login: String, after: String? = null): ApiResult<PagedOrgs> =
+        when (val result = apolloClient.query(
+            UserOrgsQuery(login, Optional.presentIfNotNull(after)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val conn = result.data.user?.organizations
+                    ?: throw UserVisibleException(R.string.error_user_not_found)
+                PagedOrgs(
+                    totalCount = conn.totalCount,
+                    orgs = conn.nodes.orEmpty().filterNotNull().map { SimpleOrg(it.login, it.name, it.avatarUrl) },
+                    hasNextPage = conn.pageInfo.hasNextPage,
+                    endCursor = conn.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val data = api.graphQL<UserOrgsQueryData>(
-            query,
-            buildMap {
-                put("login", JsonPrimitive(login))
-                after?.let { put("after", JsonPrimitive(it)) }
-            },
-        )
-        val conn = data.user?.organizations ?: throw UserVisibleException(R.string.error_user_not_found)
-        PagedOrgs(
-            totalCount = conn.totalCount,
-            orgs = conn.nodes.map { SimpleOrg(it.login, it.name, it.avatarUrl) },
-            hasNextPage = conn.pageInfo.hasNextPage,
-            endCursor = conn.pageInfo.endCursor,
-        )
-    }
+        }
 
     /**
      * 指定组织的成员列表（组织主页 → 点击"成员"统计项）。
      * 通过 organization(login:) 根字段查 membersWithRole，返回 User 节点列表；
      * 数据形状与关注者/关注列表一致，因此复用 PagedUsers/SimpleUser。
      */
-    suspend fun getOrgMembers(orgLogin: String, after: String? = null): ApiResult<PagedUsers> = safeCall {
-        val query = """
-            query OrgMembers(${'$'}orgLogin: String!, ${'$'}after: String) {
-                organization(login: ${'$'}orgLogin) {
-                    membersWithRole(first: ${PageSize.USER_LIST}, after: ${'$'}after) {
-                        totalCount
-                        nodes { login name avatarUrl bio }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    suspend fun getOrgMembers(orgLogin: String, after: String? = null): ApiResult<PagedUsers> =
+        when (val result = apolloClient.query(
+            OrgMembersQuery(orgLogin, Optional.presentIfNotNull(after)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val conn = result.data.organization?.membersWithRole
+                    ?: throw UserVisibleException(R.string.error_org_not_found)
+                PagedUsers(
+                    totalCount = conn.totalCount,
+                    users = conn.nodes.orEmpty().filterNotNull()
+                        .map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
+                    hasNextPage = conn.pageInfo.hasNextPage,
+                    endCursor = conn.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val data = api.graphQL<OrgMembersQueryData>(
-            query,
-            buildMap {
-                put("orgLogin", JsonPrimitive(orgLogin))
-                after?.let { put("after", JsonPrimitive(it)) }
-            },
-        )
-        val conn = data.organization?.membersWithRole ?: throw UserVisibleException(R.string.error_org_not_found)
-        PagedUsers(
-            totalCount = conn.totalCount,
-            users = conn.nodes.map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
-            hasNextPage = conn.pageInfo.hasNextPage,
-            endCursor = conn.pageInfo.endCursor,
-        )
-    }
+        }
 }

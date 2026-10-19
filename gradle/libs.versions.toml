@@ -3,6 +3,7 @@
 agp = "9.3.1"
 kotlin = "2.4.10"
 ksp = "2.3.10"
+apollo = "4.4.3"
 composeBom = "2026.06.01"
 
 # 依赖注入 (Hilt)
@@ -107,8 +108,12 @@ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectr
 androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 
+apollo-runtime = { module = "com.apollographql.apollo:apollo-runtime", version.ref = "apollo" }
+apollo-api = { module = "com.apollographql.apollo:apollo-api", version.ref = "apollo" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+apollo = { id = "com.apollographql.apollo", version.ref = "apollo" }
 kotlin = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

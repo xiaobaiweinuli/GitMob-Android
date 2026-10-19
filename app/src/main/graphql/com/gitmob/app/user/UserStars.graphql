@@ -1,0 +1,29 @@
+# 指定用户的星标仓库列表，orderBy STARRED_AT DESC 与官方一致
+query UserStars($login: String!, $after: String) {
+  user(login: $login) {
+    starredRepositories(first: 20, after: $after, orderBy: { field: STARRED_AT, direction: DESC }) {
+      totalCount
+      edges {
+        node {
+          id
+          name
+          url
+          description
+          homepageUrl
+          owner { login avatarUrl }
+          isPrivate
+          isArchived
+          isFork
+          parent { name owner { login avatarUrl } }
+          primaryLanguage { name color }
+          stargazerCount
+          forkCount
+          issues(states: [OPEN]) { totalCount }
+          repositoryTopics(first: 10) { nodes { topic { name } } }
+          defaultBranchRef { name }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

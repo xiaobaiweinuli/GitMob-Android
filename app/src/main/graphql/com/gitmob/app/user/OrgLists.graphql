@@ -1,0 +1,19 @@
+query UserOrgs($login: String!, $after: String) {
+  user(login: $login) {
+    organizations(first: 20, after: $after) {
+      totalCount
+      nodes { login name avatarUrl }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+query OrgMembers($orgLogin: String!, $after: String) {
+  organization(login: $orgLogin) {
+    membersWithRole(first: 30, after: $after) {
+      totalCount
+      nodes { login name avatarUrl bio }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

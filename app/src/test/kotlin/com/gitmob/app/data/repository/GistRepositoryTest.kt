@@ -1,14 +1,15 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
-import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistPage
 import com.gitmob.app.data.model.GistSort
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -28,17 +29,19 @@ class GistRepositoryTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
-        repository = GistRepository(
-            GHApiClient(
-                okHttpClient = OkHttpClient(),
-                json = Json { ignoreUnknownKeys = true },
-                tokenProvider = object : AccessTokenProvider {
-                    override suspend fun getToken() = "fake-token"
-                },
-                restBaseUrl = baseUrl,
-                graphQLUrl = "$baseUrl/graphql",
-            ),
-        )
+        val okHttpClient = OkHttpClient()
+        val apolloClient = ApolloClient.Builder()
+            .serverUrl("$baseUrl/graphql")
+            .okHttpClient(okHttpClient)
+            .addHttpInterceptor(
+                AuthHttpInterceptor(
+                    object : AccessTokenProvider {
+                        override suspend fun getToken() = "fake-token"
+                    },
+                ),
+            )
+            .build()
+        repository = GistRepository(apolloClient)
     }
 
     @After
@@ -332,7 +335,7 @@ class GistRepositoryTest {
               "id":"$id",
               "name":"$id",
               "description":$descriptionJson,
-              "owner":{"login":"$ownerLogin"},
+              "owner":{"__typename":"User","login":"$ownerLogin"},
               "isPublic":$isPublic,
               "isFork":$isFork,
               "createdAt":"2026-01-01T00:00:00Z",

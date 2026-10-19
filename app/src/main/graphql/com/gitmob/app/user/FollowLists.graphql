@@ -1,0 +1,19 @@
+query Followers($login: String!, $after: String) {
+  user(login: $login) {
+    followers(first: 30, after: $after) {
+      totalCount
+      nodes { login name avatarUrl bio }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+query Following($login: String!, $after: String) {
+  user(login: $login) {
+    following(first: 30, after: $after) {
+      totalCount
+      nodes { login name avatarUrl bio }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+# 查看他人（或按 login 查自己）资料，Follow 按钮所需 viewerCanFollow 等字段同一套
+query UserProfile($login: String!) {
+  user(login: $login) {
+    ...ProfileFields
+    gists(privacy: PUBLIC) { totalCount }
+  }
+}

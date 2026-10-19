@@ -1,0 +1,8 @@
+# 组织 BottomSheet 轻量预览（不分页，容量 30 = PageSize.ORGS_PREVIEW）
+query ViewerOrganizations {
+  viewer { organizations(first: 30) { nodes { login name avatarUrl } } }
+}
+
+query UserOrganizations($login: String!) {
+  user(login: $login) { organizations(first: 30) { nodes { login name avatarUrl } } }
+}

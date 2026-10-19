@@ -1,11 +1,12 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
-import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -15,6 +16,19 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+
+private fun buildApolloClient(baseUrl: String): ApolloClient =
+    ApolloClient.Builder()
+        .serverUrl("$baseUrl/graphql")
+        .okHttpClient(OkHttpClient())
+        .addHttpInterceptor(
+            AuthHttpInterceptor(
+                object : AccessTokenProvider {
+                    override suspend fun getToken() = "fake-token"
+                },
+            ),
+        )
+        .build()
 
 /**
  * 用 MockWebServer 模拟真实 HTTP 响应，不 Mock 内部逻辑，纯 JVM 跑，
@@ -28,16 +42,7 @@ class UserRepositoryTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
-        val api = GHApiClient(
-            okHttpClient = OkHttpClient(),
-            json = Json { ignoreUnknownKeys = true },
-            tokenProvider = object : AccessTokenProvider {
-                override suspend fun getToken() = "fake-token"
-            },
-            restBaseUrl = baseUrl,
-            graphQLUrl = "$baseUrl/graphql",
-        )
-        repository = UserRepository(api)
+        repository = UserRepository(buildApolloClient(baseUrl))
     }
 
     @After
@@ -50,6 +55,7 @@ class UserRepositoryTest {
             "id":"U_kg1","login":"octocat","name":"The Octocat","avatarUrl":"https://x/a.png",
             "bio":"hello","company":"@github","location":"SF","websiteUrl":"https://x.dev",
             "email":"o@x.com","pronouns":"they/them","isDeveloperProgramMember":true,
+            "isBountyHunter":false,"isCampusExpert":false,"isGitHubStar":false,
             "isViewer":true,"viewerCanFollow":false,"viewerIsFollowing":false,
             "status":null,
             "socialAccounts":{"nodes":[{"displayName":"@oct","provider":"TWITTER","url":"https://x.com/oct"}]},
@@ -60,9 +66,9 @@ class UserRepositoryTest {
             "starredRepositories":{"totalCount":20},
             "gists":{"totalCount":4},
             "pinnedItems":{"nodes":[
-                {"name":"repo1","url":"https://github.com/octocat/repo1","description":"desc :rocket:",
+                {"__typename":"Repository","name":"repo1","url":"https://github.com/octocat/repo1","description":"desc :rocket:",
                  "stargazerCount":100,"forkCount":4,"primaryLanguage":{"name":"Kotlin","color":"#A97BFF"},
-                 "owner":{"login":"octocat","avatarUrl":"https://x/a.png"}}
+                 "owner":{"__typename":"User","login":"octocat","avatarUrl":"https://x/a.png"}}
             ]}
         }
     """.trimIndent()
@@ -137,16 +143,7 @@ class UserRepositoryProfileOwnerTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
-        val api = GHApiClient(
-            okHttpClient = OkHttpClient(),
-            json = Json { ignoreUnknownKeys = true },
-            tokenProvider = object : AccessTokenProvider {
-                override suspend fun getToken() = "fake-token"
-            },
-            restBaseUrl = baseUrl,
-            graphQLUrl = "$baseUrl/graphql",
-        )
-        repository = UserRepository(api)
+        repository = UserRepository(buildApolloClient(baseUrl))
     }
 
     @After
@@ -159,10 +156,12 @@ class UserRepositoryProfileOwnerTest {
         server.enqueue(
             MockResponse().setBody(
                 """
-                {"data":{"repositoryOwner":{
+                {"data":{"viewer":{"login":"octocat","gists":{"totalCount":9}},"repositoryOwner":{
                     "__typename":"User","id":"U_kg1","login":"octocat","avatarUrl":"https://x/a.png","url":"https://github.com/octocat",
                     "name":"The Octocat","bio":"hi","company":"@github","location":"SF","email":"octo@example.com",
                     "pronouns":"he/him","status":{"emoji":"🌙","message":"Coding"},
+                    "isDeveloperProgramMember":false,"isBountyHunter":false,
+                    "isCampusExpert":false,"isGitHubStar":false,
                     "socialAccounts":{"nodes":[{"displayName":"@octocat","provider":"TWITTER","url":"https://x.com/octocat"}]},
                     "isViewer":false,
                     "viewerCanFollow":true,"viewerIsFollowing":false,
@@ -171,9 +170,9 @@ class UserRepositoryProfileOwnerTest {
                     "gists":{"totalCount":6},
                     "websiteUrl":"https://x.dev","repositories":{"totalCount":5},
                     "pinnedItems":{"nodes":[{
-                        "name":"repo1","url":"https://github.com/octocat/repo1","description":"desc",
+                        "__typename":"Repository","name":"repo1","url":"https://github.com/octocat/repo1","description":"desc",
                         "stargazerCount":10,"forkCount":2,"primaryLanguage":{"name":"Kotlin","color":"#A97BFF"},
-                        "owner":{"login":"octocat","avatarUrl":"https://x/a.png"}
+                        "owner":{"__typename":"User","login":"octocat","avatarUrl":"https://x/a.png"}
                     }]}
                 }}}
                 """.trimIndent(),
@@ -210,8 +209,18 @@ class UserRepositoryProfileOwnerTest {
                     "viewer":{"login":"octocat","gists":{"totalCount":9}},
                     "repositoryOwner":{
                         "__typename":"User","id":"U_kg1","login":"octocat",
-                        "isViewer":true,
-                        "gists":{"totalCount":6}
+                        "avatarUrl":"https://x/a.png","url":"https://github.com/octocat",
+                        "name":null,"bio":null,"company":null,"location":null,"email":"",
+                        "pronouns":null,"status":null,
+                        "socialAccounts":{"nodes":[]},
+                        "isDeveloperProgramMember":false,"isBountyHunter":false,
+                        "isCampusExpert":false,"isGitHubStar":false,
+                        "isViewer":true,"viewerCanFollow":false,"viewerIsFollowing":false,
+                        "followers":{"totalCount":0},"following":{"totalCount":0},
+                        "organizations":{"totalCount":0},"starredRepositories":{"totalCount":0},
+                        "websiteUrl":null,"repositories":{"totalCount":0},
+                        "gists":{"totalCount":6},
+                        "pinnedItems":{"nodes":[]}
                     }
                 }}
                 """.trimIndent(),
@@ -229,15 +238,16 @@ class UserRepositoryProfileOwnerTest {
         server.enqueue(
             MockResponse().setBody(
                 """
-                {"data":{"repositoryOwner":{
+                {"data":{"viewer":{"login":"octocat","gists":{"totalCount":9}},"repositoryOwner":{
                     "__typename":"Organization","id":"O_kg1","login":"github","avatarUrl":"https://x/o.png","url":"https://github.com/github",
                     "name":"GitHub","description":"desc","isVerified":true,
+                    "viewerCanCreateRepositories":true,"viewerIsFollowing":false,
                     "websiteUrl":"https://github.com","membersWithRole":{"totalCount":100},
                     "repositories":{"totalCount":300},
                     "pinnedItems":{"nodes":[{
-                        "name":"docs","url":"https://github.com/github/docs","description":"docs",
+                        "__typename":"Repository","name":"docs","url":"https://github.com/github/docs","description":"docs",
                         "stargazerCount":20,"forkCount":3,"primaryLanguage":null,
-                        "owner":{"login":"github","avatarUrl":"https://x/o.png"}
+                        "owner":{"__typename":"Organization","login":"github","avatarUrl":"https://x/o.png"}
                     }]}
                 }}}
                 """.trimIndent(),

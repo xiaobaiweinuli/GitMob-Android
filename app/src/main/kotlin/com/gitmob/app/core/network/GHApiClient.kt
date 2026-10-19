@@ -232,6 +232,10 @@ class GHApiClient @Inject constructor(
      * token 校验失败会通过异常层级向上抛出；调用方用 safeCall 统一归类。
      * @sample userRepository.getViewerProfile（登录时的首次验证请求）
      */
+    @Deprecated(
+        message = "GraphQL 层迁移到 Apollo Kotlin（B0 起分批替换），新代码一律用 ApolloClient + 生成模型",
+        level = DeprecationLevel.WARNING,
+    )
     suspend inline fun <reified D> graphQL(
         query: String,
         variables: Map<String, JsonElement> = emptyMap(),

@@ -1,0 +1,49 @@
+# Gist 列表（当前用户）：隐私 ALL，排序/游标由变量控制
+query ViewerGists($after: String, $orderBy: GistOrder) {
+  viewer {
+    login
+    gists(first: 20, after: $after, privacy: ALL, orderBy: $orderBy) {
+      ...GistConnectionFields
+    }
+  }
+}
+
+# Gist 列表（他人公开）：根字段 user(login:)，viewer.login 仅用于归属判断
+query UserGists($login: String!, $after: String, $orderBy: GistOrder) {
+  viewer { login }
+  user(login: $login) {
+    login
+    gists(first: 20, after: $after, privacy: PUBLIC, orderBy: $orderBy) {
+      ...GistConnectionFields
+    }
+  }
+}
+
+fragment GistConnectionFields on GistConnection {
+  edges {
+    cursor
+    node {
+      id
+      name
+      description
+      owner { login }
+      isPublic
+      isFork
+      createdAt
+      updatedAt
+      stargazerCount
+      comments { totalCount }
+      url
+      previewFiles: files(limit: 1) {
+        name
+        text(truncate: 4000)
+        size
+        isTruncated
+        isImage
+        language { name color }
+      }
+      fileMetadata: files(limit: 100) { name }
+    }
+  }
+  pageInfo { hasNextPage endCursor }
+}

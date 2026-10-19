@@ -1,0 +1,17 @@
+# 关注/取关用户：只查 clientMutationId 验证成功，UI 状态由调用方本地乐观更新
+# （followers.totalCount 是最终一致聚合计数，mutation 返回值慢一拍，不可直接刷 UI）
+mutation FollowUser($userId: ID!) {
+  followUser(input: { userId: $userId }) { clientMutationId }
+}
+
+mutation UnfollowUser($userId: ID!) {
+  unfollowUser(input: { userId: $userId }) { clientMutationId }
+}
+
+mutation FollowOrganization($organizationId: ID!) {
+  followOrganization(input: { organizationId: $organizationId }) { clientMutationId }
+}
+
+mutation UnfollowOrganization($organizationId: ID!) {
+  unfollowOrganization(input: { organizationId: $organizationId }) { clientMutationId }
+}

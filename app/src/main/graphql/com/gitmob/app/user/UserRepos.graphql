@@ -1,0 +1,25 @@
+# 指定用户的仓库列表（他人主页 → 仓库统计项），ownerAffiliations 只传 OWNER
+query UserRepos($login: String!, $after: String) {
+  user(login: $login) {
+    repositories(first: 20, after: $after, ownerAffiliations: [OWNER]) {
+      totalCount
+      nodes {
+        name
+        owner { login avatarUrl }
+        description
+        homepageUrl
+        isPrivate
+        isArchived
+        isFork
+        parent { name owner { login avatarUrl } }
+        primaryLanguage { name color }
+        stargazerCount
+        forkCount
+        issues(states: [OPEN]) { totalCount }
+        repositoryTopics(first: 10) { nodes { topic { name } } }
+        defaultBranchRef { name }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

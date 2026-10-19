@@ -5,72 +5,7 @@ import kotlinx.serialization.Serializable
 /** GraphQL 原始响应结构（贴合 query 形状），只在 Repository 内部使用，不传到 UI 层 */
 
 @Serializable
-data class ViewerProfileQueryData(val viewer: ProfileNode)
-
-@Serializable
-data class UserProfileQueryData(val user: ProfileNode? = null)
-
-@Serializable
-data class ProfileNode(
-    val id: String,
-    val login: String,
-    val name: String? = null,
-    val avatarUrl: String? = null,
-    val bio: String? = null,
-    val company: String? = null,
-    val location: String? = null,
-    val websiteUrl: String? = null,
-    val email: String? = null,
-    val pronouns: String? = null,
-    /** 徽章 1/4：开发者计划成员（对应 Octicon BADGE_DEVELOPER_PROGRAM，cpu-16） */
-    val isDeveloperProgramMember: Boolean = false,
-    /** 徽章 2/4：安全赏金猎人（对应 Octicon BADGE_SECURITY_BOUNTY_HUNTER，lock-16） */
-    val isBountyHunter: Boolean = false,
-    /** 徽章 3/4：校园专家（对应 Octicon BADGE_CAMPUS_EXPERT，mortar-board-16） */
-    val isCampusExpert: Boolean = false,
-    /** 徽章 4/4：GitHub Star（对应 Octicon BADGE_GITHUB_STAR，star-fill-16，紫粉 tint） */
-    val isGitHubStar: Boolean = false,
-    val isViewer: Boolean = false,
-    val viewerCanFollow: Boolean = false,
-    val viewerIsFollowing: Boolean = false,
-    val status: UserStatusNode? = null,
-    val socialAccounts: SocialAccountConnection,
-    val followers: TotalCountNode,
-    val following: TotalCountNode,
-    val organizations: TotalCountNode,
-    val repositories: TotalCountNode,
-    val starredRepositories: TotalCountNode,
-    val gists: TotalCountNode? = null,
-    val pinnedItems: PinnedItemsConnection,
-)
-
-@Serializable
-data class UserStatusNode(val emoji: String? = null, val message: String? = null)
-
-@Serializable
-data class SocialAccountConnection(val nodes: List<SocialAccountNode>)
-
-@Serializable
-data class SocialAccountNode(val displayName: String, val provider: String, val url: String)
-
-@Serializable
 data class TotalCountNode(val totalCount: Int)
-
-@Serializable
-data class PinnedItemsConnection(val nodes: List<PinnedRepoNode>)
-
-// 注意：不查 isDiscussionsEnabled / lists（Repository 上这两个字段公开 API 不支持，
-// 已在之前的抓包分析里确认过），也不查 achievements（User 上这个字段公开 API 不支持）
-@Serializable
-data class PinnedRepoNode(
-    val name: String,
-    val url: String,
-    val description: String? = null,
-    val stargazerCount: Int = 0,
-    val forkCount: Int = 0,
-    val primaryLanguage: LanguageNode? = null,
-    val owner: OwnerNode,
-)
 
 @Serializable
 data class LanguageNode(val name: String, val color: String? = null)
@@ -79,12 +14,6 @@ data class LanguageNode(val name: String, val color: String? = null)
 data class OwnerNode(val login: String, val avatarUrl: String? = null)
 
 // ---- 关注者/关注列表分页 ----
-
-@Serializable
-data class UserListQueryData(val user: UserListConnectionHolder? = null)
-
-@Serializable
-data class UserListConnectionHolder(val followers: PagedUserConnection? = null, val following: PagedUserConnection? = null)
 
 @Serializable
 data class PagedUserConnection(
@@ -106,32 +35,6 @@ data class PageInfoNode(val hasNextPage: Boolean = false, val endCursor: String?
 // 返回值会慢一拍，不可用于直接更新 UI。
 
 @Serializable
-data class FollowUserMutationData(val followUser: FollowUserPayload? = null)
-
-@Serializable
-data class FollowUserPayload(val clientMutationId: String? = null)
-
-@Serializable
-data class UnfollowUserMutationData(val unfollowUser: UnfollowUserPayload? = null)
-
-@Serializable
-data class UnfollowUserPayload(val clientMutationId: String? = null)
-
-@Serializable
-data class FollowOrganizationMutationData(val followOrganization: FollowOrganizationPayload? = null)
-
-@Serializable
-data class FollowOrganizationPayload(val clientMutationId: String? = null)
-
-@Serializable
-data class UnfollowOrganizationMutationData(val unfollowOrganization: UnfollowOrganizationPayload? = null)
-
-@Serializable
-data class UnfollowOrganizationPayload(val clientMutationId: String? = null)
-
-// ---- 组织列表 ----
-
-@Serializable
 data class OrganizationsQueryData(val viewer: OrgListHolder)
 
 /**
@@ -141,12 +44,6 @@ data class OrganizationsQueryData(val viewer: OrgListHolder)
  *
  * 不分页，返回简单的 nodes 列表（与 OrganizationsBottomSheet 配合，容量由 PageSize.ORGS_PREVIEW 决定）。
  */
-@Serializable
-data class UnifiedOrganizationsQueryData(
-    val viewer: OrgListHolder? = null,
-    val user: OrgListHolder? = null,
-)
-
 @Serializable
 data class OrgListHolder(val organizations: OrgConnection)
 
@@ -171,95 +68,6 @@ data class UserRepoListQueryData(val user: UserRepoListHolder? = null)
 
 @Serializable
 data class UserRepoListHolder(val repositories: RepoListConnection)
-
-@Serializable
-data class UserStarsQueryData(val user: UserStarsHolder? = null)
-
-@Serializable
-data class UserStarsHolder(val starredRepositories: StarredRepoConnection)
-
-@Serializable
-data class UserOrgsQueryData(val user: UserOrgsHolder? = null)
-
-@Serializable
-data class UserOrgsHolder(val organizations: PagedOrgConnection)
-
-// ---- 组织维度列表（组织主页：成员）----
-
-@Serializable
-data class OrgMembersQueryData(val organization: OrgMembersHolder? = null)
-
-@Serializable
-data class OrgMembersHolder(val membersWithRole: PagedUserConnection)
-
-// ---- 用户/组织统一资料查询（repositoryOwner） ----
-
-@Serializable
-data class RepositoryOwnerQueryData(
-    val viewer: ProfileViewerGistCountNode? = null,
-    val repositoryOwner: RepositoryOwnerNode? = null,
-)
-
-@Serializable
-data class ProfileViewerGistCountNode(
-    val login: String,
-    val gists: TotalCountNode,
-)
-
-@Serializable
-data class RepositoryOwnerNode(
-    val __typename: String,
-    val id: String,
-    val login: String,
-    val name: String? = null,
-    val avatarUrl: String? = null,
-    val url: String? = null,
-    // ================================
-    // User 分支字段
-    // ================================
-    val bio: String? = null,
-    val company: String? = null,
-    val location: String? = null,
-    val email: String? = null,
-    val pronouns: String? = null,
-    val status: UserStatusNode? = null,
-    val socialAccounts: SocialAccountConnection? = null,
-    /** User 分支：徽章 1/4（开发者计划成员） */
-    val isDeveloperProgramMember: Boolean = false,
-    /** User 分支：徽章 2/4（安全赏金猎人） */
-    val isBountyHunter: Boolean = false,
-    /** User 分支：徽章 3/4（校园专家） */
-    val isCampusExpert: Boolean = false,
-    /** User 分支：徽章 4/4（GitHub Star 贡献者） */
-    val isGitHubStar: Boolean = false,
-    val isViewer: Boolean = false,
-    val viewerCanFollow: Boolean = false,
-    val followers: TotalCountNode? = null,
-    val following: TotalCountNode? = null,
-    /** User 分支：组织数量统计（用于 ProfileScreen 个人资料统计行） */
-    val organizations: TotalCountNode? = null,
-    /** User 分支：星标仓库数量统计（用于 ProfileScreen 个人资料统计行） */
-    val starredRepositories: TotalCountNode? = null,
-    val gists: TotalCountNode? = null,
-    // ================================
-    // Organization 分支字段
-    // ================================
-    val description: String? = null,
-    val isVerified: Boolean = false,
-    val membersWithRole: TotalCountNode? = null,
-    val viewerCanCreateRepositories: Boolean = false,
-    // ================================
-    // 两者共有
-    // ================================
-    /** viewerIsFollowing：User 和 Organization 根级别都有此字段（Actor 接口不包含，但两个类型各自有） */
-    val viewerIsFollowing: Boolean = false,
-    val repositories: TotalCountNode? = null,
-    val websiteUrl: String? = null,
-    /** User / Organization 各自 fragment 中查询的真正置顶仓库；RepositoryOwner 接口本身不暴露该字段。 */
-    val pinnedItems: PinnedItemsConnection? = null,
-)
-
-// ---- 仓库列表（"仓库" Tab 用） ----
 
 @Serializable
 data class ViewerRepoListQueryData(val viewer: RepoListHolder)
@@ -371,65 +179,6 @@ data class TopicNameNode(val name: String)
 data class BranchRefNode(val name: String)
 
 // ---- Gist 列表 ----
-
-@Serializable
-data class ViewerGistsQueryData(
-    val viewer: ViewerGistsNode,
-    val user: UserGistsNode? = null,
-)
-
-@Serializable
-data class ViewerGistsNode(
-    val login: String,
-    val gists: GistConnectionNode? = null,
-)
-
-@Serializable
-data class UserGistsNode(
-    val login: String,
-    val gists: GistConnectionNode,
-)
-
-@Serializable
-data class GistConnectionNode(
-    val edges: List<GistEdgeNode?>? = null,
-    val pageInfo: PageInfoNode,
-)
-
-@Serializable
-data class GistEdgeNode(
-    val cursor: String,
-    val node: GistNode? = null,
-)
-
-@Serializable
-data class GistNode(
-    val id: String,
-    val name: String,
-    val description: String? = null,
-    val owner: OwnerNode? = null,
-    val isPublic: Boolean = true,
-    val isFork: Boolean = false,
-    val createdAt: String,
-    val updatedAt: String,
-    val stargazerCount: Int = 0,
-    val comments: TotalCountNode,
-    val url: String,
-    val previewFiles: List<GistFileNode?>? = null,
-    val fileMetadata: List<GistFileNode?>? = null,
-)
-
-@Serializable
-data class GistFileNode(
-    val name: String? = null,
-    val text: String? = null,
-    val size: Int? = null,
-    val isTruncated: Boolean = false,
-    val isImage: Boolean = false,
-    val language: LanguageNode? = null,
-)
-
-// ---- 星标列表功能 ----
 
 @Serializable
 data class ViewerListsQueryData(val viewer: ListsHolder)
@@ -800,14 +549,6 @@ data class RepoIssueDetailRepositoryNode(
 @Serializable data class ClientMutationPayload(val clientMutationId: String? = null)
 
 // ---- 主页事务入口行：议题/PR/讨论 involves:@me 计数 ----
-
-@Serializable
-data class ViewerProfileWithWorkQueryData(
-    val viewer: ProfileNode,
-    val issuesInvolvingMe: SearchIssueCountNode,
-    val prsInvolvingMe: SearchIssueCountNode,
-    val discussionsInvolvingMe: SearchDiscussionCountNode,
-)
 
 @Serializable
 data class SearchIssueCountNode(val issueCount: Int? = null)
