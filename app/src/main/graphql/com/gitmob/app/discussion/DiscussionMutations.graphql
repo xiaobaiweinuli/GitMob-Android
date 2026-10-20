@@ -1,0 +1,104 @@
+# 创建 Discussion。返回体 comments { totalCount } 与列表形状对齐。
+mutation CreateRepoDiscussion($input: CreateDiscussionInput!) {
+    createDiscussion(input: $input) {
+        discussion {
+            ...DiscussionFields
+            comments {
+                totalCount
+            }
+        }
+    }
+}
+
+mutation UpdateRepoDiscussion($input: UpdateDiscussionInput!) {
+    updateDiscussion(input: $input) {
+        discussion {
+            ...DiscussionFields
+            comments {
+                totalCount
+            }
+        }
+    }
+}
+
+mutation CloseRepoDiscussion($input: CloseDiscussionInput!) {
+    closeDiscussion(input: $input) {
+        discussion {
+            ...DiscussionFields
+            comments {
+                totalCount
+            }
+        }
+    }
+}
+
+mutation ReopenRepoDiscussion($input: ReopenDiscussionInput!) {
+    reopenDiscussion(input: $input) {
+        discussion {
+            ...DiscussionFields
+            comments {
+                totalCount
+            }
+        }
+    }
+}
+
+mutation DeleteRepoDiscussion($input: DeleteDiscussionInput!) {
+    deleteDiscussion(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation AddDiscussionLabels($input: AddLabelsToLabelableInput!) {
+    addLabelsToLabelable(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation RemoveDiscussionLabels($input: RemoveLabelsFromLabelableInput!) {
+    removeLabelsFromLabelable(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation AddDiscussionComment($input: AddDiscussionCommentInput!) {
+    addDiscussionComment(input: $input) {
+        comment {
+            ...DiscussionCommentFields
+        }
+    }
+}
+
+mutation UpdateDiscussionComment($input: UpdateDiscussionCommentInput!) {
+    updateDiscussionComment(input: $input) {
+        comment {
+            ...DiscussionCommentFields
+        }
+    }
+}
+
+mutation DeleteDiscussionComment($input: DeleteDiscussionCommentInput!) {
+    deleteDiscussionComment(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation MarkCommentAsAnswer($input: MarkDiscussionCommentAsAnswerInput!) {
+    markDiscussionCommentAsAnswer(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation UnmarkCommentAsAnswer($input: UnmarkDiscussionCommentAsAnswerInput!) {
+    unmarkDiscussionCommentAsAnswer(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation UpdateDiscussionSubscription($input: UpdateSubscriptionInput!) {
+    updateSubscription(input: $input) {
+        subscribable {
+            viewerSubscription
+        }
+    }
+}

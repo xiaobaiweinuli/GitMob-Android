@@ -1,8 +1,10 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
-import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.RepoIssueFilter
 import com.gitmob.app.data.model.RepoIssueStateFilter
 import com.gitmob.app.data.model.RepoIssueSort
@@ -12,7 +14,6 @@ import com.gitmob.app.data.model.CreateRepoIssueInput
 import com.gitmob.app.data.model.IssueStateReason
 import com.gitmob.app.data.model.UpdateRepoIssueInput
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -31,7 +32,13 @@ class RepoIssueRepositoryTest {
     @Before fun setUp() {
         server = MockWebServer(); server.start()
         val baseUrl = server.url("/").toString().removeSuffix("/")
-        repository = RepoIssueRepository(GHApiClient(OkHttpClient(), Json { ignoreUnknownKeys = true }, object : AccessTokenProvider { override suspend fun getToken() = "token" }, baseUrl, "$baseUrl/graphql"))
+        repository = RepoIssueRepository(
+            ApolloClient.Builder()
+                .serverUrl("$baseUrl/graphql")
+                .okHttpClient(OkHttpClient())
+                .addHttpInterceptor(AuthHttpInterceptor(object : AccessTokenProvider { override suspend fun getToken() = "token" }))
+                .build(),
+        )
     }
     @After fun tearDown() = server.shutdown()
 
@@ -91,10 +98,10 @@ class RepoIssueRepositoryTest {
         val config = "blank_issues_enabled: false"
         server.enqueue(MockResponse().setBody("{\"data\":{\"repository\":{\"id\":\"R1\",\"viewerCanCreateIssues\":true,\"isBlankIssuesEnabled\":true,\"defaultBranchRef\":{\"name\":\"main\"}}}}"))
         server.enqueue(MockResponse().setBody("""
-            {"data":{"repository":{"object":{"entries":[
-              {"name":"bug.yml","path":".github/ISSUE_TEMPLATE/bug.yml","type":"blob","object":{"text":${JsonPrimitive(yaml)},"isBinary":false,"isTruncated":false,"byteSize":${yaml.encodeToByteArray().size}}},
-              {"name":"config.yml","path":".github/ISSUE_TEMPLATE/config.yml","type":"blob","object":{"text":${JsonPrimitive(config)},"isBinary":false,"isTruncated":false,"byteSize":${config.length}}},
-              {"name":"legacy.md","path":".github/ISSUE_TEMPLATE/legacy.md","type":"blob","object":{"text":"ignored","isBinary":false,"isTruncated":false,"byteSize":7}}
+            {"data":{"repository":{"object":{"__typename":"Tree","entries":[
+              {"name":"bug.yml","path":".github/ISSUE_TEMPLATE/bug.yml","type":"blob","object":{"__typename":"Blob","text":${JsonPrimitive(yaml)},"isBinary":false,"isTruncated":false,"byteSize":${yaml.encodeToByteArray().size}}},
+              {"name":"config.yml","path":".github/ISSUE_TEMPLATE/config.yml","type":"blob","object":{"__typename":"Blob","text":${JsonPrimitive(config)},"isBinary":false,"isTruncated":false,"byteSize":${config.length}}},
+              {"name":"legacy.md","path":".github/ISSUE_TEMPLATE/legacy.md","type":"blob","object":{"__typename":"Blob","text":"ignored","isBinary":false,"isTruncated":false,"byteSize":7}}
             ]}}}}
         """.trimIndent()))
         val templates = repository.getIssueTemplates("o", "r")
@@ -136,9 +143,11 @@ class RepoIssueRepositoryTest {
     private fun mutationJson(name: String) = "{\"data\":{\"$name\":{\"issue\":${issueNodeJson(1)}}}}"
 
     private fun issueNodeJson(number: Int) = """{
-        "id":"ISSUE_$number","number":$number,"title":"Issue $number","body":"body","bodyHTML":"<p>body</p>","state":"OPEN","stateReason":null,
-        "author":{"id":"USER_1","login":"octo","name":null,"avatarUrl":null,"bio":null},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z","locked":false,
-        "comments":{"totalCount":1,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}},"labels":{"nodes":[]},"assignees":{"nodes":[]},"milestone":null,
+        "id":"ISSUE_$number","url":"https://github.com/octo/repo/issues/$number","number":$number,"title":"Issue $number","body":"body","bodyHTML":"<p>body</p>","state":"OPEN","stateReason":null,
+        "author":{"__typename":"User","login":"octo","avatarUrl":"https://a/u1.png"},"authorAssociation":"NONE",
+        "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z",
+        "includesCreatedEdit":false,"lastEditedAt":null,"editor":null,"locked":false,
+        "comments":{"totalCount":1},"labels":{"nodes":[]},"assignees":{"nodes":[]},"milestone":null,
         "viewerCanClose":true,"viewerCanDelete":true,"viewerCanLabel":true,"viewerCanSetMilestone":true,"viewerCanUpdate":true,"viewerCanSubscribe":true,"viewerCanReopen":false,"viewerSubscription":"UNSUBSCRIBED"
     }""".trimIndent()
 }

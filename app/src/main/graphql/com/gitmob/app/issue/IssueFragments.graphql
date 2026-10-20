@@ -1,0 +1,85 @@
+# Issue 公共字段片段（列表/详情/各 mutation 返回体共用）。
+# 不含 comments 连接：列表用 comments(first: 0) 只取 totalCount，
+# 详情用 comments(first: 20, after:) 取评论分页，两处形状不同无法共用片段。
+# labels/assignees first: 20 = PageSize.METADATA。
+fragment IssueFields on Issue {
+    id
+    url
+    number
+    title
+    body
+    bodyHTML
+    state
+    stateReason
+    author {
+        login
+        avatarUrl
+    }
+    authorAssociation
+    createdAt
+    updatedAt
+    includesCreatedEdit
+    lastEditedAt
+    editor {
+        login
+        avatarUrl
+    }
+    locked
+    labels(first: 20) {
+        nodes {
+            id
+            name
+            color
+            description
+        }
+    }
+    assignees(first: 20) {
+        nodes {
+            id
+            login
+            name
+            avatarUrl
+            bio
+        }
+    }
+    milestone {
+        id
+        number
+        title
+        state
+        dueOn
+    }
+    viewerCanClose
+    viewerCanDelete
+    viewerCanLabel
+    viewerCanSetMilestone
+    viewerCanUpdate
+    viewerCanSubscribe
+    viewerCanReopen
+    viewerSubscription
+}
+
+# Issue 评论公共字段片段。
+fragment IssueCommentFields on IssueComment {
+    id
+    url
+    author {
+        login
+        avatarUrl
+    }
+    authorAssociation
+    body
+    bodyHTML
+    createdAt
+    updatedAt
+    includesCreatedEdit
+    lastEditedAt
+    editor {
+        login
+        avatarUrl
+    }
+    viewerDidAuthor
+    viewerCanUpdate
+    viewerCanDelete
+    viewerCanReact
+}

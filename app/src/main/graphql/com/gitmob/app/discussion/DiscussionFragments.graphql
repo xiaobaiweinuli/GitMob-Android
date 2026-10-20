@@ -1,0 +1,84 @@
+# Discussion 分类公共字段。
+fragment DiscussionCategoryFields on DiscussionCategory {
+    id
+    name
+    emoji
+    description
+    isAnswerable
+}
+
+# Discussion 公共字段片段。不含 comments 连接：
+# 列表只取 comments { totalCount }，详情取完整评论分页，形状不同无法共用片段。
+# labels first: 20 = PageSize.METADATA。
+fragment DiscussionFields on Discussion {
+    id
+    url
+    number
+    title
+    body
+    bodyHTML
+    closed
+    stateReason
+    category {
+        ...DiscussionCategoryFields
+    }
+    author {
+        login
+        avatarUrl
+    }
+    authorAssociation
+    createdAt
+    updatedAt
+    includesCreatedEdit
+    lastEditedAt
+    editor {
+        login
+        avatarUrl
+    }
+    labels(first: 20) {
+        nodes {
+            id
+            name
+            color
+            description
+        }
+    }
+    locked
+    answerChosenAt
+    viewerCanUpdate
+    viewerCanDelete
+    viewerCanClose
+    viewerCanReopen
+    viewerCanSubscribe
+    viewerSubscription
+}
+
+# Discussion 评论公共字段片段。
+fragment DiscussionCommentFields on DiscussionComment {
+    id
+    url
+    body
+    bodyHTML
+    author {
+        login
+        avatarUrl
+    }
+    authorAssociation
+    createdAt
+    updatedAt
+    includesCreatedEdit
+    lastEditedAt
+    editor {
+        login
+        avatarUrl
+    }
+    isAnswer
+    replyTo {
+        id
+    }
+    viewerCanUpdate
+    viewerCanDelete
+    viewerCanReact
+    viewerCanMarkAsAnswer
+    viewerCanUnmarkAsAnswer
+}

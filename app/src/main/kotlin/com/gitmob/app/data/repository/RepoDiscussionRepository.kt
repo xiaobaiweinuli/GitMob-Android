@@ -1,163 +1,363 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.api.Optional
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
-import com.gitmob.app.core.network.GHApiClient
-import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
-import com.gitmob.app.data.model.*
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
+import com.gitmob.app.data.model.CommentAuthorAssociation
+import com.gitmob.app.data.model.ConversationEditSummary
+import com.gitmob.app.data.model.DiscussionStateReason
+import com.gitmob.app.data.model.IssueLabel
+import com.gitmob.app.data.model.RepoDiscussion
+import com.gitmob.app.data.model.RepoDiscussionCategory
+import com.gitmob.app.data.model.RepoDiscussionComment
+import com.gitmob.app.data.model.RepoDiscussionDetail
+import com.gitmob.app.data.model.RepoDiscussionFilter
+import com.gitmob.app.data.model.RepoDiscussionPage
+import com.gitmob.app.data.model.RepoDiscussionSort
+import com.gitmob.app.data.model.RepoDiscussionState
+import com.gitmob.app.data.model.RepoDiscussionStateFilter
+import com.gitmob.app.data.model.SimpleUser
+import com.gitmob.app.graphql.AddDiscussionCommentMutation
+import com.gitmob.app.graphql.AddDiscussionLabelsMutation
+import com.gitmob.app.graphql.CloseRepoDiscussionMutation
+import com.gitmob.app.graphql.CreateRepoDiscussionMutation
+import com.gitmob.app.graphql.DeleteDiscussionCommentMutation
+import com.gitmob.app.graphql.DeleteRepoDiscussionMutation
+import com.gitmob.app.graphql.MarkCommentAsAnswerMutation
+import com.gitmob.app.graphql.RemoveDiscussionLabelsMutation
+import com.gitmob.app.graphql.ReopenRepoDiscussionMutation
+import com.gitmob.app.graphql.RepoDiscussionDetailQuery
+import com.gitmob.app.graphql.RepoDiscussionsQuery
+import com.gitmob.app.graphql.RepoLabelsQuery
+import com.gitmob.app.graphql.UnmarkCommentAsAnswerMutation
+import com.gitmob.app.graphql.UpdateDiscussionCommentMutation
+import com.gitmob.app.graphql.UpdateDiscussionSubscriptionMutation
+import com.gitmob.app.graphql.UpdateRepoDiscussionMutation
+import com.gitmob.app.graphql.fragment.DiscussionCategoryFields
+import com.gitmob.app.graphql.fragment.DiscussionCommentFields
+import com.gitmob.app.graphql.fragment.DiscussionFields
+import com.gitmob.app.graphql.type.AddDiscussionCommentInput
+import com.gitmob.app.graphql.type.AddLabelsToLabelableInput
+import com.gitmob.app.graphql.type.CloseDiscussionInput
+import com.gitmob.app.graphql.type.CreateDiscussionInput
+import com.gitmob.app.graphql.type.DeleteDiscussionCommentInput
+import com.gitmob.app.graphql.type.DeleteDiscussionInput
+import com.gitmob.app.graphql.type.DiscussionOrder
+import com.gitmob.app.graphql.type.DiscussionOrderField
+import com.gitmob.app.graphql.type.MarkDiscussionCommentAsAnswerInput
+import com.gitmob.app.graphql.type.OrderDirection
+import com.gitmob.app.graphql.type.RemoveLabelsFromLabelableInput
+import com.gitmob.app.graphql.type.ReopenDiscussionInput
+import com.gitmob.app.graphql.type.SubscriptionState
+import com.gitmob.app.graphql.type.UnmarkDiscussionCommentAsAnswerInput
+import com.gitmob.app.graphql.type.UpdateDiscussionCommentInput
+import com.gitmob.app.graphql.type.UpdateDiscussionInput
+import com.gitmob.app.graphql.type.UpdateSubscriptionInput
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class RepoDiscussionRepository @Inject constructor(private val api: GHApiClient) {
-    suspend fun getDiscussions(owner: String, name: String, filter: RepoDiscussionFilter, after: String? = null): ApiResult<RepoDiscussionPage> = safeCall {
-        val query = """
-            query RepoDiscussions(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String, ${'$'}states: [DiscussionState!], ${'$'}orderBy: DiscussionOrder, ${'$'}categoryId: ID, ${'$'}answered: Boolean) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id viewerPermission hasDiscussionsEnabled
-                    categories: discussionCategories(first: ${PageSize.DISCUSSION_CATEGORIES}) { nodes { ${categoryFields()} } }
-                    discussions(first: ${PageSize.REPO_ISSUES}, after: ${'$'}after, states: ${'$'}states, orderBy: ${'$'}orderBy, categoryId: ${'$'}categoryId, answered: ${'$'}answered) {
-                        totalCount nodes { ${discussionFields(includeCommentCount = true)} }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+class RepoDiscussionRepository @Inject constructor(private val apolloClient: ApolloClient) {
+
+    suspend fun getDiscussions(owner: String, name: String, filter: RepoDiscussionFilter, after: String? = null): ApiResult<RepoDiscussionPage> =
+        when (val result = apolloClient.query(
+            RepoDiscussionsQuery(
+                owner = owner,
+                name = name,
+                after = Optional.presentIfNotNull(after),
+                states = Optional.present(states(filter.state)),
+                orderBy = Optional.present(order(filter.sort)),
+                categoryId = Optional.presentIfNotNull(filter.categoryId),
+                answered = Optional.presentIfNotNull(filter.answered),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repo = result.data.repository ?: error("Repository not found")
+                val permission = RepoIssueRepository.parsePermission(repo.viewerPermission?.rawValue)
+                RepoDiscussionPage(
+                    repo.id,
+                    permission,
+                    permission.toCapabilities(),
+                    repo.hasDiscussionsEnabled,
+                    repo.categories.nodes.orEmpty().filterNotNull().map { toCategory(it.discussionCategoryFields) },
+                    repo.discussions.totalCount,
+                    repo.discussions.nodes.orEmpty().filterNotNull()
+                        .map { toDiscussion(it.discussionFields, it.comments.totalCount) },
+                    repo.discussions.pageInfo.hasNextPage,
+                    repo.discussions.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val repo = api.graphQL<DiscussionListData>(query, buildMap {
-            put("owner", JsonPrimitive(owner)); put("name", JsonPrimitive(name))
-            after?.let { put("after", JsonPrimitive(it)) }
-            put("states", JsonArray(states(filter.state).map(::JsonPrimitive)))
-            put("orderBy", order(filter.sort))
-            filter.categoryId?.let { put("categoryId", JsonPrimitive(it)) }
-            filter.answered?.let { put("answered", JsonPrimitive(it)) }
-        }).repository ?: error("Repository not found")
-        val permission = parsePermission(repo.viewerPermission)
-        RepoDiscussionPage(repo.id, permission, permission.toCapabilities(), repo.hasDiscussionsEnabled, repo.categories.nodes.map(::toCategory), repo.discussions.totalCount, repo.discussions.nodes.map(::toDiscussion), repo.discussions.pageInfo.hasNextPage, repo.discussions.pageInfo.endCursor)
-    }
-
-    suspend fun getDiscussion(owner: String, name: String, number: Int, after: String? = null): ApiResult<RepoDiscussionDetail> = safeCall {
-        val query = """
-            query RepoDiscussionDetail(${'$'}owner: String!, ${'$'}name: String!, ${'$'}number: Int!, ${'$'}after: String) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id viewerPermission categories: discussionCategories(first: ${PageSize.DISCUSSION_CATEGORIES}) { nodes { ${categoryFields()} } }
-                    discussion(number: ${'$'}number) {
-                        ${discussionFields()}
-                        comments(first: ${PageSize.ISSUE_COMMENTS}, after: ${'$'}after) { totalCount nodes { ${commentFields()} } pageInfo { hasNextPage endCursor } }
-                    }
-                }
-            }
-        """.trimIndent()
-        val repo = api.graphQL<DiscussionDetailData>(query, buildMap { put("owner", JsonPrimitive(owner)); put("name", JsonPrimitive(name)); put("number", JsonPrimitive(number)); after?.let { put("after", JsonPrimitive(it)) } }).repository ?: error("Repository not found")
-        val permission = parsePermission(repo.viewerPermission)
-        val discussion = repo.discussion ?: error("Discussion not found")
-        RepoDiscussionDetail(repo.id, permission, permission.toCapabilities(), repo.categories.nodes.map(::toCategory), toDiscussion(discussion), discussion.comments?.nodes.orEmpty().map(::toComment), discussion.comments?.pageInfo?.hasNextPage ?: false, discussion.comments?.pageInfo?.endCursor)
-    }
-
-    suspend fun createDiscussion(repositoryId: String, title: String, body: String, categoryId: String): ApiResult<RepoDiscussion> = mutate("createDiscussion", "CreateDiscussionInput", JsonObject(mapOf("repositoryId" to JsonPrimitive(repositoryId), "title" to JsonPrimitive(title), "body" to JsonPrimitive(body), "categoryId" to JsonPrimitive(categoryId)))) { it.createDiscussion?.discussion }
-    suspend fun updateDiscussion(id: String, title: String, body: String, categoryId: String?): ApiResult<RepoDiscussion> = mutate("updateDiscussion", "UpdateDiscussionInput", JsonObject(buildMap { put("discussionId", JsonPrimitive(id)); put("title", JsonPrimitive(title)); put("body", JsonPrimitive(body)); categoryId?.let { put("categoryId", JsonPrimitive(it)) } })) { it.updateDiscussion?.discussion }
-    suspend fun addLabelsToDiscussion(discussionId: String, labelIds: List<String>): ApiResult<Unit> = safeCall {
-        if (labelIds.isEmpty()) return@safeCall Unit
-        api.graphQL<ClientMutationData>("mutation AddDiscussionLabels(\$input: AddLabelsToLabelableInput!) { addLabelsToLabelable(input: \$input) { clientMutationId } }", mapOf("input" to JsonObject(mapOf("labelableId" to JsonPrimitive(discussionId), "labelIds" to JsonArray(labelIds.map(::JsonPrimitive))))))
-    }
-
-    suspend fun getLabels(owner: String, name: String): ApiResult<List<IssueLabel>> = safeCall {
-        val labels = mutableListOf<DiscussionLabelNode>()
-        var cursor: String? = null
-        do {
-            val query = "query DiscussionLabels(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { labels(first: ${PageSize.METADATA}, after: \$after) { nodes { id name color description } pageInfo { hasNextPage endCursor } } } }"
-            val connection = api.graphQL<DiscussionLabelsData>(query, mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name), "after" to (cursor?.let(::JsonPrimitive) ?: JsonNull))).repository?.labels ?: break
-            labels += connection.nodes
-            cursor = connection.pageInfo.endCursor
-        } while (connection.pageInfo.hasNextPage && cursor != null)
-        labels.map { IssueLabel(it.id, it.name, it.color, it.description) }
-    }
-    suspend fun removeLabelsFromDiscussion(discussionId: String, labelIds: List<String>): ApiResult<Unit> = safeCall {
-        if (labelIds.isEmpty()) return@safeCall Unit
-        api.graphQL<ClientMutationData>("mutation RemoveDiscussionLabels(\$input: RemoveLabelsFromLabelableInput!) { removeLabelsFromLabelable(input: \$input) { clientMutationId } }", mapOf("input" to JsonObject(mapOf("labelableId" to JsonPrimitive(discussionId), "labelIds" to JsonArray(labelIds.map(::JsonPrimitive))))))
-    }
-    suspend fun closeDiscussion(id: String): ApiResult<RepoDiscussion> = mutate("closeDiscussion", "CloseDiscussionInput", JsonObject(mapOf("discussionId" to JsonPrimitive(id)))) { it.closeDiscussion?.discussion }
-    suspend fun reopenDiscussion(id: String): ApiResult<RepoDiscussion> = mutate("reopenDiscussion", "ReopenDiscussionInput", JsonObject(mapOf("discussionId" to JsonPrimitive(id)))) { it.reopenDiscussion?.discussion }
-    suspend fun deleteDiscussion(id: String): ApiResult<Unit> = safeCall {
-        api.graphQL<ClientMutationData>(
-            "mutation DeleteDiscussion(${'$'}input: DeleteDiscussionInput!) { deleteDiscussion(input: ${'$'}input) { clientMutationId } }",
-            mapOf("input" to JsonObject(mapOf("id" to JsonPrimitive(id)))),
-        )
-    }
-    suspend fun addComment(discussionId: String, body: String, replyToId: String? = null): ApiResult<RepoDiscussionComment> = safeCall { val data = api.graphQL<AddDiscussionCommentData>("mutation AddDiscussionComment(${'$'}input: AddDiscussionCommentInput!) { addDiscussionComment(input: ${'$'}input) { comment { ${commentFields()} } } }", mapOf("input" to JsonObject(buildMap { put("discussionId", JsonPrimitive(discussionId)); put("body", JsonPrimitive(body)); replyToId?.let { put("replyToId", JsonPrimitive(it)) } }))); toComment(data.addDiscussionComment?.comment ?: error("Comment was not created")) }
-    suspend fun updateComment(id: String, body: String): ApiResult<RepoDiscussionComment> = safeCall { val data = api.graphQL<UpdateDiscussionCommentData>("mutation UpdateDiscussionComment(${'$'}input: UpdateDiscussionCommentInput!) { updateDiscussionComment(input: ${'$'}input) { comment { ${commentFields()} } } }", mapOf("input" to JsonObject(mapOf("commentId" to JsonPrimitive(id), "body" to JsonPrimitive(body))))); toComment(data.updateDiscussionComment?.comment ?: error("Comment was not updated")) }
-    suspend fun deleteComment(id: String): ApiResult<Unit> = safeCall {
-        api.graphQL<ClientMutationData>(
-            "mutation DeleteDiscussionComment(${'$'}input: DeleteDiscussionCommentInput!) { deleteDiscussionComment(input: ${'$'}input) { clientMutationId } }",
-            mapOf("input" to JsonObject(mapOf("id" to JsonPrimitive(id)))),
-        )
-    }
-    suspend fun markAnswer(id: String, answer: Boolean): ApiResult<Unit> = safeCall {
-        val name = if (answer) "markDiscussionCommentAsAnswer" else "unmarkDiscussionCommentAsAnswer"
-        val type = if (answer) "MarkDiscussionCommentAsAnswerInput" else "UnmarkDiscussionCommentAsAnswerInput"
-        api.graphQL<ClientMutationData>(
-            "mutation MarkAnswer(${'$'}input: $type!) { $name(input: ${'$'}input) { clientMutationId } }",
-            mapOf("input" to JsonObject(mapOf("id" to JsonPrimitive(id)))),
-        )
-    }
-    suspend fun updateSubscription(id: String, subscribed: Boolean): ApiResult<String?> = safeCall { val data = api.graphQL<SubscriptionData>("mutation UpdateDiscussionSubscription(${'$'}input: UpdateSubscriptionInput!) { updateSubscription(input: ${'$'}input) { subscribable { viewerSubscription } } }", mapOf("input" to JsonObject(mapOf("subscribableId" to JsonPrimitive(id), "state" to JsonPrimitive(if (subscribed) "SUBSCRIBED" else "UNSUBSCRIBED"))))); data.updateSubscription?.subscribable?.viewerSubscription }
-
-    private suspend fun mutate(name: String, type: String, input: JsonObject, selector: (DiscussionMutationData) -> DiscussionNode?): ApiResult<RepoDiscussion> = safeCall { val data = api.graphQL<DiscussionMutationData>("mutation DiscussionMutation(${'$'}input: $type!) { $name(input: ${'$'}input) { discussion { ${discussionFields(includeCommentCount = true)} } } }", mapOf("input" to input)); toDiscussion(selector(data) ?: error("Discussion mutation failed")) }
-    private fun parsePermission(value: String?) = value?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() } ?: RepoPermission.NONE
-    private fun states(filter: RepoDiscussionStateFilter) = when (filter) { RepoDiscussionStateFilter.OPEN -> listOf("OPEN"); RepoDiscussionStateFilter.CLOSED -> listOf("CLOSED"); RepoDiscussionStateFilter.ALL -> listOf("OPEN", "CLOSED") }
-    private fun order(filter: RepoDiscussionSort) = JsonObject(mapOf("field" to JsonPrimitive(if (filter.name.startsWith("CREATED")) "CREATED_AT" else "UPDATED_AT"), "direction" to JsonPrimitive(if (filter.name.endsWith("ASC")) "ASC" else "DESC")))
-    private fun toCategory(node: CategoryNode) = RepoDiscussionCategory(node.id, node.name, node.emoji, node.description, node.isAnswerable)
-    private fun association(value: String) = runCatching { CommentAuthorAssociation.valueOf(value) }.getOrDefault(CommentAuthorAssociation.NONE)
-    private fun toDiscussion(node: DiscussionNode) = RepoDiscussion(node.id, node.number, node.title, node.body, node.bodyHTML, if (node.closed) RepoDiscussionState.CLOSED else RepoDiscussionState.OPEN, node.stateReason.toDiscussionStateReason(), toCategory(node.category), node.author?.let { SimpleUser(it.login, null, it.avatarUrl, null) }, node.createdAt, node.updatedAt, node.comments?.totalCount ?: 0, node.labels?.nodes.orEmpty().map { IssueLabel(it.id, it.name, it.color, it.description) }, node.locked, node.answerChosenAt, node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanClose, node.viewerCanReopen, node.viewerCanSubscribe, node.viewerSubscription, node.url, association(node.authorAssociation), ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.let { SimpleUser(it.login, null, it.avatarUrl, null) }))
-    private fun String?.toDiscussionStateReason(): DiscussionStateReason? = when (this) {
-        null -> null
-        "RESOLVED" -> DiscussionStateReason.RESOLVED
-        "OUTDATED" -> DiscussionStateReason.OUTDATED
-        "DUPLICATE" -> DiscussionStateReason.DUPLICATE
-        "REOPENED" -> DiscussionStateReason.REOPENED
-        else -> error("Unsupported Discussion stateReason: $this")
-    }
-    private fun toComment(node: CommentNode) = RepoDiscussionComment(node.id, node.body, node.bodyHTML, node.author?.let { SimpleUser(it.login, null, it.avatarUrl, null) }, node.createdAt, node.updatedAt, node.isAnswer, node.replyTo?.id, node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact, node.viewerCanMarkAsAnswer, node.viewerCanUnmarkAsAnswer, node.url, association(node.authorAssociation), ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.let { SimpleUser(it.login, null, it.avatarUrl, null) }))
-    companion object {
-        private fun categoryFields() = "id name emoji description isAnswerable"
-        private fun discussionFields(includeCommentCount: Boolean = false) = buildString {
-            append("id url number title body bodyHTML closed stateReason category { ${categoryFields()} } author { login avatarUrl } authorAssociation createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } ")
-            if (includeCommentCount) append("comments { totalCount } ")
-            append("labels(first: ${PageSize.METADATA}) { nodes { id name color description } } locked answerChosenAt viewerCanUpdate viewerCanDelete viewerCanClose viewerCanReopen viewerCanSubscribe viewerSubscription")
         }
-        private fun commentFields() = "id url body bodyHTML author { login avatarUrl } authorAssociation createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } isAnswer replyTo { id } viewerCanUpdate viewerCanDelete viewerCanReact viewerCanMarkAsAnswer viewerCanUnmarkAsAnswer"
-    }
-}
 
-@Serializable private data class DiscussionPageInfoNode(val hasNextPage: Boolean = false, val endCursor: String? = null)
-@Serializable private data class DiscussionActorNode(val login: String, val avatarUrl: String? = null)
-@Serializable private data class CategoryNode(val id: String, val name: String, val emoji: String, val description: String? = null, val isAnswerable: Boolean = false)
-@Serializable private data class DiscussionLabelNode(val id: String, val name: String, val color: String, val description: String? = null)
-@Serializable private data class CategoryConnection(val nodes: List<CategoryNode> = emptyList())
-@Serializable private data class LabelConnection(val nodes: List<DiscussionLabelNode> = emptyList(), val pageInfo: DiscussionPageInfoNode = DiscussionPageInfoNode())
-@Serializable private data class CommentConnection(val totalCount: Int = 0, val nodes: List<CommentNode> = emptyList(), val pageInfo: DiscussionPageInfoNode? = null)
-@Serializable private data class CommentNode(val id: String, val url: String = "", val body: String = "", val bodyHTML: String = "", val author: DiscussionActorNode? = null, val authorAssociation: String = "NONE", val createdAt: String = "", val updatedAt: String = "", val includesCreatedEdit: Boolean = false, val lastEditedAt: String? = null, val editor: DiscussionActorNode? = null, val isAnswer: Boolean = false, val replyTo: ReplyToNode? = null, val viewerCanUpdate: Boolean = false, val viewerCanDelete: Boolean = false, val viewerCanReact: Boolean = false, val viewerCanMarkAsAnswer: Boolean = false, val viewerCanUnmarkAsAnswer: Boolean = false)
-@Serializable private data class ReplyToNode(val id: String)
-@Serializable private data class DiscussionNode(val id: String, val url: String = "", val number: Int, val title: String, val body: String = "", val bodyHTML: String = "", val closed: Boolean = false, val stateReason: String? = null, val category: CategoryNode, val author: DiscussionActorNode? = null, val authorAssociation: String = "NONE", val createdAt: String = "", val updatedAt: String = "", val includesCreatedEdit: Boolean = false, val lastEditedAt: String? = null, val editor: DiscussionActorNode? = null, val comments: CommentConnection? = null, val labels: LabelConnection? = null, val locked: Boolean = false, val answerChosenAt: String? = null, val viewerCanUpdate: Boolean = false, val viewerCanDelete: Boolean = false, val viewerCanClose: Boolean = false, val viewerCanReopen: Boolean = false, val viewerCanSubscribe: Boolean = false, val viewerSubscription: String? = null)
-@Serializable private data class DiscussionConnection(val totalCount: Int = 0, val nodes: List<DiscussionNode> = emptyList(), val pageInfo: DiscussionPageInfoNode)
-@Serializable private data class DiscussionListRepository(val id: String, val viewerPermission: String? = null, val hasDiscussionsEnabled: Boolean = false, val categories: CategoryConnection = CategoryConnection(), val discussions: DiscussionConnection)
-@Serializable private data class DiscussionListData(val repository: DiscussionListRepository? = null)
-@Serializable private data class DiscussionDetailRepository(val id: String, val viewerPermission: String? = null, val categories: CategoryConnection = CategoryConnection(), val discussion: DiscussionNode? = null)
-@Serializable private data class DiscussionDetailData(val repository: DiscussionDetailRepository? = null)
-@Serializable private data class DiscussionLabelsRepository(val labels: LabelConnection = LabelConnection())
-@Serializable private data class DiscussionLabelsData(val repository: DiscussionLabelsRepository? = null)
-@Serializable private data class DiscussionPayload(val discussion: DiscussionNode? = null)
-@Serializable private data class DiscussionMutationData(val createDiscussion: DiscussionPayload? = null, val updateDiscussion: DiscussionPayload? = null, val closeDiscussion: DiscussionPayload? = null, val reopenDiscussion: DiscussionPayload? = null)
-@Serializable private data class CommentPayload(val comment: CommentNode? = null)
-@Serializable private data class AddDiscussionCommentData(val addDiscussionComment: CommentPayload? = null)
-@Serializable private data class UpdateDiscussionCommentData(val updateDiscussionComment: CommentPayload? = null)
-@Serializable private data class ClientMutationData(val clientMutationId: String? = null)
-@Serializable private data class DiscussionSubscriptionNode(val viewerSubscription: String? = null)
-@Serializable private data class DiscussionSubscriptionPayload(val subscribable: DiscussionSubscriptionNode? = null)
-@Serializable private data class SubscriptionData(val updateSubscription: DiscussionSubscriptionPayload? = null)
+    suspend fun getDiscussion(owner: String, name: String, number: Int, after: String? = null): ApiResult<RepoDiscussionDetail> =
+        when (val result = apolloClient.query(
+            RepoDiscussionDetailQuery(owner, name, number, Optional.presentIfNotNull(after)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repo = result.data.repository ?: error("Repository not found")
+                val discussion = repo.discussion ?: error("Discussion not found")
+                val permission = RepoIssueRepository.parsePermission(repo.viewerPermission?.rawValue)
+                RepoDiscussionDetail(
+                    repo.id,
+                    permission,
+                    permission.toCapabilities(),
+                    repo.categories.nodes.orEmpty().filterNotNull().map { toCategory(it.discussionCategoryFields) },
+                    toDiscussion(discussion.discussionFields, discussion.comments.totalCount),
+                    discussion.comments.nodes.orEmpty().filterNotNull().map { toComment(it.discussionCommentFields) },
+                    discussion.comments.pageInfo.hasNextPage,
+                    discussion.comments.pageInfo.endCursor,
+                )
+            }
+        }
+
+    suspend fun createDiscussion(repositoryId: String, title: String, body: String, categoryId: String): ApiResult<RepoDiscussion> =
+        when (val result = apolloClient.mutation(
+            CreateRepoDiscussionMutation(
+                CreateDiscussionInput(repositoryId = repositoryId, title = title, body = body, categoryId = categoryId),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val d = result.data.createDiscussion?.discussion ?: error("Discussion mutation failed")
+                toDiscussion(d.discussionFields, d.comments.totalCount)
+            }
+        }
+
+    suspend fun updateDiscussion(id: String, title: String, body: String, categoryId: String?): ApiResult<RepoDiscussion> =
+        when (val result = apolloClient.mutation(
+            UpdateRepoDiscussionMutation(
+                UpdateDiscussionInput(
+                    discussionId = id,
+                    title = Optional.present(title),
+                    body = Optional.present(body),
+                    categoryId = Optional.presentIfNotNull(categoryId),
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val d = result.data.updateDiscussion?.discussion ?: error("Discussion mutation failed")
+                toDiscussion(d.discussionFields, d.comments.totalCount)
+            }
+        }
+
+    suspend fun closeDiscussion(id: String): ApiResult<RepoDiscussion> =
+        when (val result = apolloClient.mutation(
+            CloseRepoDiscussionMutation(CloseDiscussionInput(discussionId = id)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val d = result.data.closeDiscussion?.discussion ?: error("Discussion mutation failed")
+                toDiscussion(d.discussionFields, d.comments.totalCount)
+            }
+        }
+
+    suspend fun reopenDiscussion(id: String): ApiResult<RepoDiscussion> =
+        when (val result = apolloClient.mutation(
+            ReopenRepoDiscussionMutation(ReopenDiscussionInput(discussionId = id)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val d = result.data.reopenDiscussion?.discussion ?: error("Discussion mutation failed")
+                toDiscussion(d.discussionFields, d.comments.totalCount)
+            }
+        }
+
+    suspend fun addLabelsToDiscussion(discussionId: String, labelIds: List<String>): ApiResult<Unit> {
+        if (labelIds.isEmpty()) return ApiResult.Success(Unit)
+        return when (val result = apolloClient.mutation(
+            AddDiscussionLabelsMutation(AddLabelsToLabelableInput(labelableId = discussionId, labelIds = Optional.present(labelIds))),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { }
+        }
+    }
+
+    suspend fun removeLabelsFromDiscussion(discussionId: String, labelIds: List<String>): ApiResult<Unit> {
+        if (labelIds.isEmpty()) return ApiResult.Success(Unit)
+        return when (val result = apolloClient.mutation(
+            RemoveDiscussionLabelsMutation(RemoveLabelsFromLabelableInput(labelableId = discussionId, labelIds = labelIds)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { }
+        }
+    }
+
+    suspend fun deleteDiscussion(id: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(
+            DeleteRepoDiscussionMutation(DeleteDiscussionInput(id = id)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { }
+        }
+
+    /** 标签分页查询与 Issue 域完全同构，直接复用 issue 包的 RepoLabelsQuery。 */
+    suspend fun getLabels(owner: String, name: String): ApiResult<List<IssueLabel>> {
+        val all = mutableListOf<IssueLabel>()
+        var cursor: String? = null
+        while (true) {
+            when (val result = apolloClient.query(
+                RepoLabelsQuery(owner, name, Optional.presentIfNotNull(cursor)),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> return result
+                is ApiResult.Success -> {
+                    val conn = result.data.repository?.labels ?: break
+                    all += conn.nodes.orEmpty().filterNotNull()
+                        .map { IssueLabel(it.id, it.name, it.color, it.description) }
+                    cursor = conn.pageInfo.endCursor
+                    if (!conn.pageInfo.hasNextPage || cursor == null) break
+                }
+            }
+        }
+        return ApiResult.Success(all)
+    }
+
+    suspend fun addComment(discussionId: String, body: String, replyToId: String? = null): ApiResult<RepoDiscussionComment> =
+        when (val result = apolloClient.mutation(
+            AddDiscussionCommentMutation(
+                AddDiscussionCommentInput(
+                    discussionId = discussionId,
+                    body = body,
+                    replyToId = Optional.presentIfNotNull(replyToId),
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                toComment(result.data.addDiscussionComment?.comment?.discussionCommentFields ?: error("Comment was not created"))
+            }
+        }
+
+    suspend fun updateComment(id: String, body: String): ApiResult<RepoDiscussionComment> =
+        when (val result = apolloClient.mutation(
+            UpdateDiscussionCommentMutation(
+                UpdateDiscussionCommentInput(commentId = id, body = body),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                toComment(result.data.updateDiscussionComment?.comment?.discussionCommentFields ?: error("Comment was not updated"))
+            }
+        }
+
+    suspend fun deleteComment(id: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(
+            DeleteDiscussionCommentMutation(DeleteDiscussionCommentInput(id = id)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { }
+        }
+
+    suspend fun markAnswer(id: String, answer: Boolean): ApiResult<Unit> =
+        if (answer) {
+            when (val result = apolloClient.mutation(
+                MarkCommentAsAnswerMutation(MarkDiscussionCommentAsAnswerInput(id = id)),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> result
+                is ApiResult.Success -> safeCall { }
+            }
+        } else {
+            when (val result = apolloClient.mutation(
+                UnmarkCommentAsAnswerMutation(UnmarkDiscussionCommentAsAnswerInput(id = id)),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> result
+                is ApiResult.Success -> safeCall { }
+            }
+        }
+
+    suspend fun updateSubscription(id: String, subscribed: Boolean): ApiResult<String?> =
+        when (val result = apolloClient.mutation(
+            UpdateDiscussionSubscriptionMutation(
+                UpdateSubscriptionInput(
+                    subscribableId = id,
+                    state = if (subscribed) SubscriptionState.SUBSCRIBED else SubscriptionState.UNSUBSCRIBED,
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                result.data.updateSubscription?.subscribable?.viewerSubscription?.rawValue
+            }
+        }
+
+    private fun states(filter: RepoDiscussionStateFilter) = when (filter) {
+        RepoDiscussionStateFilter.OPEN -> listOf(com.gitmob.app.graphql.type.DiscussionState.OPEN)
+        RepoDiscussionStateFilter.CLOSED -> listOf(com.gitmob.app.graphql.type.DiscussionState.CLOSED)
+        RepoDiscussionStateFilter.ALL -> listOf(
+            com.gitmob.app.graphql.type.DiscussionState.OPEN,
+            com.gitmob.app.graphql.type.DiscussionState.CLOSED,
+        )
+    }
+
+    private fun order(filter: RepoDiscussionSort) = DiscussionOrder(
+        field = if (filter.name.startsWith("CREATED")) DiscussionOrderField.CREATED_AT else DiscussionOrderField.UPDATED_AT,
+        direction = if (filter.name.endsWith("ASC")) OrderDirection.ASC else OrderDirection.DESC,
+    )
+
+    private fun toCategory(node: DiscussionCategoryFields) =
+        RepoDiscussionCategory(node.id, node.name, node.emoji, node.description, node.isAnswerable)
+
+    private fun association(value: com.gitmob.app.graphql.type.CommentAuthorAssociation) =
+        runCatching { CommentAuthorAssociation.valueOf(value.rawValue) }.getOrDefault(CommentAuthorAssociation.NONE)
+
+    private fun toDiscussion(node: DiscussionFields, commentCount: Int) = RepoDiscussion(
+        node.id,
+        node.number,
+        node.title,
+        node.body,
+        node.bodyHTML,
+        if (node.closed) RepoDiscussionState.CLOSED else RepoDiscussionState.OPEN,
+        node.stateReason.toDiscussionStateReason(),
+        toCategory(node.category.discussionCategoryFields),
+        node.author?.let { SimpleUser(it.login, null, it.avatarUrl, null) },
+        node.createdAt,
+        node.updatedAt,
+        commentCount,
+        node.labels?.nodes.orEmpty().filterNotNull().map { IssueLabel(it.id, it.name, it.color, it.description) },
+        node.locked,
+        node.answerChosenAt,
+        node.viewerCanUpdate,
+        node.viewerCanDelete,
+        node.viewerCanClose,
+        node.viewerCanReopen,
+        node.viewerCanSubscribe,
+        node.viewerSubscription?.rawValue,
+        node.url,
+        association(node.authorAssociation),
+        ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.let { SimpleUser(it.login, null, it.avatarUrl, null) }),
+    )
+
+    private fun com.gitmob.app.graphql.type.DiscussionStateReason?.toDiscussionStateReason(): DiscussionStateReason? = when (this) {
+        null -> null
+        com.gitmob.app.graphql.type.DiscussionStateReason.RESOLVED -> DiscussionStateReason.RESOLVED
+        com.gitmob.app.graphql.type.DiscussionStateReason.OUTDATED -> DiscussionStateReason.OUTDATED
+        com.gitmob.app.graphql.type.DiscussionStateReason.DUPLICATE -> DiscussionStateReason.DUPLICATE
+        com.gitmob.app.graphql.type.DiscussionStateReason.REOPENED -> DiscussionStateReason.REOPENED
+        else -> error("Unsupported Discussion stateReason: ${this.rawValue}")
+    }
+
+    private fun toComment(node: DiscussionCommentFields) = RepoDiscussionComment(
+        node.id,
+        node.body,
+        node.bodyHTML,
+        node.author?.let { SimpleUser(it.login, null, it.avatarUrl, null) },
+        node.createdAt,
+        node.updatedAt,
+        node.isAnswer,
+        node.replyTo?.id,
+        node.viewerCanUpdate,
+        node.viewerCanDelete,
+        node.viewerCanReact,
+        node.viewerCanMarkAsAnswer,
+        node.viewerCanUnmarkAsAnswer,
+        node.url,
+        association(node.authorAssociation),
+        ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.let { SimpleUser(it.login, null, it.avatarUrl, null) }),
+    )
+}

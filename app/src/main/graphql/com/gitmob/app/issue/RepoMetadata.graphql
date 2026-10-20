@@ -1,0 +1,55 @@
+# 仓库标签分页。first: 20 = PageSize.METADATA。RepoIssueRepository 与 RepoDiscussionRepository 共用。
+query RepoLabels($owner: String!, $name: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+        labels(first: 20, after: $after) {
+            nodes {
+                id
+                name
+                color
+                description
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+    }
+}
+
+# 仓库里程碑分页（只取 OPEN）。
+query RepoMilestones($owner: String!, $name: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+        milestones(first: 20, after: $after, states: [OPEN]) {
+            nodes {
+                id
+                number
+                title
+                state
+                dueOn
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+    }
+}
+
+# 可指派用户分页。
+query RepoAssignableUsers($owner: String!, $name: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+        assignableUsers(first: 20, after: $after) {
+            nodes {
+                id
+                login
+                name
+                avatarUrl
+                bio
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+    }
+}

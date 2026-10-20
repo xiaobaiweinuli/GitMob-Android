@@ -1,0 +1,43 @@
+# 仓库 Issue 分页列表。first: 20 = PageSize.REPO_ISSUES；comments(first: 0) 只取 totalCount。
+query RepoIssues($owner: String!, $name: String!, $after: String, $states: [IssueState!], $orderBy: IssueOrder!, $filterBy: IssueFilters) {
+    repository(owner: $owner, name: $name) {
+        id
+        viewerPermission
+        viewerCanCreateIssues
+        hasIssuesEnabled
+        issues(first: 20, after: $after, states: $states, orderBy: $orderBy, filterBy: $filterBy) {
+            totalCount
+            nodes {
+                ...IssueFields
+                comments(first: 0) {
+                    totalCount
+                }
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+    }
+}
+
+# 单个 Issue 详情 + 评论分页。comments first: 20 = PageSize.ISSUE_COMMENTS。
+query RepoIssueDetail($owner: String!, $name: String!, $number: Int!, $after: String) {
+    repository(owner: $owner, name: $name) {
+        id
+        viewerPermission
+        issue(number: $number) {
+            ...IssueFields
+            comments(first: 20, after: $after) {
+                totalCount
+                nodes {
+                    ...IssueCommentFields
+                }
+                pageInfo {
+                    hasNextPage
+                    endCursor
+                }
+            }
+        }
+    }
+}

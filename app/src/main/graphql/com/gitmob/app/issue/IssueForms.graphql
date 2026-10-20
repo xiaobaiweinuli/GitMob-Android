@@ -1,0 +1,34 @@
+# Issue 模板上下文：空白 Issue 开关 + 默认分支。
+query RepoIssueFormContext($owner: String!, $name: String!) {
+    repository(owner: $owner, name: $name) {
+        id
+        viewerCanCreateIssues
+        isBlankIssuesEnabled
+        defaultBranchRef {
+            name
+        }
+    }
+}
+
+# .github/ISSUE_TEMPLATE 目录树 + 每个 Blob 的文本内容。
+query RepoIssueForms($owner: String!, $name: String!, $expression: String!) {
+    repository(owner: $owner, name: $name) {
+        object(expression: $expression) {
+            ... on Tree {
+                entries {
+                    name
+                    path
+                    type
+                    object {
+                        ... on Blob {
+                            text
+                            isBinary
+                            isTruncated
+                            byteSize
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

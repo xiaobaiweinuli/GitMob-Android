@@ -1,22 +1,71 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.api.Optional
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
-import com.gitmob.app.core.network.GHApiClient
-import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
-import com.gitmob.app.data.model.*
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
+import com.gitmob.app.data.model.CommentAuthorAssociation
+import com.gitmob.app.data.model.ConversationEditSummary
+import com.gitmob.app.data.model.CreateRepoIssueInput
+import com.gitmob.app.data.model.IssueComment
+import com.gitmob.app.data.model.IssueCommentPage
+import com.gitmob.app.data.model.IssueLabel
+import com.gitmob.app.data.model.IssueMilestone
+import com.gitmob.app.data.model.IssueState
+import com.gitmob.app.data.model.IssueStateReason
+import com.gitmob.app.data.model.IssueTemplateLoadResult
+import com.gitmob.app.data.model.RepoAssigneeFilter
+import com.gitmob.app.data.model.RepoAuthorFilter
+import com.gitmob.app.data.model.RepoIssue
+import com.gitmob.app.data.model.RepoIssueDetail
+import com.gitmob.app.data.model.RepoIssueFilter
+import com.gitmob.app.data.model.RepoIssuePage
+import com.gitmob.app.data.model.RepoIssueSort
+import com.gitmob.app.data.model.RepoIssueStateFilter
+import com.gitmob.app.data.model.RepoMilestoneFilter
+import com.gitmob.app.data.model.SimpleUser
+import com.gitmob.app.data.model.UpdateRepoIssueInput
+import com.gitmob.app.graphql.AddIssueCommentMutation
+import com.gitmob.app.graphql.CloseRepoIssueMutation
+import com.gitmob.app.graphql.CreateRepoIssueMutation
+import com.gitmob.app.graphql.DeleteIssueCommentMutation
+import com.gitmob.app.graphql.DeleteRepoIssueMutation
+import com.gitmob.app.graphql.ReopenRepoIssueMutation
+import com.gitmob.app.graphql.RepoAssignableUsersQuery
+import com.gitmob.app.graphql.RepoIssueDetailQuery
+import com.gitmob.app.graphql.RepoIssueFormContextQuery
+import com.gitmob.app.graphql.RepoIssueFormsQuery
+import com.gitmob.app.graphql.RepoIssuesQuery
+import com.gitmob.app.graphql.RepoLabelsQuery
+import com.gitmob.app.graphql.RepoMilestonesQuery
+import com.gitmob.app.graphql.UpdateIssueCommentMutation
+import com.gitmob.app.graphql.UpdateIssueSubscriptionMutation
+import com.gitmob.app.graphql.UpdateRepoIssueMutation
+import com.gitmob.app.graphql.fragment.IssueCommentFields
+import com.gitmob.app.graphql.fragment.IssueFields
+import com.gitmob.app.graphql.type.CloseIssueInput
+import com.gitmob.app.graphql.type.CreateIssueInput
+import com.gitmob.app.graphql.type.DeleteIssueCommentInput
+import com.gitmob.app.graphql.type.DeleteIssueInput
+import com.gitmob.app.graphql.type.IssueClosedStateReason
+import com.gitmob.app.graphql.type.IssueFilters
+import com.gitmob.app.graphql.type.IssueOrder
+import com.gitmob.app.graphql.type.IssueOrderField
+import com.gitmob.app.graphql.type.OrderDirection
+import com.gitmob.app.graphql.type.ReopenIssueInput
+import com.gitmob.app.graphql.type.SubscriptionState
+import com.gitmob.app.graphql.type.UpdateIssueCommentInput
+import com.gitmob.app.graphql.type.UpdateIssueInput
+import com.gitmob.app.graphql.type.UpdateSubscriptionInput
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
+class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloClient) {
     private val labelsCache = MemoryCache<String, List<IssueLabel>>(5 * 60_000L)
     private val milestonesCache = MemoryCache<String, List<IssueMilestone>>(5 * 60_000L)
     private val assigneesCache = MemoryCache<String, List<SimpleUser>>(5 * 60_000L)
@@ -27,273 +76,413 @@ class RepoIssueRepository @Inject constructor(private val api: GHApiClient) {
         assigneesCache.invalidateAll()
     }
 
-    suspend fun getIssues(owner: String, name: String, filter: RepoIssueFilter, after: String? = null): ApiResult<RepoIssuePage> = safeCall {
-        val query = """
-            query RepoIssues(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String, ${'$'}states: [IssueState!], ${'$'}orderBy: IssueOrder!, ${'$'}filterBy: IssueFilters) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id viewerPermission viewerCanCreateIssues hasIssuesEnabled
-                    issues(first: ${PageSize.REPO_ISSUES}, after: ${'$'}after, states: ${'$'}states, orderBy: ${'$'}orderBy, filterBy: ${'$'}filterBy) {
-                        totalCount nodes { ${issueFields(commentsFirst = 0)} }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    suspend fun getIssues(owner: String, name: String, filter: RepoIssueFilter, after: String? = null): ApiResult<RepoIssuePage> =
+        when (val result = apolloClient.query(
+            RepoIssuesQuery(
+                owner = owner,
+                name = name,
+                after = Optional.presentIfNotNull(after),
+                states = Optional.present(states(filter.state)),
+                orderBy = issueOrder(filter.sort),
+                filterBy = Optional.presentIfNotNull(issueFilters(filter)),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val data = result.data.repository ?: error("Repository not found")
+                val permission = parsePermission(data.viewerPermission?.rawValue)
+                RepoIssuePage(
+                    repositoryId = data.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    viewerCanCreateIssues = data.viewerCanCreateIssues,
+                    hasIssuesEnabled = data.hasIssuesEnabled,
+                    totalCount = data.issues.totalCount,
+                    items = data.issues.nodes.orEmpty().filterNotNull()
+                        .map { toIssue(it.issueFields, it.comments.totalCount) },
+                    hasNextPage = data.issues.pageInfo.hasNextPage,
+                    endCursor = data.issues.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val data = api.graphQL<RepoIssuesQueryData>(query, buildMap {
-            put("owner", JsonPrimitive(owner)); put("name", JsonPrimitive(name))
-            after?.let { put("after", JsonPrimitive(it)) }
-            put("states", JsonArray(states(filter.state).map(::JsonPrimitive)))
-            put("orderBy", issueOrder(filter.sort))
-            issueFilters(filter)?.let { put("filterBy", it) }
-        }).repository ?: error("Repository not found")
-        val permission = parsePermission(data.viewerPermission)
-        RepoIssuePage(
-            repositoryId = data.id,
-            permission = permission,
-            capabilities = permission.toCapabilities(),
-            viewerCanCreateIssues = data.viewerCanCreateIssues,
-            hasIssuesEnabled = data.hasIssuesEnabled,
-            totalCount = data.issues.totalCount,
-            items = data.issues.nodes.map(::toIssue),
-            hasNextPage = data.issues.pageInfo.hasNextPage,
-            endCursor = data.issues.pageInfo.endCursor,
-        )
-    }
-
-    suspend fun getIssue(owner: String, name: String, number: Int, commentsAfter: String? = null): ApiResult<RepoIssueDetail> = safeCall {
-        val query = """
-            query RepoIssueDetail(${'$'}owner: String!, ${'$'}name: String!, ${'$'}number: Int!, ${'$'}after: String) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id viewerPermission
-                    issue(number: ${'$'}number) { ${issueFields(PageSize.ISSUE_COMMENTS, "${'$'}after")} }
-                }
-            }
-        """.trimIndent()
-        val data = api.graphQL<RepoIssueDetailQueryData>(query, buildMap {
-            put("owner", JsonPrimitive(owner)); put("name", JsonPrimitive(name)); put("number", JsonPrimitive(number))
-            commentsAfter?.let { put("after", JsonPrimitive(it)) }
-        }).repository ?: error("Repository not found")
-        val node = data.issue ?: error("Issue not found")
-        val permission = parsePermission(data.viewerPermission)
-        RepoIssueDetail(
-            repositoryId = data.id,
-            permission = permission,
-            capabilities = permission.toCapabilities(),
-            issue = toIssue(node),
-            comments = toCommentPage(node.comments),
-        )
-    }
-
-    suspend fun getLabels(owner: String, name: String): ApiResult<List<IssueLabel>> = cached(labelsCache, "$owner/$name") {
-        collectPages { after ->
-            val query = "query RepoLabels(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String) { repository(owner: ${'$'}owner, name: ${'$'}name) { labels(first: ${PageSize.METADATA}, after: ${'$'}after) { nodes { id name color description } pageInfo { hasNextPage endCursor } } } }"
-            api.graphQL<RepoLabelsQueryData>(query, repoVariables(owner, name) + mapOf("after" to (after?.let(::JsonPrimitive) ?: JsonNull))).repository?.labels?.let { RepoIssuePageConnection(it.nodes, it.pageInfo) }
-        }.map(::toLabel)
-    }
-
-    suspend fun getMilestones(owner: String, name: String): ApiResult<List<IssueMilestone>> = cached(milestonesCache, "$owner/$name") {
-        collectPages { after ->
-            val query = "query RepoMilestones(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String) { repository(owner: ${'$'}owner, name: ${'$'}name) { milestones(first: ${PageSize.METADATA}, after: ${'$'}after, states: [OPEN]) { nodes { id number title state dueOn } pageInfo { hasNextPage endCursor } } } }"
-            api.graphQL<RepoMilestonesQueryData>(query, repoVariables(owner, name) + mapOf("after" to (after?.let(::JsonPrimitive) ?: JsonNull))).repository?.milestones?.let { RepoIssuePageConnection(it.nodes, it.pageInfo) }
-        }.map(::toMilestone)
-    }
-
-    suspend fun getAssignableUsers(owner: String, name: String): ApiResult<List<SimpleUser>> = cached(assigneesCache, "$owner/$name") {
-        collectPages { after ->
-            val query = "query RepoAssignableUsers(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String) { repository(owner: ${'$'}owner, name: ${'$'}name) { assignableUsers(first: ${PageSize.METADATA}, after: ${'$'}after) { nodes { id login name avatarUrl bio } pageInfo { hasNextPage endCursor } } } }"
-            api.graphQL<RepoAssignableUsersQueryData>(query, repoVariables(owner, name) + mapOf("after" to (after?.let(::JsonPrimitive) ?: JsonNull))).repository?.assignableUsers?.let { RepoIssuePageConnection(it.nodes, it.pageInfo) }
-        }.map(::toUser)
-    }
-
-    private suspend fun <T> collectPages(load: suspend (String?) -> RepoIssuePageConnection<T>?): List<T> {
-        val result = mutableListOf<T>()
-        var cursor: String? = null
-        do {
-            val page = load(cursor) ?: break
-            result += page.nodes
-            cursor = page.pageInfo.endCursor
-        } while (page.pageInfo.hasNextPage && cursor != null)
-        return result
-    }
-
-    suspend fun getIssueTemplates(owner: String, name: String): ApiResult<IssueTemplateLoadResult> = safeCall {
-        val contextQuery = """
-            query RepoIssueFormContext(${'$'}owner: String!, ${'$'}name: String!) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id viewerCanCreateIssues isBlankIssuesEnabled defaultBranchRef { name }
-                }
-            }
-        """.trimIndent()
-        val context = api.graphQL<RepoIssueFormContextQueryData>(contextQuery, repoVariables(owner, name)).repository
-            ?: error("Repository not found")
-        val defaultBranch = context.defaultBranchRef?.name
-            ?: return@safeCall IssueTemplateLoadResult(context.isBlankIssuesEnabled, emptyList())
-        val formsQuery = """
-            query RepoIssueForms(${'$'}owner: String!, ${'$'}name: String!, ${'$'}expression: String!) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    object(expression: ${'$'}expression) {
-                        ... on Tree {
-                            entries {
-                                name path type
-                                object { ... on Blob { text isBinary isTruncated byteSize } }
-                            }
-                        }
-                    }
-                }
-            }
-        """.trimIndent()
-        val variables = repoVariables(owner, name) + ("expression" to JsonPrimitive("$defaultBranch:.github/ISSUE_TEMPLATE"))
-        val entries = api.graphQL<RepoIssueFormsQueryData>(formsQuery, variables).repository?.objectNode?.entries.orEmpty()
-        val config = entries.firstOrNull { it.type.equals("blob", true) && it.name.equals("config.yml", true) }
-        val blankIssuesEnabled = config?.objectNode?.usableText()?.let { source ->
-            try { IssueFormYamlParser.parseBlankIssuesEnabled(source) } catch (_: Exception) { context.isBlankIssuesEnabled }
-        } ?: context.isBlankIssuesEnabled
-        var invalidTemplateCount = 0
-        val templates = entries.mapNotNull { entry ->
-            if (!entry.type.equals("blob", true) || !entry.name.endsWith(".yml", true) || entry.name.equals("config.yml", true)) return@mapNotNull null
-            val source = entry.objectNode?.usableText()
-            if (source == null) {
-                invalidTemplateCount++
-                return@mapNotNull null
-            }
-            try {
-                IssueFormYamlParser.parse(entry.name, source)
-            } catch (_: Exception) {
-                invalidTemplateCount++
-                null
-            }
-        }.sortedBy { it.name.lowercase() }
-        IssueTemplateLoadResult(blankIssuesEnabled, templates, invalidTemplateCount)
-    }
-
-    suspend fun createIssue(input: CreateRepoIssueInput): ApiResult<RepoIssue> = safeCall {
-        val mutation = """
-            mutation CreateRepoIssue(${'$'}input: CreateIssueInput!) {
-                createIssue(input: ${'$'}input) { issue { ${issueFields(0)} } }
-            }
-        """.trimIndent()
-        val payload = api.graphQL<CreateIssueMutationData>(mutation, mapOf("input" to JsonObject(buildMap {
-            put("repositoryId", JsonPrimitive(input.repositoryId)); put("title", JsonPrimitive(input.title)); put("body", JsonPrimitive(input.body))
-            if (input.labelIds.isNotEmpty()) put("labelIds", JsonArray(input.labelIds.map(::JsonPrimitive)))
-            if (input.assigneeIds.isNotEmpty()) put("assigneeIds", JsonArray(input.assigneeIds.map(::JsonPrimitive)))
-            input.milestoneId?.let { put("milestoneId", JsonPrimitive(it)) }
-        }))).createIssue?.issue ?: error("Issue was not created")
-        toIssue(payload)
-    }
-
-    suspend fun updateIssue(input: UpdateRepoIssueInput): ApiResult<RepoIssue> = mutateIssue<UpdateIssueMutationData>(
-        mutationName = "updateIssue", inputType = "UpdateIssueInput", response = { it.updateIssue?.issue },
-        input = JsonObject(buildMap {
-            put("id", JsonPrimitive(input.id)); put("title", JsonPrimitive(input.title)); put("body", JsonPrimitive(input.body))
-            put("labelIds", JsonArray(input.labelIds.map(::JsonPrimitive))); put("assigneeIds", JsonArray(input.assigneeIds.map(::JsonPrimitive)))
-            put("milestoneId", input.milestoneId?.let(::JsonPrimitive) ?: JsonNull)
-        }),
-    )
-
-    suspend fun closeIssue(issueId: String, reason: IssueStateReason): ApiResult<RepoIssue> = mutateIssue<CloseIssueMutationData>(
-        "closeIssue", "CloseIssueInput", { it.closeIssue?.issue }, JsonObject(mapOf("issueId" to JsonPrimitive(issueId), "stateReason" to JsonPrimitive(reason.name)))
-    )
-
-    suspend fun reopenIssue(issueId: String): ApiResult<RepoIssue> = mutateIssue<ReopenIssueMutationData>(
-        "reopenIssue", "ReopenIssueInput", { it.reopenIssue?.issue }, JsonObject(mapOf("issueId" to JsonPrimitive(issueId)))
-    )
-
-    suspend fun deleteIssue(issueId: String): ApiResult<Unit> = simpleMutation<DeleteIssueMutationData>("deleteIssue", "DeleteIssueInput", JsonObject(mapOf("issueId" to JsonPrimitive(issueId))))
-
-    suspend fun addComment(issueId: String, body: String): ApiResult<IssueComment> = safeCall {
-        val mutation = "mutation AddIssueComment(${'$'}input: AddCommentInput!) { addComment(input: ${'$'}input) { commentEdge { node { ${commentFields()} } } } }"
-        val node = api.graphQL<AddIssueCommentMutationData>(mutation, mapOf("input" to JsonObject(mapOf("subjectId" to JsonPrimitive(issueId), "body" to JsonPrimitive(body))))).addComment?.commentEdge?.node ?: error("Comment was not created")
-        toComment(node)
-    }
-
-    suspend fun updateComment(commentId: String, body: String): ApiResult<IssueComment> = safeCall {
-        val mutation = "mutation UpdateIssueComment(${'$'}input: UpdateIssueCommentInput!) { updateIssueComment(input: ${'$'}input) { issueComment { ${commentFields()} } } }"
-        val node = api.graphQL<UpdateIssueCommentMutationData>(mutation, mapOf("input" to JsonObject(mapOf("id" to JsonPrimitive(commentId), "body" to JsonPrimitive(body))))).updateIssueComment?.issueComment ?: error("Comment was not updated")
-        toComment(node)
-    }
-
-    suspend fun deleteComment(commentId: String): ApiResult<Unit> = simpleMutation<DeleteIssueCommentMutationData>("deleteIssueComment", "DeleteIssueCommentInput", JsonObject(mapOf("id" to JsonPrimitive(commentId))))
-
-    suspend fun updateSubscription(issueId: String, subscribed: Boolean): ApiResult<String?> = safeCall {
-        val mutation = "mutation UpdateIssueSubscription(${'$'}input: UpdateSubscriptionInput!) { updateSubscription(input: ${'$'}input) { subscribable { viewerSubscription } } }"
-        api.graphQL<UpdateIssueSubscriptionMutationData>(mutation, mapOf("input" to JsonObject(mapOf(
-            "subscribableId" to JsonPrimitive(issueId), "state" to JsonPrimitive(if (subscribed) "SUBSCRIBED" else "UNSUBSCRIBED")
-        )))).updateSubscription?.subscribable?.viewerSubscription
-    }
-
-    private suspend inline fun <reified D> mutateIssue(mutationName: String, inputType: String, crossinline response: (D) -> RepoIssueNode?, input: JsonObject): ApiResult<RepoIssue> = safeCall {
-        val mutation = "mutation RepoIssueMutation(${'$'}input: $inputType!) { $mutationName(input: ${'$'}input) { issue { ${issueFields(0)} } } }"
-        toIssue(response(api.graphQL<D>(mutation, mapOf("input" to input))) ?: error("Issue mutation failed"))
-    }
-
-    private suspend inline fun <reified D> simpleMutation(name: String, inputType: String, input: JsonObject): ApiResult<Unit> = safeCall {
-        val mutation = "mutation RepoIssueMutation(${'$'}input: $inputType!) { $name(input: ${'$'}input) { clientMutationId } }"
-        with(api.graphQL<D>(mutation, mapOf("input" to input))) { }
-    }
-
-    private suspend fun <T : Any> cached(cache: MemoryCache<String, T>, key: String, loader: suspend () -> T): ApiResult<T> {
-        cache.get(key)?.let { return ApiResult.Success(it) }
-        return safeCall { loader().also { cache.set(key, it) } }
-    }
-
-    private fun repoVariables(owner: String, name: String) = mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name))
-
-    private fun RepoIssueFormBlobNode.usableText(): String? = text?.takeIf {
-        !isBinary && !isTruncated && byteSize in 1..MAX_ISSUE_FORM_BYTES
-    }
-
-    private fun states(value: RepoIssueStateFilter) = when (value) { RepoIssueStateFilter.OPEN -> listOf("OPEN"); RepoIssueStateFilter.CLOSED -> listOf("CLOSED"); RepoIssueStateFilter.ALL -> listOf("OPEN", "CLOSED") }
-
-    private fun issueOrder(value: RepoIssueSort): JsonObject {
-        val field = when (value) { RepoIssueSort.CREATED_ASC, RepoIssueSort.CREATED_DESC -> "CREATED_AT"; RepoIssueSort.COMMENTS_ASC, RepoIssueSort.COMMENTS_DESC -> "COMMENTS"; else -> "UPDATED_AT" }
-        val direction = if (value.name.endsWith("ASC")) "ASC" else "DESC"
-        return JsonObject(mapOf("field" to JsonPrimitive(field), "direction" to JsonPrimitive(direction)))
-    }
-
-    private fun issueFilters(filter: RepoIssueFilter): JsonObject? {
-        val values = buildMap<String, kotlinx.serialization.json.JsonElement> {
-            if (filter.labels.isNotEmpty()) put("labels", JsonArray(filter.labels.map(::JsonPrimitive)))
-            when (val value = filter.milestone) { RepoMilestoneFilter.ALL -> Unit; RepoMilestoneFilter.NONE -> put("milestone", JsonNull); is RepoMilestoneFilter.Number -> put("milestoneNumber", JsonPrimitive(value.value.toString())) }
-            when (val value = filter.assignee) { RepoAssigneeFilter.ALL -> Unit; RepoAssigneeFilter.ANY -> put("assignee", JsonPrimitive("*")); RepoAssigneeFilter.NONE -> put("assignee", JsonNull); is RepoAssigneeFilter.Login -> put("assignee", JsonPrimitive(value.value)) }
-            when (val value = filter.author) { RepoAuthorFilter.ALL -> Unit; is RepoAuthorFilter.Login -> put("createdBy", JsonPrimitive(value.value)) }
-            if (filter.mentioned) put("mentioned", JsonPrimitive("*"))
-            if (filter.subscribed) put("viewerSubscribed", JsonPrimitive(true))
-            filter.updatedSince?.let { put("since", JsonPrimitive(it.toString())) }
         }
-        return values.takeIf { it.isNotEmpty() }?.let(::JsonObject)
+
+    suspend fun getIssue(owner: String, name: String, number: Int, commentsAfter: String? = null): ApiResult<RepoIssueDetail> =
+        when (val result = apolloClient.query(
+            RepoIssueDetailQuery(owner, name, number, Optional.presentIfNotNull(commentsAfter)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val data = result.data.repository ?: error("Repository not found")
+                val issue = data.issue ?: error("Issue not found")
+                val permission = parsePermission(data.viewerPermission?.rawValue)
+                RepoIssueDetail(
+                    repositoryId = data.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    issue = toIssue(issue.issueFields, issue.comments.totalCount),
+                    comments = IssueCommentPage(
+                        items = issue.comments.nodes.orEmpty().filterNotNull().map { toComment(it.issueCommentFields) },
+                        hasNextPage = issue.comments.pageInfo.hasNextPage,
+                        endCursor = issue.comments.pageInfo.endCursor,
+                    ),
+                )
+            }
+        }
+
+    suspend fun getLabels(owner: String, name: String): ApiResult<List<IssueLabel>> {
+        val key = "$owner/$name"
+        labelsCache.get(key)?.let { return ApiResult.Success(it) }
+        val all = mutableListOf<IssueLabel>()
+        var cursor: String? = null
+        while (true) {
+            when (val result = apolloClient.query(
+                RepoLabelsQuery(owner, name, Optional.presentIfNotNull(cursor)),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> return result
+                is ApiResult.Success -> {
+                    val conn = result.data.repository?.labels ?: break
+                    all += conn.nodes.orEmpty().filterNotNull()
+                        .map { IssueLabel(it.id, it.name, it.color, it.description) }
+                    cursor = conn.pageInfo.endCursor
+                    if (!conn.pageInfo.hasNextPage || cursor == null) break
+                }
+            }
+        }
+        labelsCache.set(key, all)
+        return ApiResult.Success(all)
+    }
+
+    suspend fun getMilestones(owner: String, name: String): ApiResult<List<IssueMilestone>> {
+        val key = "$owner/$name"
+        milestonesCache.get(key)?.let { return ApiResult.Success(it) }
+        val all = mutableListOf<IssueMilestone>()
+        var cursor: String? = null
+        while (true) {
+            when (val result = apolloClient.query(
+                RepoMilestonesQuery(owner, name, Optional.presentIfNotNull(cursor)),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> return result
+                is ApiResult.Success -> {
+                    val conn = result.data.repository?.milestones ?: break
+                    all += conn.nodes.orEmpty().filterNotNull()
+                        .map { IssueMilestone(it.id, it.number, it.title, it.state.rawValue, it.dueOn) }
+                    cursor = conn.pageInfo.endCursor
+                    if (!conn.pageInfo.hasNextPage || cursor == null) break
+                }
+            }
+        }
+        milestonesCache.set(key, all)
+        return ApiResult.Success(all)
+    }
+
+    suspend fun getAssignableUsers(owner: String, name: String): ApiResult<List<SimpleUser>> {
+        val key = "$owner/$name"
+        assigneesCache.get(key)?.let { return ApiResult.Success(it) }
+        val all = mutableListOf<SimpleUser>()
+        var cursor: String? = null
+        while (true) {
+            when (val result = apolloClient.query(
+                RepoAssignableUsersQuery(owner, name, Optional.presentIfNotNull(cursor)),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> return result
+                is ApiResult.Success -> {
+                    val conn = result.data.repository?.assignableUsers ?: break
+                    all += conn.nodes.orEmpty().filterNotNull()
+                        .map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) }
+                    cursor = conn.pageInfo.endCursor
+                    if (!conn.pageInfo.hasNextPage || cursor == null) break
+                }
+            }
+        }
+        assigneesCache.set(key, all)
+        return ApiResult.Success(all)
+    }
+
+    suspend fun getIssueTemplates(owner: String, name: String): ApiResult<IssueTemplateLoadResult> {
+        val context = when (val result = apolloClient.query(
+            RepoIssueFormContextQuery(owner, name),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> return result
+            is ApiResult.Success -> result.data.repository ?: return safeCall { error("Repository not found") }
+        }
+        val defaultBranch = context.defaultBranchRef?.name
+            ?: return ApiResult.Success(IssueTemplateLoadResult(context.isBlankIssuesEnabled, emptyList()))
+        return when (val result = apolloClient.query(
+            RepoIssueFormsQuery(owner, name, "$defaultBranch:.github/ISSUE_TEMPLATE"),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val entries = result.data.repository?.`object`?.onTree?.entries.orEmpty()
+                val config = entries.firstOrNull { it.type.equals("blob", true) && it.name.equals("config.yml", true) }
+                val blankIssuesEnabled = config?.`object`?.onBlob?.usableText()?.let { source ->
+                    try { IssueFormYamlParser.parseBlankIssuesEnabled(source) } catch (_: Exception) { context.isBlankIssuesEnabled }
+                } ?: context.isBlankIssuesEnabled
+                var invalidTemplateCount = 0
+                val templates = entries.mapNotNull { entry ->
+                    if (!entry.type.equals("blob", true) || !entry.name.endsWith(".yml", true) || entry.name.equals("config.yml", true)) return@mapNotNull null
+                    val source = entry.`object`?.onBlob?.usableText()
+                    if (source == null) {
+                        invalidTemplateCount++
+                        return@mapNotNull null
+                    }
+                    try {
+                        IssueFormYamlParser.parse(entry.name, source)
+                    } catch (_: Exception) {
+                        invalidTemplateCount++
+                        null
+                    }
+                }.sortedBy { it.name.lowercase() }
+                IssueTemplateLoadResult(blankIssuesEnabled, templates, invalidTemplateCount)
+            }
+        }
+    }
+
+    suspend fun createIssue(input: CreateRepoIssueInput): ApiResult<RepoIssue> =
+        when (val result = apolloClient.mutation(
+            CreateRepoIssueMutation(
+                CreateIssueInput(
+                    repositoryId = input.repositoryId,
+                    title = input.title,
+                    body = Optional.present(input.body),
+                    labelIds = if (input.labelIds.isNotEmpty()) Optional.present(input.labelIds) else Optional.Absent,
+                    assigneeIds = if (input.assigneeIds.isNotEmpty()) Optional.present(input.assigneeIds) else Optional.Absent,
+                    milestoneId = Optional.presentIfNotNull(input.milestoneId),
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val issue = result.data.createIssue?.issue ?: error("Issue was not created")
+                toIssue(issue.issueFields, issue.comments.totalCount)
+            }
+        }
+
+    suspend fun updateIssue(input: UpdateRepoIssueInput): ApiResult<RepoIssue> =
+        when (val result = apolloClient.mutation(
+            UpdateRepoIssueMutation(
+                UpdateIssueInput(
+                    id = input.id,
+                    title = Optional.present(input.title),
+                    body = Optional.present(input.body),
+                    // 与旧实现一致：labelIds/assigneeIds 永远显式发送（空数组 = 清空），
+                    // milestoneId 显式发送（null = 清除里程碑）。
+                    labelIds = Optional.present(input.labelIds),
+                    assigneeIds = Optional.present(input.assigneeIds),
+                    milestoneId = Optional.present(input.milestoneId),
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val issue = result.data.updateIssue?.issue ?: error("Issue mutation failed")
+                toIssue(issue.issueFields, issue.comments.totalCount)
+            }
+        }
+
+    suspend fun closeIssue(issueId: String, reason: IssueStateReason): ApiResult<RepoIssue> =
+        when (val result = apolloClient.mutation(
+            CloseRepoIssueMutation(
+                CloseIssueInput(
+                    issueId = issueId,
+                    stateReason = Optional.present(IssueClosedStateReason.safeValueOf(reason.name)),
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val issue = result.data.closeIssue?.issue ?: error("Issue mutation failed")
+                toIssue(issue.issueFields, issue.comments.totalCount)
+            }
+        }
+
+    suspend fun reopenIssue(issueId: String): ApiResult<RepoIssue> =
+        when (val result = apolloClient.mutation(
+            ReopenRepoIssueMutation(ReopenIssueInput(issueId = issueId)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val issue = result.data.reopenIssue?.issue ?: error("Issue mutation failed")
+                toIssue(issue.issueFields, issue.comments.totalCount)
+            }
+        }
+
+    suspend fun deleteIssue(issueId: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(
+            DeleteRepoIssueMutation(DeleteIssueInput(issueId = issueId)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { }
+        }
+
+    suspend fun addComment(issueId: String, body: String): ApiResult<IssueComment> =
+        when (val result = apolloClient.mutation(
+            AddIssueCommentMutation(
+                com.gitmob.app.graphql.type.AddCommentInput(
+                    subjectId = issueId,
+                    body = body,
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val node = result.data.addComment?.commentEdge?.node ?: error("Comment was not created")
+                toComment(node.issueCommentFields)
+            }
+        }
+
+    suspend fun updateComment(commentId: String, body: String): ApiResult<IssueComment> =
+        when (val result = apolloClient.mutation(
+            UpdateIssueCommentMutation(
+                UpdateIssueCommentInput(id = commentId, body = body),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val node = result.data.updateIssueComment?.issueComment ?: error("Comment was not updated")
+                toComment(node.issueCommentFields)
+            }
+        }
+
+    suspend fun deleteComment(commentId: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(
+            DeleteIssueCommentMutation(DeleteIssueCommentInput(id = commentId)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { }
+        }
+
+    suspend fun updateSubscription(issueId: String, subscribed: Boolean): ApiResult<String?> =
+        when (val result = apolloClient.mutation(
+            UpdateIssueSubscriptionMutation(
+                UpdateSubscriptionInput(
+                    subscribableId = issueId,
+                    state = if (subscribed) SubscriptionState.SUBSCRIBED else SubscriptionState.UNSUBSCRIBED,
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                result.data.updateSubscription?.subscribable?.viewerSubscription?.rawValue
+            }
+        }
+
+    private fun RepoIssueFormsQuery.OnBlob.usableText(): String? = text?.takeIf {
+        isBinary != true && !isTruncated && byteSize in 1..MAX_ISSUE_FORM_BYTES
+    }
+
+    private fun states(value: RepoIssueStateFilter) = when (value) {
+        RepoIssueStateFilter.OPEN -> listOf(com.gitmob.app.graphql.type.IssueState.OPEN)
+        RepoIssueStateFilter.CLOSED -> listOf(com.gitmob.app.graphql.type.IssueState.CLOSED)
+        RepoIssueStateFilter.ALL -> listOf(com.gitmob.app.graphql.type.IssueState.OPEN, com.gitmob.app.graphql.type.IssueState.CLOSED)
+    }
+
+    private fun issueOrder(value: RepoIssueSort): IssueOrder {
+        val field = when (value) {
+            RepoIssueSort.CREATED_ASC, RepoIssueSort.CREATED_DESC -> IssueOrderField.CREATED_AT
+            RepoIssueSort.COMMENTS_ASC, RepoIssueSort.COMMENTS_DESC -> IssueOrderField.COMMENTS
+            else -> IssueOrderField.UPDATED_AT
+        }
+        val direction = if (value.name.endsWith("ASC")) OrderDirection.ASC else OrderDirection.DESC
+        return IssueOrder(field = field, direction = direction)
+    }
+
+    private fun issueFilters(filter: RepoIssueFilter): IssueFilters? {
+        var hasAny = false
+        fun <T> present(value: T): Optional<T> { hasAny = true; return Optional.present(value) }
+        val filters = IssueFilters(
+            labels = if (filter.labels.isNotEmpty()) present(filter.labels.toList()) else Optional.Absent,
+            milestone = when (val value = filter.milestone) {
+                RepoMilestoneFilter.ALL -> Optional.Absent
+                RepoMilestoneFilter.NONE -> present(null)
+                is RepoMilestoneFilter.Number -> Optional.Absent
+            },
+            milestoneNumber = when (val value = filter.milestone) {
+                is RepoMilestoneFilter.Number -> present(value.value.toString())
+                else -> Optional.Absent
+            },
+            assignee = when (val value = filter.assignee) {
+                RepoAssigneeFilter.ALL -> Optional.Absent
+                RepoAssigneeFilter.ANY -> present("*")
+                RepoAssigneeFilter.NONE -> present(null)
+                is RepoAssigneeFilter.Login -> present(value.value)
+            },
+            createdBy = when (val value = filter.author) {
+                RepoAuthorFilter.ALL -> Optional.Absent
+                is RepoAuthorFilter.Login -> present(value.value)
+            },
+            mentioned = if (filter.mentioned) present("*") else Optional.Absent,
+            viewerSubscribed = if (filter.subscribed) present(true) else Optional.Absent,
+            since = filter.updatedSince?.let { present(it.toString()) } ?: Optional.Absent,
+        )
+        return filters.takeIf { hasAny }
     }
 
     companion object {
         private const val MAX_ISSUE_FORM_BYTES = 256 * 1024
-        private fun issueFields(commentsFirst: Int, commentsAfter: String? = null): String = """
-            id url number title body bodyHTML state stateReason author { login avatarUrl } authorAssociation createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } locked
-            comments(first: $commentsFirst${commentsAfter?.let { ", after: $it" }.orEmpty()}) { totalCount nodes { ${commentFields()} } pageInfo { hasNextPage endCursor } }
-            labels(first: ${PageSize.METADATA}) { nodes { id name color description } }
-            assignees(first: ${PageSize.METADATA}) { nodes { id login name avatarUrl bio } }
-            milestone { id number title state dueOn }
-            viewerCanClose viewerCanDelete viewerCanLabel viewerCanSetMilestone viewerCanUpdate viewerCanSubscribe viewerCanReopen viewerSubscription
-        """.trimIndent()
 
-        private fun commentFields() = "id url author { login avatarUrl } authorAssociation body bodyHTML createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } viewerDidAuthor viewerCanUpdate viewerCanDelete viewerCanReact"
-        private fun parsePermission(value: String?) = value?.let { runCatching { RepoPermission.valueOf(it) }.getOrDefault(RepoPermission.NONE) } ?: RepoPermission.NONE
-        private fun toUser(node: SimpleUserNode) = SimpleUser(node.login, node.name, node.avatarUrl, node.bio, node.id)
-        private fun toLabel(node: RepoIssueLabelNode) = IssueLabel(node.id, node.name, node.color, node.description)
-        private fun toMilestone(node: RepoIssueMilestoneNode) = IssueMilestone(node.id, node.number, node.title, node.state, node.dueOn)
-        private fun association(value: String) = runCatching { CommentAuthorAssociation.valueOf(value) }.getOrDefault(CommentAuthorAssociation.NONE)
-        private fun toComment(node: RepoIssueCommentNode) = IssueComment(node.id, node.author?.let(::toUser), node.body, node.bodyHTML, node.createdAt, node.updatedAt, node.viewerDidAuthor, node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact, node.url, association(node.authorAssociation), ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.let(::toUser)))
-        private fun toCommentPage(node: RepoIssueCommentConnectionNode) = IssueCommentPage(node.nodes.map(::toComment), node.pageInfo?.hasNextPage ?: false, node.pageInfo?.endCursor)
-        private fun toIssue(node: RepoIssueNode) = RepoIssue(
-            id = node.id, number = node.number, title = node.title, body = node.body, bodyHtml = node.bodyHTML,
-            state = IssueState.valueOf(node.state), stateReason = node.stateReason?.let { runCatching { IssueStateReason.valueOf(it) }.getOrNull() },
-            author = node.author?.let(::toUser), createdAt = node.createdAt, updatedAt = node.updatedAt, commentCount = node.comments.totalCount,
-            labels = node.labels?.nodes.orEmpty().map(::toLabel), assignees = node.assignees?.nodes.orEmpty().map(::toUser), milestone = node.milestone?.let(::toMilestone),
-            locked = node.locked, viewerCanClose = node.viewerCanClose, viewerCanDelete = node.viewerCanDelete, viewerCanLabel = node.viewerCanLabel,
-            viewerCanSetMilestone = node.viewerCanSetMilestone, viewerCanUpdate = node.viewerCanUpdate, viewerCanSubscribe = node.viewerCanSubscribe,
-            viewerCanReopen = node.viewerCanReopen, viewerSubscription = node.viewerSubscription, url = node.url,
+        internal fun parsePermission(value: String?) =
+            value?.let { runCatching { RepoPermission.valueOf(it) }.getOrDefault(RepoPermission.NONE) } ?: RepoPermission.NONE
+
+        private fun association(value: com.gitmob.app.graphql.type.CommentAuthorAssociation) =
+            runCatching { CommentAuthorAssociation.valueOf(value.rawValue) }.getOrDefault(CommentAuthorAssociation.NONE)
+
+        private fun actorToUser(author: IssueFields.Author?) =
+            author?.let { SimpleUser(it.login, null, it.avatarUrl, null) }
+
+        private fun actorToUser(author: IssueCommentFields.Author?) =
+            author?.let { SimpleUser(it.login, null, it.avatarUrl, null) }
+
+        private fun editorToUser(editor: IssueFields.Editor?) =
+            editor?.let { SimpleUser(it.login, null, it.avatarUrl, null) }
+
+        private fun editorToUser(editor: IssueCommentFields.Editor?) =
+            editor?.let { SimpleUser(it.login, null, it.avatarUrl, null) }
+
+        internal fun toComment(node: IssueCommentFields) = IssueComment(
+            id = node.id,
+            author = actorToUser(node.author),
+            body = node.body,
+            bodyHtml = node.bodyHTML,
+            createdAt = node.createdAt,
+            updatedAt = node.updatedAt,
+            viewerDidAuthor = node.viewerDidAuthor,
+            viewerCanUpdate = node.viewerCanUpdate,
+            viewerCanDelete = node.viewerCanDelete,
+            viewerCanReact = node.viewerCanReact,
+            url = node.url,
             authorAssociation = association(node.authorAssociation),
-            editSummary = ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.let(::toUser)),
+            editSummary = ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, editorToUser(node.editor)),
+        )
+
+        internal fun toIssue(node: IssueFields, commentCount: Int) = RepoIssue(
+            id = node.id,
+            number = node.number,
+            title = node.title,
+            body = node.body,
+            bodyHtml = node.bodyHTML,
+            state = IssueState.valueOf(node.state.rawValue),
+            stateReason = node.stateReason?.let { runCatching { IssueStateReason.valueOf(it.rawValue) }.getOrNull() },
+            author = actorToUser(node.author),
+            createdAt = node.createdAt,
+            updatedAt = node.updatedAt,
+            commentCount = commentCount,
+            labels = node.labels?.nodes.orEmpty().filterNotNull()
+                .map { IssueLabel(it.id, it.name, it.color, it.description) },
+            assignees = node.assignees?.nodes.orEmpty().filterNotNull()
+                .map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) },
+            milestone = node.milestone?.let { IssueMilestone(it.id, it.number, it.title, it.state.rawValue, it.dueOn) },
+            locked = node.locked,
+            viewerCanClose = node.viewerCanClose,
+            viewerCanDelete = node.viewerCanDelete,
+            viewerCanLabel = node.viewerCanLabel,
+            viewerCanSetMilestone = node.viewerCanSetMilestone,
+            viewerCanUpdate = node.viewerCanUpdate,
+            viewerCanSubscribe = node.viewerCanSubscribe,
+            viewerCanReopen = node.viewerCanReopen,
+            viewerSubscription = node.viewerSubscription?.rawValue,
+            url = node.url,
+            authorAssociation = association(node.authorAssociation),
+            editSummary = ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, editorToUser(node.editor)),
         )
     }
 }
-
-private data class RepoIssuePageConnection<T>(val nodes: List<T>, val pageInfo: com.gitmob.app.data.model.PageInfoNode)

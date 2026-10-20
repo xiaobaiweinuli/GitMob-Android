@@ -1,0 +1,82 @@
+# 创建 Issue。返回体 comments(first: 0) 只取 totalCount，与列表形状对齐。
+mutation CreateRepoIssue($input: CreateIssueInput!) {
+    createIssue(input: $input) {
+        issue {
+            ...IssueFields
+            comments(first: 0) {
+                totalCount
+            }
+        }
+    }
+}
+
+mutation UpdateRepoIssue($input: UpdateIssueInput!) {
+    updateIssue(input: $input) {
+        issue {
+            ...IssueFields
+            comments(first: 0) {
+                totalCount
+            }
+        }
+    }
+}
+
+mutation CloseRepoIssue($input: CloseIssueInput!) {
+    closeIssue(input: $input) {
+        issue {
+            ...IssueFields
+            comments(first: 0) {
+                totalCount
+            }
+        }
+    }
+}
+
+mutation ReopenRepoIssue($input: ReopenIssueInput!) {
+    reopenIssue(input: $input) {
+        issue {
+            ...IssueFields
+            comments(first: 0) {
+                totalCount
+            }
+        }
+    }
+}
+
+mutation DeleteRepoIssue($input: DeleteIssueInput!) {
+    deleteIssue(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation AddIssueComment($input: AddCommentInput!) {
+    addComment(input: $input) {
+        commentEdge {
+            node {
+                ...IssueCommentFields
+            }
+        }
+    }
+}
+
+mutation UpdateIssueComment($input: UpdateIssueCommentInput!) {
+    updateIssueComment(input: $input) {
+        issueComment {
+            ...IssueCommentFields
+        }
+    }
+}
+
+mutation DeleteIssueComment($input: DeleteIssueCommentInput!) {
+    deleteIssueComment(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation UpdateIssueSubscription($input: UpdateSubscriptionInput!) {
+    updateSubscription(input: $input) {
+        subscribable {
+            viewerSubscription
+        }
+    }
+}

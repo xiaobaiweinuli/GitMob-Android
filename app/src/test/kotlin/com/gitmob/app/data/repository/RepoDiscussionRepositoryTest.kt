@@ -1,12 +1,13 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
-import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.CommentAuthorAssociation
 import com.gitmob.app.data.model.RepoDiscussionState
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -26,13 +27,11 @@ class RepoDiscussionRepositoryTest {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
         repository = RepoDiscussionRepository(
-            GHApiClient(
-                OkHttpClient(),
-                Json { ignoreUnknownKeys = true },
-                object : AccessTokenProvider { override suspend fun getToken() = "token" },
-                baseUrl,
-                "$baseUrl/graphql",
-            ),
+            ApolloClient.Builder()
+                .serverUrl("$baseUrl/graphql")
+                .okHttpClient(OkHttpClient())
+                .addHttpInterceptor(AuthHttpInterceptor(object : AccessTokenProvider { override suspend fun getToken() = "token" }))
+                .build(),
         )
     }
 
@@ -53,10 +52,10 @@ class RepoDiscussionRepositoryTest {
         assertEquals(CommentAuthorAssociation.CONTRIBUTOR, detail.comments.single().authorAssociation)
 
         val requestBody = server.takeRequest().body.readUtf8()
-        assertTrue(requestBody.contains("bodyHTML closed stateReason category"))
-        assertFalse(requestBody.contains("bodyHTML closed category"))
+        assertTrue(requestBody.contains("DiscussionFields"))
+        assertTrue(requestBody.contains("stateReason"))
+        assertTrue(requestBody.contains("comments(first: 20, after:"))
         assertFalse(requestBody.contains("comments { totalCount }"))
-        assertTrue(requestBody.contains("comments(first: 20, after: ${'$'}after)"))
     }
 
     private fun detailJson() = """
@@ -80,10 +79,13 @@ class RepoDiscussionRepositoryTest {
                 "closed": true,
                 "stateReason": null,
                 "category": {"id":"CAT1","name":"General","emoji":"💬","description":null,"isAnswerable":true},
-                "author": {"login":"octo","avatarUrl":"https://example.com/octo.png"},
+                "author": {"__typename":"User","login":"octo","avatarUrl":"https://example.com/octo.png"},
                 "authorAssociation": "OWNER",
                 "createdAt": "2026-01-01T00:00:00Z",
                 "updatedAt": "2026-01-02T00:00:00Z",
+                "includesCreatedEdit": false,
+                "lastEditedAt": null,
+                "editor": null,
                 "comments": {
                   "totalCount": 1,
                   "nodes": [
@@ -92,10 +94,13 @@ class RepoDiscussionRepositoryTest {
                       "url":"https://github.com/octo/repo/discussions/7#discussioncomment-1",
                       "body":"reply",
                       "bodyHTML":"<p>reply</p>",
-                      "author":{"login":"helper","avatarUrl":null},
+                      "author":{"__typename":"User","login":"helper","avatarUrl":"https://example.com/helper.png"},
                       "authorAssociation":"CONTRIBUTOR",
                       "createdAt":"2026-01-02T00:00:00Z",
                       "updatedAt":"2026-01-02T00:00:00Z",
+                      "includesCreatedEdit":false,
+                      "lastEditedAt":null,
+                      "editor":null,
                       "isAnswer":false,
                       "replyTo":null,
                       "viewerCanUpdate":false,
