@@ -1,18 +1,75 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.api.Operation
+import com.apollographql.apollo.api.Mutation
+import com.apollographql.apollo.api.Optional
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
+import com.gitmob.app.graphql.AddPullRequestCommentMutation
+import com.gitmob.app.graphql.AddPullRequestReviewMutation
+import com.gitmob.app.graphql.CloseRepoPullRequestMutation
+import com.gitmob.app.graphql.ConvertPullRequestToDraftMutation
+import com.gitmob.app.graphql.CreateRepoPullRequestMutation
+import com.gitmob.app.graphql.DeletePullRequestCommentMutation
+import com.gitmob.app.graphql.DisablePullRequestAutoMergeMutation
+import com.gitmob.app.graphql.EnablePullRequestAutoMergeMutation
+import com.gitmob.app.graphql.MarkPullRequestReadyForReviewMutation
+import com.gitmob.app.graphql.MergeRepoPullRequestMutation
+import com.gitmob.app.graphql.PullRequestBranchesQuery
+import com.gitmob.app.graphql.ReopenRepoPullRequestMutation
+import com.gitmob.app.graphql.RepoAssignableUsersQuery
+import com.gitmob.app.graphql.RepoLabelsQuery
+import com.gitmob.app.graphql.RepoMentionableUsersQuery
+import com.gitmob.app.graphql.RepoMilestonesQuery
+import com.gitmob.app.graphql.RepoPullRequestDetailQuery
+import com.gitmob.app.graphql.RepoPullRequestMetadataQuery
+import com.gitmob.app.graphql.RepoPullRequestsQuery
+import com.gitmob.app.graphql.ReplyPullRequestThreadMutation
+import com.gitmob.app.graphql.RequestPullRequestReviewsMutation
+import com.gitmob.app.graphql.ResolveReviewThreadMutation
+import com.gitmob.app.graphql.UnresolveReviewThreadMutation
+import com.gitmob.app.graphql.UpdatePullRequestCommentMutation
+import com.gitmob.app.graphql.UpdatePullRequestSubscriptionMutation
+import com.gitmob.app.graphql.UpdateRepoPullRequestBranchMutation
+import com.gitmob.app.graphql.UpdateRepoPullRequestMutation
+import com.gitmob.app.graphql.fragment.PullRequestCommentFields
+import com.gitmob.app.graphql.fragment.PullRequestFields
+import com.gitmob.app.graphql.fragment.PullRequestReviewCommentFields
+import com.gitmob.app.graphql.fragment.PullRequestReviewFields
+import com.gitmob.app.graphql.type.AddCommentInput
+import com.gitmob.app.graphql.type.AddPullRequestReviewInput
+import com.gitmob.app.graphql.type.AddPullRequestReviewThreadReplyInput
+import com.gitmob.app.graphql.type.ClosePullRequestInput
+import com.gitmob.app.graphql.type.ConvertPullRequestToDraftInput
+import com.gitmob.app.graphql.type.CreatePullRequestInput
+import com.gitmob.app.graphql.type.DeleteIssueCommentInput
+import com.gitmob.app.graphql.type.DisablePullRequestAutoMergeInput
+import com.gitmob.app.graphql.type.EnablePullRequestAutoMergeInput
+import com.gitmob.app.graphql.type.IssueOrder
+import com.gitmob.app.graphql.type.IssueOrderField
+import com.gitmob.app.graphql.type.MarkPullRequestReadyForReviewInput
+import com.gitmob.app.graphql.type.MergePullRequestInput
+import com.gitmob.app.graphql.type.OrderDirection
+import com.gitmob.app.graphql.type.PullRequestMergeMethod
+import com.gitmob.app.graphql.type.ReopenPullRequestInput
+import com.gitmob.app.graphql.type.RequestReviewsInput
+import com.gitmob.app.graphql.type.ResolveReviewThreadInput
+import com.gitmob.app.graphql.type.SubscriptionState
+import com.gitmob.app.graphql.type.UnresolveReviewThreadInput
+import com.gitmob.app.graphql.type.UpdateIssueCommentInput
+import com.gitmob.app.graphql.type.UpdatePullRequestBranchInput
+import com.gitmob.app.graphql.type.UpdatePullRequestInput
+import com.gitmob.app.graphql.type.UpdateSubscriptionInput
+import com.apollographql.apollo.ApolloCall
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 import java.net.URLEncoder
@@ -21,13 +78,23 @@ import java.nio.charset.StandardCharsets
 @Singleton
 class RepoPullRequestRepository @Inject constructor(
     private val api: GHApiClient,
+    private val apolloClient: ApolloClient,
 ) {
-    suspend fun getBranches(owner: String, name: String): ApiResult<List<RepoBranch>> = safeCall {
-        val query = "query PullRequestBranches(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) { defaultBranchRef { name } refs(refPrefix: \"refs/heads/\", first: ${PageSize.BRANCHES}) { nodes { id name target { oid } } } } }"
-        val repository = api.graphQL<PullRequestMetadataQueryData>(query, repoVariables(owner, name)).repository ?: error("Repository not found")
-        val defaultName = repository.defaultBranchRef?.name
-        repository.refs?.nodes.orEmpty().map { RepoBranch(it.id, it.name, it.name == defaultName, it.target?.oid) }.sortedByDescending(RepoBranch::isDefault)
-    }
+    suspend fun getBranches(owner: String, name: String): ApiResult<List<RepoBranch>> =
+        when (val result = apolloClient.query(
+            PullRequestBranchesQuery(owner, name, Optional.Absent),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.repository ?: error("Repository not found")
+                val defaultName = repository.defaultBranchRef?.name
+                repository.refs?.nodes.orEmpty().filterNotNull()
+                    .map { RepoBranch(it.id, it.name, it.name == defaultName, it.target?.oid) }
+                    .sortedByDescending(RepoBranch::isDefault)
+            }
+        }
+
+    /** 存在性探测：REST 实现（base/head 过滤），只需要第一条匹配的开放 PR。 */
     suspend fun findOpenPullRequest(
         baseOwner: String,
         baseRepository: String,
@@ -37,7 +104,6 @@ class RepoPullRequestRepository @Inject constructor(
     ): ApiResult<ExistingRepoPullRequest?> = safeCall {
         val base = encode(baseRef)
         val head = encode("$headOwner:$headRef")
-        // 存在性探测：只需要第一条匹配的开放 PR，不是分页列表。
         api.get<List<RestOpenPullRequest>>(
             "/repos/$baseOwner/$baseRepository/pulls?state=open&base=$base&head=$head&per_page=1",
         ).firstOrNull()?.let {
@@ -59,278 +125,304 @@ class RepoPullRequestRepository @Inject constructor(
             )
         }
     }
+
     suspend fun getPullRequests(
         owner: String,
         name: String,
         filter: RepoPullRequestFilter,
         after: String? = null,
-    ): ApiResult<RepoPullRequestPage> = safeCall {
-        val query = """
-            query RepoPullRequests(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String, ${'$'}states: [PullRequestState!], ${'$'}orderBy: IssueOrder!, ${'$'}labels: [String!]) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id viewerPermission hasPullRequestsEnabled pullRequestCreationPolicy
-                    defaultBranchRef { name }
-                    mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
-                    pullRequests(
-                        first: ${PageSize.REPO_ISSUES}, after: ${'$'}after,
-                        states: ${'$'}states, labels: ${'$'}labels,
-                        orderBy: ${'$'}orderBy
-                    ) {
-                        totalCount nodes { ${pullRequestFields()} }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    ): ApiResult<RepoPullRequestPage> =
+        when (val result = apolloClient.query(
+            RepoPullRequestsQuery(
+                owner = owner,
+                name = name,
+                after = Optional.presentIfNotNull(after),
+                states = Optional.present(states(filter.state)),
+                orderBy = order(filter.sort),
+                labels = Optional.presentIfNotNull(filter.labels.takeIf { it.isNotEmpty() }?.toList()),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.repository ?: error("Repository not found")
+                val permission = RepoIssueRepository.parsePermission(repository.viewerPermission?.rawValue)
+                RepoPullRequestPage(
+                    repositoryId = repository.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    hasPullRequestsEnabled = repository.hasPullRequestsEnabled,
+                    creationPolicy = parseCreationPolicy(repository.pullRequestCreationPolicy?.rawValue),
+                    defaultBranchName = repository.defaultBranchRef?.name,
+                    allowedMergeMethods = allowedMergeMethods(
+                        repository.mergeCommitAllowed, repository.squashMergeAllowed, repository.rebaseMergeAllowed,
+                    ),
+                    totalCount = repository.pullRequests.totalCount,
+                    items = repository.pullRequests.nodes.orEmpty().filterNotNull().map { toPullRequest(it.pullRequestFields) },
+                    hasNextPage = repository.pullRequests.pageInfo.hasNextPage,
+                    endCursor = repository.pullRequests.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val repository = api.graphQL<PullRequestsQueryData>(query, buildMap {
-            put("owner", JsonPrimitive(owner))
-            put("name", JsonPrimitive(name))
-            after?.let { put("after", JsonPrimitive(it)) }
-            put("states", JsonArray(states(filter.state).map(::JsonPrimitive)))
-            put("orderBy", order(filter.sort))
-            if (filter.labels.isNotEmpty()) put("labels", JsonArray(filter.labels.map(::JsonPrimitive)))
-        }).repository ?: error("Repository not found")
-        val permission = parsePermission(repository.viewerPermission)
-        RepoPullRequestPage(
-            repositoryId = repository.id,
-            permission = permission,
-            capabilities = permission.toCapabilities(),
-            hasPullRequestsEnabled = repository.hasPullRequestsEnabled,
-            creationPolicy = parseCreationPolicy(repository.pullRequestCreationPolicy),
-            defaultBranchName = repository.defaultBranchRef?.name,
-            allowedMergeMethods = repository.allowedMergeMethods(),
-            totalCount = repository.pullRequests.totalCount,
-            items = repository.pullRequests.nodes.map(::toPullRequest),
-            hasNextPage = repository.pullRequests.pageInfo.hasNextPage,
-            endCursor = repository.pullRequests.pageInfo.endCursor,
-        )
-    }
+        }
 
     suspend fun getPullRequest(
         owner: String,
         name: String,
         number: Int,
         commentsAfter: String? = null,
-    ): ApiResult<RepoPullRequestDetail> = safeCall {
-        val query = """
-            query RepoPullRequestDetail(${'$'}owner: String!, ${'$'}name: String!, ${'$'}number: Int!, ${'$'}after: String) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id viewerPermission mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
-                    pullRequest(number: ${'$'}number) {
-                        ${pullRequestFields()}
-                        comments(first: ${PageSize.ISSUE_COMMENTS}, after: ${'$'}after) {
-                            nodes { ${commentFields()} }
-                            pageInfo { hasNextPage endCursor }
-                        }
-                        reviews(first: ${PageSize.PULL_REQUEST_REVIEWS}) { nodes { id url author { login avatarUrl } authorAssociation body bodyHTML state submittedAt includesCreatedEdit lastEditedAt editor { login avatarUrl } viewerCanUpdate viewerCanDelete } }
-                        reviewThreads(first: ${PageSize.PULL_REQUEST_REVIEW_THREADS}) {
-                            nodes {
-                                id path line isResolved isOutdated viewerCanReply viewerCanResolve viewerCanUnresolve
-                                comments(first: ${PageSize.PULL_REQUEST_REVIEW_COMMENTS}) { nodes { ${reviewCommentFields()} } }
-                            }
-                        }
-                        commits(first: ${PageSize.PULL_REQUEST_COMMITS}) {
-                            nodes { commit { oid messageHeadline committedDate author { user { login avatarUrl } } } }
-                        }
-                    }
-                }
-            }
-        """.trimIndent()
-        val repository = api.graphQL<PullRequestDetailQueryData>(query, buildMap {
-            put("owner", JsonPrimitive(owner))
-            put("name", JsonPrimitive(name))
-            put("number", JsonPrimitive(number))
-            commentsAfter?.let { put("after", JsonPrimitive(it)) }
-        }).repository ?: error("Repository not found")
-        val node = repository.pullRequest ?: error("Pull request not found")
-        val files = api.get<List<RestPullRequestFile>>("/repos/$owner/$name/pulls/$number/files?per_page=${PageSize.PULL_REQUEST_FILES}")
-        val permission = parsePermission(repository.viewerPermission)
-        RepoPullRequestDetail(
-            repositoryId = repository.id,
-            permission = permission,
-            capabilities = permission.toCapabilities(),
-            allowedMergeMethods = repository.allowedMergeMethods(),
-            pullRequest = toPullRequest(node),
-            comments = node.comments?.nodes.orEmpty().map(::toComment),
-            reviews = node.reviews?.nodes.orEmpty().map(::toReview),
-            reviewThreads = node.reviewThreads?.nodes.orEmpty().map(::toThread),
-            commits = node.commits?.nodes.orEmpty().map {
-                RepoPullRequestCommit(
-                    oid = it.commit.oid,
-                    headline = it.commit.messageHeadline,
-                    committedAt = it.commit.committedDate,
-                    authorLogin = it.commit.author?.user?.login,
-                    authorAvatarUrl = it.commit.author?.user?.avatarUrl,
-                )
-            },
-            files = files.map {
-                RepoPullRequestFile(it.filename, it.previousFilename, it.status, it.additions, it.deletions, it.changes, it.patch, it.blobUrl)
-            },
-            commentsHasNextPage = node.comments?.pageInfo?.hasNextPage ?: false,
-            commentsEndCursor = node.comments?.pageInfo?.endCursor,
-        )
+    ): ApiResult<RepoPullRequestDetail> {
+        val detail = when (val result = apolloClient.query(
+            RepoPullRequestDetailQuery(owner, name, number, Optional.presentIfNotNull(commentsAfter)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> return result
+            is ApiResult.Success -> result.data
+        }
+        return safeCall {
+            val repository = detail.repository ?: error("Repository not found")
+            val node = repository.pullRequest ?: error("Pull request not found")
+            // 文件列表走 REST（GraphQL 没有等价的 changedFiles 明细端点）
+            val files = api.get<List<RestPullRequestFile>>("/repos/$owner/$name/pulls/$number/files?per_page=${PageSize.PULL_REQUEST_FILES}")
+            val permission = RepoIssueRepository.parsePermission(repository.viewerPermission?.rawValue)
+            RepoPullRequestDetail(
+                repositoryId = repository.id,
+                permission = permission,
+                capabilities = permission.toCapabilities(),
+                allowedMergeMethods = allowedMergeMethods(
+                    repository.mergeCommitAllowed, repository.squashMergeAllowed, repository.rebaseMergeAllowed,
+                ),
+                pullRequest = toPullRequest(node.pullRequestFields),
+                comments = node.comments.nodes.orEmpty().filterNotNull().map { toComment(it.pullRequestCommentFields) },
+                reviews = node.reviews?.nodes.orEmpty().filterNotNull().map { toReview(it.pullRequestReviewFields) },
+                reviewThreads = node.reviewThreads.nodes.orEmpty().filterNotNull().map { thread ->
+                    RepoPullRequestReviewThread(
+                        thread.id, thread.path, thread.line, thread.isResolved, thread.isOutdated,
+                        thread.viewerCanReply, thread.viewerCanResolve, thread.viewerCanUnresolve,
+                        thread.comments.nodes.orEmpty().filterNotNull().map { toReviewComment(it.pullRequestReviewCommentFields) },
+                    )
+                },
+                commits = node.commits.nodes.orEmpty().filterNotNull().map {
+                    RepoPullRequestCommit(
+                        oid = it.commit.oid,
+                        headline = it.commit.messageHeadline,
+                        committedAt = it.commit.committedDate,
+                        authorLogin = it.commit.author?.user?.login,
+                        authorAvatarUrl = it.commit.author?.user?.avatarUrl,
+                    )
+                },
+                files = files.map {
+                    RepoPullRequestFile(it.filename, it.previousFilename, it.status, it.additions, it.deletions, it.changes, it.patch, it.blobUrl)
+                },
+                commentsHasNextPage = node.comments.pageInfo.hasNextPage,
+                commentsEndCursor = node.comments.pageInfo.endCursor,
+            )
+        }
     }
 
-    suspend fun getCreateMetadata(owner: String, name: String): ApiResult<RepoPullRequestCreateMetadata> = safeCall {
-        val query = """
-            query RepoPullRequestMetadata(${'$'}owner: String!, ${'$'}name: String!) {
-                viewer { login }
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id defaultBranchRef { name }
-                    refs(refPrefix: "refs/heads/", first: ${PageSize.BRANCHES}) { nodes { id name target { oid } } pageInfo { hasNextPage endCursor } }
-                    labels(first: ${PageSize.METADATA}) { nodes { id name color description } pageInfo { hasNextPage endCursor } }
-                    milestones(first: ${PageSize.METADATA}, states: [OPEN]) { nodes { id number title state dueOn } pageInfo { hasNextPage endCursor } }
-                    assignableUsers(first: ${PageSize.METADATA}) { nodes { id login name avatarUrl bio } pageInfo { hasNextPage endCursor } }
-                    mentionableUsers(first: ${PageSize.METADATA}) { nodes { id login name avatarUrl bio } pageInfo { hasNextPage endCursor } }
-                }
-            }
-        """.trimIndent()
-        val data = api.graphQL<PullRequestMetadataQueryData>(query, repoVariables(owner, name))
-        val repository = data.repository ?: error("Repository not found")
-        val repositories = listOf(repository.toHeadRepository(owner, name))
-        val branches = loadAllRefs(owner, name, repository.refs?.nodes.orEmpty(), repository.refs?.pageInfo)
-        val labels = loadAllLabels(owner, name, repository.labels?.nodes.orEmpty(), repository.labels?.pageInfo)
-        val milestones = loadAllMilestones(owner, name, repository.milestones?.nodes.orEmpty(), repository.milestones?.pageInfo)
-        val assignees = loadAllUsers(owner, name, "assignableUsers", repository.assignableUsers?.nodes.orEmpty(), repository.assignableUsers?.pageInfo)
-        val reviewers = loadAllUsers(owner, name, "mentionableUsers", repository.mentionableUsers?.nodes.orEmpty(), repository.mentionableUsers?.pageInfo)
-        RepoPullRequestCreateMetadata(
-            repositoryId = repository.id,
-            viewerLogin = data.viewer.login,
-            defaultBranchName = repository.defaultBranchRef?.name,
-            repositories = repositories.map { it.copy(branches = branches) },
-            labels = labels,
-            milestones = milestones,
-            assignees = assignees,
-            reviewers = reviewers,
-        )
+    suspend fun getCreateMetadata(owner: String, name: String): ApiResult<RepoPullRequestCreateMetadata> {
+        val data = when (val result = apolloClient.query(
+            RepoPullRequestMetadataQuery(owner, name),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> return result
+            is ApiResult.Success -> result.data
+        }
+        return safeCall {
+            val repository = data.repository ?: error("Repository not found")
+            val branches = loadAllRefs(owner, name, repository.refs)
+            val labels = loadAllLabels(owner, name, repository.labels?.nodes.orEmpty().filterNotNull().map {
+                IssueLabel(it.id, it.name, it.color, it.description)
+            }, repository.labels?.pageInfo?.hasNextPage == true, repository.labels?.pageInfo?.endCursor)
+            val milestones = loadAllMilestones(owner, name, repository.milestones?.nodes.orEmpty().filterNotNull().map {
+                IssueMilestone(it.id, it.number, it.title, it.state.rawValue, it.dueOn)
+            }, repository.milestones?.pageInfo?.hasNextPage == true, repository.milestones?.pageInfo?.endCursor)
+            val assignees = loadAllAssignable(owner, name, repository.assignableUsers?.nodes.orEmpty().filterNotNull().map {
+                SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id)
+            }, repository.assignableUsers?.pageInfo?.hasNextPage == true, repository.assignableUsers?.pageInfo?.endCursor)
+            val reviewers = loadAllMentionable(owner, name, repository.mentionableUsers?.nodes.orEmpty().filterNotNull().map {
+                SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id)
+            }, repository.mentionableUsers?.pageInfo?.hasNextPage == true, repository.mentionableUsers?.pageInfo?.endCursor)
+            RepoPullRequestCreateMetadata(
+                repositoryId = repository.id,
+                viewerLogin = data.viewer.login,
+                defaultBranchName = repository.defaultBranchRef?.name,
+                repositories = listOf(
+                    RepoPullRequestHeadRepository(id = repository.id, owner = owner, name = name, branches = branches),
+                ),
+                labels = labels,
+                milestones = milestones,
+                assignees = assignees,
+                reviewers = reviewers,
+            )
+        }
     }
 
-    /** 仓库全部标签，供列表筛选的「标签」多选胶囊使用 */
-    suspend fun getLabels(owner: String, name: String): ApiResult<List<IssueLabel>> = safeCall {
-        val query = "query RepoLabels(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { labels(first: ${PageSize.METADATA}, after: \$after) { nodes { id name color description } pageInfo { hasNextPage endCursor } } } }"
+    /** 仓库全部标签，供列表筛选的「标签」多选胶囊使用。与 Issue/Discussion 域共用 RepoLabelsQuery。 */
+    suspend fun getLabels(owner: String, name: String): ApiResult<List<IssueLabel>> {
         val labels = mutableListOf<IssueLabel>()
         var after: String? = null
-        do {
-            val variables = buildMap {
-                put("owner", JsonPrimitive(owner))
-                put("name", JsonPrimitive(name))
-                after?.let { put("after", JsonPrimitive(it)) }
+        while (true) {
+            when (val result = apolloClient.query(
+                RepoLabelsQuery(owner, name, Optional.presentIfNotNull(after)),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> return result
+                is ApiResult.Success -> {
+                    val page = result.data.repository?.labels ?: break
+                    labels += page.nodes.orEmpty().filterNotNull().map { IssueLabel(it.id, it.name, it.color, it.description) }
+                    after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage } ?: break
+                }
             }
-            val page = api.graphQL<RepoLabelsQueryData>(query, variables).repository?.labels ?: break
-            labels += page.nodes.map(::toLabel)
-            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
-        } while (after != null)
-        labels
-    }
-
-    private suspend fun loadAllRefs(owner: String, name: String, initial: List<RefNode>, pageInfo: PageInfoNode?): List<RepoBranch> {
-        val nodes = initial.toMutableList()
-        var after = pageInfo?.endCursor.takeIf { pageInfo?.hasNextPage == true }
-        val query = "query PullRequestBranches(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { refs(refPrefix: \"refs/heads/\", first: ${PageSize.BRANCHES}, after: \$after) { nodes { id name target { oid } } pageInfo { hasNextPage endCursor } } } }"
-        while (after != null) {
-            val page = api.graphQL<PullRequestMetadataQueryData>(query, metadataVariables(owner, name, after)).repository?.refs ?: break
-            nodes += page.nodes
-            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
         }
-        return nodes.distinctBy(RefNode::id).map(::toBranch)
+        return ApiResult.Success(labels)
     }
 
-    private suspend fun loadAllLabels(owner: String, name: String, initial: List<LabelNode>, pageInfo: PageInfoNode?): List<IssueLabel> {
-        val nodes = initial.toMutableList()
-        var after = pageInfo?.endCursor.takeIf { pageInfo?.hasNextPage == true }
-        val query = "query PullRequestLabels(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { labels(first: ${PageSize.METADATA}, after: \$after) { nodes { id name color description } pageInfo { hasNextPage endCursor } } } }"
-        while (after != null) {
-            val page = api.graphQL<PullRequestMetadataQueryData>(query, metadataVariables(owner, name, after)).repository?.labels ?: break
-            nodes += page.nodes
-            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
+    /** 元数据续页加载失败时抛出，由外层 safeCall 统一转为 Failure（与旧实现一致）。 */
+    private suspend fun <D : Operation.Data> ApolloCall<D>.executeOrThrow(): D =
+        when (val result = executeAsApiResult()) {
+            is ApiResult.Success -> result.data
+            is ApiResult.Failure -> error("Metadata page load failed: ${result.error}")
         }
-        return nodes.distinctBy(LabelNode::id).map(::toLabel)
-    }
 
-    private suspend fun loadAllMilestones(owner: String, name: String, initial: List<MilestoneNode>, pageInfo: PageInfoNode?): List<IssueMilestone> {
-        val nodes = initial.toMutableList()
-        var after = pageInfo?.endCursor.takeIf { pageInfo?.hasNextPage == true }
-        val query = "query PullRequestMilestones(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { milestones(first: ${PageSize.METADATA}, after: \$after, states: [OPEN]) { nodes { id number title state dueOn } pageInfo { hasNextPage endCursor } } } }"
+    private suspend fun loadAllRefs(owner: String, name: String, firstPage: RepoPullRequestMetadataQuery.Refs?): List<RepoBranch> {
+        val seen = linkedMapOf<String, RepoBranch>()
+        firstPage?.nodes.orEmpty().filterNotNull().forEach { seen[it.id] = RepoBranch(it.id, it.name, false, it.target?.oid) }
+        var after = firstPage?.pageInfo?.endCursor.takeIf { firstPage?.pageInfo?.hasNextPage == true }
         while (after != null) {
-            val page = api.graphQL<PullRequestMetadataQueryData>(query, metadataVariables(owner, name, after)).repository?.milestones ?: break
-            nodes += page.nodes
-            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
+            val refs = apolloClient.query(PullRequestBranchesQuery(owner, name, Optional.present(after)))
+                .executeOrThrow().repository?.refs ?: break
+            refs.nodes.orEmpty().filterNotNull().forEach { seen[it.id] = RepoBranch(it.id, it.name, false, it.target?.oid) }
+            after = refs.pageInfo.endCursor.takeIf { refs.pageInfo.hasNextPage }
         }
-        return nodes.distinctBy(MilestoneNode::id).map(::toMilestone)
+        return seen.values.toList()
     }
 
-    private suspend fun loadAllUsers(owner: String, name: String, field: String, initial: List<UserNode>, pageInfo: PageInfoNode?): List<SimpleUser> {
-        require(field == "assignableUsers" || field == "mentionableUsers")
+    private suspend fun loadAllLabels(
+        owner: String,
+        name: String,
+        initial: List<IssueLabel>,
+        hasNext: Boolean,
+        cursor: String?,
+    ): List<IssueLabel> {
         val nodes = initial.toMutableList()
-        var after = pageInfo?.endCursor.takeIf { pageInfo?.hasNextPage == true }
-        val query = "query PullRequestUsers(\$owner: String!, \$name: String!, \$after: String) { repository(owner: \$owner, name: \$name) { $field(first: ${PageSize.METADATA}, after: \$after) { nodes { id login name avatarUrl bio } pageInfo { hasNextPage endCursor } } } }"
-        while (after != null) {
-            val repository = api.graphQL<PullRequestMetadataQueryData>(query, metadataVariables(owner, name, after)).repository ?: break
-            val page = if (field == "assignableUsers") repository.assignableUsers else repository.mentionableUsers
-            page ?: break
-            nodes += page.nodes
-            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage }
+        var after = cursor.takeIf { hasNext }
+        while (true) {
+            val page = apolloClient.query(RepoLabelsQuery(owner, name, Optional.presentIfNotNull(after)))
+                .executeOrThrow().repository?.labels ?: break
+            nodes += page.nodes.orEmpty().filterNotNull().map { IssueLabel(it.id, it.name, it.color, it.description) }
+            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage } ?: break
         }
-        return nodes.distinctBy(UserNode::id).map(::toUser)
+        return nodes.distinctBy(IssueLabel::id)
     }
 
-    private fun metadataVariables(owner: String, name: String, after: String) = mapOf(
-        "owner" to JsonPrimitive(owner),
-        "name" to JsonPrimitive(name),
-        "after" to JsonPrimitive(after),
-    )
+    private suspend fun loadAllMilestones(
+        owner: String,
+        name: String,
+        initial: List<IssueMilestone>,
+        hasNext: Boolean,
+        cursor: String?,
+    ): List<IssueMilestone> {
+        val nodes = initial.toMutableList()
+        var after = cursor.takeIf { hasNext }
+        while (true) {
+            val page = apolloClient.query(RepoMilestonesQuery(owner, name, Optional.presentIfNotNull(after)))
+                .executeOrThrow().repository?.milestones ?: break
+            nodes += page.nodes.orEmpty().filterNotNull().map { IssueMilestone(it.id, it.number, it.title, it.state.rawValue, it.dueOn) }
+            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage } ?: break
+        }
+        return nodes.distinctBy(IssueMilestone::id)
+    }
 
-    suspend fun createPullRequest(input: CreateRepoPullRequestInput): ApiResult<RepoPullRequest> = mutatePullRequest(
-        "createPullRequest",
-        "CreatePullRequestInput",
-        JsonObject(buildMap {
-            put("repositoryId", JsonPrimitive(input.repositoryId))
-            put("baseRefName", JsonPrimitive(input.baseRefName))
-            val headRef = input.headOwner?.takeIf { input.headRepositoryId != null }
-                ?.let { "$it:${input.headRefName}" }
-                ?: input.headRefName
-            put("headRefName", JsonPrimitive(headRef))
-            input.headRepositoryId?.let { put("headRepositoryId", JsonPrimitive(it)) }
-            put("title", JsonPrimitive(input.title))
-            put("body", JsonPrimitive(input.body))
-            put("draft", JsonPrimitive(input.draft))
-        }),
-    ) { it.createPullRequest?.pullRequest }
+    private suspend fun loadAllAssignable(
+        owner: String,
+        name: String,
+        initial: List<SimpleUser>,
+        hasNext: Boolean,
+        cursor: String?,
+    ): List<SimpleUser> {
+        val nodes = initial.toMutableList()
+        var after = cursor.takeIf { hasNext }
+        while (true) {
+            val page = apolloClient.query(RepoAssignableUsersQuery(owner, name, Optional.presentIfNotNull(after)))
+                .executeOrThrow().repository?.assignableUsers ?: break
+            nodes += page.nodes.orEmpty().filterNotNull().map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) }
+            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage } ?: break
+        }
+        return nodes.distinctBy(SimpleUser::id)
+    }
 
-    suspend fun updatePullRequest(input: UpdateRepoPullRequestInput): ApiResult<RepoPullRequest> = mutatePullRequest(
-        "updatePullRequest",
-        "UpdatePullRequestInput",
-        JsonObject(buildMap {
-            put("pullRequestId", JsonPrimitive(input.id))
-            put("title", JsonPrimitive(input.title))
-            put("body", JsonPrimitive(input.body))
-            put("baseRefName", JsonPrimitive(input.baseRefName))
-            put("labelIds", JsonArray(input.labelIds.map(::JsonPrimitive)))
-            put("assigneeIds", JsonArray(input.assigneeIds.map(::JsonPrimitive)))
-            put("milestoneId", input.milestoneId?.let(::JsonPrimitive) ?: JsonNull)
-        }),
-    ) { it.updatePullRequest?.pullRequest }
+    private suspend fun loadAllMentionable(
+        owner: String,
+        name: String,
+        initial: List<SimpleUser>,
+        hasNext: Boolean,
+        cursor: String?,
+    ): List<SimpleUser> {
+        val nodes = initial.toMutableList()
+        var after = cursor.takeIf { hasNext }
+        while (true) {
+            val page = apolloClient.query(RepoMentionableUsersQuery(owner, name, Optional.presentIfNotNull(after)))
+                .executeOrThrow().repository?.mentionableUsers ?: break
+            nodes += page.nodes.orEmpty().filterNotNull().map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) }
+            after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage } ?: break
+        }
+        return nodes.distinctBy(SimpleUser::id)
+    }
 
-    suspend fun closePullRequest(id: String) = simplePullRequestMutation(
-        "closePullRequest", "ClosePullRequestInput", "pullRequestId", id,
-    ) { it.closePullRequest?.pullRequest }
+    suspend fun createPullRequest(input: CreateRepoPullRequestInput): ApiResult<RepoPullRequest> =
+        when (val result = apolloClient.mutation(
+            CreateRepoPullRequestMutation(
+                CreatePullRequestInput(
+                    repositoryId = input.repositoryId,
+                    baseRefName = input.baseRefName,
+                    // 跨仓库 head 需要 owner:branch 前缀
+                    headRefName = input.headOwner?.takeIf { input.headRepositoryId != null }
+                        ?.let { "$it:${input.headRefName}" }
+                        ?: input.headRefName,
+                    headRepositoryId = Optional.presentIfNotNull(input.headRepositoryId),
+                    title = input.title,
+                    body = Optional.present(input.body),
+                    draft = Optional.present(input.draft),
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                toPullRequest(result.data.createPullRequest?.pullRequest?.pullRequestFields ?: error("Pull request mutation failed"))
+            }
+        }
 
-    suspend fun reopenPullRequest(id: String) = simplePullRequestMutation(
-        "reopenPullRequest", "ReopenPullRequestInput", "pullRequestId", id,
-    ) { it.reopenPullRequest?.pullRequest }
+    suspend fun updatePullRequest(input: UpdateRepoPullRequestInput): ApiResult<RepoPullRequest> =
+        when (val result = apolloClient.mutation(
+            UpdateRepoPullRequestMutation(
+                UpdatePullRequestInput(
+                    pullRequestId = input.id,
+                    title = Optional.present(input.title),
+                    body = Optional.present(input.body),
+                    baseRefName = Optional.present(input.baseRefName),
+                    // 与旧实现一致：labelIds/assigneeIds 永远显式发送（空数组 = 清空），milestoneId null = 清除
+                    labelIds = Optional.present(input.labelIds),
+                    assigneeIds = Optional.present(input.assigneeIds),
+                    milestoneId = Optional.present(input.milestoneId),
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                toPullRequest(result.data.updatePullRequest?.pullRequest?.pullRequestFields ?: error("Pull request mutation failed"))
+            }
+        }
 
-    suspend fun convertToDraft(id: String) = simplePullRequestMutation(
-        "convertPullRequestToDraft", "ConvertPullRequestToDraftInput", "pullRequestId", id,
-    ) { it.convertPullRequestToDraft?.pullRequest }
+    suspend fun closePullRequest(id: String): ApiResult<RepoPullRequest> =
+        simpleMutation(CloseRepoPullRequestMutation(ClosePullRequestInput(pullRequestId = id))) { it.closePullRequest?.pullRequest?.pullRequestFields }
 
-    suspend fun markReadyForReview(id: String) = simplePullRequestMutation(
-        "markPullRequestReadyForReview", "MarkPullRequestReadyForReviewInput", "pullRequestId", id,
-    ) { it.markPullRequestReadyForReview?.pullRequest }
+    suspend fun reopenPullRequest(id: String): ApiResult<RepoPullRequest> =
+        simpleMutation(ReopenRepoPullRequestMutation(ReopenPullRequestInput(pullRequestId = id))) { it.reopenPullRequest?.pullRequest?.pullRequestFields }
 
-    suspend fun updateBranch(id: String): ApiResult<RepoPullRequest> = mutatePullRequest(
-        "updatePullRequestBranch", "UpdatePullRequestBranchInput",
-        JsonObject(mapOf("pullRequestId" to JsonPrimitive(id))),
-    ) { it.updatePullRequestBranch?.pullRequest }
+    suspend fun convertToDraft(id: String): ApiResult<RepoPullRequest> =
+        simpleMutation(ConvertPullRequestToDraftMutation(ConvertPullRequestToDraftInput(pullRequestId = id))) { it.convertPullRequestToDraft?.pullRequest?.pullRequestFields }
+
+    suspend fun markReadyForReview(id: String): ApiResult<RepoPullRequest> =
+        simpleMutation(MarkPullRequestReadyForReviewMutation(MarkPullRequestReadyForReviewInput(pullRequestId = id))) { it.markPullRequestReadyForReview?.pullRequest?.pullRequestFields }
+
+    suspend fun updateBranch(id: String): ApiResult<RepoPullRequest> =
+        simpleMutation(UpdateRepoPullRequestBranchMutation(UpdatePullRequestBranchInput(pullRequestId = id))) { it.updatePullRequestBranch?.pullRequest?.pullRequestFields }
 
     suspend fun mergePullRequest(
         id: String,
@@ -338,146 +430,198 @@ class RepoPullRequestRepository @Inject constructor(
         headline: String?,
         body: String?,
         expectedHeadOid: String? = null,
-    ): ApiResult<RepoPullRequest> = mutatePullRequest(
-        "mergePullRequest", "MergePullRequestInput",
-        JsonObject(buildMap {
-            put("pullRequestId", JsonPrimitive(id))
-            put("mergeMethod", JsonPrimitive(method.name))
-            headline?.takeIf(String::isNotBlank)?.let { put("commitHeadline", JsonPrimitive(it)) }
-            body?.takeIf(String::isNotBlank)?.let { put("commitBody", JsonPrimitive(it)) }
-            expectedHeadOid?.let { put("expectedHeadOid", JsonPrimitive(it)) }
-        }),
-    ) { it.mergePullRequest?.pullRequest }
+    ): ApiResult<RepoPullRequest> =
+        simpleMutation(
+            MergeRepoPullRequestMutation(
+                MergePullRequestInput(
+                    pullRequestId = id,
+                    mergeMethod = Optional.present(PullRequestMergeMethod.safeValueOf(method.name)),
+                    commitHeadline = Optional.presentIfNotNull(headline?.takeIf(String::isNotBlank)),
+                    commitBody = Optional.presentIfNotNull(body?.takeIf(String::isNotBlank)),
+                    expectedHeadOid = Optional.presentIfNotNull(expectedHeadOid),
+                ),
+            ),
+        ) { it.mergePullRequest?.pullRequest?.pullRequestFields }
 
-    suspend fun setAutoMerge(id: String, enabled: Boolean, method: RepoPullRequestMergeMethod): ApiResult<RepoPullRequest> {
-        val mutation = if (enabled) "enablePullRequestAutoMerge" else "disablePullRequestAutoMerge"
-        val inputType = if (enabled) "EnablePullRequestAutoMergeInput" else "DisablePullRequestAutoMergeInput"
-        return mutatePullRequest(
-            mutation,
-            inputType,
-            JsonObject(buildMap {
-                put("pullRequestId", JsonPrimitive(id))
-                if (enabled) put("mergeMethod", JsonPrimitive(method.name))
-            }),
-        ) { if (enabled) it.enablePullRequestAutoMerge?.pullRequest else it.disablePullRequestAutoMerge?.pullRequest }
-    }
+    suspend fun setAutoMerge(id: String, enabled: Boolean, method: RepoPullRequestMergeMethod): ApiResult<RepoPullRequest> =
+        if (enabled) {
+            simpleMutation(
+                EnablePullRequestAutoMergeMutation(
+                    EnablePullRequestAutoMergeInput(
+                        pullRequestId = id,
+                        mergeMethod = Optional.present(PullRequestMergeMethod.safeValueOf(method.name)),
+                    ),
+                ),
+            ) { it.enablePullRequestAutoMerge?.pullRequest?.pullRequestFields }
+        } else {
+            simpleMutation(
+                DisablePullRequestAutoMergeMutation(DisablePullRequestAutoMergeInput(pullRequestId = id)),
+            ) { it.disablePullRequestAutoMerge?.pullRequest?.pullRequestFields }
+        }
 
-    suspend fun addComment(id: String, body: String): ApiResult<RepoPullRequestComment> = safeCall {
-        val mutation = "mutation AddPullRequestComment(${'$'}input: AddCommentInput!) { addComment(input: ${'$'}input) { commentEdge { node { ${commentFields()} } } } }"
-        val node = api.graphQL<AddPullRequestCommentData>(mutation, mapOf("input" to JsonObject(mapOf(
-            "subjectId" to JsonPrimitive(id), "body" to JsonPrimitive(body),
-        )))).addComment?.commentEdge?.node ?: error("Comment was not created")
-        toComment(node)
-    }
+    private suspend fun <D : Mutation.Data, M : Mutation<D>> simpleMutation(
+        mutation: M,
+        selector: (D) -> PullRequestFields?,
+    ): ApiResult<RepoPullRequest> =
+        when (val result = apolloClient.mutation(mutation).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                toPullRequest(selector(result.data) ?: error("Pull request mutation failed"))
+            }
+        }
 
-    suspend fun updateComment(id: String, body: String): ApiResult<RepoPullRequestComment> = safeCall {
-        val mutation = "mutation UpdatePullRequestComment(${'$'}input: UpdateIssueCommentInput!) { updateIssueComment(input: ${'$'}input) { issueComment { ${commentFields()} } } }"
-        val node = api.graphQL<UpdatePullRequestCommentData>(mutation, mapOf("input" to JsonObject(mapOf(
-            "id" to JsonPrimitive(id), "body" to JsonPrimitive(body),
-        )))).updateIssueComment?.issueComment ?: error("Comment was not updated")
-        toComment(node)
-    }
+    suspend fun addComment(id: String, body: String): ApiResult<RepoPullRequestComment> =
+        when (val result = apolloClient.mutation(
+            AddPullRequestCommentMutation(AddCommentInput(subjectId = id, body = body)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                toComment(result.data.addComment?.commentEdge?.node?.pullRequestCommentFields ?: error("Comment was not created"))
+            }
+        }
 
-    suspend fun deleteComment(id: String): ApiResult<Unit> = safeCall {
-        val mutation = "mutation DeletePullRequestComment(${'$'}input: DeleteIssueCommentInput!) { deleteIssueComment(input: ${'$'}input) { clientMutationId } }"
-        with(api.graphQL<DeletePullRequestCommentData>(mutation, mapOf("input" to JsonObject(mapOf("id" to JsonPrimitive(id)))))) { }
-    }
+    suspend fun updateComment(id: String, body: String): ApiResult<RepoPullRequestComment> =
+        when (val result = apolloClient.mutation(
+            UpdatePullRequestCommentMutation(UpdateIssueCommentInput(id = id, body = body)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                toComment(result.data.updateIssueComment?.issueComment?.pullRequestCommentFields ?: error("Comment was not updated"))
+            }
+        }
 
-    suspend fun submitReview(id: String, event: RepoPullRequestReviewEvent, body: String): ApiResult<RepoPullRequestReview> = safeCall {
-        val mutation = "mutation AddPullRequestReview(${'$'}input: AddPullRequestReviewInput!) { addPullRequestReview(input: ${'$'}input) { pullRequestReview { id author { login avatarUrl } bodyHTML state submittedAt viewerCanUpdate viewerCanDelete } } }"
-        val review = api.graphQL<AddPullRequestReviewData>(mutation, mapOf("input" to JsonObject(mapOf(
-            "pullRequestId" to JsonPrimitive(id), "event" to JsonPrimitive(event.name), "body" to JsonPrimitive(body),
-        )))).addPullRequestReview?.pullRequestReview ?: error("Review was not created")
-        toReview(review)
-    }
+    suspend fun deleteComment(id: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(
+            DeletePullRequestCommentMutation(DeleteIssueCommentInput(id = id)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { }
+        }
 
-    suspend fun requestReviews(id: String, userIds: List<String>): ApiResult<Unit> = safeCall {
-        val mutation = "mutation RequestPullRequestReviews(${'$'}input: RequestReviewsInput!) { requestReviews(input: ${'$'}input) { clientMutationId } }"
-        with(api.graphQL<RequestReviewsData>(mutation, mapOf("input" to JsonObject(mapOf(
-            "pullRequestId" to JsonPrimitive(id),
-            "userIds" to JsonArray(userIds.map(::JsonPrimitive)),
-            "botIds" to JsonArray(emptyList()),
-            "teamIds" to JsonArray(emptyList()),
-            "union" to JsonPrimitive(false),
-        ))))) { }
-    }
+    suspend fun submitReview(id: String, event: RepoPullRequestReviewEvent, body: String): ApiResult<RepoPullRequestReview> =
+        when (val result = apolloClient.mutation(
+            AddPullRequestReviewMutation(
+                AddPullRequestReviewInput(
+                    pullRequestId = id,
+                    event = Optional.present(com.gitmob.app.graphql.type.PullRequestReviewEvent.safeValueOf(event.name)),
+                    body = Optional.present(body),
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                toReview(result.data.addPullRequestReview?.pullRequestReview?.pullRequestReviewFields ?: error("Review was not created"))
+            }
+        }
 
-    suspend fun replyToThread(threadId: String, body: String): ApiResult<RepoPullRequestReviewComment> = safeCall {
-        val mutation = "mutation ReplyPullRequestThread(${'$'}input: AddPullRequestReviewThreadReplyInput!) { addPullRequestReviewThreadReply(input: ${'$'}input) { comment { ${reviewCommentFields()} } } }"
-        val comment = api.graphQL<ReplyThreadData>(mutation, mapOf("input" to JsonObject(mapOf(
-            "pullRequestReviewThreadId" to JsonPrimitive(threadId), "body" to JsonPrimitive(body),
-        )))).addPullRequestReviewThreadReply?.comment ?: error("Reply was not created")
-        toReviewComment(comment)
-    }
+    suspend fun requestReviews(id: String, userIds: List<String>): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(
+            RequestPullRequestReviewsMutation(
+                RequestReviewsInput(
+                    pullRequestId = id,
+                    userIds = Optional.present(userIds),
+                    botIds = Optional.present(emptyList()),
+                    teamIds = Optional.present(emptyList()),
+                    union = Optional.present(false),
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { }
+        }
 
-    suspend fun setThreadResolved(threadId: String, resolved: Boolean): ApiResult<Unit> = safeCall {
-        val name = if (resolved) "resolveReviewThread" else "unresolveReviewThread"
-        val type = if (resolved) "ResolveReviewThreadInput" else "UnresolveReviewThreadInput"
-        val mutation = "mutation UpdateReviewThread(${'$'}input: $type!) { $name(input: ${'$'}input) { thread { id isResolved } } }"
-        with(api.graphQL<ReviewThreadMutationData>(mutation, mapOf("input" to JsonObject(mapOf("threadId" to JsonPrimitive(threadId)))))) { }
-    }
+    suspend fun replyToThread(threadId: String, body: String): ApiResult<RepoPullRequestReviewComment> =
+        when (val result = apolloClient.mutation(
+            ReplyPullRequestThreadMutation(
+                AddPullRequestReviewThreadReplyInput(pullRequestReviewThreadId = threadId, body = body),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                toReviewComment(result.data.addPullRequestReviewThreadReply?.comment?.pullRequestReviewCommentFields ?: error("Reply was not created"))
+            }
+        }
 
-    suspend fun updateSubscription(id: String, subscribed: Boolean): ApiResult<String?> = safeCall {
-        val mutation = "mutation UpdatePullRequestSubscription(${'$'}input: UpdateSubscriptionInput!) { updateSubscription(input: ${'$'}input) { subscribable { viewerSubscription } } }"
-        api.graphQL<UpdatePullRequestSubscriptionData>(mutation, mapOf("input" to JsonObject(mapOf(
-            "subscribableId" to JsonPrimitive(id),
-            "state" to JsonPrimitive(if (subscribed) "SUBSCRIBED" else "UNSUBSCRIBED"),
-        )))).updateSubscription?.subscribable?.viewerSubscription
-    }
+    suspend fun setThreadResolved(threadId: String, resolved: Boolean): ApiResult<Unit> =
+        if (resolved) {
+            when (val result = apolloClient.mutation(
+                ResolveReviewThreadMutation(ResolveReviewThreadInput(threadId = threadId)),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> result
+                is ApiResult.Success -> safeCall { }
+            }
+        } else {
+            when (val result = apolloClient.mutation(
+                UnresolveReviewThreadMutation(UnresolveReviewThreadInput(threadId = threadId)),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> result
+                is ApiResult.Success -> safeCall { }
+            }
+        }
 
-    private suspend fun simplePullRequestMutation(
-        mutationName: String,
-        inputType: String,
-        key: String,
-        id: String,
-        selector: (PullRequestMutationsData) -> PullRequestNode?,
-    ): ApiResult<RepoPullRequest> = mutatePullRequest(
-        mutationName, inputType, JsonObject(mapOf(key to JsonPrimitive(id))), selector,
-    )
+    suspend fun updateSubscription(id: String, subscribed: Boolean): ApiResult<String?> =
+        when (val result = apolloClient.mutation(
+            UpdatePullRequestSubscriptionMutation(
+                UpdateSubscriptionInput(
+                    subscribableId = id,
+                    state = if (subscribed) SubscriptionState.SUBSCRIBED else SubscriptionState.UNSUBSCRIBED,
+                ),
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                result.data.updateSubscription?.subscribable?.viewerSubscription?.rawValue
+            }
+        }
 
-    private suspend fun mutatePullRequest(
-        mutationName: String,
-        inputType: String,
-        input: JsonObject,
-        selector: (PullRequestMutationsData) -> PullRequestNode?,
-    ): ApiResult<RepoPullRequest> = safeCall {
-        val mutation = "mutation RepoPullRequestMutation(${'$'}input: $inputType!) { $mutationName(input: ${'$'}input) { pullRequest { ${pullRequestFields()} } } }"
-        val data = api.graphQL<PullRequestMutationsData>(mutation, mapOf("input" to input))
-        toPullRequest(selector(data) ?: error("Pull request mutation failed"))
-    }
-
-    private fun repoVariables(owner: String, name: String) = mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name))
-
-    private fun parsePermission(value: String?) = value?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() } ?: RepoPermission.NONE
     private fun encode(value: String) = URLEncoder.encode(value, StandardCharsets.UTF_8.toString()).replace("+", "%20")
     private fun parseCreationPolicy(value: String?) = value?.let { runCatching { PullRequestCreationPolicy.valueOf(it) }.getOrNull() } ?: PullRequestCreationPolicy.UNKNOWN
 
     private fun states(value: RepoPullRequestStateFilter) = when (value) {
-        RepoPullRequestStateFilter.OPEN -> listOf("OPEN")
-        RepoPullRequestStateFilter.CLOSED -> listOf("CLOSED")
-        RepoPullRequestStateFilter.MERGED -> listOf("MERGED")
-        RepoPullRequestStateFilter.ALL -> listOf("OPEN", "CLOSED", "MERGED")
+        RepoPullRequestStateFilter.OPEN -> listOf(com.gitmob.app.graphql.type.PullRequestState.OPEN)
+        RepoPullRequestStateFilter.CLOSED -> listOf(com.gitmob.app.graphql.type.PullRequestState.CLOSED)
+        RepoPullRequestStateFilter.MERGED -> listOf(com.gitmob.app.graphql.type.PullRequestState.MERGED)
+        RepoPullRequestStateFilter.ALL -> listOf(
+            com.gitmob.app.graphql.type.PullRequestState.OPEN,
+            com.gitmob.app.graphql.type.PullRequestState.CLOSED,
+            com.gitmob.app.graphql.type.PullRequestState.MERGED,
+        )
     }
 
-    private fun order(value: RepoPullRequestSort): JsonObject {
+    private fun order(value: RepoPullRequestSort): IssueOrder {
         val field = when (value) {
-            RepoPullRequestSort.CREATED_ASC, RepoPullRequestSort.CREATED_DESC -> "CREATED_AT"
-            RepoPullRequestSort.COMMENTS_ASC, RepoPullRequestSort.COMMENTS_DESC -> "COMMENTS"
-            else -> "UPDATED_AT"
+            RepoPullRequestSort.CREATED_ASC, RepoPullRequestSort.CREATED_DESC -> IssueOrderField.CREATED_AT
+            RepoPullRequestSort.COMMENTS_ASC, RepoPullRequestSort.COMMENTS_DESC -> IssueOrderField.COMMENTS
+            else -> IssueOrderField.UPDATED_AT
         }
-        return JsonObject(mapOf(
-            "field" to JsonPrimitive(field),
-            "direction" to JsonPrimitive(if (value.name.endsWith("ASC")) "ASC" else "DESC"),
-        ))
+        return IssueOrder(field = field, direction = if (value.name.endsWith("ASC")) OrderDirection.ASC else OrderDirection.DESC)
     }
 
-    private fun toPullRequest(node: PullRequestNode) = RepoPullRequest(
+    private fun allowedMergeMethods(mergeCommit: Boolean, squash: Boolean, rebase: Boolean) = buildSet {
+        if (mergeCommit) add(RepoPullRequestMergeMethod.MERGE)
+        if (squash) add(RepoPullRequestMergeMethod.SQUASH)
+        if (rebase) add(RepoPullRequestMergeMethod.REBASE)
+    }
+
+    private fun PullRequestFields.Author.toDomain() = SimpleUser(login, null, avatarUrl, null)
+    private fun PullRequestFields.Editor.toDomain() = SimpleUser(login, null, avatarUrl, null)
+    private fun PullRequestCommentFields.Author.toDomain() = SimpleUser(login, null, avatarUrl, null)
+    private fun PullRequestCommentFields.Editor.toDomain() = SimpleUser(login, null, avatarUrl, null)
+    private fun PullRequestReviewFields.Author.toDomain() = SimpleUser(login, null, avatarUrl, null)
+    private fun PullRequestReviewFields.Editor.toDomain() = SimpleUser(login, null, avatarUrl, null)
+    private fun PullRequestReviewCommentFields.Author.toDomain() = SimpleUser(login, null, avatarUrl, null)
+    private fun PullRequestReviewCommentFields.Editor.toDomain() = SimpleUser(login, null, avatarUrl, null)
+
+    private fun association(value: com.gitmob.app.graphql.type.CommentAuthorAssociation) =
+        runCatching { CommentAuthorAssociation.valueOf(value.rawValue) }.getOrDefault(CommentAuthorAssociation.NONE)
+
+    private fun toPullRequest(node: PullRequestFields) = RepoPullRequest(
         id = node.id,
         number = node.number,
         title = node.title,
         body = node.body,
         bodyHtml = node.bodyHTML,
-        state = RepoPullRequestState.valueOf(node.state),
+        state = RepoPullRequestState.valueOf(node.state.rawValue),
         isDraft = node.isDraft,
         locked = node.locked,
         author = node.author?.toDomain(),
@@ -486,17 +630,17 @@ class RepoPullRequestRepository @Inject constructor(
         baseRefName = node.baseRefName,
         headRefName = node.headRefName,
         headRepositoryNameWithOwner = node.headRepository?.nameWithOwner,
-        commentCount = node.comments?.totalCount ?: node.totalCommentsCount ?: 0,
+        commentCount = node.totalCommentsCount ?: 0,
         additions = node.additions,
         deletions = node.deletions,
         changedFiles = node.changedFiles,
-        labels = node.labels?.nodes.orEmpty().map(::toLabel),
-        assignees = node.assignees?.nodes.orEmpty().map(::toUser),
-        milestone = node.milestone?.let(::toMilestone),
-        mergeable = node.mergeable,
-        mergeStateStatus = node.mergeStateStatus,
-        reviewDecision = node.reviewDecision,
-        statusCheckState = node.statusCheckRollup?.state,
+        labels = node.labels?.nodes.orEmpty().filterNotNull().map { IssueLabel(it.id, it.name, it.color, it.description) },
+        assignees = node.assignees.nodes.orEmpty().filterNotNull().map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) },
+        milestone = node.milestone?.let { IssueMilestone(it.id, it.number, it.title, it.state.rawValue, it.dueOn) },
+        mergeable = node.mergeable.rawValue,
+        mergeStateStatus = node.mergeStateStatus.rawValue,
+        reviewDecision = node.reviewDecision?.rawValue,
+        statusCheckState = node.statusCheckRollup?.state?.rawValue,
         viewerCanClose = node.viewerCanClose,
         viewerCanReopen = node.viewerCanReopen,
         viewerCanUpdate = node.viewerCanUpdate,
@@ -506,304 +650,34 @@ class RepoPullRequestRepository @Inject constructor(
         viewerCanEnableAutoMerge = node.viewerCanEnableAutoMerge,
         viewerCanDisableAutoMerge = node.viewerCanDisableAutoMerge,
         viewerCanUpdateBranch = node.viewerCanUpdateBranch,
-        viewerSubscription = node.viewerSubscription,
+        viewerSubscription = node.viewerSubscription?.rawValue,
         autoMergeEnabled = node.autoMergeRequest != null,
         url = node.url,
         authorAssociation = association(node.authorAssociation),
         editSummary = ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.toDomain()),
     )
 
-    private fun toComment(node: PullRequestCommentNode) = RepoPullRequestComment(
+    private fun toComment(node: PullRequestCommentFields) = RepoPullRequestComment(
         node.id, node.author?.toDomain(), node.body, node.bodyHTML, node.createdAt, node.updatedAt,
         node.viewerCanUpdate, node.viewerCanDelete, node.viewerCanReact, node.url, association(node.authorAssociation),
         ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.toDomain()),
     )
 
-    private fun toReview(node: PullRequestReviewNode) = RepoPullRequestReview(
+    private fun toReview(node: PullRequestReviewFields) = RepoPullRequestReview(
         id = node.id, author = node.author?.toDomain(), body = node.body, bodyHtml = node.bodyHTML,
-        state = node.state, submittedAt = node.submittedAt, viewerCanUpdate = node.viewerCanUpdate,
+        state = node.state.rawValue, submittedAt = node.submittedAt, viewerCanUpdate = node.viewerCanUpdate,
         viewerCanDelete = node.viewerCanDelete, url = node.url,
         authorAssociation = association(node.authorAssociation),
         editSummary = ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.toDomain()),
     )
 
-    private fun toReviewComment(node: PullRequestReviewCommentNode) = RepoPullRequestReviewComment(
+    private fun toReviewComment(node: PullRequestReviewCommentFields) = RepoPullRequestReviewComment(
         node.id, node.author?.toDomain(), node.body, node.bodyHTML, node.path, node.line, node.originalLine,
         node.outdated, node.createdAt, node.viewerCanUpdate, node.viewerCanDelete,
         node.url, association(node.authorAssociation),
         ConversationEditSummary(node.includesCreatedEdit, node.lastEditedAt, node.editor?.toDomain()),
     )
-
-    private fun toThread(node: PullRequestReviewThreadNode) = RepoPullRequestReviewThread(
-        node.id, node.path, node.line, node.isResolved, node.isOutdated, node.viewerCanReply,
-        node.viewerCanResolve, node.viewerCanUnresolve, node.comments.nodes.map(::toReviewComment),
-    )
-
-    private fun ActorNode.toDomain() = SimpleUser(login, null, avatarUrl, null)
-    private fun association(value: String) = runCatching { CommentAuthorAssociation.valueOf(value) }.getOrDefault(CommentAuthorAssociation.NONE)
-    private fun toUser(node: UserNode) = SimpleUser(node.login, node.name, node.avatarUrl, node.bio, node.id)
-    private fun toLabel(node: LabelNode) = IssueLabel(node.id, node.name, node.color, node.description)
-    private fun toMilestone(node: MilestoneNode) = IssueMilestone(node.id, node.number, node.title, node.state, node.dueOn)
-    private fun toBranch(node: RefNode) = RepoBranch(node.id, node.name, false, node.target?.oid)
-
-    private fun PullRequestMetadataRepositoryNode.toHeadRepository(owner: String, name: String) = RepoPullRequestHeadRepository(
-        id = id, owner = owner, name = name, branches = refs?.nodes.orEmpty().map(::toBranch),
-    )
-
-    private fun PullRequestsRepositoryNode.allowedMergeMethods() = buildSet {
-        if (mergeCommitAllowed) add(RepoPullRequestMergeMethod.MERGE)
-        if (squashMergeAllowed) add(RepoPullRequestMergeMethod.SQUASH)
-        if (rebaseMergeAllowed) add(RepoPullRequestMergeMethod.REBASE)
-    }
-
-    private fun PullRequestDetailRepositoryNode.allowedMergeMethods() = buildSet {
-        if (mergeCommitAllowed) add(RepoPullRequestMergeMethod.MERGE)
-        if (squashMergeAllowed) add(RepoPullRequestMergeMethod.SQUASH)
-        if (rebaseMergeAllowed) add(RepoPullRequestMergeMethod.REBASE)
-    }
-
-    companion object {
-        private fun pullRequestFields() = """
-            id url number title body bodyHTML state isDraft locked createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl }
-            author { login avatarUrl } authorAssociation
-            baseRefName headRefName headRepository { nameWithOwner }
-            totalCommentsCount additions deletions changedFiles mergeable mergeStateStatus reviewDecision
-            labels(first: ${PageSize.METADATA}) { nodes { id name color description } }
-            assignees(first: ${PageSize.METADATA}) { nodes { id login name avatarUrl bio } }
-            milestone { id number title state dueOn }
-            statusCheckRollup { state }
-            autoMergeRequest { enabledAt }
-            viewerCanClose viewerCanReopen viewerCanUpdate viewerCanLabel viewerCanAssign
-            viewerCanSubscribe viewerCanEnableAutoMerge viewerCanDisableAutoMerge viewerCanUpdateBranch viewerSubscription
-        """.trimIndent()
-
-        private fun commentFields() = """
-            id url author { login avatarUrl } authorAssociation body bodyHTML createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl }
-            viewerCanUpdate viewerCanDelete viewerCanReact
-        """.trimIndent()
-
-        private fun reviewCommentFields() = """
-            id url author { login avatarUrl } authorAssociation body bodyHTML path line originalLine outdated createdAt updatedAt includesCreatedEdit lastEditedAt editor { login avatarUrl }
-            viewerCanUpdate viewerCanDelete
-        """.trimIndent()
-    }
 }
-
-@Serializable private data class PageInfoNode(val hasNextPage: Boolean = false, val endCursor: String? = null)
-@Serializable private data class ActorNode(val login: String, val avatarUrl: String? = null)
-@Serializable private data class UserNode(val id: String, val login: String, val name: String? = null, val avatarUrl: String? = null, val bio: String? = null)
-@Serializable private data class LabelNode(val id: String, val name: String, val color: String, val description: String? = null)
-@Serializable private data class MilestoneNode(val id: String, val number: Int, val title: String, val state: String, val dueOn: String? = null)
-@Serializable private data class RefTargetNode(val oid: String? = null)
-@Serializable private data class RefNode(val id: String, val name: String, val target: RefTargetNode? = null)
-@Serializable private data class RefConnectionNode(val nodes: List<RefNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
-@Serializable private data class DefaultBranchNode(val name: String)
-@Serializable private data class LabelConnectionNode(val nodes: List<LabelNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
-@Serializable private data class UserConnectionNode(val nodes: List<UserNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
-@Serializable private data class MilestoneConnectionNode(val nodes: List<MilestoneNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
-@Serializable private data class HeadRepositoryNode(val nameWithOwner: String? = null)
-@Serializable private data class StatusCheckRollupNode(val state: String? = null)
-@Serializable private data class AutoMergeRequestNode(val enabledAt: String? = null)
-
-@Serializable private data class PullRequestCommentNode(
-    val id: String,
-    val url: String = "",
-    val author: ActorNode? = null,
-    val authorAssociation: String = "NONE",
-    val body: String = "",
-    val bodyHTML: String = "",
-    val createdAt: String = "",
-    val updatedAt: String = "",
-    val includesCreatedEdit: Boolean = false,
-    val lastEditedAt: String? = null,
-    val editor: ActorNode? = null,
-    val viewerCanUpdate: Boolean = false,
-    val viewerCanDelete: Boolean = false,
-    val viewerCanReact: Boolean = false,
-)
-@Serializable private data class PullRequestCommentConnectionNode(
-    val totalCount: Int = 0,
-    val nodes: List<PullRequestCommentNode> = emptyList(),
-    val pageInfo: PageInfoNode? = null,
-)
-@Serializable private data class PullRequestReviewNode(
-    val id: String,
-    val url: String = "",
-    val author: ActorNode? = null,
-    val authorAssociation: String = "NONE",
-    val body: String = "",
-    val bodyHTML: String = "",
-    val state: String = "COMMENTED",
-    val submittedAt: String? = null,
-    val createdAt: String = "",
-    val updatedAt: String = "",
-    val includesCreatedEdit: Boolean = false,
-    val lastEditedAt: String? = null,
-    val editor: ActorNode? = null,
-    val viewerCanUpdate: Boolean = false,
-    val viewerCanDelete: Boolean = false,
-)
-@Serializable private data class PullRequestReviewConnectionNode(val nodes: List<PullRequestReviewNode> = emptyList())
-@Serializable private data class PullRequestReviewCommentNode(
-    val id: String,
-    val url: String = "",
-    val author: ActorNode? = null,
-    val authorAssociation: String = "NONE",
-    val body: String = "",
-    val bodyHTML: String = "",
-    val path: String = "",
-    val line: Int? = null,
-    val originalLine: Int? = null,
-    val outdated: Boolean = false,
-    val createdAt: String = "",
-    val updatedAt: String = "",
-    val includesCreatedEdit: Boolean = false,
-    val lastEditedAt: String? = null,
-    val editor: ActorNode? = null,
-    val viewerCanUpdate: Boolean = false,
-    val viewerCanDelete: Boolean = false,
-)
-@Serializable private data class PullRequestReviewCommentConnectionNode(val nodes: List<PullRequestReviewCommentNode> = emptyList())
-@Serializable private data class PullRequestReviewThreadNode(
-    val id: String,
-    val path: String,
-    val line: Int? = null,
-    val isResolved: Boolean = false,
-    val isOutdated: Boolean = false,
-    val viewerCanReply: Boolean = false,
-    val viewerCanResolve: Boolean = false,
-    val viewerCanUnresolve: Boolean = false,
-    val comments: PullRequestReviewCommentConnectionNode = PullRequestReviewCommentConnectionNode(),
-)
-@Serializable private data class PullRequestReviewThreadConnectionNode(val nodes: List<PullRequestReviewThreadNode> = emptyList())
-@Serializable private data class CommitAuthorNode(val user: ActorNode? = null)
-@Serializable private data class CommitNode(val oid: String, val messageHeadline: String, val committedDate: String, val author: CommitAuthorNode? = null)
-@Serializable private data class PullRequestCommitNode(val commit: CommitNode)
-@Serializable private data class PullRequestCommitConnectionNode(val nodes: List<PullRequestCommitNode> = emptyList())
-
-@Serializable private data class PullRequestNode(
-    val id: String,
-    val url: String = "",
-    val number: Int,
-    val title: String,
-    val body: String = "",
-    val bodyHTML: String = "",
-    val state: String,
-    val isDraft: Boolean = false,
-    val locked: Boolean = false,
-    val author: ActorNode? = null,
-    val authorAssociation: String = "NONE",
-    val createdAt: String,
-    val updatedAt: String,
-    val includesCreatedEdit: Boolean = false,
-    val lastEditedAt: String? = null,
-    val editor: ActorNode? = null,
-    val baseRefName: String,
-    val headRefName: String,
-    val headRepository: HeadRepositoryNode? = null,
-    val totalCommentsCount: Int? = null,
-    val additions: Int = 0,
-    val deletions: Int = 0,
-    val changedFiles: Int = 0,
-    val labels: LabelConnectionNode? = null,
-    val assignees: UserConnectionNode? = null,
-    val milestone: MilestoneNode? = null,
-    val mergeable: String = "UNKNOWN",
-    val mergeStateStatus: String = "UNKNOWN",
-    val reviewDecision: String? = null,
-    val statusCheckRollup: StatusCheckRollupNode? = null,
-    val autoMergeRequest: AutoMergeRequestNode? = null,
-    val viewerCanClose: Boolean = false,
-    val viewerCanReopen: Boolean = false,
-    val viewerCanUpdate: Boolean = false,
-    val viewerCanLabel: Boolean = false,
-    val viewerCanAssign: Boolean = false,
-    val viewerCanSubscribe: Boolean = false,
-    val viewerCanEnableAutoMerge: Boolean = false,
-    val viewerCanDisableAutoMerge: Boolean = false,
-    val viewerCanUpdateBranch: Boolean = false,
-    val viewerSubscription: String? = null,
-    val comments: PullRequestCommentConnectionNode? = null,
-    val reviews: PullRequestReviewConnectionNode? = null,
-    val reviewThreads: PullRequestReviewThreadConnectionNode? = null,
-    val commits: PullRequestCommitConnectionNode? = null,
-)
-
-@Serializable private data class PullRequestConnectionNode(val totalCount: Int = 0, val nodes: List<PullRequestNode> = emptyList(), val pageInfo: PageInfoNode)
-@Serializable private data class PullRequestsQueryData(val repository: PullRequestsRepositoryNode? = null)
-@Serializable private data class PullRequestsRepositoryNode(
-    val id: String,
-    val viewerPermission: String? = null,
-    val hasPullRequestsEnabled: Boolean = false,
-    val pullRequestCreationPolicy: String? = null,
-    val defaultBranchRef: DefaultBranchNode? = null,
-    val mergeCommitAllowed: Boolean = false,
-    val squashMergeAllowed: Boolean = false,
-    val rebaseMergeAllowed: Boolean = false,
-    val pullRequests: PullRequestConnectionNode,
-)
-
-@Serializable private data class PullRequestDetailQueryData(val repository: PullRequestDetailRepositoryNode? = null)
-@Serializable private data class PullRequestDetailRepositoryNode(
-    val id: String,
-    val viewerPermission: String? = null,
-    val mergeCommitAllowed: Boolean = false,
-    val squashMergeAllowed: Boolean = false,
-    val rebaseMergeAllowed: Boolean = false,
-    val pullRequest: PullRequestNode? = null,
-)
-
-@Serializable private data class ViewerNode(val login: String = "")
-@Serializable private data class OwnerNode(val login: String)
-@Serializable private data class ForkNode(val id: String, val name: String, val owner: OwnerNode, val refs: RefConnectionNode? = null)
-@Serializable private data class ForkConnectionNode(val nodes: List<ForkNode> = emptyList(), val pageInfo: PageInfoNode = PageInfoNode())
-@Serializable private data class PullRequestMetadataQueryData(val viewer: ViewerNode = ViewerNode(), val repository: PullRequestMetadataRepositoryNode? = null)
-@Serializable private data class PullRequestMetadataRepositoryNode(
-    val id: String = "",
-    val defaultBranchRef: DefaultBranchNode? = null,
-    val refs: RefConnectionNode? = null,
-    val forks: ForkConnectionNode? = null,
-    val labels: LabelConnectionNode? = null,
-    val milestones: MilestoneConnectionNode? = null,
-    val assignableUsers: UserConnectionNode? = null,
-    val mentionableUsers: UserConnectionNode? = null,
-)
-
-@Serializable private data class RepoLabelsQueryData(val repository: RepoLabelsRepositoryNode? = null)
-@Serializable private data class RepoLabelsRepositoryNode(val labels: LabelConnectionNode? = null)
-
-@Serializable private data class PullRequestPayload(val pullRequest: PullRequestNode? = null)
-@Serializable private data class PullRequestMutationsData(
-    val createPullRequest: PullRequestPayload? = null,
-    val updatePullRequest: PullRequestPayload? = null,
-    val closePullRequest: PullRequestPayload? = null,
-    val reopenPullRequest: PullRequestPayload? = null,
-    val convertPullRequestToDraft: PullRequestPayload? = null,
-    val markPullRequestReadyForReview: PullRequestPayload? = null,
-    val updatePullRequestBranch: PullRequestPayload? = null,
-    val mergePullRequest: PullRequestPayload? = null,
-    val enablePullRequestAutoMerge: PullRequestPayload? = null,
-    val disablePullRequestAutoMerge: PullRequestPayload? = null,
-)
-
-@Serializable private data class CommentEdgeNode(val node: PullRequestCommentNode? = null)
-@Serializable private data class AddCommentPayload(val commentEdge: CommentEdgeNode? = null)
-@Serializable private data class AddPullRequestCommentData(val addComment: AddCommentPayload? = null)
-@Serializable private data class UpdateCommentPayload(val issueComment: PullRequestCommentNode? = null)
-@Serializable private data class UpdatePullRequestCommentData(val updateIssueComment: UpdateCommentPayload? = null)
-@Serializable private data class DeletePullRequestCommentData(val deleteIssueComment: ClientMutationPayload? = null)
-@Serializable private data class ClientMutationPayload(val clientMutationId: String? = null)
-@Serializable private data class AddReviewPayload(val pullRequestReview: PullRequestReviewNode? = null)
-@Serializable private data class AddPullRequestReviewData(val addPullRequestReview: AddReviewPayload? = null)
-@Serializable private data class RequestReviewsData(val requestReviews: ClientMutationPayload? = null)
-@Serializable private data class ReplyThreadPayload(val comment: PullRequestReviewCommentNode? = null)
-@Serializable private data class ReplyThreadData(val addPullRequestReviewThreadReply: ReplyThreadPayload? = null)
-@Serializable private data class ReviewThreadMutationData(val resolveReviewThread: ReviewThreadPayload? = null, val unresolveReviewThread: ReviewThreadPayload? = null)
-@Serializable private data class ReviewThreadPayload(val thread: ReviewThreadStateNode? = null)
-@Serializable private data class ReviewThreadStateNode(val id: String, val isResolved: Boolean)
-@Serializable private data class SubscriptionNode(val viewerSubscription: String? = null)
-@Serializable private data class SubscriptionPayload(val subscribable: SubscriptionNode? = null)
-@Serializable private data class UpdatePullRequestSubscriptionData(val updateSubscription: SubscriptionPayload? = null)
 
 @Serializable private data class RestPullRequestFile(
     val filename: String,

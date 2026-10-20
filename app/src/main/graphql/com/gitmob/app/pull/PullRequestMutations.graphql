@@ -1,0 +1,152 @@
+# PR 各 mutation。返回体统一用 PullRequestFields 片段，commentCount 取 totalCommentsCount。
+mutation CreateRepoPullRequest($input: CreatePullRequestInput!) {
+    createPullRequest(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation UpdateRepoPullRequest($input: UpdatePullRequestInput!) {
+    updatePullRequest(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation CloseRepoPullRequest($input: ClosePullRequestInput!) {
+    closePullRequest(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation ReopenRepoPullRequest($input: ReopenPullRequestInput!) {
+    reopenPullRequest(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation ConvertPullRequestToDraft($input: ConvertPullRequestToDraftInput!) {
+    convertPullRequestToDraft(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation MarkPullRequestReadyForReview($input: MarkPullRequestReadyForReviewInput!) {
+    markPullRequestReadyForReview(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation UpdateRepoPullRequestBranch($input: UpdatePullRequestBranchInput!) {
+    updatePullRequestBranch(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation MergeRepoPullRequest($input: MergePullRequestInput!) {
+    mergePullRequest(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation EnablePullRequestAutoMerge($input: EnablePullRequestAutoMergeInput!) {
+    enablePullRequestAutoMerge(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation DisablePullRequestAutoMerge($input: DisablePullRequestAutoMergeInput!) {
+    disablePullRequestAutoMerge(input: $input) {
+        pullRequest {
+            ...PullRequestFields
+        }
+    }
+}
+
+mutation AddPullRequestComment($input: AddCommentInput!) {
+    addComment(input: $input) {
+        commentEdge {
+            node {
+                ...PullRequestCommentFields
+            }
+        }
+    }
+}
+
+mutation UpdatePullRequestComment($input: UpdateIssueCommentInput!) {
+    updateIssueComment(input: $input) {
+        issueComment {
+            ...PullRequestCommentFields
+        }
+    }
+}
+
+mutation DeletePullRequestComment($input: DeleteIssueCommentInput!) {
+    deleteIssueComment(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation AddPullRequestReview($input: AddPullRequestReviewInput!) {
+    addPullRequestReview(input: $input) {
+        pullRequestReview {
+            ...PullRequestReviewFields
+        }
+    }
+}
+
+mutation RequestPullRequestReviews($input: RequestReviewsInput!) {
+    requestReviews(input: $input) {
+        clientMutationId
+    }
+}
+
+mutation ReplyPullRequestThread($input: AddPullRequestReviewThreadReplyInput!) {
+    addPullRequestReviewThreadReply(input: $input) {
+        comment {
+            ...PullRequestReviewCommentFields
+        }
+    }
+}
+
+mutation ResolveReviewThread($input: ResolveReviewThreadInput!) {
+    resolveReviewThread(input: $input) {
+        thread {
+            id
+            isResolved
+        }
+    }
+}
+
+mutation UnresolveReviewThread($input: UnresolveReviewThreadInput!) {
+    unresolveReviewThread(input: $input) {
+        thread {
+            id
+            isResolved
+        }
+    }
+}
+
+mutation UpdatePullRequestSubscription($input: UpdateSubscriptionInput!) {
+    updateSubscription(input: $input) {
+        subscribable {
+            viewerSubscription
+        }
+    }
+}

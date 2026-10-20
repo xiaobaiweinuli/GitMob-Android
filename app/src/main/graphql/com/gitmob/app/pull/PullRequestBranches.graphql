@@ -1,0 +1,41 @@
+# 分支列表（创建 PR 选择 base/head、分支页）。first: 50 = PageSize.BRANCHES。
+# getBranches 忽略 pageInfo；loadAllRefs 用 pageInfo 翻页。
+query PullRequestBranches($owner: String!, $name: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+        defaultBranchRef {
+            name
+        }
+        refs(refPrefix: "refs/heads/", first: 50, after: $after) {
+            nodes {
+                id
+                name
+                target {
+                    oid
+                }
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+    }
+}
+
+# 可提审用户（mentionableUsers）分页，创建 PR 的 reviewer 候选。
+query RepoMentionableUsers($owner: String!, $name: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+        mentionableUsers(first: 20, after: $after) {
+            nodes {
+                id
+                login
+                name
+                avatarUrl
+                bio
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+    }
+}

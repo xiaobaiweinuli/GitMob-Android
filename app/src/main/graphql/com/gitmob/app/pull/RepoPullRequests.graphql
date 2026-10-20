@@ -1,0 +1,86 @@
+# PR 分页列表。first: 20 = PageSize.REPO_ISSUES。
+query RepoPullRequests($owner: String!, $name: String!, $after: String, $states: [PullRequestState!], $orderBy: IssueOrder!, $labels: [String!]) {
+    repository(owner: $owner, name: $name) {
+        id
+        viewerPermission
+        hasPullRequestsEnabled
+        pullRequestCreationPolicy
+        defaultBranchRef {
+            name
+        }
+        mergeCommitAllowed
+        squashMergeAllowed
+        rebaseMergeAllowed
+        pullRequests(first: 20, after: $after, states: $states, labels: $labels, orderBy: $orderBy) {
+            totalCount
+            nodes {
+                ...PullRequestFields
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+    }
+}
+
+# PR 详情：评论分页 + reviews + reviewThreads + commits。
+# comments first: 20 = ISSUE_COMMENTS；reviews 30；threads 50；thread 评论 50；commits 50。
+query RepoPullRequestDetail($owner: String!, $name: String!, $number: Int!, $after: String) {
+    repository(owner: $owner, name: $name) {
+        id
+        viewerPermission
+        mergeCommitAllowed
+        squashMergeAllowed
+        rebaseMergeAllowed
+        pullRequest(number: $number) {
+            ...PullRequestFields
+            comments(first: 20, after: $after) {
+                nodes {
+                    ...PullRequestCommentFields
+                }
+                pageInfo {
+                    hasNextPage
+                    endCursor
+                }
+            }
+            reviews(first: 30) {
+                nodes {
+                    ...PullRequestReviewFields
+                }
+            }
+            reviewThreads(first: 50) {
+                nodes {
+                    id
+                    path
+                    line
+                    isResolved
+                    isOutdated
+                    viewerCanReply
+                    viewerCanResolve
+                    viewerCanUnresolve
+                    comments(first: 50) {
+                        nodes {
+                            ...PullRequestReviewCommentFields
+                        }
+                    }
+                }
+            }
+            commits(first: 50) {
+                nodes {
+                    commit {
+                        oid
+                        messageHeadline
+                        committedDate
+                        author {
+                            user {
+                                login
+                                avatarUrl
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

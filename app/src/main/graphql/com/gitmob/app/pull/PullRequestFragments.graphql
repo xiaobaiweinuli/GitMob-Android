@@ -1,0 +1,152 @@
+# PR 公共字段片段（列表/详情/各 mutation 返回体共用）。
+# commentCount 统一取 totalCommentsCount。labels/assignees first: 20 = PageSize.METADATA。
+fragment PullRequestFields on PullRequest {
+    id
+    url
+    number
+    title
+    body
+    bodyHTML
+    state
+    isDraft
+    locked
+    createdAt
+    updatedAt
+    includesCreatedEdit
+    lastEditedAt
+    editor {
+        login
+        avatarUrl
+    }
+    author {
+        login
+        avatarUrl
+    }
+    authorAssociation
+    baseRefName
+    headRefName
+    headRepository {
+        nameWithOwner
+    }
+    totalCommentsCount
+    additions
+    deletions
+    changedFiles
+    mergeable
+    mergeStateStatus
+    reviewDecision
+    labels(first: 20) {
+        nodes {
+            id
+            name
+            color
+            description
+        }
+    }
+    assignees(first: 20) {
+        nodes {
+            id
+            login
+            name
+            avatarUrl
+            bio
+        }
+    }
+    milestone {
+        id
+        number
+        title
+        state
+        dueOn
+    }
+    statusCheckRollup {
+        state
+    }
+    autoMergeRequest {
+        enabledAt
+    }
+    viewerCanClose
+    viewerCanReopen
+    viewerCanUpdate
+    viewerCanLabel
+    viewerCanAssign
+    viewerCanSubscribe
+    viewerCanEnableAutoMerge
+    viewerCanDisableAutoMerge
+    viewerCanUpdateBranch
+    viewerSubscription
+}
+
+# PR 评论（IssueComment 类型）公共字段。
+fragment PullRequestCommentFields on IssueComment {
+    id
+    url
+    author {
+        login
+        avatarUrl
+    }
+    authorAssociation
+    body
+    bodyHTML
+    createdAt
+    updatedAt
+    includesCreatedEdit
+    lastEditedAt
+    editor {
+        login
+        avatarUrl
+    }
+    viewerCanUpdate
+    viewerCanDelete
+    viewerCanReact
+}
+
+# PR Review 公共字段。
+fragment PullRequestReviewFields on PullRequestReview {
+    id
+    url
+    author {
+        login
+        avatarUrl
+    }
+    authorAssociation
+    body
+    bodyHTML
+    state
+    submittedAt
+    includesCreatedEdit
+    lastEditedAt
+    editor {
+        login
+        avatarUrl
+    }
+    viewerCanUpdate
+    viewerCanDelete
+}
+
+# PR Review 行内评论公共字段。
+fragment PullRequestReviewCommentFields on PullRequestReviewComment {
+    id
+    url
+    author {
+        login
+        avatarUrl
+    }
+    authorAssociation
+    body
+    bodyHTML
+    path
+    line
+    originalLine
+    outdated
+    createdAt
+    updatedAt
+    includesCreatedEdit
+    lastEditedAt
+    editor {
+        login
+        avatarUrl
+    }
+    viewerCanUpdate
+    viewerCanDelete
+}

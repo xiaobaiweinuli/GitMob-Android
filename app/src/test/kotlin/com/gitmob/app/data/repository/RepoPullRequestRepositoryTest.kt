@@ -1,8 +1,11 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.CommentAuthorAssociation
 import com.gitmob.app.data.model.CreateRepoPullRequestInput
 import com.gitmob.app.data.model.RepoPullRequestFilter
@@ -38,6 +41,11 @@ class RepoPullRequestRepositoryTest {
                 baseUrl,
                 "$baseUrl/graphql",
             ),
+            ApolloClient.Builder()
+                .serverUrl("$baseUrl/graphql")
+                .okHttpClient(OkHttpClient())
+                .addHttpInterceptor(AuthHttpInterceptor(object : AccessTokenProvider { override suspend fun getToken() = "token" }))
+                .build(),
         )
     }
 
@@ -76,7 +84,8 @@ class RepoPullRequestRepositoryTest {
                     "nodes": [
                       {"id":"LA_1","name":"bug","color":"d73a4a","description":"Something isn't working"},
                       {"id":"LA_2","name":"enhancement","color":"a2eeef","description":"New feature or request"}
-                    ]
+                    ],
+                    "pageInfo":{"hasNextPage":false,"endCursor":null}
                   }
                 }
               }
@@ -195,6 +204,27 @@ class RepoPullRequestRepositoryTest {
         assertEquals("1", request.requestUrl?.queryParameter("per_page"))
     }
 
+    /**
+     * Apollo 对非空字段严格校验，PR 片段请求的全部 Boolean/Int/枚举字段都必须出现在 mock 里；
+     * author/editor 是 Actor 接口，必须带 __typename。
+     */
+    private fun prNodeJson() = """{
+        "id":"PR1","url":"https://github.com/octo/repo/pull/1","number":1,"title":"Fix",
+        "body":"body","bodyHTML":"<p>body</p>","state":"OPEN","isDraft":false,"locked":false,
+        "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z",
+        "includesCreatedEdit":false,"lastEditedAt":null,"editor":null,
+        "author":{"__typename":"User","login":"octo","avatarUrl":"https://example.com/octo.png"},
+        "authorAssociation":"OWNER",
+        "baseRefName":"main","headRefName":"feature","headRepository":{"nameWithOwner":"octo/repo"},
+        "totalCommentsCount":0,"additions":1,"deletions":2,"changedFiles":3,
+        "mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":null,
+        "labels":{"nodes":[]},"assignees":{"nodes":[]},"milestone":null,
+        "statusCheckRollup":null,"autoMergeRequest":null,
+        "viewerCanClose":true,"viewerCanReopen":false,"viewerCanUpdate":true,"viewerCanLabel":true,
+        "viewerCanAssign":true,"viewerCanSubscribe":true,"viewerCanEnableAutoMerge":false,
+        "viewerCanDisableAutoMerge":false,"viewerCanUpdateBranch":false,"viewerSubscription":null
+    }""".trimIndent()
+
     private fun pageJson() = """
         {
           "data": {
@@ -209,30 +239,7 @@ class RepoPullRequestRepositoryTest {
               "rebaseMergeAllowed":true,
               "pullRequests": {
                 "totalCount":1,
-                "nodes":[
-                  {
-                    "id":"PR1",
-                    "url":"https://github.com/octo/repo/pull/1",
-                    "number":1,
-                    "title":"Fix",
-                    "body":"body",
-                    "bodyHTML":"<p>body</p>",
-                    "state":"OPEN",
-                    "isDraft":false,
-                    "locked":false,
-                    "author":{"login":"octo","avatarUrl":"https://example.com/octo.png"},
-                    "authorAssociation":"OWNER",
-                    "createdAt":"2026-01-01T00:00:00Z",
-                    "updatedAt":"2026-01-02T00:00:00Z",
-                    "baseRefName":"main",
-                    "headRefName":"feature",
-                    "headRepository":{"nameWithOwner":"octo/repo"},
-                    "totalCommentsCount":0,
-                    "labels":{"nodes":[]},
-                    "assignees":{"nodes":[]},
-                    "milestone":null
-                  }
-                ],
+                "nodes":[${prNodeJson()}],
                 "pageInfo":{"hasNextPage":false,"endCursor":null}
               }
             }
@@ -240,11 +247,6 @@ class RepoPullRequestRepositoryTest {
         }
     """.trimIndent()
 
-    private fun createPullRequestJson() = """
-        {"data":{"createPullRequest":{"pullRequest":{
-          "id":"PR1","number":1,"title":"Feature","body":"Body","bodyHTML":"<p>Body</p>",
-          "state":"OPEN","createdAt":"2026-08-01T00:00:00Z","updatedAt":"2026-08-01T00:00:00Z",
-          "baseRefName":"main","headRefName":"feature/login"
-        }}}}
-    """.trimIndent()
+    private fun createPullRequestJson() =
+        """{"data":{"createPullRequest":{"pullRequest":${prNodeJson()}}}}"""
 }

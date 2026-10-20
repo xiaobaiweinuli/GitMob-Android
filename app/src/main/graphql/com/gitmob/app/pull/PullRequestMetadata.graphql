@@ -1,0 +1,78 @@
+# 创建 PR 的元数据首页：viewer login + 默认分支 + 各候选列表第一页。
+# 超出第一页的后续翻页分别走 PullRequestBranches / RepoLabels / RepoMilestones /
+# RepoAssignableUsers / RepoMentionableUsers。
+query RepoPullRequestMetadata($owner: String!, $name: String!) {
+    viewer {
+        login
+    }
+    repository(owner: $owner, name: $name) {
+        id
+        defaultBranchRef {
+            name
+        }
+        refs(refPrefix: "refs/heads/", first: 50) {
+            nodes {
+                id
+                name
+                target {
+                    oid
+                }
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+        labels(first: 20) {
+            nodes {
+                id
+                name
+                color
+                description
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+        milestones(first: 20, states: [OPEN]) {
+            nodes {
+                id
+                number
+                title
+                state
+                dueOn
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+        assignableUsers(first: 20) {
+            nodes {
+                id
+                login
+                name
+                avatarUrl
+                bio
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+        mentionableUsers(first: 20) {
+            nodes {
+                id
+                login
+                name
+                avatarUrl
+                bio
+            }
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+    }
+}
