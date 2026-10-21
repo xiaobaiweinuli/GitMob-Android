@@ -1,0 +1,50 @@
+# 提交历史（可按路径过滤，游标分页）
+query RepoCommitHistory($owner: String!, $name: String!, $qualifiedRef: String!, $after: String, $path: String, $first: Int!, $parentsFirst: Int!) {
+  repository(owner: $owner, name: $name) {
+    id
+    viewerPermission
+    isArchived
+    ref(qualifiedName: $qualifiedRef) {
+      name
+      target {
+        ... on Commit {
+          oid
+          history(first: $first, after: $after, path: $path) {
+            totalCount
+            nodes { ...CommitWithParentsFields }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    }
+  }
+}
+
+# 提交详情（object(expression: sha)）
+query RepoCommitDetail($owner: String!, $name: String!, $qualifiedRef: String!, $sha: String!, $parentsFirst: Int!) {
+  repository(owner: $owner, name: $name) {
+    id
+    viewerPermission
+    isArchived
+    ref(qualifiedName: $qualifiedRef) { name target { oid } }
+    object(expression: $sha) {
+      ... on Commit { ...CommitWithParentsFields }
+    }
+  }
+}
+
+# 父提交对探测：只需区分零、一个或多个父提交，不是分页列表
+query CommitParent($owner: String!, $name: String!, $sha: String!) {
+  repository(owner: $owner, name: $name) {
+    object(expression: $sha) {
+      ... on Commit { parents(first: 2) { nodes { oid } } }
+    }
+  }
+}
+
+# 在分支上创建提交（文件增删）
+mutation CreateCommitOnBranch($input: CreateCommitOnBranchInput!) {
+  createCommitOnBranch(input: $input) {
+    commit { ...CommitFields }
+  }
+}

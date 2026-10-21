@@ -1,8 +1,11 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.RepoComparisonResult
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -23,14 +26,20 @@ class RepoGitCompareTest {
     fun setUp() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
+        val tokenProvider = object : AccessTokenProvider { override suspend fun getToken() = "token" }
         repository = RepoGitRepository(
             GHApiClient(
                 OkHttpClient(),
                 Json { ignoreUnknownKeys = true },
-                object : AccessTokenProvider { override suspend fun getToken() = "token" },
+                tokenProvider,
                 baseUrl,
                 "$baseUrl/graphql",
             ),
+            ApolloClient.Builder()
+                .serverUrl("$baseUrl/graphql")
+                .okHttpClient(OkHttpClient())
+                .addHttpInterceptor(AuthHttpInterceptor(tokenProvider))
+                .build(),
         )
     }
 

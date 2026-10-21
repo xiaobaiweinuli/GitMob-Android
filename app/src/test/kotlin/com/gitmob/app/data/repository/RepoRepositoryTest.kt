@@ -1,8 +1,11 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.RepoList
 import com.gitmob.app.data.model.RepositoryCreateInput
 import com.gitmob.app.data.model.RepositoryCreateOwner
@@ -26,16 +29,22 @@ class RepoRepositoryTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
+        val tokenProvider = object : AccessTokenProvider {
+            override suspend fun getToken() = "fake-token"
+        }
         val api = GHApiClient(
             okHttpClient = OkHttpClient(),
             json = Json { ignoreUnknownKeys = true },
-            tokenProvider = object : AccessTokenProvider {
-                override suspend fun getToken() = "fake-token"
-            },
+            tokenProvider = tokenProvider,
             restBaseUrl = baseUrl,
             graphQLUrl = "$baseUrl/graphql",
         )
-        repository = RepoRepository(api)
+        val apollo = ApolloClient.Builder()
+            .serverUrl("$baseUrl/graphql")
+            .okHttpClient(OkHttpClient())
+            .addHttpInterceptor(AuthHttpInterceptor(tokenProvider))
+            .build()
+        repository = RepoRepository(api, apollo)
     }
 
     @After
@@ -51,18 +60,22 @@ class RepoRepositoryTest {
                 {
                   "data": {
                     "viewer": {
+                      "id": "u1",
+                      "login": "cmliu",
+                      "name": "Cmliu",
+                      "avatarUrl": "https://avatars.example.com/cmliu",
                       "repositories": {
                         "totalCount": 1,
                         "nodes": [
                           {
                             "name": "edgetunnel",
-                            "owner": { "login": "cmliu", "avatarUrl": null },
+                            "owner": { "__typename": "User", "login": "cmliu", "avatarUrl": "https://avatars.example.com/cmliu" },
                             "description": "desc",
                             "homepageUrl": null,
                             "isPrivate": false,
                             "isArchived": false,
                             "isFork": true,
-                            "parent": { "name": "edgetunnel", "owner": { "login": "zizifn", "avatarUrl": null } },
+                            "parent": { "name": "edgetunnel", "owner": { "__typename": "User", "login": "zizifn", "avatarUrl": "https://avatars.example.com/zizifn" } },
                             "primaryLanguage": { "name": "JavaScript", "color": "#f1e05a" },
                             "stargazerCount": 40624,
                             "forkCount": 100,
@@ -178,14 +191,14 @@ class RepoRepositoryTest {
         server.enqueue(
             MockResponse().setBody(
                 """
-                {"data":{"viewer":{"id":"u1","login":"octocat","name":"Octocat","avatarUrl":null,"organizations":{"nodes":[{"id":"o1","login":"acme","name":"Acme","avatarUrl":null,"viewerCanCreateRepositories":true}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}
+                {"data":{"viewer":{"id":"u1","login":"octocat","name":"Octocat","avatarUrl":"https://avatars.example.com/octocat","organizations":{"nodes":[{"id":"o1","login":"acme","name":"Acme","avatarUrl":"https://avatars.example.com/acme","viewerCanCreateRepositories":true}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}
                 """.trimIndent(),
             ),
         )
         server.enqueue(
             MockResponse().setBody(
                 """
-                {"data":{"viewer":{"id":"u1","login":"octocat","name":"Octocat","avatarUrl":null,"organizations":{"nodes":[{"id":"o2","login":"beta","name":"Beta","avatarUrl":null,"viewerCanCreateRepositories":false}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
+                {"data":{"viewer":{"id":"u1","login":"octocat","name":"Octocat","avatarUrl":"https://avatars.example.com/octocat","organizations":{"nodes":[{"id":"o2","login":"beta","name":"Beta","avatarUrl":"https://avatars.example.com/beta","viewerCanCreateRepositories":false}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
                 """.trimIndent(),
             ),
         )
@@ -197,7 +210,7 @@ class RepoRepositoryTest {
         assertEquals("beta", (second as ApiResult.Success).data.organizations.single().login)
         val firstBody = server.takeRequest().body.readUtf8()
         val secondBody = server.takeRequest().body.readUtf8()
-        assertTrue(firstBody.contains("organizations(first: 20"))
+        assertTrue(firstBody.contains("\"first\":20"))
         assertTrue(!firstBody.contains("\"after\":\"cursor-1\""))
         assertTrue(secondBody.contains("\"after\":\"cursor-1\""))
     }
@@ -207,7 +220,7 @@ class RepoRepositoryTest {
         server.enqueue(
             MockResponse().setBody(
                 """
-                {"data":{"repositoryOwner":{"__typename":"Organization","id":"o1","login":"acme","name":"Acme","avatarUrl":null,"viewerCanCreateRepositories":true,"repositories":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
+                {"data":{"repositoryOwner":{"__typename":"Organization","id":"o1","login":"acme","name":"Acme","avatarUrl":"https://avatars.example.com/acme","viewerCanCreateRepositories":true,"repositories":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
                 """.trimIndent(),
             ),
         )

@@ -48,26 +48,3 @@ sealed class StarFilter {
     data object All : StarFilter()
     data class ByList(val list: UserListSummary) : StarFilter()
 }
-
-/**
- * RepoListItemNode → RepoListItem 公共映射，RepoRepository 和 UserRepository.getUserRepos 都需要用到。
- * 与 StarredRepoNode.toDomain() 对称，提取到领域模型层，避免重复字段映射代码。
- */
-internal fun RepoListItemNode.toDomain() = RepoListItem(
-    name = name,
-    ownerLogin = owner.login,
-    description = description,
-    homepageUrl = homepageUrl,
-    isPrivate = isPrivate,
-    isArchived = isArchived,
-    isFork = isFork,
-    forkedFromOwner = parent?.owner?.login,
-    forkedFromName = parent?.name,
-    languageName = primaryLanguage?.name,
-    languageColor = primaryLanguage?.color,
-    stargazerCount = stargazerCount,
-    forkCount = forkCount,
-    openIssueCount = issues.totalCount,
-    topics = repositoryTopics.nodes.map { it.topic.name },
-    defaultBranchName = defaultBranchRef?.name,
-)

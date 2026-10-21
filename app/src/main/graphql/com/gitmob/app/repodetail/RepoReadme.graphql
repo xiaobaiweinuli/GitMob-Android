@@ -1,0 +1,8 @@
+# README 用 object(expression:) 取原始 Markdown，Repository.readme 不存在于公开 Schema
+query RepoReadme($owner: String!, $name: String!, $expression: String!) {
+  repository(owner: $owner, name: $name) {
+    object(expression: $expression) {
+      ... on Blob { text isTruncated isBinary }
+    }
+  }
+}

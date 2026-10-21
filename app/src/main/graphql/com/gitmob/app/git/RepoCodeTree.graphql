@@ -1,0 +1,27 @@
+# 代码树（目录条目）
+query RepoCodeTree($owner: String!, $name: String!, $qualifiedRef: String!, $expression: String!) {
+  repository(owner: $owner, name: $name) {
+    id
+    viewerPermission
+    isArchived
+    ref(qualifiedName: $qualifiedRef) { name target { oid } }
+    object(expression: $expression) {
+      ... on Tree {
+        entries { name path type oid size extension language { name } }
+      }
+    }
+  }
+}
+
+# 文件内容（Blob）
+query RepoFileContent($owner: String!, $name: String!, $qualifiedRef: String!, $expression: String!) {
+  repository(owner: $owner, name: $name) {
+    id
+    viewerPermission
+    isArchived
+    ref(qualifiedName: $qualifiedRef) { name target { oid } }
+    object(expression: $expression) {
+      ... on Blob { oid byteSize isBinary isTruncated text }
+    }
+  }
+}

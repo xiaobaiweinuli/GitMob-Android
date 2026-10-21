@@ -1,16 +1,30 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.api.Optional
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.JsonArray
+import com.gitmob.app.graphql.CommitParentQuery
+import com.gitmob.app.graphql.CreateCommitOnBranchMutation
+import com.gitmob.app.graphql.RepoCodeTreeQuery
+import com.gitmob.app.graphql.RepoCommitDetailQuery
+import com.gitmob.app.graphql.RepoCommitHistoryQuery
+import com.gitmob.app.graphql.RepoFileContentQuery
+import com.gitmob.app.graphql.fragment.CommitFields
+import com.gitmob.app.graphql.fragment.CommitWithParentsFields
+import com.gitmob.app.graphql.type.CommitMessage
+import com.gitmob.app.graphql.type.CommittableBranch
+import com.gitmob.app.graphql.type.CreateCommitOnBranchInput
+import com.gitmob.app.graphql.type.FileAddition
+import com.gitmob.app.graphql.type.FileChanges
+import com.gitmob.app.graphql.type.FileDeletion
 import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.error.UserVisibleException
 import java.util.zip.ZipEntry
@@ -30,7 +44,10 @@ import javax.inject.Singleton
  * 以调用时传入的 ref/HEAD 为准。
  */
 @Singleton
-class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
+class RepoGitRepository @Inject constructor(
+    private val api: GHApiClient,
+    private val apolloClient: ApolloClient,
+) {
 
     /** REST commit comparison. Pagination is deliberately hidden in this repository API. */
     suspend fun compare(
@@ -78,156 +95,119 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
         ))
     }
 
-    suspend fun getCodeTree(owner: String, name: String, ref: String, path: String = ""): ApiResult<RepoCodeTree> = safeCall {
+    suspend fun getCodeTree(owner: String, name: String, ref: String, path: String = ""): ApiResult<RepoCodeTree> {
         val expression = if (path.isBlank()) "$ref:" else "$ref:$path"
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
-        val query = """
-            query RepoCodeTree(${'$'}owner: String!, ${'$'}name: String!, ${'$'}qualifiedRef: String!, ${'$'}expression: String!) {
-              repository(owner: ${'$'}owner, name: ${'$'}name) {
-                id viewerPermission isArchived
-                ref(qualifiedName: ${'$'}qualifiedRef) { name target { oid } }
-                object(expression: ${'$'}expression) {
-                  __typename
-                  ... on Tree {
-                    entries {
-                      name path type oid size extension language { name }
-                    }
-                  }
-                }
-              }
+        return when (val result = apolloClient.query(
+            RepoCodeTreeQuery(owner, name, qualifiedRef, expression),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.repository ?: error("Repository not found")
+                val tree = repository.`object`?.onTree ?: error("Tree not found")
+                val repositoryRef = repository.ref ?: error("Branch not found")
+                val head = repositoryRef.target?.oid ?: error("Branch head not found")
+                val permission = permission(repository.viewerPermission?.rawValue)
+                RepoCodeTree(
+                    repositoryId = repository.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    isArchived = repository.isArchived,
+                    ref = repositoryRef.name,
+                    headOid = head,
+                    path = path,
+                    entries = tree.entries.orEmpty().filterNotNull().map(::toTreeEntry),
+                )
             }
-        """.trimIndent()
-        val repository = api.graphQL<RepoGitQueryData>(query, variables(owner, name, qualifiedRef, expression)).repository
-            ?: error("Repository not found")
-        val tree = repository.objectNode?.takeIf { it.typeName == "Tree" }
-            ?: error("Tree not found")
-        val repositoryRef = repository.ref ?: error("Branch not found")
-        val head = repositoryRef.target?.oid ?: error("Branch head not found")
-        RepoCodeTree(
-            repositoryId = repository.id,
-            permission = permission(repository.viewerPermission),
-            capabilities = permission(repository.viewerPermission).toCapabilities(),
-            isArchived = repository.isArchived,
-            ref = repositoryRef.name ?: ref.removePrefix("refs/heads/"),
-            headOid = head,
-            path = path,
-            entries = tree.entries.map(::toTreeEntry),
-        )
+        }
     }
 
-    suspend fun getFileContent(owner: String, name: String, ref: String, path: String): ApiResult<RepoFileContent> = safeCall {
+    suspend fun getFileContent(owner: String, name: String, ref: String, path: String): ApiResult<RepoFileContent> {
         require(path.isNotBlank()) { "File path is empty" }
         val expression = "$ref:$path"
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
-        val query = """
-            query RepoFileContent(${'$'}owner: String!, ${'$'}name: String!, ${'$'}qualifiedRef: String!, ${'$'}expression: String!) {
-              repository(owner: ${'$'}owner, name: ${'$'}name) {
-                id viewerPermission isArchived
-                ref(qualifiedName: ${'$'}qualifiedRef) { name target { oid } }
-                object(expression: ${'$'}expression) {
-                  __typename
-                  ... on Blob { oid byteSize isBinary isTruncated text }
-                }
-              }
+        return when (val result = apolloClient.query(
+            RepoFileContentQuery(owner, name, qualifiedRef, expression),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.repository ?: error("Repository not found")
+                val blob = repository.`object`?.onBlob ?: error("File not found")
+                val repositoryRef = repository.ref ?: error("Branch not found")
+                val permission = permission(repository.viewerPermission?.rawValue)
+                RepoFileContent(
+                    repositoryId = repository.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    isArchived = repository.isArchived,
+                    ref = repositoryRef.name,
+                    headOid = repositoryRef.target?.oid ?: error("Branch head not found"),
+                    path = path,
+                    oid = blob.oid,
+                    byteSize = blob.byteSize.toLong(),
+                    isBinary = blob.isBinary == true,
+                    isTruncated = blob.isTruncated,
+                    text = blob.text,
+                )
             }
-        """.trimIndent()
-        val repository = api.graphQL<RepoGitQueryData>(query, variables(owner, name, qualifiedRef, expression)).repository
-            ?: error("Repository not found")
-        val blob = repository.objectNode?.takeIf { it.typeName == "Blob" } ?: error("File not found")
-        val repositoryRef = repository.ref ?: error("Branch not found")
-        val permission = permission(repository.viewerPermission)
-        RepoFileContent(
-            repositoryId = repository.id,
-            permission = permission,
-            capabilities = permission.toCapabilities(),
-            isArchived = repository.isArchived,
-            ref = repositoryRef.name ?: ref.removePrefix("refs/heads/"),
-            headOid = repositoryRef.target?.oid ?: error("Branch head not found"),
-            path = path,
-            oid = blob.oid,
-            byteSize = blob.byteSize.toLong(),
-            isBinary = blob.isBinary == true,
-            isTruncated = blob.isTruncated,
-            text = blob.text,
-        )
+        }
     }
 
-    suspend fun getCommitHistory(owner: String, name: String, ref: String, path: String? = null, after: String? = null): ApiResult<PagedRepoCommits> = safeCall {
+    suspend fun getCommitHistory(owner: String, name: String, ref: String, path: String? = null, after: String? = null): ApiResult<PagedRepoCommits> {
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
-        val query = """
-            query RepoCommitHistory(${'$'}owner: String!, ${'$'}name: String!, ${'$'}qualifiedRef: String!, ${'$'}after: String, ${'$'}path: String) {
-              repository(owner: ${'$'}owner, name: ${'$'}name) {
-                id viewerPermission isArchived
-                ref(qualifiedName: ${'$'}qualifiedRef) {
-                  name target {
-                    ... on Commit {
-                      oid
-                      history(first: ${PageSize.REPO_ISSUES}, after: ${'$'}after, path: ${'$'}path) {
-                        totalCount nodes { ${commitFields()} }
-                        pageInfo { hasNextPage endCursor }
-                      }
-                    }
-                  }
-                }
-              }
+        return when (val result = apolloClient.query(
+            RepoCommitHistoryQuery(
+                owner = owner,
+                name = name,
+                qualifiedRef = qualifiedRef,
+                after = Optional.presentIfNotNull(after),
+                path = Optional.presentIfNotNull(path),
+                first = PageSize.REPO_ISSUES,
+                parentsFirst = PageSize.COMMIT_PARENTS,
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.repository ?: error("Repository not found")
+                val permission = permission(repository.viewerPermission?.rawValue)
+                val repositoryRef = repository.ref ?: error("Branch not found")
+                val target = repositoryRef.target?.onCommit ?: error("Branch not found")
+                val history = target.history
+                PagedRepoCommits(
+                    repositoryId = repository.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    isArchived = repository.isArchived,
+                    ref = repositoryRef.name,
+                    headOid = target.oid,
+                    totalCount = history.totalCount,
+                    items = history.nodes.orEmpty().filterNotNull().map { toCommitSummary(it.commitWithParentsFields) },
+                    hasNextPage = history.pageInfo.hasNextPage,
+                    endCursor = history.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val variables = buildMap {
-            put("owner", JsonPrimitive(owner)); put("name", JsonPrimitive(name))
-            put("qualifiedRef", JsonPrimitive(qualifiedRef))
-            after?.let { put("after", JsonPrimitive(it)) }
-            path?.let { put("path", JsonPrimitive(it)) }
         }
-        val repository = api.graphQL<RepoGitQueryData>(query, variables).repository ?: error("Repository not found")
-        val permission = permission(repository.viewerPermission)
-        val repositoryRef = repository.ref ?: error("Branch not found")
-        val target = repositoryRef.target ?: error("Branch not found")
-        val history = target.history ?: error("Commit history unavailable")
-        PagedRepoCommits(
-            repositoryId = repository.id,
-            permission = permission,
-            capabilities = permission.toCapabilities(),
-            isArchived = repository.isArchived,
-            ref = repositoryRef.name ?: ref.removePrefix("refs/heads/"),
-            headOid = target.oid,
-            totalCount = history.totalCount,
-            items = history.nodes.map(::toCommitSummary),
-            hasNextPage = history.pageInfo.hasNextPage,
-            endCursor = history.pageInfo.endCursor,
-        )
     }
 
     suspend fun getFileHistory(owner: String, name: String, ref: String, path: String, after: String? = null): ApiResult<PagedRepoCommits> =
         getCommitHistory(owner, name, ref, path, after)
 
-    suspend fun getCommitDetail(owner: String, name: String, ref: String, sha: String): ApiResult<RepoCommitDetail> = safeCall {
+    suspend fun getCommitDetail(owner: String, name: String, ref: String, sha: String): ApiResult<RepoCommitDetail> {
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
-        val query = """
-            query RepoCommitDetail(${'$'}owner: String!, ${'$'}name: String!, ${'$'}qualifiedRef: String!, ${'$'}sha: String!) {
-              repository(owner: ${'$'}owner, name: ${'$'}name) {
-                id viewerPermission isArchived
-                ref(qualifiedName: ${'$'}qualifiedRef) { name target { oid } }
-                object(expression: ${'$'}sha) {
-                  __typename
-                  ... on Commit { ${commitFields(includeHistory = false)} parents(first: ${PageSize.COMMIT_PARENTS}) { nodes { oid } } }
-                }
-              }
+        return when (val result = apolloClient.query(
+            RepoCommitDetailQuery(owner, name, qualifiedRef, sha, PageSize.COMMIT_PARENTS),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.repository ?: error("Repository not found")
+                val commitNode = repository.`object`?.onCommit ?: error("Commit not found")
+                val permission = permission(repository.viewerPermission?.rawValue)
+                val commit = toCommitSummary(commitNode.commitWithParentsFields)
+                val rest = api.get<RestRepoCommitResponse>("/repos/$owner/$name/commits/$sha")
+                val files = rest.files.map(::toChangedFile)
+                RepoCommitDetail(repository.id, permission, permission.toCapabilities(), repository.isArchived, commit, files, false)
             }
-        """.trimIndent()
-        val variables = mapOf(
-            "owner" to JsonPrimitive(owner),
-            "name" to JsonPrimitive(name),
-            "qualifiedRef" to JsonPrimitive(qualifiedRef),
-            "sha" to JsonPrimitive(sha),
-        )
-        val repository = api.graphQL<RepoGitQueryData>(query, variables).repository
-            ?: error("Repository not found")
-        val commitNode = repository.objectNode?.takeIf { it.typeName == "Commit" } ?: error("Commit not found")
-        val permission = permission(repository.viewerPermission)
-        val commit = toCommitSummary(commitNode)
-        val rest = api.get<RestRepoCommitResponse>("/repos/$owner/$name/commits/$sha")
-        val files = rest.files.map(::toChangedFile)
-        RepoCommitDetail(repository.id, permission, permission.toCapabilities(), repository.isArchived, commit, files, false)
+        }
     }
 
     suspend fun getChangedFiles(owner: String, name: String, sha: String): ApiResult<List<RepoChangedFile>> = safeCall {
@@ -251,13 +231,16 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
         path: String,
         message: String,
         previousPath: String? = null,
-    ): ApiResult<RepoCommitSummary> = safeCall {
+    ): ApiResult<RepoCommitSummary> {
         // 父提交对探测：只需区分零、一个或多个父提交，不是分页列表。
-        val parentOids = api.graphQL<RepoGitQueryData>("""
-            query CommitParent(${'$'}owner: String!, ${'$'}name: String!, ${'$'}sha: String!) {
-              repository(owner: ${'$'}owner, name: ${'$'}name) { object(expression: ${'$'}sha) { ... on Commit { parents(first: 2) { nodes { oid } } } } }
-            }
-        """.trimIndent(), mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name), "sha" to JsonPrimitive(targetSha))).repository?.objectNode?.parents?.nodes.orEmpty().mapNotNull { it.oid }
+        // safeCall 是 crossinline，失败必须直接返回 Failure，不能包进 safeCall。
+        val parentOids = when (val result = apolloClient.query(
+            CommitParentQuery(owner, name, targetSha),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> return result
+            is ApiResult.Success -> result.data.repository?.`object`?.onCommit?.parents?.nodes.orEmpty().mapNotNull { it?.oid }
+        }
+        return safeCall {
         if (parentOids.size != 1) throw UserVisibleException(R.string.git_revert_merge_unsupported)
         val parentSha = parentOids.single()
         val currentHead = getCodeTree(owner, name, branch, path.substringBeforeLast('/', "")).let { result ->
@@ -273,6 +256,7 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
         val deletions = if (parentBytes == null || restorePath != path) listOf(RepoPendingFileChange.Deletion(path)) else emptyList()
         createCommit(owner, name, branch, message, additions, deletions, currentHead)
             .let { result -> (result as? ApiResult.Success)?.data ?: error("Revert commit failed") }
+        }
     }
 
     suspend fun revertCommit(
@@ -349,48 +333,33 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
         additions: List<RepoPendingFileChange.Addition>,
         deletions: List<RepoPendingFileChange.Deletion>,
         expectedHeadOid: String,
-    ): ApiResult<RepoCommitSummary> = safeCall {
-        val mutation = """
-            mutation CreateCommitOnBranch(${'$'}input: CreateCommitOnBranchInput!) {
-              createCommitOnBranch(input: ${'$'}input) {
-                commit { ${commitFields(includeHistory = false)} }
-              }
+    ): ApiResult<RepoCommitSummary> {
+        val input = CreateCommitOnBranchInput(
+            branch = CommittableBranch(
+                repositoryNameWithOwner = Optional.present("$owner/$name"),
+                branchName = Optional.present(branch),
+            ),
+            message = CommitMessage(headline = message),
+            fileChanges = Optional.present(FileChanges(
+                additions = Optional.present(additions.map { FileAddition(path = it.path, contents = it.contentBase64) }),
+                deletions = Optional.present(deletions.map { FileDeletion(path = it.path) }),
+            )),
+            expectedHeadOid = expectedHeadOid,
+            clientMutationId = Optional.present("gitmob"),
+        )
+        return when (val result = apolloClient.mutation(CreateCommitOnBranchMutation(input)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val commit = result.data.createCommitOnBranch?.commit
+                    ?: error("Commit was not created")
+                toCommitSummary(commit.commitFields)
             }
-        """.trimIndent()
-        val additionNodes = JsonArray(additions.map { addition ->
-            JsonObject(mapOf("path" to JsonPrimitive(addition.path), "contents" to JsonPrimitive(addition.contentBase64)))
-        })
-        val deletionNodes = JsonArray(deletions.map { deletion ->
-            JsonObject(mapOf("path" to JsonPrimitive(deletion.path)))
-        })
-        val fileChanges = JsonObject(mapOf("additions" to additionNodes, "deletions" to deletionNodes))
-        val branchInput = JsonObject(mapOf(
-            "repositoryNameWithOwner" to JsonPrimitive("$owner/$name"),
-            "branchName" to JsonPrimitive(branch),
-        ))
-        val messageInput = JsonObject(mapOf("headline" to JsonPrimitive(message)))
-        val input = JsonObject(mapOf(
-            "branch" to branchInput,
-            "message" to messageInput,
-            "fileChanges" to fileChanges,
-            "expectedHeadOid" to JsonPrimitive(expectedHeadOid),
-            "clientMutationId" to JsonPrimitive("gitmob"),
-        ))
-        val commit = api.graphQL<RepoGitCommitMutationData>(mutation, mapOf("input" to input)).createCommitOnBranch?.commit
-            ?: error("Commit was not created")
-        toCommitSummary(commit)
+        }
     }
-
-    private fun variables(owner: String, name: String, qualifiedRef: String, expression: String) = mapOf(
-        "owner" to JsonPrimitive(owner),
-        "name" to JsonPrimitive(name),
-        "qualifiedRef" to JsonPrimitive(qualifiedRef),
-        "expression" to JsonPrimitive(expression),
-    )
 
     private fun permission(value: String?): RepoPermission = value?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() } ?: RepoPermission.NONE
 
-    private fun toTreeEntry(node: RepoGitTreeEntryNode) = RepoTreeEntry(
+    private fun toTreeEntry(node: RepoCodeTreeQuery.Entry) = RepoTreeEntry(
         name = node.name,
         path = node.path ?: node.name,
         type = when (node.type.uppercase()) {
@@ -405,24 +374,33 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
         languageName = node.language?.name,
     )
 
-    private fun toActor(node: RepoGitActorNode?): RepoGitActor? = node?.let {
+    private fun toActor(node: CommitFields.Author?): RepoGitActor? = node?.let {
         RepoGitActor(it.user?.login, it.name, it.email, it.user?.avatarUrl ?: it.avatarUrl, it.date)
     }
 
-    private fun toCommitSummary(node: RepoGitObjectNode) = RepoCommitSummary(
-        oid = node.oid,
-        abbreviatedOid = node.abbreviatedOid.ifBlank { node.oid.take(7) },
-        headline = node.messageHeadline,
-        body = node.messageBody,
-        authoredDate = node.authoredDate,
-        committedDate = node.committedDate,
-        author = toActor(node.author),
-        committer = toActor(node.committer),
-        additions = node.additions,
-        deletions = node.deletions,
-        changedFiles = node.changedFilesIfAvailable,
-        parentOids = node.parents?.nodes.orEmpty().map { it.oid },
-        url = node.url,
+    private fun toActor(node: CommitFields.Committer?): RepoGitActor? = node?.let {
+        RepoGitActor(it.user?.login, it.name, it.email, it.user?.avatarUrl ?: it.avatarUrl, it.date)
+    }
+
+    private fun toCommitSummary(fields: CommitWithParentsFields) = toCommitSummary(
+        fields.commitFields,
+        parentOids = fields.parents.nodes.orEmpty().mapNotNull { it?.oid },
+    )
+
+    private fun toCommitSummary(fields: CommitFields, parentOids: List<String> = emptyList()) = RepoCommitSummary(
+        oid = fields.oid,
+        abbreviatedOid = fields.abbreviatedOid.ifBlank { fields.oid.take(7) },
+        headline = fields.messageHeadline,
+        body = fields.messageBody,
+        authoredDate = fields.authoredDate,
+        committedDate = fields.committedDate,
+        author = toActor(fields.author),
+        committer = toActor(fields.committer),
+        additions = fields.additions,
+        deletions = fields.deletions,
+        changedFiles = fields.changedFilesIfAvailable,
+        parentOids = parentOids,
+        url = fields.url,
     )
 
     private fun toChangedFile(file: RestRepoCommitFile) = RepoChangedFile(
@@ -453,9 +431,4 @@ class RepoGitRepository @Inject constructor(private val api: GHApiClient) {
         changedFiles = null,
         url = commit.htmlUrl,
     )
-
-    private fun commitFields(includeHistory: Boolean = true) = buildString {
-        append("oid abbreviatedOid messageHeadline messageBody authoredDate committedDate author { name email date avatarUrl user { login avatarUrl } } committer { name email date avatarUrl user { login avatarUrl } } additions deletions changedFilesIfAvailable url ")
-        if (includeHistory) append("parents(first: ${PageSize.COMMIT_PARENTS}) { nodes { oid } } ")
-    }
 }

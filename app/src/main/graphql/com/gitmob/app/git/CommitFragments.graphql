@@ -1,0 +1,20 @@
+# Commit 公共字段片段。$parentsFirst 由包含本 fragment 的 operation 声明。
+fragment CommitFields on Commit {
+  oid
+  abbreviatedOid
+  messageHeadline
+  messageBody
+  authoredDate
+  committedDate
+  author { name email date avatarUrl user { login avatarUrl } }
+  committer { name email date avatarUrl user { login avatarUrl } }
+  additions
+  deletions
+  changedFilesIfAvailable
+  url
+}
+
+fragment CommitWithParentsFields on Commit {
+  ...CommitFields
+  parents(first: $parentsFirst) { nodes { oid } }
+}

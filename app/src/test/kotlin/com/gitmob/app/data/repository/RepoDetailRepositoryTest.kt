@@ -1,8 +1,11 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -22,16 +25,22 @@ class RepoDetailRepositoryTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
+        val tokenProvider = object : AccessTokenProvider {
+            override suspend fun getToken() = "fake-token"
+        }
         val api = GHApiClient(
             okHttpClient = OkHttpClient(),
             json = Json { ignoreUnknownKeys = true },
-            tokenProvider = object : AccessTokenProvider {
-                override suspend fun getToken() = "fake-token"
-            },
+            tokenProvider = tokenProvider,
             restBaseUrl = baseUrl,
             graphQLUrl = "$baseUrl/graphql",
         )
-        repository = RepoDetailRepository(api)
+        val apollo = ApolloClient.Builder()
+            .serverUrl("$baseUrl/graphql")
+            .okHttpClient(OkHttpClient())
+            .addHttpInterceptor(AuthHttpInterceptor(tokenProvider))
+            .build()
+        repository = RepoDetailRepository(api, apollo)
     }
 
     @After
@@ -46,7 +55,7 @@ class RepoDetailRepositoryTest {
                 """
                 {"data":{"repository":{
                     "id":"R1","name":"GitMob-Android","description":"desc","homepageUrl":null,
-                    "owner":{"login":"xiaobaiweinuli","avatarUrl":null},
+                    "owner":{"__typename":"User","login":"xiaobaiweinuli","avatarUrl":"https://avatars.example.com/u1"},
                     "isPrivate":false,"isArchived":false,"isTemplate":true,"isFork":false,"parent":null,
                     "stargazerCount":20,"viewerHasStarred":false,"forkCount":2,
                     "issues":{"totalCount":2},"pullRequests":{"totalCount":0},
@@ -57,7 +66,9 @@ class RepoDetailRepositoryTest {
                     "primaryLanguage":{"name":"Kotlin","color":"#A97BFF"},
                     "repositoryTopics":{"nodes":[{"topic":{"name":"github"}},{"topic":{"name":"android"}}]},
                     "viewerPermission":"ADMIN","viewerCanCreateIssues":true,"hasIssuesEnabled":true,
-                    "isBlankIssuesEnabled":false,"issueCreationPolicy":"COLLABORATORS_ONLY"
+                    "isBlankIssuesEnabled":false,"issueCreationPolicy":"COLLABORATORS_ONLY",
+                    "hasPullRequestsEnabled":true,"pullRequestCreationPolicy":"ALL",
+                    "hasDiscussionsEnabled":true,"discussions":{"totalCount":3}
                 }}}
                 """.trimIndent(),
             ),

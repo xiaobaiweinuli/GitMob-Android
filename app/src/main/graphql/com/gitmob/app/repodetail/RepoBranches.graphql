@@ -1,0 +1,26 @@
+# 仓库分支列表（游标分页）
+query RepoBranches($owner: String!, $name: String!, $after: String, $first: Int!) {
+  repository(owner: $owner, name: $name) {
+    defaultBranchRef { id name }
+    refs(refPrefix: "refs/heads/", first: $first, after: $after) {
+      nodes { id name target { oid } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+# 仓库关注者（Watchers）
+query RepoWatchers($owner: String!, $name: String!, $after: String, $first: Int!) {
+  repository(owner: $owner, name: $name) {
+    watchers(first: $first, after: $after) {
+      totalCount
+      nodes { login name avatarUrl bio }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+# 删除分支：DeleteRefInput 只需要 refId（Ref 节点自己的 id，不是分支名），已用 introspection 核实
+mutation DeleteBranch($refId: ID!) {
+  deleteRef(input: { refId: $refId }) { clientMutationId }
+}

@@ -1,0 +1,65 @@
+# 仓库列表公共字段片段：viewer.repositories 与 repositoryOwner(login:).repositories
+# 字段集合 100% 一致，用一份 fragment 避免两处漂移。
+# $topicsFirst 由包含本 fragment 的 operation 声明。
+fragment RepoListFields on Repository {
+  name
+  owner { login avatarUrl }
+  description
+  homepageUrl
+  isPrivate
+  isArchived
+  isFork
+  parent { name owner { login avatarUrl } }
+  primaryLanguage { name color }
+  stargazerCount
+  forkCount
+  issues(states: [OPEN]) { totalCount }
+  repositoryTopics(first: $topicsFirst) { nodes { topic { name } } }
+  defaultBranchRef { name }
+}
+
+# 当前登录用户自己的仓库（「仓库」Tab）
+query ViewerRepos($after: String, $first: Int!, $topicsFirst: Int!) {
+  viewer {
+    id
+    login
+    name
+    avatarUrl
+    repositories(first: $first, after: $after, ownerAffiliations: [OWNER]) {
+      totalCount
+      nodes { ...RepoListFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+# 任意指定 owner（用户或组织）的仓库（个人/组织主页点「仓库」）
+query OwnerRepos($login: String!, $after: String, $first: Int!, $topicsFirst: Int!) {
+  repositoryOwner(login: $login) {
+    __typename
+    id
+    login
+    avatarUrl
+    ... on User { name isViewer }
+    ... on Organization { name viewerCanCreateRepositories }
+    repositories(first: $first, after: $after, ownerAffiliations: [OWNER]) {
+      totalCount
+      nodes { ...RepoListFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+# 新建仓库的 owner 选择器：viewer 自己 + 一页组织
+query RepositoryCreateOwners($after: String, $first: Int!) {
+  viewer {
+    id
+    login
+    name
+    avatarUrl
+    organizations(first: $first, after: $after) {
+      nodes { id login name avatarUrl viewerCanCreateRepositories }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

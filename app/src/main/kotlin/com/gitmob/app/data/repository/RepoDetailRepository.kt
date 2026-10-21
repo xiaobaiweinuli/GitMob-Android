@@ -1,5 +1,7 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.api.Optional
 import com.gitmob.app.R
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.UserVisibleException
@@ -7,23 +9,22 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
-import com.gitmob.app.core.permission.RepoPermission
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.core.permission.toCapabilities
-import com.gitmob.app.data.model.DeleteRefMutationData
 import com.gitmob.app.data.model.IssueCreationPolicy
 import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.PagedBranches
 import com.gitmob.app.data.model.PagedUsers
 import com.gitmob.app.data.model.RepoBranch
 import com.gitmob.app.data.model.BranchCreationSpec
-import com.gitmob.app.data.model.RepoBranchesQueryData
 import com.gitmob.app.data.model.RepoDetail
-import com.gitmob.app.data.model.RepoDetailQueryData
 import com.gitmob.app.data.model.RepoReadme
-import com.gitmob.app.data.model.RepoReadmeQueryData
-import com.gitmob.app.data.model.RepoWatchersQueryData
 import com.gitmob.app.data.model.SimpleUser
-import kotlinx.serialization.json.JsonPrimitive
+import com.gitmob.app.graphql.DeleteBranchMutation
+import com.gitmob.app.graphql.RepoBranchesQuery
+import com.gitmob.app.graphql.RepoDetailQuery
+import com.gitmob.app.graphql.RepoReadmeQuery
+import com.gitmob.app.graphql.RepoWatchersQuery
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject
@@ -32,6 +33,7 @@ import javax.inject.Singleton
 @Singleton
 class RepoDetailRepository @Inject constructor(
     private val api: GHApiClient,
+    private val apolloClient: ApolloClient,
 ) {
 
     // ── 缓存实例 ──────────────────────────────────────────────
@@ -44,127 +46,76 @@ class RepoDetailRepository @Inject constructor(
     fun invalidateAllCaches() {
         branchesCache.invalidateAll()
     }
-    suspend fun getRepoDetail(owner: String, name: String): ApiResult<RepoDetail> = safeCall {
-        // first: 0 只取连接计数；first: 1 只取最新一条 Release，不是列表分页。
-        val query = """
-            query RepoDetail(${'$'}owner: String!, ${'$'}name: String!) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    id
-                    name
-                    description
-                    homepageUrl
-                    owner { login avatarUrl }
-                    isPrivate
-                    isArchived
-                    isTemplate
-                    isFork
-                    parent { name owner { login avatarUrl } }
-                    stargazerCount
-                    viewerHasStarred
-                    forkCount
-                    issues(states: [OPEN]) { totalCount }
-                    pullRequests(states: [OPEN]) { totalCount }
-                    watchers(first: 0) { totalCount }
-                    viewerSubscription
-                    licenseInfo { name spdxId }
-                    refs(refPrefix: "refs/heads/", first: 0) { totalCount }
-                    defaultBranchRef { name }
-                    releases(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) {
-                        totalCount
-                        nodes { name tagName }
-                    }
-                    primaryLanguage { name color }
-                    repositoryTopics(first: ${PageSize.TOPICS_PER_REPO}) { nodes { topic { name } } }
-                    viewerPermission
-                    viewerCanCreateIssues
-                    hasIssuesEnabled
-                    isBlankIssuesEnabled
-                    issueCreationPolicy
-                    hasPullRequestsEnabled
-                    pullRequestCreationPolicy
-                    hasDiscussionsEnabled
-                    discussions(states: [OPEN], first: 0) { totalCount }
-                }
+    suspend fun getRepoDetail(owner: String, name: String): ApiResult<RepoDetail> =
+        when (val result = apolloClient.query(
+            RepoDetailQuery(owner, name, PageSize.TOPICS_PER_REPO),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val node = result.data.repository ?: throw UserVisibleException(R.string.error_repo_not_found)
+                val permission = RepoIssueRepository.parsePermission(node.viewerPermission?.rawValue)
+                val latestRelease = node.releases.nodes.orEmpty().filterNotNull().firstOrNull()
+
+                RepoDetail(
+                    id = node.id,
+                    name = node.name,
+                    ownerLogin = node.owner.login,
+                    ownerAvatarUrl = node.owner.avatarUrl,
+                    description = node.description,
+                    homepageUrl = node.homepageUrl,
+                    isPrivate = node.isPrivate,
+                    isArchived = node.isArchived,
+                    isTemplate = node.isTemplate,
+                    isFork = node.isFork,
+                    forkedFromOwner = node.parent?.owner?.login,
+                    forkedFromName = node.parent?.name,
+                    stargazerCount = node.stargazerCount,
+                    viewerHasStarred = node.viewerHasStarred,
+                    forkCount = node.forkCount,
+                    openIssueCount = node.issues.totalCount,
+                    openPrCount = node.pullRequests.totalCount,
+                    watcherCount = node.watchers.totalCount,
+                    viewerSubscription = node.viewerSubscription?.rawValue ?: "UNSUBSCRIBED",
+                    licenseName = node.licenseInfo?.name,
+                    licenseSpdxId = node.licenseInfo?.spdxId,
+                    branchCount = node.refs?.totalCount ?: 0,
+                    defaultBranchName = node.defaultBranchRef?.name,
+                    releaseCount = node.releases.totalCount,
+                    latestReleaseName = latestRelease?.name,
+                    latestReleaseTag = latestRelease?.tagName,
+                    languageName = node.primaryLanguage?.name,
+                    languageColor = node.primaryLanguage?.color,
+                    topics = node.repositoryTopics.nodes.orEmpty().filterNotNull().map { it.topic.name },
+                    permission = permission,
+                    viewerCanCreateIssues = node.viewerCanCreateIssues,
+                    hasIssuesEnabled = node.hasIssuesEnabled,
+                    isBlankIssuesEnabled = node.isBlankIssuesEnabled,
+                    issueCreationPolicy = node.issueCreationPolicy?.let {
+                        runCatching { IssueCreationPolicy.valueOf(it.rawValue) }.getOrDefault(IssueCreationPolicy.UNKNOWN)
+                    } ?: IssueCreationPolicy.UNKNOWN,
+                    hasPullRequestsEnabled = node.hasPullRequestsEnabled,
+                    pullRequestCreationPolicy = node.pullRequestCreationPolicy?.let {
+                        runCatching { PullRequestCreationPolicy.valueOf(it.rawValue) }
+                            .getOrDefault(PullRequestCreationPolicy.UNKNOWN)
+                    } ?: PullRequestCreationPolicy.UNKNOWN,
+                    hasDiscussionsEnabled = node.hasDiscussionsEnabled,
+                    openDiscussionCount = node.discussions.totalCount,
+                    capabilities = permission.toCapabilities(),
+                )
             }
-        """.trimIndent()
-        val node = api.graphQL<RepoDetailQueryData>(
-            query,
-            mapOf("owner" to JsonPrimitive(owner), "name" to JsonPrimitive(name)),
-        ).repository ?: throw UserVisibleException(R.string.error_repo_not_found)
-
-        val permission = node.viewerPermission?.let {
-            runCatching { RepoPermission.valueOf(it) }.getOrDefault(RepoPermission.NONE)
-        } ?: RepoPermission.NONE
-
-        RepoDetail(
-            id = node.id,
-            name = node.name,
-            ownerLogin = node.owner.login,
-            ownerAvatarUrl = node.owner.avatarUrl,
-            description = node.description,
-            homepageUrl = node.homepageUrl,
-            isPrivate = node.isPrivate,
-            isArchived = node.isArchived,
-            isTemplate = node.isTemplate,
-            isFork = node.isFork,
-            forkedFromOwner = node.parent?.owner?.login,
-            forkedFromName = node.parent?.name,
-            stargazerCount = node.stargazerCount,
-            viewerHasStarred = node.viewerHasStarred,
-            forkCount = node.forkCount,
-            openIssueCount = node.issues.totalCount,
-            openPrCount = node.pullRequests.totalCount,
-            watcherCount = node.watchers.totalCount,
-            viewerSubscription = node.viewerSubscription,
-            licenseName = node.licenseInfo?.name,
-            licenseSpdxId = node.licenseInfo?.spdxId,
-            branchCount = node.refs.totalCount,
-            defaultBranchName = node.defaultBranchRef?.name,
-            releaseCount = node.releases.totalCount,
-            latestReleaseName = node.releases.nodes.firstOrNull()?.name,
-            latestReleaseTag = node.releases.nodes.firstOrNull()?.tagName,
-            languageName = node.primaryLanguage?.name,
-            languageColor = node.primaryLanguage?.color,
-            topics = node.repositoryTopics.nodes.map { it.topic.name },
-            permission = permission,
-            viewerCanCreateIssues = node.viewerCanCreateIssues,
-            hasIssuesEnabled = node.hasIssuesEnabled,
-            isBlankIssuesEnabled = node.isBlankIssuesEnabled,
-            issueCreationPolicy = node.issueCreationPolicy?.let {
-                runCatching { IssueCreationPolicy.valueOf(it) }.getOrDefault(IssueCreationPolicy.UNKNOWN)
-            } ?: IssueCreationPolicy.UNKNOWN,
-            hasPullRequestsEnabled = node.hasPullRequestsEnabled,
-            pullRequestCreationPolicy = node.pullRequestCreationPolicy?.let {
-                runCatching { PullRequestCreationPolicy.valueOf(it) }
-                    .getOrDefault(PullRequestCreationPolicy.UNKNOWN)
-            } ?: PullRequestCreationPolicy.UNKNOWN,
-            hasDiscussionsEnabled = node.hasDiscussionsEnabled,
-            openDiscussionCount = node.discussions.totalCount,
-            capabilities = permission.toCapabilities(),
-        )
-    }
+        }
 
     /** README 用 object(expression:) 取原始 Markdown，Repository.readme 不存在于公开 Schema */
-    suspend fun getReadme(owner: String, name: String, ref: String): ApiResult<RepoReadme> = safeCall {
-        val query = """
-            query RepoReadme(${'$'}owner: String!, ${'$'}name: String!, ${'$'}expression: String!) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    object(expression: ${'$'}expression) {
-                        ... on Blob { text isTruncated isBinary }
-                    }
-                }
+    suspend fun getReadme(owner: String, name: String, ref: String): ApiResult<RepoReadme> =
+        when (val result = apolloClient.query(
+            RepoReadmeQuery(owner, name, "$ref:README.md"),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val blob = result.data.repository?.`object`?.onBlob
+                RepoReadme(markdown = blob?.text, isTruncated = blob?.isTruncated ?: false)
             }
-        """.trimIndent()
-        val blob = api.graphQL<RepoReadmeQueryData>(
-            query,
-            mapOf(
-                "owner" to JsonPrimitive(owner),
-                "name" to JsonPrimitive(name),
-                "expression" to JsonPrimitive("$ref:README.md"),
-            ),
-        ).repository?.`object`
-        RepoReadme(markdown = blob?.text, isTruncated = blob?.isTruncated ?: false)
-    }
+        }
 
     /**
      * 仓库分支列表。
@@ -193,63 +144,42 @@ class RepoDetailRepository @Inject constructor(
         return result
     }
 
-    private suspend fun getBranchesInternal(owner: String, name: String, after: String?): ApiResult<PagedBranches> = safeCall {
-        val query = """
-            query RepoBranches(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    defaultBranchRef { id name }
-                    refs(refPrefix: "refs/heads/", first: ${PageSize.BRANCHES}, after: ${'$'}after) {
-                        nodes { id name target { oid } }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    private suspend fun getBranchesInternal(owner: String, name: String, after: String?): ApiResult<PagedBranches> =
+        when (val result = apolloClient.query(
+            RepoBranchesQuery(owner, name, Optional.presentIfNotNull(after), PageSize.BRANCHES),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val data = result.data.repository
+                    ?: throw UserVisibleException(R.string.error_repo_not_found)
+                val defaultName = data.defaultBranchRef?.name
+                PagedBranches(
+                    items = data.refs?.nodes.orEmpty().filterNotNull().map {
+                        RepoBranch(id = it.id, name = it.name, isDefault = it.name == defaultName, commitOid = it.target?.oid)
+                    },
+                    hasNextPage = data.refs?.pageInfo?.hasNextPage ?: false,
+                    endCursor = data.refs?.pageInfo?.endCursor,
+                )
             }
-        """.trimIndent()
-        val variables = buildMap {
-            put("owner", JsonPrimitive(owner))
-            put("name", JsonPrimitive(name))
-            after?.let { put("after", JsonPrimitive(it)) }
         }
-        val data = api.graphQL<RepoBranchesQueryData>(query, variables).repository
-            ?: throw UserVisibleException(R.string.error_repo_not_found)
-
-        val defaultName = data.defaultBranchRef?.name
-        PagedBranches(
-            items = data.refs?.nodes.orEmpty().map {
-                RepoBranch(id = it.id, name = it.name, isDefault = it.name == defaultName, commitOid = it.target?.oid)
-            },
-            hasNextPage = data.refs?.pageInfo?.hasNextPage ?: false,
-            endCursor = data.refs?.pageInfo?.endCursor,
-        )
-    }
 
     /** 仓库关注者（Watchers），复用和 followers/following 一样的 PagedUsers 形状 */
-    suspend fun getWatchers(owner: String, name: String, after: String? = null): ApiResult<PagedUsers> = safeCall {
-        val query = """
-            query RepoWatchers(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    watchers(first: ${PageSize.USER_LIST}, after: ${'$'}after) {
-                        totalCount
-                        nodes { login name avatarUrl bio }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
+    suspend fun getWatchers(owner: String, name: String, after: String? = null): ApiResult<PagedUsers> =
+        when (val result = apolloClient.query(
+            RepoWatchersQuery(owner, name, Optional.presentIfNotNull(after), PageSize.USER_LIST),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val conn = result.data.repository?.watchers
+                    ?: throw UserVisibleException(R.string.error_repo_not_found)
+                PagedUsers(
+                    totalCount = conn.totalCount,
+                    users = conn.nodes.orEmpty().filterNotNull().map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
+                    hasNextPage = conn.pageInfo.hasNextPage,
+                    endCursor = conn.pageInfo.endCursor,
+                )
             }
-        """.trimIndent()
-        val variables = buildMap {
-            put("owner", JsonPrimitive(owner))
-            put("name", JsonPrimitive(name))
-            after?.let { put("after", JsonPrimitive(it)) }
         }
-        val conn = api.graphQL<RepoWatchersQueryData>(query, variables).repository?.watchers
-            ?: throw UserVisibleException(R.string.error_repo_not_found)
-        PagedUsers(
-            totalCount = conn.totalCount,
-            users = conn.nodes.map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio) },
-            hasNextPage = conn.pageInfo.hasNextPage,
-            endCursor = conn.pageInfo.endCursor,
-        )
-    }
 
     /**
      * 删除分支：DeleteRefInput 只需要 refId（Ref 节点自己的 id，不是分支名），已用 introspection 核实。
@@ -259,16 +189,14 @@ class RepoDetailRepository @Inject constructor(
      * @param owner   仓库 owner login（用于失效对应缓存 key）
      * @param name    仓库名（用于失效对应缓存 key）
      */
-    suspend fun deleteBranch(refId: String, owner: String, name: String): ApiResult<Unit> = safeCall {
-        val mutation = """
-            mutation DeleteBranch(${'$'}refId: ID!) {
-                deleteRef(input: { refId: ${'$'}refId }) { clientMutationId }
+    suspend fun deleteBranch(refId: String, owner: String, name: String): ApiResult<Unit> =
+        when (val result = apolloClient.mutation(DeleteBranchMutation(refId)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                // 删除分支后，分支列表顺序、默认分支高亮都会变化，失效缓存
+                branchesCache.invalidate("$owner/$name")
             }
-        """.trimIndent()
-        with(api.graphQL<DeleteRefMutationData>(mutation, mapOf("refId" to JsonPrimitive(refId)))) { }
-        // 删除分支后，分支列表顺序、默认分支高亮都会变化，失效缓存
-        branchesCache.invalidate("$owner/$name")
-    }
+        }
 
     /**
      * 设默认分支——公开 GraphQL API 没有对应能力（UpdateRepositoryInput 没有 defaultBranch

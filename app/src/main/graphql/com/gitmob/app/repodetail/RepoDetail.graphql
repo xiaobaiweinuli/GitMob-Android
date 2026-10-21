@@ -1,0 +1,40 @@
+# 仓库详情。first: 0 只取连接计数；releases first: 1 只取最新一条，不是列表分页。
+query RepoDetail($owner: String!, $name: String!, $topicsFirst: Int!) {
+  repository(owner: $owner, name: $name) {
+    id
+    name
+    description
+    homepageUrl
+    owner { login avatarUrl }
+    isPrivate
+    isArchived
+    isTemplate
+    isFork
+    parent { name owner { login avatarUrl } }
+    stargazerCount
+    viewerHasStarred
+    forkCount
+    issues(states: [OPEN]) { totalCount }
+    pullRequests(states: [OPEN]) { totalCount }
+    watchers(first: 0) { totalCount }
+    viewerSubscription
+    licenseInfo { name spdxId }
+    refs(refPrefix: "refs/heads/", first: 0) { totalCount }
+    defaultBranchRef { name }
+    releases(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) {
+      totalCount
+      nodes { name tagName }
+    }
+    primaryLanguage { name color }
+    repositoryTopics(first: $topicsFirst) { nodes { topic { name } } }
+    viewerPermission
+    viewerCanCreateIssues
+    hasIssuesEnabled
+    isBlankIssuesEnabled
+    issueCreationPolicy
+    hasPullRequestsEnabled
+    pullRequestCreationPolicy
+    hasDiscussionsEnabled
+    discussions(states: [OPEN], first: 0) { totalCount }
+  }
+}

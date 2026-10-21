@@ -1,22 +1,29 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.api.Optional
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.*
+import com.gitmob.app.graphql.OwnerReposQuery
+import com.gitmob.app.graphql.RepositoryCreateOwnersQuery
+import com.gitmob.app.graphql.ViewerReposQuery
+import com.gitmob.app.graphql.fragment.RepoListFields
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class RepoRepository @Inject constructor(
     private val api: GHApiClient,
+    private val apolloClient: ApolloClient,
 ) {
 
     // ── 缓存实例 ──────────────────────────────────────────────
@@ -64,163 +71,110 @@ class RepoRepository @Inject constructor(
         return result
     }
 
-    private suspend fun getReposInternal(login: String?, after: String?): ApiResult<RepoList> = safeCall {
-        // 仓库公共字段片段：viewer.repositories 和 repositoryOwner(login:).repositories 下的字段集合 100% 一致
-        // 直接复用一份字符串避免两处漂移（技能文档第三节「协议屏蔽」统一查询思想）。
-        val repoFields = """
-            name
-            owner { login avatarUrl }
-            description
-            homepageUrl
-            isPrivate
-            isArchived
-            isFork
-            parent { name owner { login avatarUrl } }
-            primaryLanguage { name color }
-            stargazerCount
-            forkCount
-            issues(states: [OPEN]) { totalCount }
-            repositoryTopics(first: ${PageSize.TOPICS_PER_REPO}) { nodes { topic { name } } }
-            defaultBranchRef { name }
-        """.trimIndent()
-
-        val query = if (login == null) {
-            """
-                query ViewerRepos(${'$'}after: String) {
-                    viewer {
-                        id
-                        login
-                        name
-                        avatarUrl
-                        repositories(first: ${PageSize.REPOS}, after: ${'$'}after, ownerAffiliations: [OWNER]) {
-                            totalCount
-                            nodes { $repoFields }
-                            pageInfo { hasNextPage endCursor }
-                        }
-                    }
+    private suspend fun getReposInternal(login: String?, after: String?): ApiResult<RepoList> {
+        return if (login == null) {
+            when (val result = apolloClient.query(ViewerReposQuery(
+                after = Optional.presentIfNotNull(after),
+                first = PageSize.REPOS,
+                topicsFirst = PageSize.TOPICS_PER_REPO,
+            )).executeAsApiResult()) {
+                is ApiResult.Failure -> result
+                is ApiResult.Success -> safeCall {
+                    val viewer = result.data.viewer
+                    val conn = viewer.repositories
+                    RepoList(
+                        totalCount = conn.totalCount,
+                        items = conn.nodes.orEmpty().filterNotNull().map { it.repoListFields.toDomain() },
+                        hasNextPage = conn.pageInfo.hasNextPage,
+                        endCursor = conn.pageInfo.endCursor,
+                        ownerContext = RepositoryListOwnerContext(
+                            RepositoryCreateOwner(
+                                id = viewer.id,
+                                login = viewer.login,
+                                name = viewer.name,
+                                avatarUrl = viewer.avatarUrl,
+                                type = RepositoryCreateOwnerType.USER,
+                                canCreateRepository = true,
+                            ),
+                        ),
+                    )
                 }
-            """.trimIndent()
-        } else {
-            """
-                query OwnerRepos(${'$'}login: String!, ${'$'}after: String) {
-                    repositoryOwner(login: ${'$'}login) {
-                        __typename
-                        id
-                        login
-                        avatarUrl
-                        ... on User { name isViewer }
-                        ... on Organization { name viewerCanCreateRepositories }
-                        repositories(first: ${PageSize.REPOS}, after: ${'$'}after, ownerAffiliations: [OWNER]) {
-                            totalCount
-                            nodes { $repoFields }
-                            pageInfo { hasNextPage endCursor }
-                        }
-                    }
-                }
-            """.trimIndent()
-        }
-
-        val variables = buildMap {
-            after?.let { put("after", JsonPrimitive(it)) }
-            login?.let { put("login", JsonPrimitive(it)) }
-        }
-
-        // 两种模式共用同一个 DTO：同时暴露 viewer 和 repositoryOwner 两个 nullable 根
-        // GraphQL 服务端只会返回对应查询的那一个，另一个保持 null，
-        // 这样就不需要维护两份结构完全重复的 ViewerRepoListQueryData / UserRepoListQueryData。
-        val data = api.graphQL<UnifiedRepoListQueryData>(query, variables)
-        val viewer = data.viewer
-        val repositoryOwner = data.repositoryOwner
-        val conn = viewer?.repositories
-            ?: repositoryOwner?.repositories
-            ?: throw IllegalStateException("仓库查询根字段缺失（viewer/repositoryOwner 均为 null）")
-        val owner = if (viewer != null) {
-            RepositoryCreateOwner(
-                id = viewer.id,
-                login = viewer.login,
-                name = viewer.name,
-                avatarUrl = viewer.avatarUrl,
-                type = RepositoryCreateOwnerType.USER,
-                canCreateRepository = true,
-            )
-        } else {
-            val ownerType = if (repositoryOwner?.__typename == "Organization") {
-                RepositoryCreateOwnerType.ORGANIZATION
-            } else {
-                RepositoryCreateOwnerType.USER
             }
-            RepositoryCreateOwner(
-                id = repositoryOwner?.id.orEmpty(),
-                login = repositoryOwner?.login.orEmpty(),
-                name = repositoryOwner?.name,
-                avatarUrl = repositoryOwner?.avatarUrl,
-                type = ownerType,
-                canCreateRepository = if (ownerType == RepositoryCreateOwnerType.ORGANIZATION) {
-                    repositoryOwner?.viewerCanCreateRepositories == true
-                } else {
-                    repositoryOwner?.isViewer == true
-                },
-            )
+        } else {
+            when (val result = apolloClient.query(OwnerReposQuery(
+                login = login,
+                after = Optional.presentIfNotNull(after),
+                first = PageSize.REPOS,
+                topicsFirst = PageSize.TOPICS_PER_REPO,
+            )).executeAsApiResult()) {
+                is ApiResult.Failure -> result
+                is ApiResult.Success -> safeCall {
+                    val repositoryOwner = result.data.repositoryOwner
+                        ?: throw IllegalStateException("仓库查询根字段缺失（repositoryOwner 为 null）")
+                    val conn = repositoryOwner.repositories
+                    val ownerType = if (repositoryOwner.onOrganization != null) {
+                        RepositoryCreateOwnerType.ORGANIZATION
+                    } else {
+                        RepositoryCreateOwnerType.USER
+                    }
+                    RepoList(
+                        totalCount = conn.totalCount,
+                        items = conn.nodes.orEmpty().filterNotNull().map { it.repoListFields.toDomain() },
+                        hasNextPage = conn.pageInfo.hasNextPage,
+                        endCursor = conn.pageInfo.endCursor,
+                        ownerContext = RepositoryListOwnerContext(
+                            RepositoryCreateOwner(
+                                id = repositoryOwner.id,
+                                login = repositoryOwner.login,
+                                name = repositoryOwner.onUser?.name ?: repositoryOwner.onOrganization?.name,
+                                avatarUrl = repositoryOwner.avatarUrl,
+                                type = ownerType,
+                                canCreateRepository = if (ownerType == RepositoryCreateOwnerType.ORGANIZATION) {
+                                    repositoryOwner.onOrganization?.viewerCanCreateRepositories == true
+                                } else {
+                                    repositoryOwner.onUser?.isViewer == true
+                                },
+                            ),
+                        ),
+                    )
+                }
+            }
         }
-        RepoList(
-            totalCount = conn.totalCount,
-            items = conn.nodes.map { it.toDomain() },
-            hasNextPage = conn.pageInfo.hasNextPage,
-            endCursor = conn.pageInfo.endCursor,
-            ownerContext = RepositoryListOwnerContext(owner),
-        )
     }
 
     /** Loads the viewer and one page of organizations for the create-repository owner picker. */
-    suspend fun getRepositoryCreateOwners(after: String? = null): ApiResult<RepositoryCreateOwnerPage> = safeCall {
-        val query = """
-            query RepositoryCreateOwners(${'$'}after: String) {
-                viewer {
-                    id
-                    login
-                    name
-                    avatarUrl
-                    organizations(first: ${PageSize.ORGS}, after: ${'$'}after) {
-                        nodes {
-                            id
-                            login
-                            name
-                            avatarUrl
-                            viewerCanCreateRepositories
-                        }
-                        pageInfo { hasNextPage endCursor }
-                    }
-                }
-            }
-        """.trimIndent()
-        val data = api.graphQL<RepositoryCreateOwnersQueryData>(
-            query,
-            buildMap { after?.let { put("after", JsonPrimitive(it)) } },
-        )
-        val viewer = data.viewer
-        RepositoryCreateOwnerPage(
-            viewer = RepositoryCreateOwner(
-                id = viewer.id,
-                login = viewer.login,
-                name = viewer.name,
-                avatarUrl = viewer.avatarUrl,
-                type = RepositoryCreateOwnerType.USER,
-                canCreateRepository = true,
-            ),
-            organizations = viewer.organizations.nodes.map { organization ->
-                RepositoryCreateOwner(
-                    id = organization.id,
-                    login = organization.login,
-                    name = organization.name,
-                    avatarUrl = organization.avatarUrl,
-                    type = RepositoryCreateOwnerType.ORGANIZATION,
-                    canCreateRepository = organization.viewerCanCreateRepositories,
+    suspend fun getRepositoryCreateOwners(after: String? = null): ApiResult<RepositoryCreateOwnerPage> =
+        when (val result = apolloClient.query(RepositoryCreateOwnersQuery(
+            after = Optional.presentIfNotNull(after),
+            first = PageSize.ORGS,
+        )).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val viewer = result.data.viewer
+                RepositoryCreateOwnerPage(
+                    viewer = RepositoryCreateOwner(
+                        id = viewer.id,
+                        login = viewer.login,
+                        name = viewer.name,
+                        avatarUrl = viewer.avatarUrl,
+                        type = RepositoryCreateOwnerType.USER,
+                        canCreateRepository = true,
+                    ),
+                    organizations = viewer.organizations.nodes.orEmpty().filterNotNull().map { organization ->
+                        RepositoryCreateOwner(
+                            id = organization.id,
+                            login = organization.login,
+                            name = organization.name,
+                            avatarUrl = organization.avatarUrl,
+                            type = RepositoryCreateOwnerType.ORGANIZATION,
+                            canCreateRepository = organization.viewerCanCreateRepositories,
+                        )
+                    },
+                    hasNextPage = viewer.organizations.pageInfo.hasNextPage,
+                    endCursor = viewer.organizations.pageInfo.endCursor,
                 )
-            },
-            hasNextPage = viewer.organizations.pageInfo.hasNextPage,
-            endCursor = viewer.organizations.pageInfo.endCursor,
-        )
-    }
+            }
+        }
 
     suspend fun getLicenseTemplates(): ApiResult<List<RepositoryLicense>> = safeCall {
         api.get<List<RestLicenseTemplate>>("/licenses").map { RepositoryLicense(it.key, it.name) }
@@ -285,3 +239,27 @@ class RepoRepository @Inject constructor(
         val login: String = "",
     )
 }
+
+/**
+ * RepoListFields → RepoListItem 公共映射。
+ * viewer.repositories 与 repositoryOwner(login:).repositories 的节点结构完全一致，
+ * 统一在这里映射，避免两处漂移。
+ */
+internal fun RepoListFields.toDomain() = RepoListItem(
+    name = name,
+    ownerLogin = owner.login,
+    description = description,
+    homepageUrl = homepageUrl,
+    isPrivate = isPrivate,
+    isArchived = isArchived,
+    isFork = isFork,
+    forkedFromOwner = parent?.owner?.login,
+    forkedFromName = parent?.name,
+    languageName = primaryLanguage?.name,
+    languageColor = primaryLanguage?.color,
+    stargazerCount = stargazerCount,
+    forkCount = forkCount,
+    openIssueCount = issues.totalCount,
+    topics = repositoryTopics.nodes.orEmpty().filterNotNull().map { it.topic.name },
+    defaultBranchName = defaultBranchRef?.name,
+)
