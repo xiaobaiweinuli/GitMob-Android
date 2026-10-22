@@ -45,8 +45,7 @@ class RepoActionsRepositoryTest {
                     override suspend fun getToken() = "fake-token"
                 },
                 restBaseUrl = baseUrl,
-                graphQLUrl = "$baseUrl/graphql",
-            ),
+                ),
             ApolloClient.Builder()
                 .serverUrl("$baseUrl/graphql")
                 .okHttpClient(OkHttpClient())
@@ -117,7 +116,7 @@ class RepoActionsRepositoryTest {
                     options: [staging, production]
         """.trimIndent()
         server.enqueue(MockResponse().setBody("""
-            {"data":{"repository":{"object":{"text":${JsonPrimitive(yaml)},"isBinary":false,"isTruncated":false,"byteSize":${yaml.encodeToByteArray().size}}}}}
+            {"data":{"repository":{"object":{"__typename":"Blob","text":${JsonPrimitive(yaml)},"isBinary":false,"isTruncated":false,"byteSize":${yaml.encodeToByteArray().size}}}}}
         """.trimIndent()))
         val workflow = RepoWorkflow(10, "W10", "Manual", ".github/workflows/manual.yml", "active", null, null)
 

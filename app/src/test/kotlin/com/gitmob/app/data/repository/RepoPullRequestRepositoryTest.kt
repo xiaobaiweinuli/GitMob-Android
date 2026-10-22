@@ -39,7 +39,6 @@ class RepoPullRequestRepositoryTest {
                 json,
                 object : AccessTokenProvider { override suspend fun getToken() = "token" },
                 baseUrl,
-                "$baseUrl/graphql",
             ),
             ApolloClient.Builder()
                 .serverUrl("$baseUrl/graphql")

@@ -33,7 +33,6 @@ class RepoGitCompareTest {
                 Json { ignoreUnknownKeys = true },
                 tokenProvider,
                 baseUrl,
-                "$baseUrl/graphql",
             ),
             ApolloClient.Builder()
                 .serverUrl("$baseUrl/graphql")

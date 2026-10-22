@@ -11,11 +11,10 @@ import com.gitmob.app.core.permission.RepoPermission
 import com.apollographql.apollo.ApolloClient
 import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.*
+import com.gitmob.app.graphql.ActionWorkflowYamlQuery
 import com.gitmob.app.graphql.RepositoryPermissionQuery
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,31 +53,21 @@ class RepoActionsRepository @Inject constructor(
         RepoWorkflowRunDetail(toRun(run), jobs.jobs.map(::toJob), artifacts.artifacts.map(::toArtifact))
     }
 
-    suspend fun getDispatchInputs(owner: String, name: String, workflow: RepoWorkflow, ref: String): ApiResult<List<WorkflowDispatchInput>> = safeCall {
+    suspend fun getDispatchInputs(owner: String, name: String, workflow: RepoWorkflow, ref: String): ApiResult<List<WorkflowDispatchInput>> {
         require(ref.isNotBlank()) { "Workflow ref must not be blank" }
         require(workflow.path.startsWith(".github/workflows/") && !workflow.path.contains("..")) { "Invalid workflow path" }
-        val query = """
-            query ActionWorkflowYaml(${'$'}owner: String!, ${'$'}name: String!, ${'$'}expression: String!) {
-                repository(owner: ${'$'}owner, name: ${'$'}name) {
-                    object(expression: ${'$'}expression) {
-                        ... on Blob { text isBinary isTruncated byteSize }
-                    }
+        return when (val result = apolloClient.query(
+            ActionWorkflowYamlQuery(owner, name, "$ref:${workflow.path}"),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val blob = result.data.repository?.`object`?.onBlob ?: error("Workflow YAML not found")
+                if (blob.isBinary == true || blob.isTruncated || blob.byteSize !in 1..MAX_WORKFLOW_YAML_BYTES) {
+                    error("Workflow YAML is unavailable")
                 }
+                WorkflowDispatchYamlParser.parse(blob.text ?: error("Workflow YAML is unavailable"))
             }
-        """.trimIndent()
-        val data = api.graphQL<ActionWorkflowYamlData>(
-            query,
-            mapOf(
-                "owner" to JsonPrimitive(owner),
-                "name" to JsonPrimitive(name),
-                "expression" to JsonPrimitive("$ref:${workflow.path}"),
-            ),
-        )
-        val blob = data.repository?.objectNode ?: error("Workflow YAML not found")
-        if (blob.isBinary || blob.isTruncated || blob.byteSize !in 1..MAX_WORKFLOW_YAML_BYTES) {
-            error("Workflow YAML is unavailable")
         }
-        WorkflowDispatchYamlParser.parse(blob.text ?: error("Workflow YAML is unavailable"))
     }
 
     suspend fun dispatch(owner: String, name: String, workflowId: Long, ref: String, inputs: Map<String, String>): ApiResult<Unit> = safeCall {
@@ -125,15 +114,5 @@ class RepoActionsRepository @Inject constructor(
 @Serializable private data class RestStep(val name: String = "", val status: String = "", val conclusion: String? = null, val number: Int = 0)
 @Serializable private data class RestArtifactsResponse(val artifacts: List<RestArtifact> = emptyList())
 @Serializable private data class RestArtifact(val id: Long, val name: String = "", @SerialName("size_in_bytes") val sizeInBytes: Long = 0, val expired: Boolean = false, @SerialName("expires_at") val expiresAt: String? = null)
-@Serializable private data class ActionWorkflowYamlData(val repository: ActionWorkflowYamlRepository? = null)
-@Serializable private data class ActionWorkflowYamlRepository(
-    @SerialName("object") val objectNode: ActionWorkflowYamlBlob? = null,
-)
-@Serializable private data class ActionWorkflowYamlBlob(
-    val text: String? = null,
-    val isBinary: Boolean = false,
-    val isTruncated: Boolean = false,
-    val byteSize: Int = 0,
-)
 
 private const val MAX_WORKFLOW_YAML_BYTES = 1024 * 1024

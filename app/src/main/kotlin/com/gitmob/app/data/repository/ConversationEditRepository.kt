@@ -1,58 +1,44 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.api.Optional
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
-import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.ConversationEdit
 import com.gitmob.app.data.model.ConversationEditPage
 import com.gitmob.app.data.model.SimpleUser
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonPrimitive
+import com.gitmob.app.graphql.ContentEditsQuery
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class ConversationEditRepository @Inject constructor(
-    private val api: GHApiClient,
+    private val apolloClient: ApolloClient,
 ) {
-    suspend fun getEdits(nodeId: String, after: String? = null): ApiResult<ConversationEditPage> = safeCall {
+    suspend fun getEdits(nodeId: String, after: String? = null): ApiResult<ConversationEditPage> {
         require(nodeId.isNotBlank()) { "Content node id must not be blank" }
-        val query = """
-            query ContentEdits(${"$"}id: ID!, ${"$"}after: String) {
-                node(id: ${"$"}id) {
-                    ... on Comment {
-                        userContentEdits(first: ${PageSize.CONTENT_EDITS}, after: ${"$"}after) {
-                            totalCount
-                            nodes {
-                                id
-                                editedAt
-                                editor { login avatarUrl }
-                                diff
-                                deletedAt
-                                deletedBy { login avatarUrl }
-                            }
-                            pageInfo { hasNextPage endCursor }
-                        }
-                    }
-                }
+        return when (val result = apolloClient.query(ContentEditsQuery(
+            id = nodeId,
+            after = Optional.presentIfNotNull(after),
+            first = PageSize.CONTENT_EDITS,
+        )).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val connection = result.data.node?.onComment?.userContentEdits
+                ConversationEditPage(
+                    items = connection?.nodes.orEmpty().filterNotNull().map { it.toDomain() },
+                    hasNextPage = connection?.pageInfo?.hasNextPage ?: false,
+                    endCursor = connection?.pageInfo?.endCursor,
+                    totalCount = connection?.totalCount ?: 0,
+                )
             }
-        """.trimIndent()
-        val variables = buildMap {
-            put("id", JsonPrimitive(nodeId))
-            after?.let { put("after", JsonPrimitive(it)) }
         }
-        val connection = api.graphQL<ContentEditsQueryData>(query, variables).node?.userContentEdits
-        ConversationEditPage(
-            items = connection?.nodes.orEmpty().map { it.toDomain() },
-            hasNextPage = connection?.pageInfo?.hasNextPage ?: false,
-            endCursor = connection?.pageInfo?.endCursor,
-            totalCount = connection?.totalCount ?: 0,
-        )
     }
 }
 
-private fun ContentEditNode.toDomain() = ConversationEdit(
+private fun ContentEditsQuery.Node1.toDomain() = ConversationEdit(
     id = id,
     editedAt = editedAt,
     editor = editor?.toDomain(),
@@ -61,48 +47,16 @@ private fun ContentEditNode.toDomain() = ConversationEdit(
     deletedBy = deletedBy?.toDomain(),
 )
 
-private fun EditActorNode.toDomain() = SimpleUser(
+private fun ContentEditsQuery.Editor.toDomain() = SimpleUser(
     login = login,
     name = null,
     avatarUrl = avatarUrl,
     bio = null,
 )
 
-@Serializable
-private data class ContentEditsQueryData(
-    val node: ContentNode? = null,
-)
-
-@Serializable
-private data class ContentNode(
-    val userContentEdits: ContentEditConnection? = null,
-)
-
-@Serializable
-private data class ContentEditConnection(
-    val totalCount: Int = 0,
-    val nodes: List<ContentEditNode> = emptyList(),
-    val pageInfo: ContentEditPageInfo = ContentEditPageInfo(),
-)
-
-@Serializable
-private data class ContentEditPageInfo(
-    val hasNextPage: Boolean = false,
-    val endCursor: String? = null,
-)
-
-@Serializable
-private data class ContentEditNode(
-    val id: String,
-    val editedAt: String = "",
-    val editor: EditActorNode? = null,
-    val diff: String? = null,
-    val deletedAt: String? = null,
-    val deletedBy: EditActorNode? = null,
-)
-
-@Serializable
-private data class EditActorNode(
-    val login: String = "",
-    val avatarUrl: String? = null,
+private fun ContentEditsQuery.DeletedBy.toDomain() = SimpleUser(
+    login = login,
+    name = null,
+    avatarUrl = avatarUrl,
+    bio = null,
 )

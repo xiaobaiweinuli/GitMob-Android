@@ -1,8 +1,10 @@
 package com.gitmob.app.data.repository
 
+import com.apollographql.apollo.ApolloClient
+import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
-import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.DiscussionStateReason
 import com.gitmob.app.data.model.IssueState
 import com.gitmob.app.data.model.IssueStateReason
@@ -24,7 +26,6 @@ import com.gitmob.app.data.model.UserPullRequestSortFilter
 import com.gitmob.app.data.model.UserPullRequestStateFilter
 import com.gitmob.app.data.model.UserPullRequestVisibilityFilter
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -42,16 +43,19 @@ class WorkRepositoryTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
-        val api = GHApiClient(
-            okHttpClient = OkHttpClient(),
-            json = Json { ignoreUnknownKeys = true },
-            tokenProvider = object : AccessTokenProvider {
-                override suspend fun getToken() = "fake-token"
-            },
-            restBaseUrl = baseUrl,
-            graphQLUrl = "$baseUrl/graphql",
+        repository = WorkRepository(
+            ApolloClient.Builder()
+                .serverUrl("$baseUrl/graphql")
+                .okHttpClient(OkHttpClient())
+                .addHttpInterceptor(
+                    AuthHttpInterceptor(
+                        object : AccessTokenProvider {
+                            override suspend fun getToken() = "fake-token"
+                        },
+                    ),
+                )
+                .build(),
         )
-        repository = WorkRepository(api)
     }
 
     @After
@@ -70,7 +74,7 @@ class WorkRepositoryTest {
                         "__typename":"Issue","id":"I_1","number":42,"title":"bug",
                         "state":"OPEN","stateReason":"REOPENED","locked":true,
                         "updatedAt":"2026-01-01T00:00:00Z",
-                        "repository":{"name":"repo","owner":{"login":"octocat","avatarUrl":null}}
+                        "repository":{"name":"repo","owner":{"__typename":"User","login":"octocat","avatarUrl":"https://avatars.example.com/octocat"}}
                     }],
                     "pageInfo":{"hasNextPage":false,"endCursor":null}
                 }}}
@@ -103,7 +107,7 @@ class WorkRepositoryTest {
                         "__typename":"PullRequest","id":"PR_1","number":18,"title":"draft",
                         "state":"OPEN","isDraft":true,"locked":false,
                         "updatedAt":"2026-01-01T00:00:00Z",
-                        "repository":{"name":"repo","owner":{"login":"octocat","avatarUrl":null}}
+                        "repository":{"name":"repo","owner":{"__typename":"User","login":"octocat","avatarUrl":"https://avatars.example.com/octocat"}}
                     }],
                     "pageInfo":{"hasNextPage":false,"endCursor":null}
                 }}}
@@ -132,7 +136,7 @@ class WorkRepositoryTest {
                         "__typename":"Discussion","id":"D_1","number":7,"title":"讨论标题",
                         "stateReason":"RESOLVED","isAnswered":true,"locked":false,
                         "updatedAt":"2026-01-01T00:00:00Z",
-                        "repository":{"name":"repo","owner":{"login":"octocat","avatarUrl":null}}
+                        "repository":{"name":"repo","owner":{"__typename":"User","login":"octocat","avatarUrl":"https://avatars.example.com/octocat"}}
                     }],
                     "pageInfo":{"hasNextPage":false,"endCursor":null}
                 }}}

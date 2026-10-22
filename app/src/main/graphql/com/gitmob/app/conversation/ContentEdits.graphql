@@ -1,0 +1,19 @@
+# 评论/正文编辑历史（node(id:) ... on Comment）
+query ContentEdits($id: ID!, $after: String, $first: Int!) {
+  node(id: $id) {
+    ... on Comment {
+      userContentEdits(first: $first, after: $after) {
+        totalCount
+        nodes {
+          id
+          editedAt
+          editor { login avatarUrl }
+          diff
+          deletedAt
+          deletedBy { login avatarUrl }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}

@@ -43,8 +43,7 @@ class RepoReleaseRepositoryTest {
                     override suspend fun getToken() = "fake-token"
                 },
                 restBaseUrl = baseUrl,
-                graphQLUrl = "$baseUrl/graphql",
-            ),
+                ),
             ApolloClient.Builder()
                 .serverUrl("$baseUrl/graphql")
                 .okHttpClient(OkHttpClient())

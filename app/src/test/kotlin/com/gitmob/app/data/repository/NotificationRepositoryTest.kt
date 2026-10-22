@@ -30,7 +30,6 @@ class NotificationRepositoryTest {
                 override suspend fun getToken() = "fake-token"
             },
             restBaseUrl = baseUrl,
-            graphQLUrl = "$baseUrl/graphql",
         )
         repository = NotificationRepository(api)
     }

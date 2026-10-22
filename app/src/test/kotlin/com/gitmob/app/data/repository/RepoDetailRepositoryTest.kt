@@ -33,7 +33,6 @@ class RepoDetailRepositoryTest {
             json = Json { ignoreUnknownKeys = true },
             tokenProvider = tokenProvider,
             restBaseUrl = baseUrl,
-            graphQLUrl = "$baseUrl/graphql",
         )
         val apollo = ApolloClient.Builder()
             .serverUrl("$baseUrl/graphql")

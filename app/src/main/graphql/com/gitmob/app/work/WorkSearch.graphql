@@ -1,0 +1,59 @@
+# "involves:@me" 跨仓库聚合搜索。
+# type: ISSUE 同时覆盖 Issue 和 PullRequest（用 inline fragment 分流）；
+# type: DISCUSSION 是完全独立的一次查询，没法和前者合并。
+query WorkIssues($searchQuery: String!, $after: String, $first: Int!) {
+  search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
+    issueCount
+    nodes {
+      ... on Issue {
+        id
+        number
+        title
+        updatedAt
+        state
+        stateReason
+        locked
+        repository { name owner { login avatarUrl } }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+query WorkPullRequests($searchQuery: String!, $after: String, $first: Int!) {
+  search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
+    issueCount
+    nodes {
+      ... on PullRequest {
+        id
+        number
+        title
+        updatedAt
+        state
+        isDraft
+        locked
+        repository { name owner { login avatarUrl } }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+query WorkDiscussions($searchQuery: String!, $after: String, $first: Int!) {
+  search(query: $searchQuery, type: DISCUSSION, first: $first, after: $after) {
+    discussionCount
+    nodes {
+      ... on Discussion {
+        id
+        number
+        title
+        updatedAt
+        stateReason
+        isAnswered
+        locked
+        repository { name owner { login avatarUrl } }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}

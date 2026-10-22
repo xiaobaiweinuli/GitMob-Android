@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
  *   private val profileCache = MemoryCache<Unit, ViewerProfile>(ttlMs = 5 * 60_000L)
  *   // 命中直接返回；未命中走网络并写缓存
  *   profileCache.get(Unit)?.let { return ApiResult.Success(it) }
- *   return safeCall { api.graphQL(...).also { profileCache.set(Unit, it) } }
+ *   return safeCall { fetch().also { profileCache.set(Unit, it) } }
  *   // mutation 后主动失效（下次重新拉取）
  *   profileCache.invalidate(Unit)
  *

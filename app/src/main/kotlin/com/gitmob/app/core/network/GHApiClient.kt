@@ -1,15 +1,12 @@
 package com.gitmob.app.core.network
 
 import com.gitmob.app.core.auth.AccessTokenProvider
-import com.gitmob.app.core.error.GraphQLException
 import com.gitmob.app.core.error.HttpStatusException
-import com.gitmob.app.core.error.NetworkException
 import com.gitmob.app.core.error.UnauthorizedException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -22,7 +19,6 @@ import javax.inject.Singleton
 
 @PublishedApi
 internal const val REST_API_VERSION = "2026-03-10" // 最新版本（2026-03-10 发布），升级前先读 GitHub 变更日志
-// graphQL()（inline）直接用到这个值，同 DEFAULT_ACCEPT 的道理
 @PublishedApi
 internal const val USER_AGENT = "GitMob-Android"     // REST 强制要求，缺失会被拒绝
 
@@ -34,21 +30,21 @@ internal const val USER_AGENT = "GitMob-Android"     // REST 强制要求，缺�
 internal const val DEFAULT_ACCEPT = "application/vnd.github+json"
 
 /**
- * REST 和 GraphQL 共用同一个 OkHttpClient，但两套请求头完全不同、作用也不同，
- * 内部拆成两组独立方法各自拼头，不共用统一拦截器。详见技能 references/http-headers.md。
+ * 纯 REST 客户端。GraphQL 已全部迁移到 Apollo Kotlin（见 NetworkModule.provideApolloClient），
+ * 两套通道复用同一个 OkHttpClient 实例（超时/连接池一致），请求头各自拼接。
+ * 详见技能 references/http-headers.md。
  *
  * 不使用 Retrofit——REST 端点数量不多，手写比维护 Retrofit interface 更直观。
  */
 @Singleton
 class GHApiClient @Inject constructor(
-    // 下面这四个原来是 private val——同样是被 public inline 函数（graphQL 等）直接
+    // 下面三个原来是 private val——被 public inline 函数（get/post/patch 等）直接
     // 引用到，必须至少是 internal 才能通过编译，用 @PublishedApi 标记"仅供 inline 用，
     // 别当成正常的公开 API 调用"，道理同 DEFAULT_ACCEPT。
     @PublishedApi internal val okHttpClient: OkHttpClient,
     @PublishedApi internal val json: Json,
     @PublishedApi internal val tokenProvider: AccessTokenProvider,
     @Named("restBaseUrl") private val restBaseUrl: String,
-    @Named("graphQLUrl") @PublishedApi internal val graphQLUrl: String,
 ) {
     // 生产环境的默认值由 NetworkModule 用 @Named 提供；单元测试里不走 Hilt，
     // 直接 new GHApiClient(..., restBaseUrl = mockServer.url("/").toString(), ...) 即可，
@@ -225,65 +221,4 @@ class GHApiClient @Inject constructor(
         }
     }
 
-    // ============ GraphQL 单一入口 ============
-
-    /**
-     * GitHub GraphQL 单一入口（登录校验请求走这里）。
-     * token 校验失败会通过异常层级向上抛出；调用方用 safeCall 统一归类。
-     * @sample userRepository.getViewerProfile（登录时的首次验证请求）
-     */
-    @Deprecated(
-        message = "GraphQL 层迁移到 Apollo Kotlin（B0 起分批替换），新代码一律用 ApolloClient + 生成模型",
-        level = DeprecationLevel.WARNING,
-    )
-    suspend inline fun <reified D> graphQL(
-        query: String,
-        variables: Map<String, JsonElement> = emptyMap(),
-    ): D {
-        // Step 1: 拿 token（会走 TokenStorage -> TokenCipher 解密）
-        val token = tokenProvider.getToken() ?: throw UnauthorizedException()
-
-        // Step 2: 构造请求
-        val bodyStr = json.encodeToString(GraphQLRequest(query, variables))
-        val request = Request.Builder()
-            .url(graphQLUrl)
-            .header("Authorization", "bearer $token")           // 大小写均可，GraphQL 官方示例用小写
-            .header("Content-Type", "application/json")         // GraphQL 必需：所有操作都是 POST + JSON body
-            .header("User-Agent", USER_AGENT)
-            // 注意：不加 Accept 媒体类型头、不加 X-GitHub-Api-Version —— GraphQL 没有这两个概念
-            .post(bodyStr.toRequestBody("application/json".toMediaType()))
-            .build()
-
-        // Step 3: 发起 HTTP 请求 —— OkHttp execute() 是同步阻塞 API，必须切 Dispatchers.IO
-        //         否则 viewModelScope.launch 默认 Main 线程会触发 NetworkOnMainThreadException
-        //         （直接被 safeCall catch-all 归类为"未知错误"）。
-        return withContext(Dispatchers.IO) {
-            okHttpClient.newCall(request).execute().use { response ->
-                val bytes = response.body.bytes()
-
-                // 非成功 HTTP 状态码
-                if (!response.isSuccessful) {
-                    throw HttpStatusException(response.code, bytes.decodeToString())
-                }
-
-                // Step 4: JSON 解码
-                val bodyString = bytes.decodeToString()
-                val parsed = try {
-                    json.decodeFromString<GraphQLResponse<D>>(bodyString)
-                } catch (e: kotlinx.serialization.SerializationException) {
-                    throw e
-                } catch (t: Throwable) {
-                    throw t
-                }
-
-                // GraphQL 业务层错误（HTTP 200 也可能带 errors）
-                if (!parsed.errors.isNullOrEmpty()) {
-                    throw GraphQLException(parsed.errors)
-                }
-
-                // data 为空但也没 errors —— 罕见
-                parsed.data ?: throw NetworkException("data 字段为空")
-            }
-        }
-    }
 }

@@ -1,0 +1,8 @@
+# 读取 workflow YAML 原文（object(expression:) → Blob），供 workflow_dispatch 输入解析
+query ActionWorkflowYaml($owner: String!, $name: String!, $expression: String!) {
+  repository(owner: $owner, name: $name) {
+    object(expression: $expression) {
+      ... on Blob { text isBinary isTruncated byteSize }
+    }
+  }
+}
