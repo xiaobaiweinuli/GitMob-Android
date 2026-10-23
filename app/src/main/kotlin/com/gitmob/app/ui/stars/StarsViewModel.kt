@@ -30,7 +30,7 @@ data class StarsUiState(
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
     val hasNextPage: Boolean = false,
-    val listsSectionExpanded: Boolean = true,
+    val listsSectionExpanded: Boolean = false,
     val showCreateListDialog: Boolean = false,
     val isCreatingList: Boolean = false,
     val editingList: UserListSummary? = null,

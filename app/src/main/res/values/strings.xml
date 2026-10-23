@@ -372,11 +372,13 @@
     <string name="inbox_empty_read">没有已读通知</string>
     <string name="gist_title_of_user">@%1$s 的 Gist</string>
     <string name="gist_title_mine">我的 Gist</string>
+    <string name="gist_filter_category">类别</string>
     <string name="gist_category_original">原创</string>
     <string name="gist_category_forked">复刻</string>
     <string name="gist_empty_batch">当前批次没有匹配的 Gist</string>
     <string name="gist_empty_original">还没有原创 Gist</string>
     <string name="gist_empty_forked">还没有复刻 Gist</string>
+    <string name="gist_empty_filtered">没有符合筛选条件的 Gist</string>
     <string name="gist_continue_search">继续查找</string>
     <string name="userlist_title_followers">关注者</string>
     <string name="userlist_title_following">关注</string>

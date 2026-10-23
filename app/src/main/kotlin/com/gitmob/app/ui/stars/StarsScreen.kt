@@ -7,12 +7,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -36,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,8 +54,7 @@ import com.gitmob.app.ui.common.StarredRepoCard
 /**
  * 底部 Tab「星标」——当前登录用户的星标管理页（带列表筛选 Chip 行 + 下拉刷新 + 分页）。
  *
- * Scaffold 只处理 safeDrawing(Top+Horizontal) 生成 statusBar 内边距，
- * Chip 行在 ListsSection 前手动 Spacer(statusBarTop) 占位；
+ * TopAppBar 处理 safeDrawing(Top+Horizontal)，内容应用 Scaffold 的 innerPadding；
  * 底部 NavigationBar 高度由外层 NavDisplay 统一处理，不需要 Screen 内部再挂 Spacer。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,22 +69,26 @@ fun StarsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     Scaffold(
-        // 无 TopAppBar → innerPadding.top = statusBar 高度
-        contentWindowInsets = WindowInsets.safeDrawing
-            .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.nav_tab_stars)) },
+                actions = {
+                    IconButton(onClick = viewModel::openCreateListDialog) {
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.stars_create_list))
+                    }
+                },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
-        val statusBarTop = innerPadding.calculateTopPadding()
-
-        Column(modifier = Modifier.fillMaxSize()) {
-            // ListsSection（Chip 行）：始终可见，不随列表滚动，先跳过 statusBar 高度
-            Spacer(Modifier.height(statusBarTop))
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             ListsSection(
                 lists = state.lists,
                 selectedFilter = state.selectedFilter,
                 expanded = state.listsSectionExpanded,
                 onToggleExpanded = viewModel::toggleListsSectionExpanded,
                 onSelectFilter = viewModel::selectFilter,
-                onCreateListClick = viewModel::openCreateListDialog,
                 onEditListClick = viewModel::openEditListDialog,
             )
 
@@ -201,7 +203,6 @@ private fun ListsSection(
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
     onSelectFilter: (StarFilter) -> Unit,
-    onCreateListClick: () -> Unit,
     onEditListClick: (UserListSummary) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -222,9 +223,6 @@ private fun ListsSection(
                 if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
             )
-            IconButton(onClick = onCreateListClick) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.stars_create_list))
-            }
         }
 
         if (expanded) {

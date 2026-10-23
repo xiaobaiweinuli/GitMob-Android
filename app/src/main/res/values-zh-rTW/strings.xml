@@ -367,11 +367,13 @@
     <string name="inbox_empty_read">沒有已讀通知</string>
     <string name="gist_title_of_user">@%1$s 的 Gist</string>
     <string name="gist_title_mine">我的 Gist</string>
+    <string name="gist_filter_category">類別</string>
     <string name="gist_category_original">原創</string>
     <string name="gist_category_forked">復刻</string>
     <string name="gist_empty_batch">目前批次沒有符合的 Gist</string>
     <string name="gist_empty_original">還沒有原創 Gist</string>
     <string name="gist_empty_forked">還沒有復刻 Gist</string>
+    <string name="gist_empty_filtered">沒有符合篩選條件的 Gist</string>
     <string name="gist_continue_search">繼續查找</string>
     <string name="userlist_title_followers">追蹤者</string>
     <string name="userlist_title_following">正在追蹤</string>

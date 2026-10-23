@@ -14,6 +14,7 @@ import com.gitmob.app.data.model.GistFilePreview
 import com.gitmob.app.data.model.GistListItem
 import com.gitmob.app.data.model.GistPage
 import com.gitmob.app.data.model.GistSort
+import com.gitmob.app.data.model.GistVisibility
 import com.gitmob.app.graphql.UserGistsQuery
 import com.gitmob.app.graphql.ViewerGistsQuery
 import com.gitmob.app.graphql.fragment.GistConnectionFields
@@ -36,6 +37,7 @@ class GistRepository @Inject constructor(
         val targetLogin: String?,
         val category: GistCategory,
         val sort: GistSort,
+        val visibility: GistVisibility,
     )
 
     private data class ScanResult(
@@ -65,27 +67,30 @@ class GistRepository @Inject constructor(
         category: GistCategory,
         sort: GistSort,
         after: String? = null,
+        visibility: GistVisibility = GistVisibility.ALL,
     ): ApiResult<GistPage> {
         if (after == null) {
             currentViewerLogin?.let { viewerLogin ->
-                firstPageCache.get(CacheKey(viewerLogin, login?.lowercase(), category, sort))?.let {
+                firstPageCache.get(CacheKey(viewerLogin, login?.lowercase(), category, sort, visibility))?.let {
                     return ApiResult.Success(it)
                 }
             }
         }
 
-        return loadAndMap(login, category, sort, after, cacheFirstPage = after == null)
+        return loadAndMap(login, category, sort, after, visibility, cacheFirstPage = after == null)
     }
 
     suspend fun getGistsFresh(
         login: String? = null,
         category: GistCategory,
         sort: GistSort,
+        visibility: GistVisibility = GistVisibility.ALL,
     ): ApiResult<GistPage> = loadAndMap(
         login = login,
         category = category,
         sort = sort,
         after = null,
+        visibility = visibility,
         cacheFirstPage = true,
     )
 
@@ -94,13 +99,14 @@ class GistRepository @Inject constructor(
         category: GistCategory,
         sort: GistSort,
         after: String?,
+        visibility: GistVisibility,
         cacheFirstPage: Boolean,
-    ): ApiResult<GistPage> = when (val result = scanGists(login, category, sort, after)) {
+    ): ApiResult<GistPage> = when (val result = scanGists(login, category, sort, after, visibility)) {
         is ApiResult.Success -> {
             currentViewerLogin = result.data.viewerLogin
             if (cacheFirstPage) {
                 firstPageCache.set(
-                    CacheKey(result.data.viewerLogin, login?.lowercase(), category, sort),
+                    CacheKey(result.data.viewerLogin, login?.lowercase(), category, sort, visibility),
                     result.data.page,
                 )
             }
@@ -124,6 +130,7 @@ class GistRepository @Inject constructor(
         category: GistCategory,
         sort: GistSort,
         after: String?,
+        visibility: GistVisibility,
     ): ApiResult<ScanResult> {
         val collected = mutableListOf<GistListItem>()
         var viewerLogin: String? = null
@@ -141,7 +148,7 @@ class GistRepository @Inject constructor(
                 is ApiResult.Success -> result.data
             }
             val step = safeCall {
-                processBatch(batch, targetLogin, viewerLogin, category, collected, cursor)
+                processBatch(batch, targetLogin, viewerLogin, category, visibility, collected, cursor)
             }
             when (step) {
                 is ApiResult.Failure -> return step
@@ -166,12 +173,13 @@ class GistRepository @Inject constructor(
         }
     }
 
-    /** 处理一个扫描批次：校验归属、过滤分类、推进游标。collected 由调用方持有并在本函数内追加。 */
+    /** 处理一个扫描批次：校验归属、过滤分类与可见性、推进游标。 */
     private fun processBatch(
         batch: GistBatch,
         targetLogin: String?,
         previousViewerLogin: String?,
         category: GistCategory,
+        visibility: GistVisibility,
         collected: MutableList<GistListItem>,
         cursorIn: String?,
     ): LoopStep {
@@ -195,7 +203,7 @@ class GistRepository @Inject constructor(
         for ((index, edge) in edges.withIndex()) {
             cursor = edge.cursor
             edge.node?.let { node ->
-                if (node.matches(category)) {
+                if (node.matches(category, visibility)) {
                     collected += node.toDomain(login)
                 }
             }
@@ -279,10 +287,12 @@ class GistRepository @Inject constructor(
         )
     }
 
-    private fun GistConnectionFields.Node.matches(category: GistCategory): Boolean = when (category) {
-        GistCategory.ORIGINAL -> !isFork
-        GistCategory.FORKED -> isFork
-    }
+    private fun GistConnectionFields.Node.matches(category: GistCategory, visibility: GistVisibility): Boolean =
+        (isFork == (category == GistCategory.FORKED)) && when (visibility) {
+            GistVisibility.ALL -> true
+            GistVisibility.PUBLIC -> isPublic
+            GistVisibility.PRIVATE -> !isPublic
+        }
 
     private fun GistConnectionFields.Node.toDomain(viewerLogin: String): GistListItem {
         val fileNodes = fileMetadata.orEmpty().filterNotNull()

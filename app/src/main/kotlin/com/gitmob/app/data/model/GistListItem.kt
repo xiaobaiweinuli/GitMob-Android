@@ -6,6 +6,12 @@ enum class GistCategory {
     FORKED,
 }
 
+enum class GistVisibility {
+    ALL,
+    PUBLIC,
+    PRIVATE,
+}
+
 enum class GistSort(
     internal val graphQLField: String,
     internal val graphQLDirection: String,

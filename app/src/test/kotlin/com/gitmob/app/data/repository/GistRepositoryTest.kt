@@ -9,6 +9,7 @@ import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistPage
 import com.gitmob.app.data.model.GistSort
+import com.gitmob.app.data.model.GistVisibility
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -252,6 +253,179 @@ class GistRepositoryTest {
         assertTrue(result is ApiResult.Failure)
         val error = (result as ApiResult.Failure).error
         assertTrue(error is ApiError.GraphQLError)
+    }
+
+    @Test
+    fun `类别与可见性共同筛选且全部保留两种可见性`() = runTest {
+        val cases = listOf(
+            Triple(GistCategory.ORIGINAL, GistVisibility.ALL, listOf("original-public", "original-private")),
+            Triple(GistCategory.ORIGINAL, GistVisibility.PUBLIC, listOf("original-public")),
+            Triple(GistCategory.ORIGINAL, GistVisibility.PRIVATE, listOf("original-private")),
+            Triple(GistCategory.FORKED, GistVisibility.ALL, listOf("fork-public", "fork-private")),
+            Triple(GistCategory.FORKED, GistVisibility.PUBLIC, listOf("fork-public")),
+            Triple(GistCategory.FORKED, GistVisibility.PRIVATE, listOf("fork-private")),
+        )
+        for ((category, visibility, expectedIds) in cases) {
+            enqueuePage(
+                edges = listOf(
+                    edge("c1", gistNode("original-public", isFork = false)),
+                    edge("c2", gistNode("original-private", isFork = false, isPublic = false)),
+                    edge("c3", gistNode("fork-public", isFork = true)),
+                    edge("c4", gistNode("fork-private", isFork = true, isPublic = false)),
+                ),
+                hasNextPage = false,
+                endCursor = "c4",
+            )
+            val result = repository.getGists(category = category, sort = GistSort.RECENTLY_UPDATED, visibility = visibility)
+            val page = (result as ApiResult.Success).data
+            assertEquals(expectedIds, page.items.map { it.id })
+            assertFalse(page.hasNextPage)
+        }
+        assertEquals(6, server.requestCount)
+    }
+
+    @Test
+    fun `可见性过滤跨越不匹配批次与空批次并正确推进游标`() = runTest {
+        enqueuePage(
+            edges = listOf(
+                "null",
+                edge("c0", "null"),
+                edge("c1", gistNode("public", isFork = false)),
+                edge("c2", gistNode("private-fork", isFork = true, isPublic = false)),
+            ),
+            hasNextPage = true,
+            endCursor = "c2",
+        )
+        enqueuePage(emptyList(), hasNextPage = true, endCursor = "c3")
+        enqueuePage(
+            listOf(edge("c4", gistNode("private-original", isFork = false, isPublic = false))),
+            hasNextPage = false,
+            endCursor = "c4",
+        )
+
+        val page = (repository.getGists(
+            category = GistCategory.ORIGINAL,
+            sort = GistSort.RECENTLY_UPDATED,
+            visibility = GistVisibility.PRIVATE,
+        ) as ApiResult.Success).data
+
+        assertEquals(listOf("private-original"), page.items.map { it.id })
+        assertEquals("c4", page.nextCursor)
+        assertFalse(page.hasNextPage)
+        server.takeRequest()
+        assertTrue(server.takeRequest().body.readUtf8().contains("\"after\":\"c2\""))
+        assertTrue(server.takeRequest().body.readUtf8().contains("\"after\":\"c3\""))
+    }
+
+    @Test
+    fun `可见性筛选页中截断后下一页从最后检查的edge续接`() = runTest {
+        val edges = (1..21).flatMap { index ->
+            listOf(
+                edge("skip$index", gistNode("public$index", isFork = false)),
+                edge("c$index", gistNode("private$index", isFork = false, isPublic = false)),
+            )
+        }
+        enqueuePage(edges, hasNextPage = false, endCursor = "c21")
+        enqueuePage(edges.takeLast(2), hasNextPage = false, endCursor = "c21")
+
+        val first = (repository.getGists(
+            category = GistCategory.ORIGINAL,
+            sort = GistSort.RECENTLY_UPDATED,
+            visibility = GistVisibility.PRIVATE,
+        ) as ApiResult.Success).data
+        assertEquals((1..20).map { "private$it" }, first.items.map { it.id })
+        assertEquals("c20", first.nextCursor)
+        assertTrue(first.hasNextPage)
+
+        val next = (repository.getGists(
+            null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, first.nextCursor, GistVisibility.PRIVATE,
+        ) as ApiResult.Success).data
+        assertEquals(listOf("private21"), next.items.map { it.id })
+        assertFalse(next.hasNextPage)
+        server.takeRequest()
+        assertTrue(server.takeRequest().body.readUtf8().contains("\"after\":\"c20\""))
+        val cached = (repository.getGists(
+            category = GistCategory.ORIGINAL,
+            sort = GistSort.RECENTLY_UPDATED,
+            visibility = GistVisibility.PRIVATE,
+        ) as ApiResult.Success).data
+        assertEquals(first, cached)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `可见性扫描达到五批后保留继续查找能力`() = runTest {
+        repeat(5) { batch ->
+            val cursor = "c${batch + 1}"
+            enqueuePage(listOf(edge(cursor, gistNode("public$batch", isFork = false))), true, cursor)
+        }
+        val first = (repository.getGists(
+            category = GistCategory.ORIGINAL,
+            sort = GistSort.RECENTLY_UPDATED,
+            visibility = GistVisibility.PRIVATE,
+        ) as ApiResult.Success).data
+        assertTrue(first.items.isEmpty())
+        assertTrue(first.hasNextPage)
+        assertEquals("c5", first.nextCursor)
+        assertEquals(5, server.requestCount)
+
+        enqueuePage(listOf(edge("c6", gistNode("private", isFork = false, isPublic = false))), false, "c6")
+        val next = (repository.getGists(
+            null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, first.nextCursor, GistVisibility.PRIVATE,
+        ) as ApiResult.Success).data
+        assertEquals(listOf("private"), next.items.map { it.id })
+        assertFalse(next.hasNextPage)
+        assertEquals(6, server.requestCount)
+    }
+
+    @Test
+    fun `三种可见性首屏缓存隔离且刷新只更新对应缓存`() = runTest {
+        val expected = mapOf(
+            GistVisibility.ALL to listOf("public", "private"),
+            GistVisibility.PUBLIC to listOf("public"),
+            GistVisibility.PRIVATE to listOf("private"),
+        )
+        repeat(3) {
+            enqueuePage(
+                listOf(
+                    edge("c1", gistNode("public", isFork = false)),
+                    edge("c2", gistNode("private", isFork = false, isPublic = false)),
+                ),
+                false, "c2",
+            )
+        }
+        repeat(2) {
+            for ((visibility, ids) in expected) {
+                val result = repository.getGists(
+                    category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED, visibility = visibility,
+                ) as ApiResult.Success
+                assertEquals(ids, result.data.items.map { it.id })
+            }
+        }
+        assertEquals(3, server.requestCount)
+        enqueuePage(listOf(edge("fresh", gistNode("fresh-private", isFork = false, isPublic = false))), false, "fresh")
+        repository.getGistsFresh(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED, visibility = GistVisibility.PRIVATE)
+        for ((visibility, ids) in expected) {
+            val result = repository.getGists(
+                category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED, visibility = visibility,
+            ) as ApiResult.Success
+            assertEquals(if (visibility == GistVisibility.PRIVATE) listOf("fresh-private") else ids, result.data.items.map { it.id })
+        }
+        assertEquals(4, server.requestCount)
+    }
+
+    @Test
+    fun `他人私有筛选仍使用公开查询并返回最终无匹配`() = runTest {
+        enqueueUserPage("octocat", listOf(edge("c1", gistNode("public", false, ownerLogin = "octocat"))), false, "c1")
+        val result = repository.getGists(
+            login = "octocat", category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED,
+            visibility = GistVisibility.PRIVATE,
+        ) as ApiResult.Success
+        assertTrue(result.data.items.isEmpty())
+        assertFalse(result.data.hasNextPage)
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body.contains("privacy: PUBLIC"))
+        assertFalse(body.contains("privacy: ALL"))
     }
 
     private fun enqueuePage(

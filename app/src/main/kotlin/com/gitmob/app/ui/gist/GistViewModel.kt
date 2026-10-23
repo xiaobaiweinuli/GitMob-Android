@@ -9,6 +9,7 @@ import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistListItem
 import com.gitmob.app.data.model.GistPage
 import com.gitmob.app.data.model.GistSort
+import com.gitmob.app.data.model.GistVisibility
 import com.gitmob.app.data.repository.GistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,11 +28,13 @@ data class GistCategoryUiState(
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
     val loadedSort: GistSort? = null,
+    val loadedVisibility: GistVisibility? = null,
 )
 
 data class GistUiState(
     val selectedCategory: GistCategory = GistCategory.ORIGINAL,
     val selectedSort: GistSort = GistSort.RECENTLY_UPDATED,
+    val selectedVisibility: GistVisibility = GistVisibility.ALL,
     val original: GistCategoryUiState = GistCategoryUiState(),
     val forked: GistCategoryUiState = GistCategoryUiState(),
 ) {
@@ -65,6 +68,7 @@ class GistViewModel @Inject constructor(
     private companion object {
         const val CATEGORY_KEY = "gist.selectedCategory"
         const val SORT_KEY = "gist.selectedSort"
+        const val VISIBILITY_KEY = "gist.selectedVisibility"
     }
 
     private val _state = MutableStateFlow(
@@ -75,63 +79,74 @@ class GistViewModel @Inject constructor(
             selectedSort = savedStateHandle.get<String>(SORT_KEY)
                 ?.let { value -> runCatching { GistSort.valueOf(value) }.getOrNull() }
                 ?: GistSort.RECENTLY_UPDATED,
+            selectedVisibility = savedStateHandle.get<String>(VISIBILITY_KEY)
+                ?.let { value -> runCatching { GistVisibility.valueOf(value) }.getOrNull() }
+                ?: GistVisibility.ALL,
         ),
     )
     val state: StateFlow<GistUiState> = _state.asStateFlow()
 
     private var login: String? = null
     private var initialized = false
+    private val requestGenerations = mutableMapOf<GistCategory, Long>()
 
     init {
         savedStateHandle[CATEGORY_KEY] = _state.value.selectedCategory.name
         savedStateHandle[SORT_KEY] = _state.value.selectedSort.name
+        savedStateHandle[VISIBILITY_KEY] = _state.value.selectedVisibility.name
     }
 
     fun init(login: String?) {
         if (initialized) return
         initialized = true
         this.login = login
-        loadFirstPage(_state.value.selectedCategory, _state.value.selectedSort, preserveItems = false)
+        val current = _state.value
+        loadFirstPage(current.selectedCategory, current.selectedSort, current.selectedVisibility, preserveItems = false)
     }
 
     fun selectCategory(category: GistCategory) {
         if (category == _state.value.selectedCategory) return
         savedStateHandle[CATEGORY_KEY] = category.name
         _state.update { it.copy(selectedCategory = category) }
-        val sort = _state.value.selectedSort
-        if (_state.value.current.loadedSort != sort) {
-            loadFirstPage(category, sort, preserveItems = false)
+        val current = _state.value
+        if (current.current.loadedSort != current.selectedSort || current.current.loadedVisibility != current.selectedVisibility) {
+            loadFirstPage(category, current.selectedSort, current.selectedVisibility, preserveItems = false)
         }
     }
 
     fun selectSort(sort: GistSort) {
         if (sort == _state.value.selectedSort) return
         savedStateHandle[SORT_KEY] = sort.name
-        val category = _state.value.selectedCategory
-        _state.update { state ->
-            state.copy(selectedSort = sort).withBucket(category) {
-                GistCategoryUiState(loadedSort = sort)
-            }
-        }
-        loadFirstPage(category, sort, preserveItems = false)
+        _state.update { it.copy(selectedSort = sort) }
+        val current = _state.value
+        loadFirstPage(current.selectedCategory, sort, current.selectedVisibility, preserveItems = false)
+    }
+
+    fun selectVisibility(visibility: GistVisibility) {
+        if (visibility == _state.value.selectedVisibility) return
+        savedStateHandle[VISIBILITY_KEY] = visibility.name
+        _state.update { it.copy(selectedVisibility = visibility) }
+        val current = _state.value
+        loadFirstPage(current.selectedCategory, current.selectedSort, visibility, preserveItems = false)
     }
 
     fun refresh() {
         val current = _state.value
         val category = current.selectedCategory
         val sort = current.selectedSort
-        loadFirstPage(category, sort, preserveItems = true, forceFresh = true)
+        loadFirstPage(category, sort, current.selectedVisibility, preserveItems = true, forceFresh = true)
     }
 
     fun retry() {
         val current = _state.value
-        loadFirstPage(current.selectedCategory, current.selectedSort, preserveItems = false)
+        loadFirstPage(current.selectedCategory, current.selectedSort, current.selectedVisibility, preserveItems = false)
     }
 
     fun loadMore() {
         val snapshot = _state.value
         val category = snapshot.selectedCategory
         val sort = snapshot.selectedSort
+        val visibility = snapshot.selectedVisibility
         val bucket = snapshot.current
         val cursor = bucket.nextCursor
         if (
@@ -140,16 +155,20 @@ class GistViewModel @Inject constructor(
             bucket.isLoadingMore ||
             !bucket.hasNextPage ||
             bucket.loadedSort != sort ||
+            bucket.loadedVisibility != visibility ||
             cursor == null
         ) return
 
+        val generation = nextRequestGeneration(category)
         updateBucket(category) { it.copy(isLoadingMore = true) }
         viewModelScope.launch {
-            when (val result = gistRepository.getGists(login, category, sort, cursor)) {
-                is ApiResult.Success -> applyNextPage(category, sort, cursor, result.data)
+            val result = gistRepository.getGists(login, category, sort, cursor, visibility)
+            if (!isCurrentRequest(category, sort, visibility, generation, cursor)) return@launch
+            when (result) {
+                is ApiResult.Success -> applyNextPage(category, result.data)
                 is ApiResult.Failure -> {
-                    errorEventBus.emit(result.error)
-                    updateBucketIfCurrent(category, sort, cursor) { it.copy(isLoadingMore = false) }
+                    updateBucket(category) { it.copy(isLoadingMore = false) }
+                    if (_state.value.selectedCategory == category) errorEventBus.emit(result.error)
                 }
             }
         }
@@ -158,48 +177,55 @@ class GistViewModel @Inject constructor(
     private fun loadFirstPage(
         category: GistCategory,
         sort: GistSort,
+        visibility: GistVisibility,
         preserveItems: Boolean,
         forceFresh: Boolean = false,
     ) {
         val current = _state.value.bucket(category)
-        if (current.isLoading || current.isRefreshing) return
+        if (
+            current.loadedSort == sort && current.loadedVisibility == visibility &&
+            (current.isLoading || current.isRefreshing)
+        ) return
+        val generation = nextRequestGeneration(category)
         updateBucket(category) {
             it.copy(
                 items = if (preserveItems) it.items else emptyList(),
-                nextCursor = null,
-                hasNextPage = false,
+                nextCursor = if (preserveItems) it.nextCursor else null,
+                hasNextPage = preserveItems && it.hasNextPage,
                 isLoading = !preserveItems,
                 isRefreshing = preserveItems,
                 isLoadingMore = false,
                 loadFailed = false,
                 loadedSort = sort,
+                loadedVisibility = visibility,
             )
         }
 
         viewModelScope.launch {
             val result = if (forceFresh) {
-                gistRepository.getGistsFresh(login, category, sort)
+                gistRepository.getGistsFresh(login, category, sort, visibility)
             } else {
-                gistRepository.getGists(login, category, sort, after = null)
+                gistRepository.getGists(login, category, sort, after = null, visibility = visibility)
             }
+            if (!isCurrentRequest(category, sort, visibility, generation)) return@launch
             when (result) {
-                is ApiResult.Success -> applyFirstPage(category, sort, result.data)
+                is ApiResult.Success -> applyFirstPage(category, result.data)
                 is ApiResult.Failure -> {
-                    errorEventBus.emit(result.error)
-                    updateBucketIfSortCurrent(category, sort) {
+                    updateBucket(category) {
                         it.copy(
                             isLoading = false,
                             isRefreshing = false,
                             loadFailed = it.items.isEmpty(),
                         )
                     }
+                    if (_state.value.selectedCategory == category) errorEventBus.emit(result.error)
                 }
             }
         }
     }
 
-    private fun applyFirstPage(category: GistCategory, sort: GistSort, page: GistPage) {
-        updateBucketIfSortCurrent(category, sort) {
+    private fun applyFirstPage(category: GistCategory, page: GistPage) {
+        updateBucket(category) {
             it.copy(
                 items = page.items,
                 nextCursor = page.nextCursor,
@@ -208,18 +234,15 @@ class GistViewModel @Inject constructor(
                 isRefreshing = false,
                 isLoadingMore = false,
                 loadFailed = false,
-                loadedSort = sort,
             )
         }
     }
 
     private fun applyNextPage(
         category: GistCategory,
-        sort: GistSort,
-        cursor: String,
         page: GistPage,
     ) {
-        updateBucketIfCurrent(category, sort, cursor) {
+        updateBucket(category) {
             it.copy(
                 items = (it.items + page.items).distinctBy(GistListItem::id),
                 nextCursor = page.nextCursor,
@@ -236,30 +259,23 @@ class GistViewModel @Inject constructor(
         _state.update { it.withBucket(category, transform) }
     }
 
-    private fun updateBucketIfSortCurrent(
-        category: GistCategory,
-        sort: GistSort,
-        transform: (GistCategoryUiState) -> GistCategoryUiState,
-    ) {
-        _state.update { state ->
-            if (state.bucket(category).loadedSort == sort) state.withBucket(category, transform) else state
-        }
+    private fun nextRequestGeneration(category: GistCategory): Long {
+        val generation = (requestGenerations[category] ?: 0L) + 1
+        requestGenerations[category] = generation
+        return generation
     }
 
-    private fun updateBucketIfCurrent(
+    private fun isCurrentRequest(
         category: GistCategory,
         sort: GistSort,
-        cursor: String,
-        transform: (GistCategoryUiState) -> GistCategoryUiState,
-    ) {
-        _state.update { state ->
-            val bucket = state.bucket(category)
-            if (bucket.loadedSort == sort && bucket.nextCursor == cursor && bucket.isLoadingMore) {
-                state.withBucket(category, transform)
-            } else {
-                state
-            }
-        }
+        visibility: GistVisibility,
+        generation: Long,
+        cursor: String? = null,
+    ): Boolean {
+        val bucket = _state.value.bucket(category)
+        return requestGenerations[category] == generation &&
+            bucket.loadedSort == sort && bucket.loadedVisibility == visibility &&
+            (cursor == null || (bucket.nextCursor == cursor && bucket.isLoadingMore))
     }
 }
 

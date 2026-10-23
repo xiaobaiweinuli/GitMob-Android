@@ -2,13 +2,16 @@ package com.gitmob.app.ui.gist
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import app.cash.turbine.test
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.error.BannerEvent
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistListItem
 import com.gitmob.app.data.model.GistPage
 import com.gitmob.app.data.model.GistSort
+import com.gitmob.app.data.model.GistVisibility
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
@@ -19,6 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -40,6 +44,7 @@ class GistViewModelTest {
 
         assertEquals(GistCategory.ORIGINAL, viewModel.state.value.selectedCategory)
         assertEquals(GistSort.RECENTLY_UPDATED, viewModel.state.value.selectedSort)
+        assertEquals(GistVisibility.ALL, viewModel.state.value.selectedVisibility)
         assertEquals(listOf("original"), viewModel.state.value.items.map { it.id })
         assertFalse(viewModel.state.value.isLoading)
         viewModel.viewModelScope.cancel()
@@ -127,7 +132,7 @@ class GistViewModelTest {
         val repository = mockk<GistRepository>()
         coEvery {
             repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null)
-        } returns ApiResult.Success(page("existing"))
+        } returns ApiResult.Success(page("existing", hasNext = true, cursor = "c1"))
         coEvery {
             repository.getGistsFresh(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED)
         } returns ApiResult.Failure(ApiError.NetworkError)
@@ -139,6 +144,8 @@ class GistViewModelTest {
         assertEquals(listOf("existing"), viewModel.state.value.items.map { it.id })
         assertFalse(viewModel.state.value.isRefreshing)
         assertFalse(viewModel.state.value.loadFailed)
+        assertTrue(viewModel.state.value.hasNextPage)
+        assertEquals("c1", viewModel.state.value.current.nextCursor)
         viewModel.viewModelScope.cancel()
     }
 
@@ -219,10 +226,290 @@ class GistViewModelTest {
         viewModel.viewModelScope.cancel()
     }
 
+    @Test
+    fun `恢复类别排序与可见性后首次请求使用恢复条件`() = runTest {
+        val savedState = SavedStateHandle(mapOf(
+            "gist.selectedCategory" to "FORKED",
+            "gist.selectedSort" to "OLDEST_UPDATED",
+            "gist.selectedVisibility" to "PRIVATE",
+        ))
+        val repository = mockk<GistRepository>()
+        coEvery {
+            repository.getGists("octocat", GistCategory.FORKED, GistSort.OLDEST_UPDATED, null, GistVisibility.PRIVATE)
+        } returns ApiResult.Success(page("restored"))
+        val viewModel = createViewModel(repository, savedState)
+
+        viewModel.init("octocat")
+
+        assertEquals(GistCategory.FORKED, viewModel.state.value.selectedCategory)
+        assertEquals(GistSort.OLDEST_UPDATED, viewModel.state.value.selectedSort)
+        assertEquals(GistVisibility.PRIVATE, viewModel.state.value.selectedVisibility)
+        assertEquals(GistVisibility.PRIVATE, viewModel.state.value.current.loadedVisibility)
+        assertEquals(listOf("restored"), viewModel.state.value.items.map { it.id })
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `非法恢复值回落到默认条件并修正保存值`() = runTest {
+        val savedState = SavedStateHandle(mapOf(
+            "gist.selectedCategory" to "invalid",
+            "gist.selectedSort" to "invalid",
+            "gist.selectedVisibility" to "invalid",
+        ))
+        val repository = mockk<GistRepository>()
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL)
+        } returns ApiResult.Success(page("default"))
+        val viewModel = createViewModel(repository, savedState)
+
+        viewModel.init(null)
+
+        assertEquals("ORIGINAL", savedState.get<String>("gist.selectedCategory"))
+        assertEquals("RECENTLY_UPDATED", savedState.get<String>("gist.selectedSort"))
+        assertEquals("ALL", savedState.get<String>("gist.selectedVisibility"))
+        assertEquals(listOf("default"), viewModel.state.value.items.map { it.id })
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `切换可见性重置首屏并将条件传给刷新和下一页`() = runTest {
+        val repository = mockk<GistRepository>()
+        val gate = CompletableDeferred<Unit>()
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL)
+        } returns ApiResult.Success(page("old", hasNext = true, cursor = "old-cursor"))
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE)
+        } coAnswers {
+            gate.await()
+            ApiResult.Success(page("private", hasNext = true, cursor = "c1"))
+        }
+        coEvery {
+            repository.getGistsFresh(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, GistVisibility.PRIVATE)
+        } returns ApiResult.Success(page("fresh-private", hasNext = true, cursor = "c2"))
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, "c2", GistVisibility.PRIVATE)
+        } returns ApiResult.Success(page("next-private"))
+        val savedState = SavedStateHandle()
+        val viewModel = createViewModel(repository, savedState)
+        viewModel.init(null)
+
+        viewModel.selectVisibility(GistVisibility.PRIVATE)
+        viewModel.selectVisibility(GistVisibility.PRIVATE)
+        viewModel.loadMore()
+        assertTrue(viewModel.state.value.isLoading)
+        assertTrue(viewModel.state.value.items.isEmpty())
+        assertNull(viewModel.state.value.current.nextCursor)
+        assertFalse(viewModel.state.value.hasNextPage)
+        assertEquals("PRIVATE", savedState.get<String>("gist.selectedVisibility"))
+        gate.complete(Unit)
+        viewModel.refresh()
+        viewModel.loadMore()
+
+        assertEquals(listOf("fresh-private", "next-private"), viewModel.state.value.items.map { it.id })
+        assertFalse(viewModel.state.value.isLoadingMore)
+        coVerify(exactly = 1) {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE)
+            repository.getGistsFresh(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, GistVisibility.PRIVATE)
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, "c2", GistVisibility.PRIVATE)
+        }
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `分类切回只复用匹配可见性的分桶`() = runTest {
+        val repository = mockk<GistRepository>()
+        coEvery { repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL) } returns ApiResult.Success(page("original-all"))
+        coEvery { repository.getGists(null, GistCategory.FORKED, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL) } returns ApiResult.Success(page("forked-all"))
+        coEvery { repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE) } returns ApiResult.Success(page("original-private"))
+        coEvery { repository.getGists(null, GistCategory.FORKED, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE) } returns ApiResult.Success(page("forked-private"))
+        val viewModel = createViewModel(repository)
+        viewModel.init(null)
+        viewModel.selectCategory(GistCategory.FORKED)
+        viewModel.selectCategory(GistCategory.ORIGINAL)
+        assertEquals(listOf("original-all"), viewModel.state.value.items.map { it.id })
+
+        viewModel.selectVisibility(GistVisibility.PRIVATE)
+        viewModel.selectCategory(GistCategory.FORKED)
+        assertEquals(listOf("forked-private"), viewModel.state.value.items.map { it.id })
+        viewModel.selectCategory(GistCategory.ORIGINAL)
+        assertEquals(listOf("original-private"), viewModel.state.value.items.map { it.id })
+        coVerify(exactly = 1) {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL)
+            repository.getGists(null, GistCategory.FORKED, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL)
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE)
+            repository.getGists(null, GistCategory.FORKED, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE)
+        }
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `另一个分类仍在旧条件加载时切回可以立即加载新条件`() = runTest {
+        val repository = mockk<GistRepository>()
+        val old = CompletableDeferred<ApiResult<GistPage>>()
+        coEvery { repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL) } coAnswers { old.await() }
+        coEvery { repository.getGists(null, GistCategory.FORKED, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL) } returns ApiResult.Success(page("forked-all"))
+        coEvery { repository.getGists(null, GistCategory.FORKED, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE) } returns ApiResult.Success(page("forked-private"))
+        coEvery { repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE) } returns ApiResult.Success(page("original-private"))
+        val viewModel = createViewModel(repository)
+        viewModel.init(null)
+        viewModel.selectCategory(GistCategory.FORKED)
+        viewModel.selectVisibility(GistVisibility.PRIVATE)
+        viewModel.selectCategory(GistCategory.ORIGINAL)
+
+        assertEquals(listOf("original-private"), viewModel.state.value.items.map { it.id })
+        old.complete(ApiResult.Success(page("obsolete")))
+        assertEquals(listOf("original-private"), viewModel.state.value.items.map { it.id })
+        assertFalse(viewModel.state.value.isLoading)
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `可见性A到B到A忽略旧成功和旧错误且不结束新加载`() = runTest {
+        for (obsolete in listOf(ApiResult.Success(page("obsolete")), ApiResult.Failure(ApiError.NetworkError))) {
+            val repository = mockk<GistRepository>()
+            val old = CompletableDeferred<ApiResult<GistPage>>()
+            val latest = CompletableDeferred<ApiResult<GistPage>>()
+            var calls = 0
+            coEvery {
+                repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL)
+            } coAnswers { if (++calls == 1) old.await() else latest.await() }
+            coEvery {
+                repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE)
+            } returns ApiResult.Success(page("private"))
+            val bus = ErrorEventBus()
+            val viewModel = createViewModel(repository, errorEventBus = bus)
+            bus.events.test {
+                viewModel.init(null)
+                viewModel.selectVisibility(GistVisibility.PRIVATE)
+                viewModel.selectVisibility(GistVisibility.ALL)
+                old.complete(obsolete)
+                assertTrue(viewModel.state.value.isLoading)
+                assertTrue(viewModel.state.value.items.isEmpty())
+                expectNoEvents()
+
+                latest.complete(ApiResult.Success(page("latest")))
+                assertEquals(listOf("latest"), viewModel.state.value.items.map { it.id })
+                assertFalse(viewModel.state.value.isLoading)
+            }
+            viewModel.viewModelScope.cancel()
+        }
+    }
+
+    @Test
+    fun `排序A到B到A旧请求不能覆盖最新结果`() = runTest {
+        val repository = mockk<GistRepository>()
+        val old = CompletableDeferred<ApiResult<GistPage>>()
+        var calls = 0
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL)
+        } coAnswers { if (++calls == 1) old.await() else ApiResult.Success(page("latest")) }
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.OLDEST_CREATED, null, GistVisibility.ALL)
+        } returns ApiResult.Success(page("oldest"))
+        val viewModel = createViewModel(repository)
+        viewModel.init(null)
+        viewModel.selectSort(GistSort.OLDEST_CREATED)
+        viewModel.selectSort(GistSort.RECENTLY_UPDATED)
+        old.complete(ApiResult.Success(page("obsolete")))
+        assertEquals(listOf("latest"), viewModel.state.value.items.map { it.id })
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `刷新期间切换筛选后旧刷新错误不影响当前结果和提示`() = runTest {
+        val repository = mockk<GistRepository>()
+        val old = CompletableDeferred<ApiResult<GistPage>>()
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL)
+        } returns ApiResult.Success(page("all"))
+        coEvery {
+            repository.getGistsFresh(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, GistVisibility.ALL)
+        } coAnswers { old.await() }
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.PUBLIC)
+        } returns ApiResult.Success(page("public"))
+        val bus = ErrorEventBus()
+        val viewModel = createViewModel(repository, errorEventBus = bus)
+        bus.events.test {
+            viewModel.init(null)
+            viewModel.refresh()
+            viewModel.selectVisibility(GistVisibility.PUBLIC)
+            viewModel.selectVisibility(GistVisibility.ALL)
+            old.complete(ApiResult.Failure(ApiError.NetworkError))
+            assertEquals(listOf("all"), viewModel.state.value.items.map { it.id })
+            assertFalse(viewModel.state.value.isRefreshing)
+            assertFalse(viewModel.state.value.loadFailed)
+            expectNoEvents()
+        }
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `刷新后相同游标的新分页不被旧分页错误清除或追加`() = runTest {
+        for (obsolete in listOf(ApiResult.Success(page("obsolete")), ApiResult.Failure(ApiError.NetworkError))) {
+            val repository = mockk<GistRepository>()
+            val old = CompletableDeferred<ApiResult<GistPage>>()
+            val latest = CompletableDeferred<ApiResult<GistPage>>()
+            var calls = 0
+            coEvery { repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null) } returns ApiResult.Success(page("initial", true, "same-cursor"))
+            coEvery { repository.getGistsFresh(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED) } returns ApiResult.Success(page("fresh", true, "same-cursor"))
+            coEvery {
+                repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, "same-cursor")
+            } coAnswers { if (++calls == 1) old.await() else latest.await() }
+            val bus = ErrorEventBus()
+            val viewModel = createViewModel(repository, errorEventBus = bus)
+            bus.events.test {
+                viewModel.init(null)
+                viewModel.loadMore()
+                viewModel.refresh()
+                viewModel.loadMore()
+                old.complete(obsolete)
+                assertTrue(viewModel.state.value.isLoadingMore)
+                assertEquals(listOf("fresh"), viewModel.state.value.items.map { it.id })
+                expectNoEvents()
+                latest.complete(ApiResult.Success(GistPage(listOf(gist("fresh"), gist("next")), false, null)))
+                assertEquals(listOf("fresh", "next"), viewModel.state.value.items.map { it.id })
+                assertFalse(viewModel.state.value.isLoadingMore)
+            }
+            viewModel.viewModelScope.cancel()
+        }
+    }
+
+    @Test
+    fun `当前条件首屏和分页失败均可重试并发出错误`() = runTest {
+        val repository = mockk<GistRepository>()
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.PRIVATE)
+        } returns ApiResult.Failure(ApiError.NetworkError) andThen ApiResult.Success(page("first", true, "c1"))
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, "c1", GistVisibility.PRIVATE)
+        } returns ApiResult.Failure(ApiError.NetworkError) andThen ApiResult.Success(page("next"))
+        val bus = ErrorEventBus()
+        val viewModel = createViewModel(repository, SavedStateHandle(mapOf("gist.selectedVisibility" to "PRIVATE")), bus)
+        bus.events.test {
+            viewModel.init(null)
+            assertTrue(viewModel.state.value.loadFailed)
+            assertEquals(BannerEvent.Error(ApiError.NetworkError), awaitItem())
+            viewModel.retry()
+            assertFalse(viewModel.state.value.loadFailed)
+            viewModel.loadMore()
+            assertEquals(BannerEvent.Error(ApiError.NetworkError), awaitItem())
+            assertEquals(listOf("first"), viewModel.state.value.items.map { it.id })
+            assertEquals("c1", viewModel.state.value.current.nextCursor)
+            assertTrue(viewModel.state.value.hasNextPage)
+            assertFalse(viewModel.state.value.isLoadingMore)
+            viewModel.loadMore()
+            assertEquals(listOf("first", "next"), viewModel.state.value.items.map { it.id })
+        }
+        viewModel.viewModelScope.cancel()
+    }
+
     private fun createViewModel(
         repository: GistRepository,
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
-    ) = GistViewModel(repository, ErrorEventBus(), savedStateHandle)
+        errorEventBus: ErrorEventBus = ErrorEventBus(),
+    ) = GistViewModel(repository, errorEventBus, savedStateHandle)
 
     private fun page(
         id: String,

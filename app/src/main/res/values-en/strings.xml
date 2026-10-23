@@ -367,11 +367,13 @@
     <string name="inbox_empty_read">No read notifications</string>
     <string name="gist_title_of_user">Gists by %1$s</string>
     <string name="gist_title_mine">My gists</string>
+    <string name="gist_filter_category">Category</string>
     <string name="gist_category_original">Original</string>
     <string name="gist_category_forked">Forked</string>
     <string name="gist_empty_batch">No matching gists in this batch</string>
     <string name="gist_empty_original">No original gists yet</string>
     <string name="gist_empty_forked">No forked gists yet</string>
+    <string name="gist_empty_filtered">No gists match the filters</string>
     <string name="gist_continue_search">Keep searching</string>
     <string name="userlist_title_followers">Followers</string>
     <string name="userlist_title_following">Following</string>
