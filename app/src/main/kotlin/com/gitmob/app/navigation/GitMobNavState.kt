@@ -16,6 +16,7 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.runtime.serialization.NavKeySerializer
 import androidx.savedstate.compose.serialization.serializers.MutableStateSerializer
+import com.gitmob.app.core.event.RepoUpdateEvent
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
@@ -162,6 +163,27 @@ class GitMobNavigator(
      */
     fun onReselect(route: Route) {
         _reselectEvents.tryEmit(route)
+    }
+
+    fun onRepositoryUpdate(event: RepoUpdateEvent) {
+        when (event) {
+            is RepoUpdateEvent.RepositoryAddressChanged -> state.backStacks.values.forEach { stack ->
+                stack.indices.forEach { index ->
+                    val route = stack[index] as? Route ?: return@forEach
+                    stack[index] = route.replaceRepositoryAddress(event.owner, event.name, event.newOwner, event.newName)
+                }
+            }
+            is RepoUpdateEvent.RepositoryDeleted -> {
+                state.backStacks.values.forEach { stack ->
+                    stack.removeAll { key ->
+                        val route = key as? Route ?: return@removeAll false
+                        route.replaceRepositoryAddress(event.owner, event.name, "", "") != route
+                    }
+                }
+                navigate(ReposRoute)
+            }
+            else -> Unit
+        }
     }
 
     /**

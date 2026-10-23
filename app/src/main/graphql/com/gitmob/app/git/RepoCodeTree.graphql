@@ -2,6 +2,7 @@
 query RepoCodeTree($owner: String!, $name: String!, $qualifiedRef: String!, $expression: String!) {
   repository(owner: $owner, name: $name) {
     id
+    isFork
     viewerPermission
     isArchived
     ref(qualifiedName: $qualifiedRef) { name target { oid } }

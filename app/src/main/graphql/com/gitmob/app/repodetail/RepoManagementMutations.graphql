@@ -1,0 +1,26 @@
+mutation UpdateRepoSettings($input: UpdateRepositoryInput!) {
+  updateRepository(input: $input) { repository { name owner { login } } }
+}
+
+mutation UpdateRepoTopics($input: UpdateTopicsInput!) {
+  updateTopics(input: $input) { invalidTopicNames repository { id } }
+}
+
+mutation ArchiveRepo($id: ID!) {
+  archiveRepository(input: { repositoryId: $id }) { repository { id isArchived } }
+}
+
+mutation UnarchiveRepo($id: ID!) {
+  unarchiveRepository(input: { repositoryId: $id }) { repository { id isArchived } }
+}
+
+mutation UpdateRepoSubscription($input: UpdateSubscriptionInput!) {
+  updateSubscription(input: $input) {
+    subscribable {
+      ... on Repository {
+        viewerSubscription
+        watchers(first: 0) { totalCount }
+      }
+    }
+  }
+}

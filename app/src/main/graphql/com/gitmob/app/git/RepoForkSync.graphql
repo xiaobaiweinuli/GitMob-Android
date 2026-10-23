@@ -1,0 +1,18 @@
+# 当前 fork 分支及其上游同名分支；不使用上游默认分支替代。
+query RepoForkSync($owner: String!, $name: String!, $qualifiedRef: String!) {
+  repository(owner: $owner, name: $name) {
+    id
+    isFork
+    ref(qualifiedName: $qualifiedRef) { target { oid } }
+    parent {
+      id
+      name
+      owner { login }
+      ref(qualifiedName: $qualifiedRef) { target { oid } }
+    }
+  }
+}
+
+mutation ForceAlignFork($input: UpdateRefsInput!) {
+  updateRefs(input: $input) { clientMutationId }
+}

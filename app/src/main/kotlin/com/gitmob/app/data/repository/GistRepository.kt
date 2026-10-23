@@ -240,7 +240,7 @@ class GistRepository @Inject constructor(
                 is ApiResult.Success -> ApiResult.Success(
                     GistBatch(
                         viewerLogin = result.data.viewer.login,
-                        connection = result.data.viewer.gists?.gistConnectionFields,
+                        connection = result.data.viewer.gists.gistConnectionFields,
                         userMissing = false,
                     ),
                 )

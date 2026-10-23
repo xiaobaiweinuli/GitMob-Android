@@ -143,6 +143,18 @@ class RepoActionsRepositoryTest {
     }
 
     @Test
+    fun `delete run accepts empty success response`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val result = repository.deleteRun("octo", "repo", runId = 42)
+
+        assertTrue(result is ApiResult.Success)
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        assertEquals("/repos/octo/repo/actions/runs/42", request.path)
+    }
+
+    @Test
     fun `artifact download resolves redirect and opens external browser`() = runTest {
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "https://objects.example/build.zip"))
         val artifact = RepoActionArtifact(42, "build", 1024, expired = false, expiresAt = null)

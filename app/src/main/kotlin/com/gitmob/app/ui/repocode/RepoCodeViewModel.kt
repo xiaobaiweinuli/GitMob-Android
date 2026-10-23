@@ -13,7 +13,10 @@ import com.gitmob.app.core.permission.RepoCapabilities
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.RepoCodeTree
+import com.gitmob.app.data.model.RepoForkSyncInfo
+import com.gitmob.app.data.model.RepoForkSyncStatus
 import com.gitmob.app.data.repository.RepoGitRepository
+import com.gitmob.app.data.repository.RepoPullRequestRepository
 import com.gitmob.app.core.storage.SafFile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,11 +41,22 @@ data class RepoCodeUiState(
     val folderExportCompleted: Int = 0,
     val folderExportTotal: Int = 0,
     val openingDownload: Boolean = false,
-)
+    val isSyncDialogOpen: Boolean = false,
+    val syncInfo: RepoForkSyncInfo? = null,
+    val isLoadingSync: Boolean = false,
+    val isSyncing: Boolean = false,
+    val isCheckingSyncPullRequest: Boolean = false,
+    val showDiscardConfirmation: Boolean = false,
+    val showSyncPullRequestConfirmation: Boolean = false,
+    val syncHasConflict: Boolean = false,
+) {
+    val isSyncBusy: Boolean get() = isLoadingSync || isSyncing || isCheckingSyncPullRequest
+}
 
 @HiltViewModel
 class RepoCodeViewModel @Inject constructor(
     private val repository: RepoGitRepository,
+    private val pullRequestRepository: RepoPullRequestRepository,
     private val errorEventBus: ErrorEventBus,
     private val downloadLauncher: ExternalDownloadLauncher,
     private val repoUpdateEventBus: RepoUpdateEventBus,
@@ -185,5 +199,134 @@ class RepoCodeViewModel @Inject constructor(
                 _state.update { it.copy(openingDownload = false) }
             }
         }
+    }
+
+    fun openSync() {
+        if (_state.value.isSyncBusy) return
+        _state.update { it.copy(isSyncDialogOpen = true) }
+        refreshSync()
+    }
+
+    fun dismissSync() {
+        if (_state.value.isSyncBusy) return
+        _state.update { it.copy(isSyncDialogOpen = false, showDiscardConfirmation = false, showSyncPullRequestConfirmation = false) }
+    }
+
+    fun showDiscardConfirmation(value: Boolean) {
+        val state = _state.value
+        if (state.isSyncBusy) return
+        if (value && (!state.isSyncDialogOpen || state.showSyncPullRequestConfirmation ||
+                state.syncInfo?.status != RepoForkSyncStatus.READY || state.syncInfo.aheadBy == 0 || !state.capabilities.canPush)) return
+        _state.update { it.copy(showDiscardConfirmation = value) }
+    }
+
+    fun showSyncPullRequestConfirmation(value: Boolean) {
+        val state = _state.value
+        val info = state.syncInfo
+        if (state.isSyncBusy) return
+        if (value && (!state.isSyncDialogOpen || state.showDiscardConfirmation ||
+                info?.status != RepoForkSyncStatus.READY || info.behindBy == 0 ||
+                info.upstreamOwner == null || info.upstreamName == null || state.tree?.isArchived != false)) return
+        _state.update { it.copy(showSyncPullRequestConfirmation = value) }
+    }
+
+    fun mergeUpstream() {
+        val state = _state.value
+        val info = state.syncInfo ?: return
+        if (state.isSyncBusy || !state.isSyncDialogOpen || state.showDiscardConfirmation || state.showSyncPullRequestConfirmation ||
+            info.status != RepoForkSyncStatus.READY || info.behindBy == 0 || !state.capabilities.canPush) return
+        _state.update { it.copy(isSyncing = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.mergeUpstream(owner, name, info.branch)) {
+                    is ApiResult.Success -> syncCompleted(info.branch)
+                    is ApiResult.Failure -> {
+                        _state.update { it.copy(syncHasConflict = result.error == ApiError.UserVisible(R.string.repo_sync_conflict)) }
+                        errorEventBus.emit(result.error)
+                    }
+                }
+            } finally {
+                _state.update { it.copy(isSyncing = false) }
+            }
+        }
+    }
+
+    fun discardAndAlign(confirmation: String) {
+        val state = _state.value
+        val info = state.syncInfo ?: return
+        if (
+            state.isSyncBusy || !state.isSyncDialogOpen || !state.showDiscardConfirmation ||
+            confirmation != info.branch || info.status != RepoForkSyncStatus.READY ||
+            info.aheadBy == 0 || !state.capabilities.canPush
+        ) return
+        _state.update { it.copy(isSyncing = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.forceAlignFork(owner, name, info)) {
+                    is ApiResult.Success -> syncCompleted(info.branch)
+                    is ApiResult.Failure -> {
+                        if (result.error == ApiError.UserVisible(R.string.repo_sync_head_changed)) refreshSync()
+                        errorEventBus.emit(result.error)
+                    }
+                }
+            } finally {
+                _state.update { it.copy(isSyncing = false) }
+            }
+        }
+    }
+
+    fun openSyncPullRequest(onExisting: (Int) -> Unit, onCreate: (RepoForkSyncInfo) -> Unit) {
+        val state = _state.value
+        val info = state.syncInfo ?: return
+        val upstreamOwner = info.upstreamOwner ?: return
+        if (state.isSyncBusy || !state.isSyncDialogOpen || !state.showSyncPullRequestConfirmation ||
+            info.status != RepoForkSyncStatus.READY || info.behindBy == 0 || state.tree?.isArchived != false) return
+        _state.update { it.copy(isCheckingSyncPullRequest = true) }
+        viewModelScope.launch {
+            try {
+                when (
+                    val result = pullRequestRepository.findOpenPullRequest(
+                        baseOwner = owner,
+                        baseRepository = name,
+                        baseRef = info.branch,
+                        headOwner = upstreamOwner,
+                        headRef = info.branch,
+                    )
+                ) {
+                    is ApiResult.Success -> {
+                        _state.update { it.copy(isSyncDialogOpen = false, showSyncPullRequestConfirmation = false) }
+                        result.data?.let { onExisting(it.number) } ?: onCreate(info)
+                    }
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                }
+            } finally {
+                _state.update { it.copy(isCheckingSyncPullRequest = false) }
+            }
+        }
+    }
+
+    private fun refreshSync() {
+        _state.update {
+            it.copy(
+                isLoadingSync = true, syncInfo = null, showDiscardConfirmation = false,
+                showSyncPullRequestConfirmation = false, syncHasConflict = false,
+            )
+        }
+        viewModelScope.launch {
+            when (val result = repository.getForkSync(owner, name, ref)) {
+                is ApiResult.Success -> _state.update { it.copy(syncInfo = result.data, isLoadingSync = false) }
+                is ApiResult.Failure -> {
+                    errorEventBus.emit(result.error)
+                    _state.update { it.copy(isLoadingSync = false) }
+                }
+            }
+        }
+    }
+
+    private suspend fun syncCompleted(branch: String) {
+        errorEventBus.emitNotice(R.string.repo_sync_success)
+        repoUpdateEventBus.emit(RepoUpdateEvent.BranchSynced(owner, name, branch))
+        load()
+        refreshSync()
     }
 }

@@ -18,6 +18,30 @@ sealed class RepoUpdateEvent {
         override val name: String,
     ) : RepoUpdateEvent()
 
+    data class RepositoryChanged(
+        override val owner: String,
+        override val name: String,
+        val detail: com.gitmob.app.data.model.RepoDetail,
+    ) : RepoUpdateEvent()
+
+    data class RepositoryAddressChanged(
+        override val owner: String,
+        override val name: String,
+        val newOwner: String,
+        val newName: String,
+    ) : RepoUpdateEvent()
+
+    data class RepositoryDeleted(
+        override val owner: String,
+        override val name: String,
+    ) : RepoUpdateEvent()
+
+    data class BranchSynced(
+        override val owner: String,
+        override val name: String,
+        val ref: String,
+    ) : RepoUpdateEvent()
+
     /** 当前查看的分支变了（仓库详情 Header、代码/提交入口都要联动） */
     data class BranchSwitched(
         override val owner: String,

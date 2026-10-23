@@ -3,6 +3,7 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
@@ -13,6 +14,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -54,11 +56,12 @@ class RepoDetailRepositoryTest {
                 """
                 {"data":{"repository":{
                     "id":"R1","name":"GitMob-Android","description":"desc","homepageUrl":null,
-                    "owner":{"__typename":"User","login":"xiaobaiweinuli","avatarUrl":"https://avatars.example.com/u1"},
+                    "url":"https://github.com/xiaobaiweinuli/GitMob-Android","visibility":"PUBLIC",
+                    "owner":{"__typename":"User","login":"xiaobaiweinuli","avatarUrl":"https://avatars.example.com/u1","isViewer":true},
                     "isPrivate":false,"isArchived":false,"isTemplate":true,"isFork":false,"parent":null,
-                    "stargazerCount":20,"viewerHasStarred":false,"forkCount":2,
+                    "stargazerCount":20,"viewerHasStarred":false,"forkCount":2,"forkingAllowed":true,
                     "issues":{"totalCount":2},"pullRequests":{"totalCount":0},
-                    "watchers":{"totalCount":1},"viewerSubscription":"IGNORED",
+                    "watchers":{"totalCount":1},"viewerSubscription":"IGNORED","viewerCanSubscribe":true,
                     "licenseInfo":{"name":"Apache License 2.0","spdxId":"Apache-2.0"},
                     "refs":{"totalCount":6},"defaultBranchRef":{"name":"claude"},
                     "releases":{"totalCount":43,"nodes":[{"name":"GitMob v1.7.8","tagName":"v1.7.8"}]},
@@ -87,6 +90,46 @@ class RepoDetailRepositoryTest {
         assertTrue(detail.capabilities.canDeleteIssues)
         assertTrue(detail.viewerCanCreateIssues)
         assertTrue(detail.hasIssuesEnabled)
+        assertTrue(detail.ownerIsViewer)
+        assertTrue(detail.forkingAllowed)
+    }
+
+    @Test
+    fun `stargazers are mapped with cursor pagination`() = runTest {
+        server.enqueue(MockResponse().setBody(
+            """{"data":{"repository":{"stargazers":{"totalCount":2,"nodes":[{"login":"octocat","name":"Octo Cat","avatarUrl":"https://avatars.example.com/octocat","bio":"Hi"}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}""",
+        ))
+
+        val result = repository.getStargazers("octo", "repo") as ApiResult.Success
+
+        assertEquals("octocat", result.data.users.single().login)
+        assertEquals("next", result.data.endCursor)
+        assertTrue(result.data.hasNextPage)
+    }
+
+    @Test
+    fun `direct forks are mapped as repository cards`() = runTest {
+        server.enqueue(MockResponse().setBody(
+            """{"data":{"repository":{"forks":{"totalCount":1,"nodes":[{"name":"repo","owner":{"__typename":"User","login":"forker","avatarUrl":null},"description":null,"homepageUrl":null,"isPrivate":false,"isArchived":false,"isFork":true,"parent":{"name":"repo","owner":{"__typename":"User","login":"octo","avatarUrl":null}},"primaryLanguage":null,"stargazerCount":0,"forkCount":0,"issues":{"totalCount":0},"repositoryTopics":{"nodes":[]},"defaultBranchRef":{"name":"main"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}""",
+        ))
+
+        val result = repository.getForks("octo", "repo") as ApiResult.Success
+
+        assertEquals("forker", result.data.items.single().ownerLogin)
+        assertEquals("octo", result.data.items.single().forkedFromOwner)
+    }
+
+    @Test
+    fun `create fork accepts 202 with an empty JSON body`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(202).setBody("""{"name":"repo"}"""))
+
+        val result = repository.createFork("octo", "repo")
+
+        assertTrue(result is ApiResult.Success)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/repos/octo/repo/forks", request.path)
+        assertEquals("{}", request.body.readUtf8())
     }
 
     @Test
@@ -205,5 +248,121 @@ class RepoDetailRepositoryTest {
             request.requestUrl?.encodedPath,
         )
         assertEquals("{\"new_name\":\"feature/renamed\"}", request.body.readUtf8())
+    }
+
+    @Test
+    fun `transfer preflight accepts only missing repository errors with valid account data`() = runTest {
+        listOf("\"type\":\"NOT_FOUND\"", "\"extensions\":{\"type\":\"NOT_FOUND\"}").forEach { type ->
+            server.enqueue(MockResponse().setBody(transferTargetResponse(
+                errors = """[{"message":"Could not resolve to a Repository with the name 'Worker-TG-Bot/gpt_academic'.","path":["repositoryOwner","repository"],$type}]""",
+            )))
+
+            val result = repository.getTransferTarget("Worker-TG-Bot", "gpt_academic")
+
+            assertTrue(result.toString(), result is ApiResult.Success)
+            val target = (result as ApiResult.Success).data
+            assertEquals("Worker-TG-Bot", target.account.login)
+            assertTrue(target.account.canCreateRepository)
+            assertFalse(target.hasNameConflict)
+            val request = server.takeRequest().body.readUtf8()
+            assertTrue(request.contains("followRenames:false") || request.contains("followRenames: false"))
+        }
+    }
+
+    @Test
+    fun `transfer preflight keeps visible name conflicts`() = runTest {
+        server.enqueue(MockResponse().setBody(transferTargetResponse(repository = """{"id":"R2"}""")))
+
+        val result = repository.getTransferTarget("Worker-TG-Bot", "gpt_academic")
+
+        assertTrue((result as ApiResult.Success).data.hasNameConflict)
+    }
+
+    @Test
+    fun `transfer preflight rejects other paths types and mixed errors`() = runTest {
+        val expected = """{"message":"Missing repository","path":["repositoryOwner","repository"],"type":"NOT_FOUND"}"""
+        listOf(
+            """[{"message":"Missing owner","path":["repositoryOwner"],"type":"NOT_FOUND"}]""",
+            """[{"message":"Denied","path":["repositoryOwner","repository"],"type":"FORBIDDEN"}]""",
+            """[{"message":"Unknown error","path":["repositoryOwner","repository"]}]""",
+            """[$expected,{"message":"Rate limited","type":"RATE_LIMITED"}]""",
+        ).forEach { errors ->
+            server.enqueue(MockResponse().setBody(transferTargetResponse(errors = errors)))
+
+            val result = repository.getTransferTarget("Worker-TG-Bot", "gpt_academic")
+
+            assertTrue(result is ApiResult.Failure)
+            val error = (result as ApiResult.Failure).error as ApiError.GraphQLError
+            assertEquals(if (errors.contains("RATE_LIMITED")) 2 else 1, error.errors.size)
+            if (errors.contains("FORBIDDEN")) assertEquals("FORBIDDEN", error.errors.single().type)
+        }
+    }
+
+    @Test
+    fun `transfer preflight never accepts missing account or transport failure`() = runTest {
+        server.enqueue(MockResponse().setBody(
+            """{"data":{"repositoryOwner":null},"errors":[{"message":"Missing","path":["repositoryOwner","repository"],"type":"NOT_FOUND"}]}""",
+        ))
+        assertTrue(repository.getTransferTarget("missing", "repo") is ApiResult.Failure)
+
+        server.enqueue(MockResponse().setResponseCode(403).setBody(transferTargetResponse()))
+        assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getTransferTarget("Worker-TG-Bot", "repo"))
+    }
+
+    private fun transferTargetResponse(repository: String = "null", errors: String = "[]") = """
+        {"data":{"repositoryOwner":{"__typename":"Organization","id":"O1","login":"Worker-TG-Bot",
+        "avatarUrl":"https://example.test/avatar","name":"Worker","viewerCanCreateRepositories":true,
+        "repository":$repository}},"errors":$errors}
+    """.trimIndent()
+
+    @Test
+    fun `transfer accepts 202 without treating response as the completed address`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(202).setBody("""{"name":"repo"}"""))
+
+        val result = repository.transferRepository("octo", "repo", "target", "renamed")
+
+        assertTrue(result is ApiResult.Success)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/repos/octo/repo/transfer", request.path)
+        assertEquals("{\"new_owner\":\"target\",\"new_name\":\"renamed\"}", request.body.readUtf8())
+    }
+
+    @Test
+    fun `delete repository accepts empty 204 response`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val result = repository.deleteRepository("octo", "repo")
+
+        assertTrue(result is ApiResult.Success)
+        assertEquals("DELETE", server.takeRequest().method)
+    }
+
+    @Test
+    fun `visibility forbidden response remains a permission error`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"message":"Forbidden"}"""))
+
+        val result = repository.setVisibility("octo", "repo", "private")
+
+        assertTrue(result is ApiResult.Failure)
+        assertEquals(ApiError.Forbidden, (result as ApiResult.Failure).error)
+    }
+
+    @Test
+    fun `topics mutation returns invalid names for partial success handling`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"data":{"updateTopics":{"invalidTopicNames":["bad topic"]}}}"""))
+
+        val result = repository.updateTopics("R1", listOf("android", "bad-topic"))
+
+        assertEquals(listOf("bad topic"), (result as ApiResult.Success).data)
+    }
+
+    @Test
+    fun `settings mutation with empty payload fails instead of reporting success`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"data":{"updateRepository":null}}"""))
+
+        val result = repository.updateSettings("R1", description = "updated")
+
+        assertTrue(result is ApiResult.Failure)
     }
 }

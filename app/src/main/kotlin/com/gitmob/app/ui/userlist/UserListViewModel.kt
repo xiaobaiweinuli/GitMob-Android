@@ -30,6 +30,8 @@ enum class UserListMode {
     FOLLOWING,
     /** 仓库维度：某个仓库的 Watchers（关注者），复用现有 UserListScreen 架构 */
     WATCHERS,
+    /** 仓库维度：某个仓库的 Stargazers（标星用户） */
+    STARGAZERS,
     /** 组织维度：某个组织的 Members（成员），与上面三个走完全一样的 PagedUsers 渲染逻辑 */
     ORG_MEMBERS,
 }
@@ -80,6 +82,15 @@ class UserListViewModel @Inject constructor(
         load()
     }
 
+    fun initForRepoStargazers(owner: String, name: String) {
+        if (initialized) return
+        initialized = true
+        this.repoOwner = owner
+        this.repoName = name
+        this.mode = UserListMode.STARGAZERS
+        load()
+    }
+
     /**
      * 组织成员（ORG_MEMBERS，组织维度）。
      * 与 initForRepoWatchers 同构：都是单 login 参数 → 调用不同的 Repository 方法，
@@ -115,6 +126,7 @@ class UserListViewModel @Inject constructor(
         UserListMode.FOLLOWERS -> userRepository.getFollowers(login, after)
         UserListMode.FOLLOWING -> userRepository.getFollowing(login, after)
         UserListMode.WATCHERS -> repoDetailRepository.getWatchers(repoOwner, repoName, after)
+        UserListMode.STARGAZERS -> repoDetailRepository.getStargazers(repoOwner, repoName, after)
         // 组织成员：复用 UserRepository 已存在的 getOrgMembers(orgLogin, after) 方法
         UserListMode.ORG_MEMBERS -> userRepository.getOrgMembers(repoOwner, after)
     }

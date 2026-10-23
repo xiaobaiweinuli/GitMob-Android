@@ -3,6 +3,7 @@ package com.gitmob.app.ui.repoactions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.R
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
@@ -17,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -37,6 +39,8 @@ data class RepoActionsUiState(
     val dispatchRef: String = "main",
     val dispatchInputsRef: String? = null,
     val isLoadingInputs: Boolean = false,
+    val pendingDeleteRun: RepoWorkflowRun? = null,
+    val deletingRunIds: Set<Long> = emptySet(),
 )
 
 @HiltViewModel
@@ -49,7 +53,8 @@ class RepoActionsViewModel @Inject constructor(
     val state: StateFlow<RepoActionsUiState> = _state.asStateFlow()
     private var owner = ""; private var name = ""; private var initialized = false
     private var dispatchInputsJob: Job? = null
-    fun init(owner: String, name: String, permission: RepoPermission?, defaultRef: String?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; _state.update { it.copy(dispatchRef = defaultRef ?: "main") }; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } } ?: viewModelScope.launch { when (val result = repository.getRepositoryPermission(owner, name)) { is ApiResult.Success -> _state.update { it.copy(permission = result.data, capabilities = result.data.toCapabilities()) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }; load() }
+    private val locallyDeletedRunIds = mutableSetOf<Long>()
+    fun init(owner: String, name: String, permission: RepoPermission?, defaultRef: String?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; _state.update { it.copy(dispatchRef = defaultRef ?: "main") }; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } } ?: viewModelScope.launch { when (val result = repository.getRepositoryPermission(owner, name)) { is ApiResult.Success -> _state.update { it.copy(permission = result.data, capabilities = result.data.toCapabilities()) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }; observeRunChanges(); load() }
     fun load() { viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getActions(owner, name)) { is ApiResult.Success -> _state.update { it.copy(workflows = result.data.workflows, runs = result.data.runs, totalCount = result.data.totalCount, page = result.data.page, hasNextPage = result.data.hasNextPage, isLoading = false) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun refresh() = load()
     fun loadMore() { val s = _state.value; if (!s.hasNextPage || s.isLoadingMore) return; viewModelScope.launch { _state.update { it.copy(isLoadingMore = true) }; when (val result = repository.getActions(owner, name, s.page + 1)) { is ApiResult.Success -> _state.update { it.copy(runs = it.runs + result.data.runs, page = result.data.page, hasNextPage = result.data.hasNextPage, isLoadingMore = false) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoadingMore = false) } } } } }
@@ -70,6 +75,52 @@ class RepoActionsViewModel @Inject constructor(
     fun dismissDispatch() { dispatchInputsJob?.cancel(); _state.update { it.copy(dispatchWorkflow = null, dispatchInputs = emptyList(), dispatchInputsRef = null, isLoadingInputs = false) } }
     fun dispatch(ref: String, inputs: Map<String, String>) { val workflow = _state.value.dispatchWorkflow ?: return; viewModelScope.launch { when (val result = repository.dispatch(owner, name, workflow.id, ref, inputs)) { is ApiResult.Success -> { dismissDispatch(); load(); repoUpdateEventBus.emit(RepoUpdateEvent.ActionRunChanged(owner, name, 0L)) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
     fun setWorkflowEnabled(workflow: RepoWorkflow, enabled: Boolean) { if (!_state.value.capabilities.canPush) return; viewModelScope.launch { when (val result = repository.enableWorkflow(owner, name, workflow.id, enabled)) { is ApiResult.Success -> _state.update { it.copy(workflows = it.workflows.map { value -> if (value.id == workflow.id) value.copy(state = if (enabled) "active" else "disabled_manually") else value }) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
+
+    fun requestDelete(run: RepoWorkflowRun) {
+        if (!_state.value.capabilities.canDeleteActionRuns || run.id in _state.value.deletingRunIds) return
+        if (run.status != "completed") {
+            viewModelScope.launch { errorEventBus.emit(ApiError.UserVisible(R.string.actions_delete_running)) }
+            return
+        }
+        _state.update { it.copy(pendingDeleteRun = run) }
+    }
+
+    fun dismissDelete() = _state.update { it.copy(pendingDeleteRun = null) }
+
+    fun deletePendingRun() {
+        val run = _state.value.pendingDeleteRun ?: return
+        if (run.id in _state.value.deletingRunIds) return
+        _state.update { it.copy(pendingDeleteRun = null, deletingRunIds = it.deletingRunIds + run.id) }
+        viewModelScope.launch {
+            when (val result = repository.deleteRun(owner, name, run.id)) {
+                is ApiResult.Success -> {
+                    _state.update {
+                        it.copy(
+                            runs = it.runs.filterNot { item -> item.id == run.id },
+                            totalCount = (it.totalCount - 1).coerceAtLeast(0),
+                        )
+                    }
+                    errorEventBus.emitNotice(R.string.actions_run_deleted)
+                    locallyDeletedRunIds += run.id
+                    repoUpdateEventBus.emit(RepoUpdateEvent.ActionRunChanged(owner, name, run.id))
+                    _state.update { it.copy(deletingRunIds = it.deletingRunIds - run.id) }
+                }
+                is ApiResult.Failure -> {
+                    errorEventBus.emit(result.error)
+                    _state.update { it.copy(deletingRunIds = it.deletingRunIds - run.id) }
+                }
+            }
+        }
+    }
+
+    private fun observeRunChanges() {
+        viewModelScope.launch {
+            repoUpdateEventBus.events.filterIsInstance<RepoUpdateEvent.ActionRunChanged>().collect { event ->
+                if (event.owner != owner || event.name != name) return@collect
+                if (!locallyDeletedRunIds.remove(event.runId)) load()
+            }
+        }
+    }
 }
 
 data class RepoWorkflowRunUiState(

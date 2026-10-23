@@ -1,0 +1,21 @@
+# 仓库标星用户；分页容量由 PageSize.USER_LIST 传入。
+query RepoStargazers($owner: String!, $name: String!, $after: String, $first: Int!) {
+  repository(owner: $owner, name: $name) {
+    stargazers(first: $first, after: $after) {
+      totalCount
+      nodes { login name avatarUrl bio }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+# 仓库直接 fork；forkCount 是整个网络计数，不能替代此连接的 totalCount。
+query RepoForks($owner: String!, $name: String!, $after: String, $first: Int!, $topicsFirst: Int!) {
+  repository(owner: $owner, name: $name) {
+    forks(first: $first, after: $after) {
+      totalCount
+      nodes { ...RepoListFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

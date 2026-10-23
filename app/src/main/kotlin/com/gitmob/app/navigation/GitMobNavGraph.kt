@@ -47,6 +47,8 @@ import androidx.navigation3.ui.NavDisplay
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ErrorBannerHost
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.event.RepoUpdateEvent
+import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.ui.branches.BranchesScreen
@@ -55,6 +57,7 @@ import com.gitmob.app.ui.repoactions.RepoActionsScreen
 import com.gitmob.app.ui.repoactions.RepoWorkflowRunScreen
 import com.gitmob.app.ui.repocommunity.RepoContributorsScreen
 import com.gitmob.app.ui.repocommunity.RepoLicenseScreen
+import com.gitmob.app.ui.repoforks.RepoForksScreen
 import com.gitmob.app.ui.repocommits.RepoCommitDetailScreen
 import com.gitmob.app.ui.repocommits.RepoCommitsScreen
 import com.gitmob.app.ui.repocode.RepoCodeScreen
@@ -87,6 +90,7 @@ import com.gitmob.app.ui.settings.SettingsScreen
 import com.gitmob.app.ui.stars.StarsScreen
 import com.gitmob.app.ui.userlist.OrgMembersScreen
 import com.gitmob.app.ui.userlist.RepoWatchersScreen
+import com.gitmob.app.ui.userlist.RepoStargazersScreen
 import com.gitmob.app.ui.userlist.UserListMode
 import com.gitmob.app.ui.userlist.UserListScreen
 import com.gitmob.app.ui.userstars.UserStarredReposScreen
@@ -149,6 +153,7 @@ private fun GitMobNavState.isShowingTabRoot(): Boolean {
 fun GitMobNavGraph(
     startLoggedIn: Boolean,
     errorEventBus: ErrorEventBus,
+    repoUpdateEventBus: RepoUpdateEventBus,
     enablePredictiveBack: Boolean,
     deepLinkDestination: DeepLinkDestination? = null,
     onDeepLinkConsumed: () -> Unit = {},
@@ -162,6 +167,7 @@ fun GitMobNavGraph(
                 enablePredictiveBack = enablePredictiveBack,
                 deepLinkDestination = deepLinkDestination,
                 onDeepLinkConsumed = onDeepLinkConsumed,
+                repoUpdateEventBus = repoUpdateEventBus,
             )
         } else {
             LoginScreen(onLoginSuccess = { isLoggedIn = true })
@@ -196,6 +202,7 @@ private fun LoggedInApp(
     enablePredictiveBack: Boolean,
     deepLinkDestination: DeepLinkDestination?,
     onDeepLinkConsumed: () -> Unit,
+    repoUpdateEventBus: RepoUpdateEventBus,
 ) {
     val navState = rememberGitMobNavState(startRoute = HomeRoute)
     val navigator = remember(navState) { GitMobNavigator(navState) }
@@ -214,6 +221,10 @@ private fun LoggedInApp(
         }
     }
     val showingTabRoot = navState.isShowingTabRoot()
+
+    LaunchedEffect(repoUpdateEventBus, navigator) {
+        repoUpdateEventBus.events.collect(navigator::onRepositoryUpdate)
+    }
 
     LaunchedEffect(deepLinkDestination) {
         val destination = deepLinkDestination ?: return@LaunchedEffect
@@ -393,6 +404,7 @@ private fun LoggedInApp(
                 onForkSourceClick = { forkOwner, forkName ->
                     navigator.navigate(RepoDetailRoute(forkOwner, forkName))
                 },
+                onHomepageClick = openExternalUrl,
                 onNavigateBranches = { currentRef, canPush, canManageBranchProtection ->
                     navigator.navigate(
                         RepoBranchesRoute(route.owner, route.name, currentRef, canPush, canManageBranchProtection)
@@ -401,6 +413,8 @@ private fun LoggedInApp(
                 onNavigateCode = { ref -> navigator.navigate(RepoCodeRoute(route.owner, route.name, ref)) },
                 onNavigateCommits = { ref -> navigator.navigate(RepoCommitsRoute(route.owner, route.name, ref)) },
                 onNavigateWatchers = { navigator.navigate(RepoWatchersRoute(route.owner, route.name)) },
+                onNavigateStargazers = { navigator.navigate(RepoStargazersRoute(route.owner, route.name)) },
+                onNavigateForks = { navigator.navigate(RepoForksRoute(route.owner, route.name)) },
                 onNavigateIssues = { permission, viewerCanCreateIssues ->
                     navigator.navigate(RepoIssuesRoute(route.owner, route.name, permission, viewerCanCreateIssues))
                 },
@@ -411,6 +425,12 @@ private fun LoggedInApp(
                 onNavigateContributors = { navigator.navigate(RepoContributorsRoute(route.owner, route.name)) },
                 onNavigateLicense = { ref -> navigator.navigate(RepoLicenseRoute(route.owner, route.name, ref)) },
                 onNavigatePlaceholder = { label -> navigator.navigate(RepoPlaceholderRoute(label)) },
+                onRepositoryAddressChanged = { owner, name ->
+                    navigator.onRepositoryUpdate(RepoUpdateEvent.RepositoryAddressChanged(route.owner, route.name, owner, name))
+                },
+                onRepositoryDeleted = {
+                    navigator.onRepositoryUpdate(RepoUpdateEvent.RepositoryDeleted(route.owner, route.name))
+                },
             )
         }
         entry<RepoIssuesRoute> { route ->
@@ -706,6 +726,27 @@ private fun LoggedInApp(
                 onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
             )
         }
+        entry<RepoStargazersRoute> { route ->
+            RepoStargazersScreen(
+                owner = route.owner,
+                name = route.name,
+                onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+            )
+        }
+        entry<RepoForksRoute> { route ->
+            RepoForksScreen(
+                owner = route.owner,
+                name = route.name,
+                onBack = { navigator.goBack() },
+                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onForkSourceClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onHomepageClick = openExternalUrl,
+            )
+        }
         entry<RepoCodeRoute> { route ->
             RepoCodeScreen(
                 owner = route.owner,
@@ -719,6 +760,25 @@ private fun LoggedInApp(
                 onAdd = { navigator.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, null, route.permission)) },
                 onDirectoryClick = { path -> navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, path, route.permission)) },
                 onFileClick = { path -> navigator.navigate(RepoFileDetailRoute(route.owner, route.name, route.ref, path, route.permission)) },
+                onCreateSyncPullRequest = { info ->
+                    navigator.navigate(
+                        RepoPullRequestEditorRoute(
+                            owner = route.owner,
+                            name = route.name,
+                            permission = route.permission,
+                            baseOwner = route.owner,
+                            baseName = route.name,
+                            baseRef = info.branch,
+                            headOwner = info.upstreamOwner,
+                            headName = info.upstreamName,
+                            headRef = info.branch,
+                            headRepositoryId = info.upstreamRepositoryId,
+                        ),
+                    )
+                },
+                onExistingSyncPullRequest = { number ->
+                    navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission))
+                },
             )
         }
         entry<RepoCommitsRoute> { route ->

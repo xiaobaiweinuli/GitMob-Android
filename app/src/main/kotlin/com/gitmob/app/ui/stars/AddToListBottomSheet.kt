@@ -24,13 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
-import com.gitmob.app.data.model.StarredRepo
 import com.gitmob.app.data.model.UserListSummary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddToListBottomSheet(
-    targetRepo: StarredRepo,
+    targetLabel: String,
     lists: List<UserListSummary>,
     selection: Set<String>,
     isLoadingSelection: Boolean,
@@ -50,7 +49,7 @@ fun AddToListBottomSheet(
                 Text(stringResource(R.string.common_add_to_list), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
             }
             Text(
-                "${targetRepo.ownerLogin}/${targetRepo.name}",
+                targetLabel,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),

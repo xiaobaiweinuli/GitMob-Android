@@ -233,12 +233,12 @@ class RepoPullRequestRepository @Inject constructor(
             val milestones = loadAllMilestones(owner, name, repository.milestones?.nodes.orEmpty().filterNotNull().map {
                 IssueMilestone(it.id, it.number, it.title, it.state.rawValue, it.dueOn)
             }, repository.milestones?.pageInfo?.hasNextPage == true, repository.milestones?.pageInfo?.endCursor)
-            val assignees = loadAllAssignable(owner, name, repository.assignableUsers?.nodes.orEmpty().filterNotNull().map {
+            val assignees = loadAllAssignable(owner, name, repository.assignableUsers.nodes.orEmpty().filterNotNull().map {
                 SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id)
-            }, repository.assignableUsers?.pageInfo?.hasNextPage == true, repository.assignableUsers?.pageInfo?.endCursor)
-            val reviewers = loadAllMentionable(owner, name, repository.mentionableUsers?.nodes.orEmpty().filterNotNull().map {
+            }, repository.assignableUsers.pageInfo.hasNextPage, repository.assignableUsers.pageInfo.endCursor)
+            val reviewers = loadAllMentionable(owner, name, repository.mentionableUsers.nodes.orEmpty().filterNotNull().map {
                 SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id)
-            }, repository.mentionableUsers?.pageInfo?.hasNextPage == true, repository.mentionableUsers?.pageInfo?.endCursor)
+            }, repository.mentionableUsers.pageInfo.hasNextPage, repository.mentionableUsers.pageInfo.endCursor)
             RepoPullRequestCreateMetadata(
                 repositoryId = repository.id,
                 viewerLogin = data.viewer.login,

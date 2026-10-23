@@ -6,7 +6,6 @@ import org.junit.Test
 
 /** 纯函数测试，不需要任何 Mock，五级权限全部覆盖，见 references/testing.md */
 class RepoCapabilitiesTest {
-
     @Test
     fun `ADMIN 拥有全部能力`() {
         val cap = RepoPermission.ADMIN.toCapabilities()
@@ -57,5 +56,23 @@ class RepoCapabilitiesTest {
         assertFalse(cap.canPush)
         assertFalse(cap.canManageIssuesAndPRs)
         assertFalse(cap.canDeleteIssues)
+    }
+
+    @Test
+    fun `destructive repository actions require admin`() {
+        assertTrue(RepoPermission.ADMIN.toCapabilities().canDeleteRepo)
+        assertTrue(RepoPermission.ADMIN.toCapabilities().canTransferRepo)
+        assertFalse(RepoPermission.MAINTAIN.toCapabilities().canDeleteRepo)
+        assertFalse(RepoPermission.WRITE.toCapabilities().canTransferRepo)
+    }
+
+    @Test
+    fun `action run deletion follows push permission and archived lock`() {
+        assertTrue(RepoPermission.ADMIN.toCapabilities().canDeleteActionRuns)
+        assertTrue(RepoPermission.MAINTAIN.toCapabilities().canDeleteActionRuns)
+        assertTrue(RepoPermission.WRITE.toCapabilities().canDeleteActionRuns)
+        assertFalse(RepoPermission.TRIAGE.toCapabilities().canDeleteActionRuns)
+        assertFalse(RepoPermission.READ.toCapabilities().canDeleteActionRuns)
+        assertFalse(RepoPermission.ADMIN.toCapabilities(isArchived = true).canDeleteActionRuns)
     }
 }

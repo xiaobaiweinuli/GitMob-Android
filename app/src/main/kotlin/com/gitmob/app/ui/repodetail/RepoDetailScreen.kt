@@ -1,10 +1,13 @@
 package com.gitmob.app.ui.repodetail
 
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -12,8 +15,10 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -32,12 +37,17 @@ import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,7 +56,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -64,8 +77,11 @@ import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.common.GitHubEmojiText
+import com.gitmob.app.ui.common.RepoMetadataLinkRow
 import com.gitmob.app.ui.common.RepositoryTopicsRow
 import com.gitmob.app.ui.common.StatusChip
+import com.gitmob.app.ui.stars.AddToListBottomSheet
+import com.gitmob.app.ui.stars.CreateListDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,10 +91,13 @@ fun RepoDetailScreen(
     onBack: () -> Unit,
     onOwnerClick: (login: String) -> Unit,
     onForkSourceClick: (owner: String, name: String) -> Unit,
+    onHomepageClick: (String) -> Unit,
     onNavigateBranches: (currentRef: String, canPush: Boolean, canManageBranchProtection: Boolean) -> Unit,
     onNavigateCode: (ref: String) -> Unit,
     onNavigateCommits: (ref: String) -> Unit,
     onNavigateWatchers: () -> Unit,
+    onNavigateStargazers: () -> Unit,
+    onNavigateForks: () -> Unit,
     onNavigateIssues: (permission: com.gitmob.app.core.permission.RepoPermission, viewerCanCreateIssues: Boolean) -> Unit,
     onNavigatePullRequests: (permission: com.gitmob.app.core.permission.RepoPermission) -> Unit,
     onNavigateDiscussions: (permission: com.gitmob.app.core.permission.RepoPermission) -> Unit,
@@ -87,10 +106,18 @@ fun RepoDetailScreen(
     onNavigateContributors: () -> Unit,
     onNavigateLicense: (ref: String) -> Unit,
     onNavigatePlaceholder: (label: String) -> Unit,
+    onRepositoryAddressChanged: (String, String) -> Unit,
+    onRepositoryDeleted: () -> Unit,
     viewModel: RepoDetailViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(state.detail?.ownerLogin, state.detail?.name, state.isManaging, state.deleted) {
+        if (state.deleted) onRepositoryDeleted()
+        else if (!state.isManaging) state.detail?.let { detail ->
+            if (detail.ownerLogin != owner || detail.name != name) onRepositoryAddressChanged(detail.ownerLogin, detail.name)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -103,6 +130,14 @@ fun RepoDetailScreen(
                             contentDescription = stringResource(R.string.common_back),
                         )
                     }
+                },
+                actions = {
+                    RepoManagementMenu(
+                        detail = state.detail,
+                        enabled = state.canStartAction,
+                        onShare = viewModel::share,
+                        onAction = viewModel::openManagement,
+                    )
                 },
                 windowInsets = WindowInsets.safeDrawing
                     .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -139,15 +174,34 @@ fun RepoDetailScreen(
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState()),
                     ) {
+                        if (state.transferPending) {
+                            Text(stringResource(R.string.repo_transfer_accepted), modifier = Modifier.padding(16.dp))
+                            OutlinedButton(
+                                onClick = viewModel::checkTransferStatus,
+                                enabled = !state.isCheckingTransfer,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            ) { Text(stringResource(R.string.repo_transfer_check_status)) }
+                        }
                         RepoHeader(
                             detail = detail,
                             onStarClick = viewModel::toggleStar,
+                            onStargazersClick = onNavigateStargazers,
+                            onForksClick = onNavigateForks,
+                            onListsClick = viewModel::openStarListSelector,
+                            onForkClick = viewModel::createFork,
+                            onNotificationsClick = { viewModel.openManagement(RepoManagementAction.NOTIFICATIONS) },
                             onOwnerClick = { onOwnerClick(detail.ownerLogin) },
                             onForkSourceClick = {
                                 val forkOwner = detail.forkedFromOwner
                                 val forkName = detail.forkedFromName
                                 if (forkOwner != null && forkName != null) onForkSourceClick(forkOwner, forkName)
                             },
+                            onHomepageClick = onHomepageClick,
+                            canStar = state.canStartAction,
+                            canAct = state.canStartAction,
+                            isForking = state.isForking,
+                            selectedListIds = state.starListMembership,
+                            lists = state.starLists,
                         )
                         RepoMenu(
                             detail = detail,
@@ -201,14 +255,46 @@ fun RepoDetailScreen(
             }
         }
     }
+    RepoManagementDialogs(state, viewModel)
+    if (state.showStarListSelector) {
+        AddToListBottomSheet(
+            targetLabel = state.detail?.let { "${it.ownerLogin}/${it.name}" } ?: "$owner/$name",
+            lists = state.starLists,
+            selection = state.starListSelection,
+            isLoadingSelection = state.isLoadingStarLists,
+            isSaving = state.isSavingStarLists,
+            onToggle = viewModel::toggleStarList,
+            onCreateNewList = viewModel::openCreateListDialog,
+            onDismiss = viewModel::dismissStarListSelector,
+            onConfirm = viewModel::saveStarLists,
+        )
+    }
+    if (state.showCreateListDialog) {
+        CreateListDialog(
+            isSaving = state.isCreatingList,
+            onDismiss = viewModel::dismissCreateListDialog,
+            onConfirm = viewModel::createList,
+        )
+    }
 }
 
 @Composable
 private fun RepoHeader(
     detail: RepoDetail,
     onStarClick: () -> Unit,
+    onStargazersClick: () -> Unit,
+    onForksClick: () -> Unit,
+    onListsClick: () -> Unit,
+    onForkClick: () -> Unit,
+    onNotificationsClick: () -> Unit,
     onOwnerClick: () -> Unit,
     onForkSourceClick: () -> Unit,
+    onHomepageClick: (String) -> Unit,
+    canStar: Boolean,
+    canAct: Boolean,
+    isForking: Boolean,
+    selectedListIds: Set<String>,
+    lists: List<com.gitmob.app.data.model.UserListSummary>,
 ) {
     Column(modifier = Modifier.padding(16.dp)) {
         Row(
@@ -248,6 +334,16 @@ private fun RepoHeader(
             )
         }
 
+        detail.homepageUrl?.takeIf { it.isNotBlank() }?.let { homepageUrl ->
+            RepoMetadataLinkRow(
+                icon = Icons.Default.Link,
+                text = homepageUrl,
+                contentDescription = stringResource(R.string.common_open_homepage),
+                onClick = { onHomepageClick(homepageUrl) },
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+
         // 状态标签行：模板 / 私有 / 已归档
         Row(modifier = Modifier.padding(top = 8.dp)) {
             if (detail.isTemplate) StatusChip(stringResource(R.string.repo_template))
@@ -280,18 +376,80 @@ private fun RepoHeader(
             modifier = Modifier.padding(top = if (detail.languageName != null) 6.dp else 8.dp),
         )
 
-        // 操作按钮：标星 / Fork（Watch 放进菜单里的关注者行，简化处理）
-        Row(modifier = Modifier.padding(top = 12.dp)) {
+        val selectedLists = lists.filter { it.id in selectedListIds }
+        val firstListName = selectedLists.firstOrNull()?.name?.take(4)
+        val listLabel = when {
+            firstListName == null -> stringResource(R.string.repo_star_lists)
+            selectedLists.size == 1 -> firstListName
+            else -> stringResource(R.string.repo_star_lists_summary, firstListName, selectedLists.size - 1)
+        }
+        Row(
+            modifier = Modifier
+                .padding(top = 12.dp)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(onClick = onStargazersClick) {
+                Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(stringResource(R.string.repo_stargazers_count, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
+            }
+            OutlinedButton(onClick = onForksClick) {
+                Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(stringResource(R.string.repo_forks_count, detail.forkCount), modifier = Modifier.padding(start = 4.dp))
+            }
             if (detail.viewerHasStarred) {
-                OutlinedButton(onClick = onStarClick) {
-                    Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(stringResource(R.string.repo_starred_count, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Transparent,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            onClick = onStarClick,
+                            enabled = canStar,
+                            shape = RectangleShape,
+                            colors = ButtonDefaults.textButtonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            ),
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text(stringResource(R.string.repo_starred), modifier = Modifier.padding(start = 4.dp))
+                        }
+                        VerticalDivider(Modifier.fillMaxHeight())
+                        TextButton(onClick = onListsClick, enabled = canAct, shape = RectangleShape, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(listLabel)
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    }
                 }
             } else {
-                Button(onClick = onStarClick) {
+                Button(onClick = onStarClick, enabled = canStar) {
                     Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(stringResource(R.string.repo_star_count, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
+                    Text(stringResource(R.string.repo_star), modifier = Modifier.padding(start = 4.dp))
                 }
+            }
+            if (!detail.ownerIsViewer) {
+                OutlinedButton(onClick = onForkClick, enabled = canAct && detail.forkingAllowed && !isForking) {
+                    if (isForking) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
+                    Text(stringResource(R.string.repo_fork), modifier = Modifier.padding(start = 4.dp))
+                }
+            }
+            OutlinedButton(
+                onClick = onNotificationsClick,
+                enabled = canAct && detail.viewerCanSubscribe,
+            ) {
+                Icon(
+                    if (detail.viewerSubscription == "IGNORED") Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                    contentDescription = stringResource(R.string.repo_manage_notifications),
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }

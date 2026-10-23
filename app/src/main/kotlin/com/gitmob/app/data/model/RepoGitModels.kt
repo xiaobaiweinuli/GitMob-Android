@@ -46,6 +46,7 @@ data class RepoCodeTree(
     val permission: RepoPermission,
     val capabilities: RepoCapabilities,
     val isArchived: Boolean,
+    val isFork: Boolean = false,
     val ref: String,
     val headOid: String,
     val path: String,
@@ -122,6 +123,28 @@ sealed interface RepoComparisonResult {
     data object NoCommonAncestor : RepoComparisonResult
 }
 
+enum class RepoForkSyncStatus {
+    READY,
+    NOT_FORK,
+    MISSING_UPSTREAM,
+    MISSING_UPSTREAM_BRANCH,
+    EMPTY_BRANCH,
+    NO_COMMON_ANCESTOR,
+}
+
+data class RepoForkSyncInfo(
+    val repositoryId: String,
+    val branch: String,
+    val currentOid: String?,
+    val upstreamRepositoryId: String?,
+    val upstreamOwner: String?,
+    val upstreamName: String?,
+    val upstreamOid: String?,
+    val status: RepoForkSyncStatus,
+    val aheadBy: Int = 0,
+    val behindBy: Int = 0,
+)
+
 data class PagedRepoCommits(
     val repositoryId: String,
     val permission: RepoPermission,
@@ -147,4 +170,3 @@ sealed interface RepoPendingFileChange {
         override val path: String,
     ) : RepoPendingFileChange
 }
-

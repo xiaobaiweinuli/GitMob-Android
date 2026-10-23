@@ -5,7 +5,9 @@ query RepoDetail($owner: String!, $name: String!, $topicsFirst: Int!) {
     name
     description
     homepageUrl
-    owner { login avatarUrl }
+    url
+    visibility
+    owner { login avatarUrl ... on User { isViewer } ... on Organization { id } }
     isPrivate
     isArchived
     isTemplate
@@ -14,10 +16,12 @@ query RepoDetail($owner: String!, $name: String!, $topicsFirst: Int!) {
     stargazerCount
     viewerHasStarred
     forkCount
+    forkingAllowed
     issues(states: [OPEN]) { totalCount }
     pullRequests(states: [OPEN]) { totalCount }
     watchers(first: 0) { totalCount }
     viewerSubscription
+    viewerCanSubscribe
     licenseInfo { name spdxId }
     refs(refPrefix: "refs/heads/", first: 0) { totalCount }
     defaultBranchRef { name }
@@ -36,5 +40,29 @@ query RepoDetail($owner: String!, $name: String!, $topicsFirst: Int!) {
     pullRequestCreationPolicy
     hasDiscussionsEnabled
     discussions(states: [OPEN], first: 0) { totalCount }
+  }
+}
+
+query RepoManagementTopics($owner: String!, $name: String!, $after: String, $first: Int!) {
+  repository(owner: $owner, name: $name) {
+    repositoryTopics(first: $first, after: $after) {
+      nodes { topic { name } }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+query RepoManagementIdentity($id: ID!) {
+  node(id: $id) { ... on Repository { name owner { login } } }
+}
+
+query RepoTransferTarget($login: String!, $name: String!) {
+  repositoryOwner(login: $login) {
+    id
+    login
+    avatarUrl
+    ... on User { name }
+    ... on Organization { name viewerCanCreateRepositories }
+    repository(name: $name, followRenames: false) { id }
   }
 }

@@ -9,24 +9,49 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.core.network.graphql.GraphQLErrorMapper
 import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.IssueCreationPolicy
 import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.PagedBranches
 import com.gitmob.app.data.model.PagedUsers
+import com.gitmob.app.data.model.RepoList
 import com.gitmob.app.data.model.RepoBranch
 import com.gitmob.app.data.model.BranchCreationSpec
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.data.model.RepoReadme
 import com.gitmob.app.data.model.SimpleUser
+import com.gitmob.app.data.model.CreatedRepository
+import com.gitmob.app.data.model.RepositoryCreateOwner
+import com.gitmob.app.data.model.RepositoryCreateOwnerType
+import com.gitmob.app.data.model.RepositorySubscription
+import com.gitmob.app.data.model.RepositoryTransferTarget
+import com.gitmob.app.data.model.isValidRepositoryName
+import com.gitmob.app.data.model.isValidRepositoryWebsite
+import com.gitmob.app.data.model.areValidRepositoryTopics
+import com.gitmob.app.graphql.ArchiveRepoMutation
+import com.gitmob.app.graphql.UnarchiveRepoMutation
+import com.gitmob.app.graphql.UpdateRepoSettingsMutation
+import com.gitmob.app.graphql.UpdateRepoTopicsMutation
+import com.gitmob.app.graphql.UpdateRepoSubscriptionMutation
+import com.gitmob.app.graphql.RepoManagementTopicsQuery
+import com.gitmob.app.graphql.RepoManagementIdentityQuery
+import com.gitmob.app.graphql.RepoTransferTargetQuery
+import com.gitmob.app.graphql.type.UpdateRepositoryInput
+import com.gitmob.app.graphql.type.UpdateTopicsInput
+import com.gitmob.app.graphql.type.UpdateSubscriptionInput
+import com.gitmob.app.graphql.type.SubscriptionState
 import com.gitmob.app.graphql.DeleteBranchMutation
 import com.gitmob.app.graphql.RepoBranchesQuery
 import com.gitmob.app.graphql.RepoDetailQuery
 import com.gitmob.app.graphql.RepoReadmeQuery
 import com.gitmob.app.graphql.RepoWatchersQuery
+import com.gitmob.app.graphql.RepoStargazersQuery
+import com.gitmob.app.graphql.RepoForksQuery
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -100,7 +125,13 @@ class RepoDetailRepository @Inject constructor(
                     } ?: PullRequestCreationPolicy.UNKNOWN,
                     hasDiscussionsEnabled = node.hasDiscussionsEnabled,
                     openDiscussionCount = node.discussions.totalCount,
-                    capabilities = permission.toCapabilities(),
+                    capabilities = permission.toCapabilities(node.isArchived),
+                    url = node.url,
+                    visibility = node.visibility.rawValue,
+                    ownerIsOrganization = node.owner.onOrganization != null,
+                    viewerCanSubscribe = node.viewerCanSubscribe,
+                    ownerIsViewer = node.owner.onUser?.isViewer == true,
+                    forkingAllowed = node.forkingAllowed,
                 )
             }
         }
@@ -180,6 +211,53 @@ class RepoDetailRepository @Inject constructor(
                 )
             }
         }
+
+    suspend fun getStargazers(owner: String, name: String, after: String? = null): ApiResult<PagedUsers> =
+        when (val result = apolloClient.query(
+            RepoStargazersQuery(owner, name, Optional.presentIfNotNull(after), PageSize.USER_LIST),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val connection = result.data.repository?.stargazers
+                    ?: throw UserVisibleException(R.string.error_repo_not_found)
+                PagedUsers(
+                    totalCount = connection.totalCount,
+                    users = connection.nodes.orEmpty().filterNotNull().map {
+                        SimpleUser(it.login, it.name, it.avatarUrl, it.bio)
+                    },
+                    hasNextPage = connection.pageInfo.hasNextPage,
+                    endCursor = connection.pageInfo.endCursor,
+                )
+            }
+        }
+
+    suspend fun getForks(owner: String, name: String, after: String? = null): ApiResult<RepoList> =
+        when (val result = apolloClient.query(
+            RepoForksQuery(
+                owner,
+                name,
+                Optional.presentIfNotNull(after),
+                PageSize.REPOS,
+                PageSize.TOPICS_PER_REPO,
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val connection = result.data.repository?.forks
+                    ?: throw UserVisibleException(R.string.error_repo_not_found)
+                RepoList(
+                    totalCount = connection.totalCount,
+                    items = connection.nodes.orEmpty().filterNotNull().map { it.repoListFields.toDomain() },
+                    hasNextPage = connection.pageInfo.hasNextPage,
+                    endCursor = connection.pageInfo.endCursor,
+                )
+            }
+        }
+
+    suspend fun createFork(owner: String, name: String): ApiResult<Unit> = safeCall {
+        with(api.post<CreateForkResponse, CreateForkBody>("/repos/$owner/$name/forks", CreateForkBody())) { }
+        // GitHub responds with 202 while creating the fork asynchronously; no count or route update is valid yet.
+    }
 
     /**
      * 删除分支：DeleteRefInput 只需要 refId（Ref 节点自己的 id，不是分支名），已用 introspection 核实。
@@ -277,7 +355,185 @@ class RepoDetailRepository @Inject constructor(
 
     private fun encodePathSegment(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8.toString()).replace("+", "%20")
+
+    suspend fun getManagementIdentity(id: String): ApiResult<CreatedRepository> =
+        when (val result = apolloClient.query(RepoManagementIdentityQuery(id)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.node?.onRepository
+                    ?: throw UserVisibleException(R.string.error_repo_not_found)
+                CreatedRepository(repository.owner.login, repository.name)
+            }
+        }
+
+    suspend fun getAllTopics(owner: String, name: String): ApiResult<List<String>> {
+        val topics = mutableListOf<String>()
+        var after: String? = null
+        do {
+            when (val result = apolloClient.query(
+                RepoManagementTopicsQuery(owner, name, Optional.presentIfNotNull(after), PageSize.TOPICS_PER_REPO),
+            ).executeAsApiResult()) {
+                is ApiResult.Failure -> return result
+                is ApiResult.Success -> {
+                    val connection = result.data.repository?.repositoryTopics
+                        ?: return safeCall { throw UserVisibleException(R.string.error_repo_not_found) }
+                    topics += connection.nodes.orEmpty().filterNotNull().map { it.topic.name }
+                    if (!connection.pageInfo.hasNextPage) break
+                    val next = connection.pageInfo.endCursor
+                    if (next == null || next == after) return safeCall { error("Topics cursor is missing or unchanged") }
+                    after = next
+                }
+            }
+        } while (true)
+        return ApiResult.Success(topics.distinct())
+    }
+
+    suspend fun updateSettings(
+        id: String,
+        newName: String? = null,
+        description: String? = null,
+        homepageUrl: String? = null,
+        hasIssuesEnabled: Boolean? = null,
+        hasDiscussionsEnabled: Boolean? = null,
+    ): ApiResult<CreatedRepository> {
+        if (newName != null && !isValidRepositoryName(newName)) return safeCall { throw UserVisibleException(R.string.repo_manage_invalid_name) }
+        if (homepageUrl != null && !isValidRepositoryWebsite(homepageUrl)) return safeCall { throw UserVisibleException(R.string.repo_manage_invalid_website) }
+        val input = UpdateRepositoryInput(
+            repositoryId = id,
+            name = Optional.presentIfNotNull(newName),
+            description = Optional.presentIfNotNull(description),
+            homepageUrl = Optional.presentIfNotNull(homepageUrl),
+            hasIssuesEnabled = Optional.presentIfNotNull(hasIssuesEnabled),
+            hasDiscussionsEnabled = Optional.presentIfNotNull(hasDiscussionsEnabled),
+        )
+        return when (val result = apolloClient.mutation(UpdateRepoSettingsMutation(input)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.updateRepository?.repository ?: error("Repository update payload is missing")
+                CreatedRepository(repository.owner.login, repository.name)
+            }
+        }
+    }
+
+    suspend fun updateTopics(id: String, topics: List<String>): ApiResult<List<String>> {
+        if (!areValidRepositoryTopics(topics)) return safeCall { throw UserVisibleException(R.string.repo_manage_invalid_topics) }
+        return when (val result = apolloClient.mutation(
+            UpdateRepoTopicsMutation(UpdateTopicsInput(repositoryId = id, topicNames = topics)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val payload = result.data.updateTopics ?: error("Topics update payload is missing")
+                payload.invalidTopicNames.orEmpty()
+            }
+        }
+    }
+
+    suspend fun setArchived(id: String, archived: Boolean): ApiResult<Unit> = if (archived) {
+        when (val result = apolloClient.mutation(ArchiveRepoMutation(id)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { check(result.data.archiveRepository?.repository?.isArchived == true) }
+        }
+    } else {
+        when (val result = apolloClient.mutation(UnarchiveRepoMutation(id)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { check(result.data.unarchiveRepository?.repository?.isArchived == false) }
+        }
+    }
+
+    suspend fun setSubscription(id: String, state: String): ApiResult<RepositorySubscription> {
+        val subscription = SubscriptionState.entries.firstOrNull { it.rawValue == state && it != SubscriptionState.UNKNOWN__ }
+            ?: return safeCall { error("Unsupported subscription state") }
+        return when (val result = apolloClient.mutation(
+            UpdateRepoSubscriptionMutation(UpdateSubscriptionInput(subscribableId = id, state = subscription)),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val node = result.data.updateSubscription?.subscribable?.onRepository
+                    ?: error("Subscription update payload is missing")
+                RepositorySubscription(node.viewerSubscription?.rawValue ?: error("Subscription state is missing"), node.watchers.totalCount)
+            }
+        }
+    }
+
+    suspend fun setVisibility(owner: String, name: String, visibility: String): ApiResult<Unit> = safeCall {
+        require(visibility == "public" || visibility == "private")
+        val response = api.patch<ManagedRepoResponse, RepoVisibilityBody>("/repos/$owner/$name", RepoVisibilityBody(visibility))
+        check(response.visibility == visibility) { "Repository visibility was not updated" }
+    }
+
+    suspend fun getTransferTarget(login: String, newName: String): ApiResult<RepositoryTransferTarget> {
+        val result = try {
+            val response = apolloClient.query(RepoTransferTargetQuery(login, newName)).execute()
+            val account = response.data?.repositoryOwner
+            // Only this existence check accepts a missing repository alongside a resolved account.
+            val expectedMissingRepository = account != null && account.id.isNotBlank() && account.login.isNotBlank() &&
+                (account.onOrganization != null || account.onUser != null) && account.repository == null &&
+                response.errors.orEmpty().all { error ->
+                    error.path == listOf("repositoryOwner", "repository") && GraphQLErrorMapper.errorType(error) == "NOT_FOUND"
+                }
+            GraphQLErrorMapper.toApiResult(
+                response.data,
+                if (expectedMissingRepository) null else response.errors,
+                response.exception,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            return ApiResult.Failure(GraphQLErrorMapper.toApiError(error))
+        }
+        return when (result) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val account = result.data.repositoryOwner ?: throw UserVisibleException(R.string.repo_transfer_account_missing)
+                val organization = account.onOrganization
+                RepositoryTransferTarget(
+                    account = RepositoryCreateOwner(
+                        id = account.id,
+                        login = account.login,
+                        name = organization?.name ?: account.onUser?.name,
+                        avatarUrl = account.avatarUrl,
+                        type = if (organization != null) RepositoryCreateOwnerType.ORGANIZATION else RepositoryCreateOwnerType.USER,
+                        canCreateRepository = organization?.viewerCanCreateRepositories ?: true,
+                    ),
+                    hasNameConflict = account.repository != null,
+                )
+            }
+        }
+    }
+
+    suspend fun transferRepository(owner: String, name: String, target: String, newName: String): ApiResult<Unit> = safeCall {
+        if (!isValidRepositoryName(newName)) throw UserVisibleException(R.string.repo_manage_invalid_name)
+        require(target.isNotBlank() && !target.equals(owner, true) && '/' !in target)
+        with(api.post<ManagedRepoResponse, RepoTransferBody>(
+            "/repos/$owner/$name/transfer",
+            RepoTransferBody(target, newName.takeUnless { it == name }),
+        )) { }
+        // 202 is acceptance, not a new repository address.
+    }
+
+    suspend fun deleteRepository(owner: String, name: String): ApiResult<Unit> = safeCall {
+        api.delete<Unit>("/repos/$owner/$name")
+        branchesCache.invalidate("$owner/$name")
+    }
 }
+
+@kotlinx.serialization.Serializable
+private data class RepoVisibilityBody(val visibility: String)
+
+@kotlinx.serialization.Serializable
+private data class RepoTransferBody(
+    @kotlinx.serialization.SerialName("new_owner") val newOwner: String,
+    @kotlinx.serialization.SerialName("new_name") val newName: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+private class CreateForkBody
+
+@kotlinx.serialization.Serializable
+private data class CreateForkResponse(val name: String = "")
+
+@kotlinx.serialization.Serializable
+private data class ManagedRepoResponse(val visibility: String? = null)
 
 @kotlinx.serialization.Serializable
 private data class SetDefaultBranchBody(

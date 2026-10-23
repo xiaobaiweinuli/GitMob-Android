@@ -16,6 +16,9 @@ import com.gitmob.app.core.error.GraphQLErrorItem
  */
 object GraphQLErrorMapper {
 
+    internal fun errorType(error: com.apollographql.apollo.api.Error): String? =
+        error.extensions?.get("type") as? String ?: error.nonStandardFields?.get("type") as? String
+
     fun toApiError(throwable: Throwable): ApiError = when (throwable) {
         is ApolloHttpException -> when (throwable.statusCode) {
             401 -> ApiError.Unauthorized
@@ -30,7 +33,7 @@ object GraphQLErrorMapper {
             listOfNotNull(throwable.error).map { error ->
                 GraphQLErrorItem(
                     message = error.message,
-                    type = error.extensions?.get("type")?.toString(),
+                    type = errorType(error),
                 )
             },
         )
@@ -49,7 +52,7 @@ object GraphQLErrorMapper {
         if (!errors.isNullOrEmpty()) {
             return ApiResult.Failure(
                 ApiError.GraphQLError(
-                    errors.map { GraphQLErrorItem(it.message, it.extensions?.get("type")?.toString()) },
+                    errors.map { GraphQLErrorItem(it.message, errorType(it)) },
                 ),
             )
         }

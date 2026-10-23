@@ -56,6 +56,7 @@ fun RepoCard(
     onForkSourceClick: (owner: String, name: String) -> Unit,
     onHomepageClick: (url: String) -> Unit,
     modifier: Modifier = Modifier,
+    showOwner: Boolean = false,
 ) {
     Card(
         onClick = onClick,
@@ -64,7 +65,7 @@ fun RepoCard(
         Column(modifier = Modifier.padding(16.dp)) {
             // ---- 1. 仓库名 ----
             Text(
-                repo.name,
+                if (showOwner) "${repo.ownerLogin}/${repo.name}" else repo.name,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )

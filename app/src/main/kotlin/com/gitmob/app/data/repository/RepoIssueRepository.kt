@@ -468,7 +468,7 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
             commentCount = commentCount,
             labels = node.labels?.nodes.orEmpty().filterNotNull()
                 .map { IssueLabel(it.id, it.name, it.color, it.description) },
-            assignees = node.assignees?.nodes.orEmpty().filterNotNull()
+            assignees = node.assignees.nodes.orEmpty().filterNotNull()
                 .map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) },
             milestone = node.milestone?.let { IssueMilestone(it.id, it.number, it.title, it.state.rawValue, it.dueOn) },
             locked = node.locked,

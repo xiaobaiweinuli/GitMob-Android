@@ -13,10 +13,12 @@ import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
 import com.gitmob.app.graphql.CommitParentQuery
 import com.gitmob.app.graphql.CreateCommitOnBranchMutation
+import com.gitmob.app.graphql.ForceAlignForkMutation
 import com.gitmob.app.graphql.RepoCodeTreeQuery
 import com.gitmob.app.graphql.RepoCommitDetailQuery
 import com.gitmob.app.graphql.RepoCommitHistoryQuery
 import com.gitmob.app.graphql.RepoFileContentQuery
+import com.gitmob.app.graphql.RepoForkSyncQuery
 import com.gitmob.app.graphql.fragment.CommitFields
 import com.gitmob.app.graphql.fragment.CommitWithParentsFields
 import com.gitmob.app.graphql.type.CommitMessage
@@ -25,11 +27,15 @@ import com.gitmob.app.graphql.type.CreateCommitOnBranchInput
 import com.gitmob.app.graphql.type.FileAddition
 import com.gitmob.app.graphql.type.FileChanges
 import com.gitmob.app.graphql.type.FileDeletion
+import com.gitmob.app.graphql.type.RefUpdate
+import com.gitmob.app.graphql.type.UpdateRefsInput
 import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.error.UserVisibleException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import java.io.ByteArrayOutputStream
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
@@ -95,6 +101,120 @@ class RepoGitRepository @Inject constructor(
         ))
     }
 
+    suspend fun getForkSync(owner: String, name: String, branch: String): ApiResult<RepoForkSyncInfo> {
+        val refs = when (val result = getForkSyncRefs(owner, name, branch)) {
+            is ApiResult.Success -> result.data
+            is ApiResult.Failure -> return result
+        }
+        if (refs.status != RepoForkSyncStatus.READY) return ApiResult.Success(refs)
+        return when (
+            val result = compare(
+                baseOwner = refs.upstreamOwner!!,
+                baseRepository = refs.upstreamName!!,
+                baseRef = refs.upstreamOid!!,
+                headOwner = owner,
+                headRepository = name,
+                headRef = refs.currentOid!!,
+            )
+        ) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> when (val comparison = result.data) {
+                is RepoComparisonResult.Available -> ApiResult.Success(
+                    refs.copy(
+                        aheadBy = comparison.comparison.aheadBy,
+                        behindBy = comparison.comparison.behindBy,
+                    ),
+                )
+                RepoComparisonResult.NoCommonAncestor -> ApiResult.Success(
+                    refs.copy(status = RepoForkSyncStatus.NO_COMMON_ANCESTOR),
+                )
+            }
+        }
+    }
+
+    suspend fun mergeUpstream(owner: String, name: String, branch: String): ApiResult<Unit> = safeCall {
+        require(branch.isNotBlank())
+        try {
+            with(api.post<RestMergeUpstreamResponse, MergeUpstreamBody>(
+                "/repos/$owner/$name/merge-upstream",
+                MergeUpstreamBody(branch),
+            )) { }
+        } catch (error: HttpStatusException) {
+            if (error.code == 409) {
+                throw UserVisibleException(R.string.repo_sync_conflict)
+            }
+            throw error
+        }
+    }
+
+    suspend fun forceAlignFork(
+        owner: String,
+        name: String,
+        expected: RepoForkSyncInfo,
+    ): ApiResult<Unit> {
+        val fresh = when (val result = getForkSyncRefs(owner, name, expected.branch)) {
+            is ApiResult.Success -> result.data
+            is ApiResult.Failure -> return result
+        }
+        if (
+            fresh.status != RepoForkSyncStatus.READY ||
+            fresh.repositoryId != expected.repositoryId ||
+            fresh.currentOid != expected.currentOid ||
+            fresh.upstreamOid != expected.upstreamOid
+        ) {
+            return safeCall { throw UserVisibleException(R.string.repo_sync_head_changed) }
+        }
+        val input = UpdateRefsInput(
+            repositoryId = fresh.repositoryId,
+            refUpdates = listOf(
+                RefUpdate(
+                    name = "refs/heads/${fresh.branch}",
+                    afterOid = fresh.upstreamOid!!,
+                    beforeOid = Optional.present(fresh.currentOid!!),
+                    force = Optional.present(true),
+                ),
+            ),
+            clientMutationId = Optional.present("gitmob"),
+        )
+        return when (val result = apolloClient.mutation(ForceAlignForkMutation(input)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                check(result.data.updateRefs?.clientMutationId == "gitmob") { "Ref update payload is missing" }
+            }
+        }
+    }
+
+    private suspend fun getForkSyncRefs(owner: String, name: String, branch: String): ApiResult<RepoForkSyncInfo> {
+        require(branch.isNotBlank())
+        val qualifiedRef = if (branch.startsWith("refs/")) branch else "refs/heads/$branch"
+        return when (val result = apolloClient.query(RepoForkSyncQuery(owner, name, qualifiedRef)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.repository ?: error("Repository not found")
+                val currentOid = repository.ref?.target?.oid
+                val parent = repository.parent
+                val upstreamOid = parent?.ref?.target?.oid
+                val status = when {
+                    !repository.isFork -> RepoForkSyncStatus.NOT_FORK
+                    parent == null -> RepoForkSyncStatus.MISSING_UPSTREAM
+                    currentOid == null -> RepoForkSyncStatus.EMPTY_BRANCH
+                    upstreamOid == null -> RepoForkSyncStatus.MISSING_UPSTREAM_BRANCH
+                    else -> RepoForkSyncStatus.READY
+                }
+                RepoForkSyncInfo(
+                    repositoryId = repository.id,
+                    branch = branch.removePrefix("refs/heads/"),
+                    currentOid = currentOid,
+                    upstreamRepositoryId = parent?.id,
+                    upstreamOwner = parent?.owner?.login,
+                    upstreamName = parent?.name,
+                    upstreamOid = upstreamOid,
+                    status = status,
+                )
+            }
+        }
+    }
+
     suspend fun getCodeTree(owner: String, name: String, ref: String, path: String = ""): ApiResult<RepoCodeTree> {
         val expression = if (path.isBlank()) "$ref:" else "$ref:$path"
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
@@ -111,8 +231,9 @@ class RepoGitRepository @Inject constructor(
                 RepoCodeTree(
                     repositoryId = repository.id,
                     permission = permission,
-                    capabilities = permission.toCapabilities(),
+                    capabilities = permission.toCapabilities(repository.isArchived),
                     isArchived = repository.isArchived,
+                    isFork = repository.isFork,
                     ref = repositoryRef.name,
                     headOid = head,
                     path = path,
@@ -432,3 +553,13 @@ class RepoGitRepository @Inject constructor(
         url = commit.htmlUrl,
     )
 }
+
+@Serializable
+private data class MergeUpstreamBody(val branch: String)
+
+@Serializable
+private data class RestMergeUpstreamResponse(
+    val message: String = "",
+    @SerialName("merge_type") val mergeType: String = "",
+    @SerialName("base_branch") val baseBranch: String = "",
+)

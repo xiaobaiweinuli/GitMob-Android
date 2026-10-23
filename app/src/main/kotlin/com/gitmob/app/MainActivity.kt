@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.navigation.GitMobNavGraph
 import com.gitmob.app.navigation.DeepLinkDestination
 import com.gitmob.app.navigation.EXTRA_DEEP_LINK_DESTINATION
@@ -26,6 +27,7 @@ import javax.inject.Inject
 class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var errorEventBus: ErrorEventBus
+    @Inject lateinit var repoUpdateEventBus: RepoUpdateEventBus
 
     private val startupViewModel: StartupViewModel by viewModels()
     private var deepLinkDestination by mutableStateOf<DeepLinkDestination?>(null)
@@ -72,6 +74,7 @@ class MainActivity : AppCompatActivity() {
                     GitMobNavGraph(
                         startLoggedIn = isLoggedIn,
                         errorEventBus = errorEventBus,
+                        repoUpdateEventBus = repoUpdateEventBus,
                         enablePredictiveBack = themePreference.enablePredictiveBack,
                         deepLinkDestination = deepLinkDestination,
                         onDeepLinkConsumed = { deepLinkDestination = null },

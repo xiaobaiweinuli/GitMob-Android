@@ -54,7 +54,7 @@ class GraphQLErrorMapperTest {
     @Test
     fun `graphql exception maps to GraphQLError with items`() {
         val gqlError = Error.Builder("Field 'viewer' doesn't exist")
-            .apply { extensions?.put("type", "INVALID_FIELD") }
+            .apply { extensions.put("type", "INVALID_FIELD") }
             .build()
         val error = GraphQLErrorMapper.toApiError(ApolloGraphQLException(listOf(gqlError)))
         assertTrue(error is ApiError.GraphQLError)

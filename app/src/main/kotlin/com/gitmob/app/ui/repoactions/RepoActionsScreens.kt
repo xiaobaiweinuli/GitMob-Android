@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repoactions
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,7 +13,15 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -24,6 +33,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
 import com.gitmob.app.ui.common.RepositoryContextTitle
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,16 +50,82 @@ fun RepoActionsScreen(owner: String, name: String, permission: RepoPermission?, 
                     state.loadFailed -> ActionsRetry(viewModel::load)
                     tab == 0 && state.runs.isEmpty() -> Text(stringResource(R.string.actions_empty_runs), modifier = Modifier.align(Alignment.Center))
                     tab == 1 && state.workflows.isEmpty() -> Text(stringResource(R.string.actions_empty_workflows), modifier = Modifier.align(Alignment.Center))
-                    tab == 0 -> LazyColumn { items(state.runs, key = { it.id }) { run -> RunRow(run) { onRunClick(run.id) }; HorizontalDivider() }; if (state.hasNextPage) item { LaunchedEffect(state.runs.size) { viewModel.loadMore() }; Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp)) } } }
+                    tab == 0 -> LazyColumn { items(state.runs, key = { it.id }) { run -> SwipeableRunRow(run, state.capabilities.canDeleteActionRuns, run.id in state.deletingRunIds, { onRunClick(run.id) }, { viewModel.requestDelete(run) }); HorizontalDivider() }; if (state.hasNextPage) item { LaunchedEffect(state.runs.size) { viewModel.loadMore() }; Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp)) } } }
                     else -> LazyColumn { items(state.workflows, key = { it.id }) { workflow -> WorkflowRow(workflow, state.capabilities.canPush, { viewModel.prepareDispatch(workflow) }, { enabled -> viewModel.setWorkflowEnabled(workflow, enabled) }); HorizontalDivider() } }
                 }
             }
         }
     }
     state.dispatchWorkflow?.let { workflow -> DispatchDialog(workflow, state.dispatchInputs, state.dispatchRef, state.dispatchInputsRef, state.isLoadingInputs, viewModel::loadDispatchInputs, viewModel::dismissDispatch, viewModel::dispatch) }
+    state.pendingDeleteRun?.let { run ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissDelete,
+            title = { Text(stringResource(R.string.actions_delete_run)) },
+            text = { Text(stringResource(R.string.actions_delete_run_message, run.runNumber, run.displayTitle)) },
+            dismissButton = { TextButton(onClick = viewModel::dismissDelete) { Text(stringResource(R.string.common_cancel)) } },
+            confirmButton = { TextButton(onClick = viewModel::deletePendingRun) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } },
+        )
+    }
 }
 
-@Composable private fun RunRow(run: RepoWorkflowRun, click: () -> Unit) { Row(Modifier.fillMaxWidth().clickable(onClick = click).padding(16.dp), verticalAlignment = Alignment.Top) { Icon(runIcon(run), null, tint = runColor(run), modifier = Modifier.size(22.dp)); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(run.displayTitle, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis); Text("${run.name.orEmpty()} · #${run.runNumber} · ${run.event}", style = MaterialTheme.typography.bodySmall); Text("${run.headBranch ?: run.headSha.take(7)} · ${run.createdAt.take(10)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Text(actionStateLabel(run.conclusion ?: run.status), style = MaterialTheme.typography.labelMedium) } }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableRunRow(run: RepoWorkflowRun, canDelete: Boolean, deleting: Boolean, click: () -> Unit, delete: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val dismissState = rememberSwipeToDismissBoxState()
+    val deleteEnabled = canDelete && !deleting
+    val deleteLabel = stringResource(R.string.actions_delete_run)
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = deleteEnabled,
+        onDismiss = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart && deleteEnabled) delete()
+            scope.launch { dismissState.reset() }
+        },
+        backgroundContent = {
+            if (canDelete) Box(
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(end = 24.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+            }
+        },
+    ) {
+        RunRow(
+            run = run,
+            deleting = deleting,
+            click = click,
+            modifier = Modifier
+                .semantics {
+                    if (deleteEnabled) customActions = listOf(CustomAccessibilityAction(deleteLabel) { delete(); true })
+                }
+                .onPreviewKeyEvent { event ->
+                    if (deleteEnabled && event.key == Key.Delete && event.type == KeyEventType.KeyUp) {
+                        delete()
+                        true
+                    } else false
+                },
+        )
+    }
+}
+
+@Composable
+private fun RunRow(run: RepoWorkflowRun, deleting: Boolean, click: () -> Unit, modifier: Modifier) {
+    Row(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).clickable(enabled = !deleting, onClick = click).padding(16.dp), verticalAlignment = Alignment.Top) {
+        Icon(runIcon(run), null, tint = runColor(run), modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(run.displayTitle, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${run.name.orEmpty()} · #${run.runNumber} · ${run.event}", style = MaterialTheme.typography.bodySmall)
+            Text("${run.headBranch ?: run.headSha.take(7)} · ${run.createdAt.take(10)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(actionStateLabel(run.conclusion ?: run.status), style = MaterialTheme.typography.labelMedium)
+            if (deleting) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
+    }
+}
 @Composable private fun WorkflowRow(workflow: RepoWorkflow, canManage: Boolean, dispatch: () -> Unit, enable: (Boolean) -> Unit) { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AccountTree, null); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(workflow.name, fontWeight = FontWeight.SemiBold); Text(workflow.path, style = MaterialTheme.typography.bodySmall); Text(workflowStateLabel(workflow.state), style = MaterialTheme.typography.labelSmall) }; if (canManage) { IconButton(onClick = dispatch, enabled = workflow.state == "active") { Icon(Icons.Default.PlayArrow, stringResource(R.string.actions_run_workflow)) }; IconButton(onClick = { enable(workflow.state != "active") }) { Icon(if (workflow.state == "active") Icons.Default.Pause else Icons.Default.PlayCircle, stringResource(if (workflow.state == "active") R.string.actions_disable_workflow else R.string.actions_enable_workflow)) } } } }
 
 @Composable

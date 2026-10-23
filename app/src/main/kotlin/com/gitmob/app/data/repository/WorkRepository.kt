@@ -101,7 +101,7 @@ class WorkRepository @Inject constructor(
             is ApiResult.Success -> safeCall {
                 val conn = result.data.search
                 PagedWorkDiscussions(
-                    totalCount = conn.discussionCount ?: 0,
+                    totalCount = conn.discussionCount,
                     items = conn.nodes.orEmpty().mapNotNull { it?.onDiscussion }.map {
                         WorkDiscussionItem(
                             id = it.id, number = it.number, title = it.title,

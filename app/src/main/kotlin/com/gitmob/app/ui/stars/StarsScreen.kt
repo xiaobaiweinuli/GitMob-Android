@@ -181,7 +181,7 @@ fun StarsScreen(
 
     state.addToListTarget?.let { target ->
         AddToListBottomSheet(
-            targetRepo = target,
+            targetLabel = "${target.ownerLogin}/${target.name}",
             lists = state.lists,
             selection = state.addToListSelection,
             isLoadingSelection = state.isLoadingAddToListSelection,

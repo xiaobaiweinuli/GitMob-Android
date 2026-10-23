@@ -44,6 +44,12 @@ data class RepoDetail(
     val pullRequestCreationPolicy: PullRequestCreationPolicy = PullRequestCreationPolicy.UNKNOWN,
     val hasDiscussionsEnabled: Boolean = false,
     val openDiscussionCount: Int = 0,
+    val url: String? = null,
+    val visibility: String = if (isPrivate) "PRIVATE" else "PUBLIC",
+    val ownerIsOrganization: Boolean = false,
+    val viewerCanSubscribe: Boolean = false,
+    val ownerIsViewer: Boolean = false,
+    val forkingAllowed: Boolean = false,
 )
 
 enum class IssueCreationPolicy { ALL, COLLABORATORS_ONLY, UNKNOWN }

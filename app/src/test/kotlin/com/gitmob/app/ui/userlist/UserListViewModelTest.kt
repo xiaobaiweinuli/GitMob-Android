@@ -10,6 +10,7 @@ import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
 import io.mockk.mockk
+import io.mockk.coVerify
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -67,5 +68,19 @@ class UserListViewModelTest {
         viewModel.init("octocat", UserListMode.FOLLOWING)
 
         assertEquals(true, viewModel.state.value.loadFailed)
+    }
+
+    @Test
+    fun `repository stargazers use the shared paged user state`() = runTest {
+        val detailRepository = mockk<RepoDetailRepository>()
+        coEvery { detailRepository.getStargazers("octo", "repo", null) } returns ApiResult.Success(
+            PagedUsers(1, listOf(SimpleUser("fan", "Fan", null, null)), false, null),
+        )
+        val viewModel = UserListViewModel(mockk(), detailRepository, ErrorEventBus())
+
+        viewModel.initForRepoStargazers("octo", "repo")
+
+        assertEquals("fan", viewModel.state.value.users.single().login)
+        coVerify(exactly = 1) { detailRepository.getStargazers("octo", "repo", null) }
     }
 }

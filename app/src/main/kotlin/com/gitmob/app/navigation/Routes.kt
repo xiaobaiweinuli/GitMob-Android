@@ -149,6 +149,8 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
     val permission: RepoPermission? = null,
 ) : Route
 @Serializable data class RepoWatchersRoute(val owner: String, val name: String) : Route
+@Serializable data class RepoStargazersRoute(val owner: String, val name: String) : Route
+@Serializable data class RepoForksRoute(val owner: String, val name: String) : Route
 @Serializable data class RepoPlaceholderRoute(val label: String) : Route
 
 /** "关于"页面，从设置 Tab 点击跳转 */
@@ -162,3 +164,46 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
 @Serializable data object WorkPullRequestsRoute : Route
 @Serializable data object WorkDiscussionsRoute : Route
 @Serializable data object InboxRoute : Route
+
+internal fun Route.replaceRepositoryAddress(owner: String, name: String, newOwner: String, newName: String): Route {
+    fun matches(candidateOwner: String?, candidateName: String?) =
+        candidateOwner.equals(owner, true) && candidateName.equals(name, true)
+    return when (this) {
+        is RepoDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
+        is RepoIssuesRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null, viewerCanCreateIssues = null) else this
+        is RepoIssueDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoIssueEditorRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoPullRequestsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoPullRequestDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoPullRequestEditorRoute -> copy(
+            owner = if (matches(this.owner, this.name)) newOwner else this.owner,
+            name = if (matches(this.owner, this.name)) newName else this.name,
+            permission = if (matches(this.owner, this.name)) null else permission,
+            baseOwner = if (matches(baseOwner, baseName)) newOwner else baseOwner,
+            baseName = if (matches(baseOwner, baseName)) newName else baseName,
+            headOwner = if (matches(headOwner, headName)) newOwner else headOwner,
+            headName = if (matches(headOwner, headName)) newName else headName,
+        )
+        is RepoDiscussionsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoDiscussionDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoDiscussionEditorRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is ConversationComposerRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
+        is RepoActionsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoWorkflowRunRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoReleasesRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoReleaseDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoReleaseEditorRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoContributorsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
+        is RepoLicenseRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
+        is RepoBranchesRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, canPush = false, canManageBranchProtection = false) else this
+        is RepoCodeRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoCommitsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoCommitDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoFileDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoFileEditorRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoWatchersRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
+        is RepoStargazersRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
+        is RepoForksRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
+        else -> this
+    }
+}

@@ -93,9 +93,9 @@ class UserRepository @Inject constructor(
                 val profile = data.viewer.profileFields.toDomain(
                     gistCount = data.viewer.gists.totalCount,
                 ).copy(
-                    involvedIssueCount = data.issuesInvolvingMe.issueCount ?: 0,
-                    involvedPrCount = data.prsInvolvingMe.issueCount ?: 0,
-                    involvedDiscussionCount = data.discussionsInvolvingMe.discussionCount ?: 0,
+                    involvedIssueCount = data.issuesInvolvingMe.issueCount,
+                    involvedPrCount = data.prsInvolvingMe.issueCount,
+                    involvedDiscussionCount = data.discussionsInvolvingMe.discussionCount,
                 )
                 viewerProfileCache.set(Unit, profile)
                 profile

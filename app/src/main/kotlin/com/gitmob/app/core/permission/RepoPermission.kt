@@ -21,6 +21,13 @@ data class RepoCapabilities(
     val canDeleteRepo: Boolean,
     val canManageCollaborators: Boolean,
     val canManageBranchProtection: Boolean,
+    val canRenameRepo: Boolean = canDeleteRepo,
+    val canChangeVisibility: Boolean = canDeleteRepo,
+    val canTransferRepo: Boolean = canDeleteRepo,
+    val canArchiveRepo: Boolean = canDeleteRepo,
+    val canToggleIssues: Boolean = canDeleteRepo,
+    val canToggleDiscussions: Boolean = canManageSomeSettings,
+    val canDeleteActionRuns: Boolean = canPush,
 ) {
     companion object {
         val NONE = RepoCapabilities(
@@ -32,7 +39,8 @@ data class RepoCapabilities(
     }
 }
 
-fun RepoPermission.toCapabilities(): RepoCapabilities = when (this) {
+fun RepoPermission.toCapabilities(isArchived: Boolean = false): RepoCapabilities {
+    val capabilities = when (this) {
     RepoPermission.ADMIN -> RepoCapabilities(
         canPush = true, canPushToProtectedBranch = true, canManageIssuesAndPRs = true,
         canDeleteIssues = true,
@@ -58,4 +66,18 @@ fun RepoPermission.toCapabilities(): RepoCapabilities = when (this) {
         canManageCollaborators = false, canManageBranchProtection = false,
     )
     RepoPermission.READ, RepoPermission.NONE -> RepoCapabilities.NONE
+    }
+    return if (!isArchived) capabilities else capabilities.copy(
+        canPush = false,
+        canPushToProtectedBranch = false,
+        canManageIssuesAndPRs = false,
+        canDeleteIssues = false,
+        canManageSomeSettings = false,
+        canRenameRepo = false,
+        canChangeVisibility = false,
+        canTransferRepo = false,
+        canToggleIssues = false,
+        canToggleDiscussions = false,
+        canDeleteActionRuns = false,
+    )
 }
