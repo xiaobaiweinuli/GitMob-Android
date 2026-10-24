@@ -1,9 +1,9 @@
 # 某个具体列表内的仓库，用 node(id:) 通用查询（UserList 实现了 Node 接口）。
-# first: 20 = PageSize.LIST_ITEMS。
-query ListItems($listId: ID!, $after: String) {
+# 分页与话题容量分别由 PageSize.LIST_ITEMS / TOPICS_PER_REPO 传入。
+query ListItems($listId: ID!, $after: String, $first: Int!, $topicsFirst: Int!) {
     node(id: $listId) {
         ... on UserList {
-            items(first: 20, after: $after) {
+            items(first: $first, after: $after) {
                 totalCount
                 nodes {
                     ... on Repository {

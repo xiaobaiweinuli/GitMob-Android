@@ -1,5 +1,5 @@
-# PR 分页列表。first: 20 = PageSize.REPO_ISSUES。
-query RepoPullRequests($owner: String!, $name: String!, $after: String, $states: [PullRequestState!], $orderBy: IssueOrder!, $labels: [String!]) {
+# PR 分页列表。容量由 PageSize.REPO_ISSUES / METADATA 传入。
+query RepoPullRequests($owner: String!, $name: String!, $after: String, $states: [PullRequestState!], $orderBy: IssueOrder!, $labels: [String!], $first: Int!, $metadataFirst: Int!) {
     repository(owner: $owner, name: $name) {
         id
         viewerPermission
@@ -11,7 +11,7 @@ query RepoPullRequests($owner: String!, $name: String!, $after: String, $states:
         mergeCommitAllowed
         squashMergeAllowed
         rebaseMergeAllowed
-        pullRequests(first: 20, after: $after, states: $states, labels: $labels, orderBy: $orderBy) {
+        pullRequests(first: $first, after: $after, states: $states, labels: $labels, orderBy: $orderBy) {
             totalCount
             nodes {
                 ...PullRequestFields
@@ -25,8 +25,8 @@ query RepoPullRequests($owner: String!, $name: String!, $after: String, $states:
 }
 
 # PR 详情：评论分页 + reviews + reviewThreads + commits。
-# comments first: 20 = ISSUE_COMMENTS；reviews 30；threads 50；thread 评论 50；commits 50。
-query RepoPullRequestDetail($owner: String!, $name: String!, $number: Int!, $after: String) {
+# 各连接容量分别由 Repository 从对应 PageSize 常量传入。
+query RepoPullRequestDetail($owner: String!, $name: String!, $number: Int!, $after: String, $commentsFirst: Int!, $reviewsFirst: Int!, $reviewThreadsFirst: Int!, $reviewCommentsFirst: Int!, $commitsFirst: Int!, $metadataFirst: Int!) {
     repository(owner: $owner, name: $name) {
         id
         viewerPermission
@@ -35,7 +35,7 @@ query RepoPullRequestDetail($owner: String!, $name: String!, $number: Int!, $aft
         rebaseMergeAllowed
         pullRequest(number: $number) {
             ...PullRequestFields
-            comments(first: 20, after: $after) {
+            comments(first: $commentsFirst, after: $after) {
                 nodes {
                     ...PullRequestCommentFields
                 }
@@ -44,12 +44,12 @@ query RepoPullRequestDetail($owner: String!, $name: String!, $number: Int!, $aft
                     endCursor
                 }
             }
-            reviews(first: 30) {
+            reviews(first: $reviewsFirst) {
                 nodes {
                     ...PullRequestReviewFields
                 }
             }
-            reviewThreads(first: 50) {
+            reviewThreads(first: $reviewThreadsFirst) {
                 nodes {
                     id
                     path
@@ -59,14 +59,14 @@ query RepoPullRequestDetail($owner: String!, $name: String!, $number: Int!, $aft
                     viewerCanReply
                     viewerCanResolve
                     viewerCanUnresolve
-                    comments(first: 50) {
+                    comments(first: $reviewCommentsFirst) {
                         nodes {
                             ...PullRequestReviewCommentFields
                         }
                     }
                 }
             }
-            commits(first: 50) {
+            commits(first: $commitsFirst) {
                 nodes {
                     commit {
                         oid

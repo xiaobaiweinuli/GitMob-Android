@@ -1,5 +1,5 @@
 # 主页（当前登录用户）资料 + 工作台统计。同时也是登录校验请求（成功即 token 有效）。
-query ViewerProfile {
+query ViewerProfile($socialAccountsFirst: Int!, $pinnedItemsFirst: Int!) {
   viewer {
     ...ProfileFields
     gists(privacy: ALL) { totalCount }

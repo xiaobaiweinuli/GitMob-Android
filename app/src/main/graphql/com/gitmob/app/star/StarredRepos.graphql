@@ -1,7 +1,7 @@
-# 当前登录用户自己的星标仓库（底部 Tab 星标页）。first: 20 = PageSize.STARRED_REPOS。
-query ViewerStarredRepos($after: String) {
+# 当前登录用户自己的星标仓库（底部 Tab 星标页）。容量由 Repository 从 PageSize 传入。
+query ViewerStarredRepos($after: String, $first: Int!, $topicsFirst: Int!) {
     viewer {
-        starredRepositories(first: 20, after: $after, orderBy: { field: STARRED_AT, direction: DESC }) {
+        starredRepositories(first: $first, after: $after, orderBy: { field: STARRED_AT, direction: DESC }) {
             totalCount
             edges {
                 node {
@@ -17,9 +17,9 @@ query ViewerStarredRepos($after: String) {
 }
 
 # 指定用户的公开星标仓库（他人星标页）。
-query UserStarredRepos($login: String!, $after: String) {
+query UserStarredRepos($login: String!, $after: String, $first: Int!, $topicsFirst: Int!) {
     user(login: $login) {
-        starredRepositories(first: 20, after: $after, orderBy: { field: STARRED_AT, direction: DESC }) {
+        starredRepositories(first: $first, after: $after, orderBy: { field: STARRED_AT, direction: DESC }) {
             totalCount
             edges {
                 node {

@@ -83,7 +83,7 @@ class RepoGitRepository @Inject constructor(
             }
             throw error
         }
-        val files = response.files.take(300).map(::toChangedFile)
+        val files = response.files.take(PageSize.COMPARE_FILES_LIMIT).map(::toChangedFile)
         val commits = response.commits.map(::toCompareCommit)
         RepoComparisonResult.Available(RepoComparison(
             refs = RepoComparisonRefs(baseOwner, baseRepository, baseRef, headOwner, headRepository, headRef),
@@ -95,7 +95,7 @@ class RepoGitRepository @Inject constructor(
             files = files,
             additions = files.sumOf { it.additions },
             deletions = files.sumOf { it.deletions },
-            filesTruncated = response.files.size >= 300,
+            filesTruncated = response.files.size >= PageSize.COMPARE_FILES_LIMIT,
             commitsPage = page,
             commitsHasNextPage = page * PageSize.COMPARE_COMMITS < response.totalCommits,
         ))

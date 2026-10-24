@@ -1,11 +1,11 @@
-# 仓库 Issue 分页列表。first: 20 = PageSize.REPO_ISSUES；comments(first: 0) 只取 totalCount。
-query RepoIssues($owner: String!, $name: String!, $after: String, $states: [IssueState!], $orderBy: IssueOrder!, $filterBy: IssueFilters) {
+# 仓库 Issue 分页列表。容量由 PageSize 传入；comments(first: 0) 只取 totalCount。
+query RepoIssues($owner: String!, $name: String!, $after: String, $states: [IssueState!], $orderBy: IssueOrder!, $filterBy: IssueFilters, $first: Int!, $metadataFirst: Int!) {
     repository(owner: $owner, name: $name) {
         id
         viewerPermission
         viewerCanCreateIssues
         hasIssuesEnabled
-        issues(first: 20, after: $after, states: $states, orderBy: $orderBy, filterBy: $filterBy) {
+        issues(first: $first, after: $after, states: $states, orderBy: $orderBy, filterBy: $filterBy) {
             totalCount
             nodes {
                 ...IssueFields
@@ -21,14 +21,14 @@ query RepoIssues($owner: String!, $name: String!, $after: String, $states: [Issu
     }
 }
 
-# 单个 Issue 详情 + 评论分页。comments first: 20 = PageSize.ISSUE_COMMENTS。
-query RepoIssueDetail($owner: String!, $name: String!, $number: Int!, $after: String) {
+# 单个 Issue 详情 + 评论分页。评论容量由 PageSize.ISSUE_COMMENTS 传入。
+query RepoIssueDetail($owner: String!, $name: String!, $number: Int!, $after: String, $commentsFirst: Int!, $metadataFirst: Int!) {
     repository(owner: $owner, name: $name) {
         id
         viewerPermission
         issue(number: $number) {
             ...IssueFields
-            comments(first: 20, after: $after) {
+            comments(first: $commentsFirst, after: $after) {
                 totalCount
                 nodes {
                     ...IssueCommentFields

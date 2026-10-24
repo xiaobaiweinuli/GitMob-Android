@@ -1,7 +1,7 @@
 # Issue 公共字段片段（列表/详情/各 mutation 返回体共用）。
 # 不含 comments 连接：列表用 comments(first: 0) 只取 totalCount，
-# 详情用 comments(first: 20, after:) 取评论分页，两处形状不同无法共用片段。
-# labels/assignees first: 20 = PageSize.METADATA。
+# 详情取评论分页，两处形状不同无法共用片段。
+# $metadataFirst 由所有消费 operation 声明，并从 PageSize.METADATA 传入。
 fragment IssueFields on Issue {
     id
     url
@@ -25,7 +25,7 @@ fragment IssueFields on Issue {
         avatarUrl
     }
     locked
-    labels(first: 20) {
+    labels(first: $metadataFirst) {
         nodes {
             id
             name
@@ -33,7 +33,7 @@ fragment IssueFields on Issue {
             description
         }
     }
-    assignees(first: 20) {
+    assignees(first: $metadataFirst) {
         nodes {
             id
             login

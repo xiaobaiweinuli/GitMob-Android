@@ -9,7 +9,7 @@ fragment DiscussionCategoryFields on DiscussionCategory {
 
 # Discussion 公共字段片段。不含 comments 连接：
 # 列表只取 comments { totalCount }，详情取完整评论分页，形状不同无法共用片段。
-# labels first: 20 = PageSize.METADATA。
+# $metadataFirst 由所有消费 operation 声明，并从 PageSize.METADATA 传入。
 fragment DiscussionFields on Discussion {
     id
     url
@@ -35,7 +35,7 @@ fragment DiscussionFields on Discussion {
         login
         avatarUrl
     }
-    labels(first: 20) {
+    labels(first: $metadataFirst) {
         nodes {
             id
             name

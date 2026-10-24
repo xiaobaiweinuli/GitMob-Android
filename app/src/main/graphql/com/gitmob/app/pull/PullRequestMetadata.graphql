@@ -1,7 +1,7 @@
 # 创建 PR 的元数据首页：viewer login + 默认分支 + 各候选列表第一页。
 # 超出第一页的后续翻页分别走 PullRequestBranches / RepoLabels / RepoMilestones /
 # RepoAssignableUsers / RepoMentionableUsers。
-query RepoPullRequestMetadata($owner: String!, $name: String!) {
+query RepoPullRequestMetadata($owner: String!, $name: String!, $branchesFirst: Int!, $metadataFirst: Int!) {
     viewer {
         login
     }
@@ -10,7 +10,7 @@ query RepoPullRequestMetadata($owner: String!, $name: String!) {
         defaultBranchRef {
             name
         }
-        refs(refPrefix: "refs/heads/", first: 50) {
+        refs(refPrefix: "refs/heads/", first: $branchesFirst) {
             nodes {
                 id
                 name
@@ -23,7 +23,7 @@ query RepoPullRequestMetadata($owner: String!, $name: String!) {
                 endCursor
             }
         }
-        labels(first: 20) {
+        labels(first: $metadataFirst) {
             nodes {
                 id
                 name
@@ -35,7 +35,7 @@ query RepoPullRequestMetadata($owner: String!, $name: String!) {
                 endCursor
             }
         }
-        milestones(first: 20, states: [OPEN]) {
+        milestones(first: $metadataFirst, states: [OPEN]) {
             nodes {
                 id
                 number
@@ -48,7 +48,7 @@ query RepoPullRequestMetadata($owner: String!, $name: String!) {
                 endCursor
             }
         }
-        assignableUsers(first: 20) {
+        assignableUsers(first: $metadataFirst) {
             nodes {
                 id
                 login
@@ -61,7 +61,7 @@ query RepoPullRequestMetadata($owner: String!, $name: String!) {
                 endCursor
             }
         }
-        mentionableUsers(first: 20) {
+        mentionableUsers(first: $metadataFirst) {
             nodes {
                 id
                 login

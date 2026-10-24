@@ -1,5 +1,5 @@
 # 创建 Discussion。返回体 comments { totalCount } 与列表形状对齐。
-mutation CreateRepoDiscussion($input: CreateDiscussionInput!) {
+mutation CreateRepoDiscussion($input: CreateDiscussionInput!, $metadataFirst: Int!) {
     createDiscussion(input: $input) {
         discussion {
             ...DiscussionFields
@@ -10,7 +10,7 @@ mutation CreateRepoDiscussion($input: CreateDiscussionInput!) {
     }
 }
 
-mutation UpdateRepoDiscussion($input: UpdateDiscussionInput!) {
+mutation UpdateRepoDiscussion($input: UpdateDiscussionInput!, $metadataFirst: Int!) {
     updateDiscussion(input: $input) {
         discussion {
             ...DiscussionFields
@@ -21,7 +21,7 @@ mutation UpdateRepoDiscussion($input: UpdateDiscussionInput!) {
     }
 }
 
-mutation CloseRepoDiscussion($input: CloseDiscussionInput!) {
+mutation CloseRepoDiscussion($input: CloseDiscussionInput!, $metadataFirst: Int!) {
     closeDiscussion(input: $input) {
         discussion {
             ...DiscussionFields
@@ -32,7 +32,7 @@ mutation CloseRepoDiscussion($input: CloseDiscussionInput!) {
     }
 }
 
-mutation ReopenRepoDiscussion($input: ReopenDiscussionInput!) {
+mutation ReopenRepoDiscussion($input: ReopenDiscussionInput!, $metadataFirst: Int!) {
     reopenDiscussion(input: $input) {
         discussion {
             ...DiscussionFields

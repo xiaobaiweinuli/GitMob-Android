@@ -5,12 +5,17 @@ import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistPage
 import com.gitmob.app.data.model.GistSort
 import com.gitmob.app.data.model.GistVisibility
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -89,6 +94,9 @@ class GistRepositoryTest {
         assertEquals(2, gist.fileCount)
         assertFalse(gist.isFileCountCapped)
         assertFalse(page.hasNextPage)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.GISTS), variables["first"])
+        assertEquals(JsonPrimitive(PageSize.GIST_FILE_METADATA_LIMIT), variables["fileMetadataLimit"])
     }
 
     @Test
@@ -114,23 +122,23 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `收集满20项时停在最后检查的edge并保留未检查数据`() = runTest {
-        val edges = (1..21).map { index ->
+    fun `收集满目标项时停在最后检查的edge并保留未检查数据`() = runTest {
+        val edges = (1..PageSize.GISTS + 1).map { index ->
             edge("c$index", gistNode("g$index", isFork = false))
         }
-        enqueuePage(edges = edges, hasNextPage = false, endCursor = "c21")
+        enqueuePage(edges = edges, hasNextPage = false, endCursor = "c${PageSize.GISTS + 1}")
 
         val result = repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED)
 
         val page = (result as ApiResult.Success).data
-        assertEquals(20, page.items.size)
-        assertEquals("c20", page.nextCursor)
+        assertEquals(PageSize.GISTS, page.items.size)
+        assertEquals("c${PageSize.GISTS}", page.nextCursor)
         assertTrue(page.hasNextPage)
     }
 
     @Test
     fun `达到扫描批次上限时允许空页但保留下一页`() = runTest {
-        repeat(5) { batch ->
+        repeat(PageSize.GIST_SCAN_BATCH_LIMIT) { batch ->
             val cursor = "c${batch + 1}"
             enqueuePage(
                 edges = listOf(edge(cursor, gistNode("fork-$batch", isFork = true))),
@@ -144,8 +152,8 @@ class GistRepositoryTest {
         val page = (result as ApiResult.Success).data
         assertTrue(page.items.isEmpty())
         assertTrue(page.hasNextPage)
-        assertEquals("c5", page.nextCursor)
-        assertEquals(5, server.requestCount)
+        assertEquals("c${PageSize.GIST_SCAN_BATCH_LIMIT}", page.nextCursor)
+        assertEquals(PageSize.GIST_SCAN_BATCH_LIMIT, server.requestCount)
     }
 
     @Test
@@ -210,6 +218,9 @@ class GistRepositoryTest {
         assertTrue(body.contains("user(login:"))
         assertTrue(body.contains("privacy: PUBLIC"))
         assertFalse(body.contains("privacy: ALL"))
+        val variables = Json.parseToJsonElement(body).jsonObject.getValue("variables").jsonObject
+        assertEquals(JsonPrimitive(PageSize.GISTS), variables["first"])
+        assertEquals(JsonPrimitive(PageSize.GIST_FILE_METADATA_LIMIT), variables["fileMetadataLimit"])
     }
 
     @Test
@@ -319,31 +330,31 @@ class GistRepositoryTest {
 
     @Test
     fun `可见性筛选页中截断后下一页从最后检查的edge续接`() = runTest {
-        val edges = (1..21).flatMap { index ->
+        val edges = (1..PageSize.GISTS + 1).flatMap { index ->
             listOf(
                 edge("skip$index", gistNode("public$index", isFork = false)),
                 edge("c$index", gistNode("private$index", isFork = false, isPublic = false)),
             )
         }
-        enqueuePage(edges, hasNextPage = false, endCursor = "c21")
-        enqueuePage(edges.takeLast(2), hasNextPage = false, endCursor = "c21")
+        enqueuePage(edges, hasNextPage = false, endCursor = "c${PageSize.GISTS + 1}")
+        enqueuePage(edges.takeLast(2), hasNextPage = false, endCursor = "c${PageSize.GISTS + 1}")
 
         val first = (repository.getGists(
             category = GistCategory.ORIGINAL,
             sort = GistSort.RECENTLY_UPDATED,
             visibility = GistVisibility.PRIVATE,
         ) as ApiResult.Success).data
-        assertEquals((1..20).map { "private$it" }, first.items.map { it.id })
-        assertEquals("c20", first.nextCursor)
+        assertEquals((1..PageSize.GISTS).map { "private$it" }, first.items.map { it.id })
+        assertEquals("c${PageSize.GISTS}", first.nextCursor)
         assertTrue(first.hasNextPage)
 
         val next = (repository.getGists(
             null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, first.nextCursor, GistVisibility.PRIVATE,
         ) as ApiResult.Success).data
-        assertEquals(listOf("private21"), next.items.map { it.id })
+        assertEquals(listOf("private${PageSize.GISTS + 1}"), next.items.map { it.id })
         assertFalse(next.hasNextPage)
         server.takeRequest()
-        assertTrue(server.takeRequest().body.readUtf8().contains("\"after\":\"c20\""))
+        assertEquals(JsonPrimitive("c${PageSize.GISTS}"), takeVariables()["after"])
         val cached = (repository.getGists(
             category = GistCategory.ORIGINAL,
             sort = GistSort.RECENTLY_UPDATED,
@@ -354,8 +365,9 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `可见性扫描达到五批后保留继续查找能力`() = runTest {
-        repeat(5) { batch ->
+    fun `可见性扫描达到预算后保留继续查找能力`() = runTest {
+        val budget = PageSize.GIST_SCAN_BATCH_LIMIT
+        repeat(budget) { batch ->
             val cursor = "c${batch + 1}"
             enqueuePage(listOf(edge(cursor, gistNode("public$batch", isFork = false))), true, cursor)
         }
@@ -366,16 +378,80 @@ class GistRepositoryTest {
         ) as ApiResult.Success).data
         assertTrue(first.items.isEmpty())
         assertTrue(first.hasNextPage)
-        assertEquals("c5", first.nextCursor)
-        assertEquals(5, server.requestCount)
+        assertEquals("c$budget", first.nextCursor)
+        assertEquals(budget, server.requestCount)
 
-        enqueuePage(listOf(edge("c6", gistNode("private", isFork = false, isPublic = false))), false, "c6")
+        enqueuePage(listOf(edge("c${budget + 1}", gistNode("private", isFork = false, isPublic = false))), false, "c${budget + 1}")
         val next = (repository.getGists(
             null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, first.nextCursor, GistVisibility.PRIVATE,
         ) as ApiResult.Success).data
         assertEquals(listOf("private"), next.items.map { it.id })
         assertFalse(next.hasNextPage)
-        assertEquals(6, server.requestCount)
+        assertEquals(budget + 1, server.requestCount)
+        val requests = List(budget + 1) { takeVariables() }
+        assertEquals(listOf(null) + (1..budget).map { "c$it" }, requests.map { it["after"]?.jsonPrimitive?.content })
+        requests.forEach {
+            assertEquals(JsonPrimitive(PageSize.GISTS), it["first"])
+            assertEquals(JsonPrimitive(PageSize.GIST_FILE_METADATA_LIMIT), it["fileMetadataLimit"])
+        }
+    }
+
+    @Test
+    fun `预算前一批收满目标不再请求`() = runTest {
+        val batches = PageSize.GIST_SCAN_BATCH_LIMIT - 1
+        repeat(batches) { batch ->
+            val edges = if (batch == batches - 1) {
+                (1..PageSize.GISTS).map { edge("hit-$it", gistNode("original-$it", isFork = false)) }
+            } else {
+                listOf(edge("skip-$batch", gistNode("fork-$batch", isFork = true)))
+            }
+            enqueuePage(edges, true, "source-$batch")
+        }
+
+        val page = (repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED) as ApiResult.Success).data
+
+        assertEquals(PageSize.GISTS, page.items.size)
+        assertEquals("hit-${PageSize.GISTS}", page.nextCursor)
+        assertTrue(page.hasNextPage)
+        assertEquals(batches, server.requestCount)
+    }
+
+    @Test
+    fun `文件元数据容量前一项与达到容量使用同源封顶判断`() = runTest {
+        for (count in listOf(PageSize.GIST_FILE_METADATA_LIMIT - 1, PageSize.GIST_FILE_METADATA_LIMIT)) {
+            enqueuePage(listOf(edge("last", gistNode("gist-$count", isFork = false, fileCount = count))), false, "last")
+
+            val gist = (repository.getGistsFresh(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED) as ApiResult.Success).data.items.single()
+
+            assertEquals(count, gist.fileCount)
+            assertEquals(count >= PageSize.GIST_FILE_METADATA_LIMIT, gist.isFileCountCapped)
+            assertEquals(JsonPrimitive(PageSize.GIST_FILE_METADATA_LIMIT), takeVariables()["fileMetadataLimit"])
+        }
+    }
+
+    @Test
+    fun `扫描失败不提交半批结果且重试沿用原游标`() = runTest {
+        enqueuePage(listOf(edge("middle", gistNode("first", isFork = false))), true, "middle")
+        server.enqueue(MockResponse().setResponseCode(403))
+        assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED, after = "start"))
+
+        enqueuePage(listOf(edge("middle", gistNode("first", isFork = false))), true, "middle")
+        enqueuePage(listOf(edge("end", gistNode("second", isFork = false))), false, "end")
+        val page = (repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED, after = "start") as ApiResult.Success).data
+
+        assertEquals(listOf("first", "second"), page.items.map { it.id })
+        assertEquals(listOf("start", "middle", "start", "middle"), List(4) { takeVariables().getValue("after").jsonPrimitive.content })
+    }
+
+    @Test
+    fun `空列表成功但缺失根节点仍失败`() = runTest {
+        enqueuePage(emptyList(), false, null)
+        val empty = repository.getGistsFresh(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED) as ApiResult.Success
+        assertTrue(empty.data.items.isEmpty())
+        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"login":"viewer"},"user":null}}"""))
+        assertTrue(repository.getGists(login = "missing", category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED) is ApiResult.Failure)
+        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"login":"viewer"}}}"""))
+        assertTrue(repository.getGistsFresh(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED) is ApiResult.Failure)
     }
 
     @Test
@@ -427,6 +503,9 @@ class GistRepositoryTest {
         assertTrue(body.contains("privacy: PUBLIC"))
         assertFalse(body.contains("privacy: ALL"))
     }
+
+    private fun takeVariables() =
+        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
 
     private fun enqueuePage(
         edges: List<String>,

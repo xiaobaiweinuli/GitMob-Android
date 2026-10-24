@@ -1,5 +1,5 @@
 # 创建 Issue。返回体 comments(first: 0) 只取 totalCount，与列表形状对齐。
-mutation CreateRepoIssue($input: CreateIssueInput!) {
+mutation CreateRepoIssue($input: CreateIssueInput!, $metadataFirst: Int!) {
     createIssue(input: $input) {
         issue {
             ...IssueFields
@@ -10,7 +10,7 @@ mutation CreateRepoIssue($input: CreateIssueInput!) {
     }
 }
 
-mutation UpdateRepoIssue($input: UpdateIssueInput!) {
+mutation UpdateRepoIssue($input: UpdateIssueInput!, $metadataFirst: Int!) {
     updateIssue(input: $input) {
         issue {
             ...IssueFields
@@ -21,7 +21,7 @@ mutation UpdateRepoIssue($input: UpdateIssueInput!) {
     }
 }
 
-mutation CloseRepoIssue($input: CloseIssueInput!) {
+mutation CloseRepoIssue($input: CloseIssueInput!, $metadataFirst: Int!) {
     closeIssue(input: $input) {
         issue {
             ...IssueFields
@@ -32,7 +32,7 @@ mutation CloseRepoIssue($input: CloseIssueInput!) {
     }
 }
 
-mutation ReopenRepoIssue($input: ReopenIssueInput!) {
+mutation ReopenRepoIssue($input: ReopenIssueInput!, $metadataFirst: Int!) {
     reopenIssue(input: $input) {
         issue {
             ...IssueFields

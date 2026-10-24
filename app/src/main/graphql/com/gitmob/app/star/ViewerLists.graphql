@@ -1,7 +1,7 @@
-# "我的列表"横排 chip：每个列表只读 totalCount，不加载项目。first: 20 = PageSize.STAR_LISTS。
-query ViewerLists {
+# "我的列表"横排 chip：每个列表只读 totalCount，不加载项目。容量由 PageSize.STAR_LISTS 传入。
+query ViewerLists($first: Int!) {
     viewer {
-        lists(first: 20) {
+        lists(first: $first) {
             nodes {
                 id
                 name

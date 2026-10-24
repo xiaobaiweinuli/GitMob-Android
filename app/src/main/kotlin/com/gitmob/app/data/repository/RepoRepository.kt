@@ -31,10 +31,6 @@ class RepoRepository @Inject constructor(
     private val apolloClient: ApolloClient,
 ) {
 
-    private companion object {
-        const val SEARCH_SCAN_PAGE_LIMIT = 5
-    }
-
     /** 只缓存 viewer 默认条件第一页，TTL 5 min。 */
     private val viewerReposCache = MemoryCache<Unit, RepoList>(ttlMs = 5 * 60_000L)
     private var cacheGeneration = 0L
@@ -51,7 +47,7 @@ class RepoRepository @Inject constructor(
 
     /**
      * 查询当前主体拥有的仓库；login=null 表示 viewer，其他值表示用户或组织。
-     * 搜索逐页匹配名称／简介，每次最多扫描五页，返回最后完整处理页的游标。
+     * 搜索逐页匹配名称／简介，扫描预算由 PageSize 决定，返回最后完整处理页的游标。
      */
     suspend fun getRepos(
         login: String? = null,
@@ -103,11 +99,11 @@ class RepoRepository @Inject constructor(
                 page.copy(
                     items = collected.values.toList(),
                     requiresManualContinue = page.hasNextPage &&
-                        (collected.isEmpty() || (filters.query.isNotEmpty() && scannedPages == SEARCH_SCAN_PAGE_LIMIT)),
+                        (collected.isEmpty() || (filters.query.isNotEmpty() && scannedPages == PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT)),
                 )
             }
             if (batch is ApiResult.Failure) return batch
-            if (!page.hasNextPage || filters.query.isEmpty() || collected.size >= PageSize.REPOS || scannedPages == SEARCH_SCAN_PAGE_LIMIT) {
+            if (!page.hasNextPage || filters.query.isEmpty() || collected.size >= PageSize.REPOS || scannedPages == PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT) {
                 return batch
             }
             cursor = page.endCursor

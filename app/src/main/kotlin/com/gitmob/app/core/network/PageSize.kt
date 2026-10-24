@@ -1,16 +1,15 @@
 package com.gitmob.app.core.network
 
 /**
- * 全局分页尺寸常量。所有 Repository 的 GraphQL `first:` 参数和 REST `per_page=`
- * 统一引用这里，禁止在查询字符串内散落魔法数字。
+ * 全局分页尺寸、固定容量与单次扫描预算。Repository 的 GraphQL `first`/`last`/`limit`、
+ * REST `per_page`、扫描停止条件及同源截断判断统一引用这里。
  *
- * ★ 修改某个值前先确认对应 GitHub API 的服务端上限：
- *   GraphQL 节点类通常上限 100，个别字段更低（如 releases 最高 100，topics 最高 10）。
- *   REST 通知上限 50。
+ * 修改值前确认对应 GitHub API 的上限；固定展示容量与扫描预算不等于服务端硬上限。
+ * 明确的计数、单条结果或父提交对探测可保留 0/1/2，不作为普通分页配置。
  */
 object PageSize {
 
-    // ──────────────── 可分页列表（UI 无限滚动）────────────────
+    // ──────────────── 请求容量（分页列表及固定预取）────────────────
 
     /** 仓库列表（viewer.repositories / repositoryOwner.repositories） */
     const val REPOS = 20
@@ -30,7 +29,7 @@ object PageSize {
     /** 分支列表（refs） */
     const val BRANCHES = 50
 
-    /** REST compare commits/files page. GitHub returns at most 300 files overall. */
+    /** REST compare 提交分页，与文件总容量分开设置。 */
     const val COMPARE_COMMITS = 30
 
     /** Labels, assignees, milestones and reviewer candidate connections. */
@@ -96,6 +95,12 @@ object PageSize {
 
     // ──────────────── 固定容量（非分页，不可随意调大）────────────────
 
+    /** REST compare 最多返回的文件总数，同时用于裁剪和可能截断的判断。 */
+    const val COMPARE_FILES_LIMIT = 300
+
+    /** 每个 Gist 的文件元数据预取容量，同时用于文件数量封顶标记。 */
+    const val GIST_FILE_METADATA_LIMIT = 100
+
     /**
      * 仓库话题标签上限（repositoryTopics）。
      * GitHub 每个仓库最多 20 个 topic；此处使用固定展示容量，不分页。
@@ -131,4 +136,12 @@ object PageSize {
      * 社交账号（socialAccounts）。GitHub 每用户上限约 10 个，不分页。
      */
     const val SOCIAL_ACCOUNTS = 10
+
+    // ──────────────── 单次扫描预算（单位为源页/批次，不是节点数）────────────────
+
+    /** 仓库搜索一次最多扫描的完整源页数，达到预算后由用户手动继续。 */
+    const val REPO_SEARCH_SCAN_PAGE_LIMIT = 5
+
+    /** Gist 分类/可见性过滤一次最多扫描的源批次数。 */
+    const val GIST_SCAN_BATCH_LIMIT = 5
 }

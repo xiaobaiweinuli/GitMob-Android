@@ -1,7 +1,7 @@
 # 指定用户的星标仓库列表，orderBy STARRED_AT DESC 与官方一致
-query UserStars($login: String!, $after: String) {
+query UserStars($login: String!, $after: String, $first: Int!, $topicsFirst: Int!) {
   user(login: $login) {
-    starredRepositories(first: 20, after: $after, orderBy: { field: STARRED_AT, direction: DESC }) {
+    starredRepositories(first: $first, after: $after, orderBy: { field: STARRED_AT, direction: DESC }) {
       totalCount
       edges {
         node {
@@ -19,7 +19,7 @@ query UserStars($login: String!, $after: String) {
           stargazerCount
           forkCount
           issues(states: [OPEN]) { totalCount }
-          repositoryTopics(first: 10) { nodes { topic { name } } }
+          repositoryTopics(first: $topicsFirst) { nodes { topic { name } } }
           defaultBranchRef { name }
         }
       }

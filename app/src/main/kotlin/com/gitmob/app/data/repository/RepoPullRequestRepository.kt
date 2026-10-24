@@ -82,7 +82,7 @@ class RepoPullRequestRepository @Inject constructor(
 ) {
     suspend fun getBranches(owner: String, name: String): ApiResult<List<RepoBranch>> =
         when (val result = apolloClient.query(
-            PullRequestBranchesQuery(owner, name, Optional.Absent),
+            PullRequestBranchesQuery(owner, name, Optional.Absent, PageSize.BRANCHES),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -140,6 +140,8 @@ class RepoPullRequestRepository @Inject constructor(
                 states = Optional.present(states(filter.state)),
                 orderBy = order(filter.sort),
                 labels = Optional.presentIfNotNull(filter.labels.takeIf { it.isNotEmpty() }?.toList()),
+                first = PageSize.REPO_ISSUES,
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -171,7 +173,18 @@ class RepoPullRequestRepository @Inject constructor(
         commentsAfter: String? = null,
     ): ApiResult<RepoPullRequestDetail> {
         val detail = when (val result = apolloClient.query(
-            RepoPullRequestDetailQuery(owner, name, number, Optional.presentIfNotNull(commentsAfter)),
+            RepoPullRequestDetailQuery(
+                owner = owner,
+                name = name,
+                number = number,
+                after = Optional.presentIfNotNull(commentsAfter),
+                commentsFirst = PageSize.ISSUE_COMMENTS,
+                reviewsFirst = PageSize.PULL_REQUEST_REVIEWS,
+                reviewThreadsFirst = PageSize.PULL_REQUEST_REVIEW_THREADS,
+                reviewCommentsFirst = PageSize.PULL_REQUEST_REVIEW_COMMENTS,
+                commitsFirst = PageSize.PULL_REQUEST_COMMITS,
+                metadataFirst = PageSize.METADATA,
+            ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> return result
             is ApiResult.Success -> result.data
@@ -219,7 +232,7 @@ class RepoPullRequestRepository @Inject constructor(
 
     suspend fun getCreateMetadata(owner: String, name: String): ApiResult<RepoPullRequestCreateMetadata> {
         val data = when (val result = apolloClient.query(
-            RepoPullRequestMetadataQuery(owner, name),
+            RepoPullRequestMetadataQuery(owner, name, PageSize.BRANCHES, PageSize.METADATA),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> return result
             is ApiResult.Success -> result.data
@@ -260,7 +273,7 @@ class RepoPullRequestRepository @Inject constructor(
         var after: String? = null
         while (true) {
             when (val result = apolloClient.query(
-                RepoLabelsQuery(owner, name, Optional.presentIfNotNull(after)),
+                RepoLabelsQuery(owner, name, Optional.presentIfNotNull(after), PageSize.METADATA),
             ).executeAsApiResult()) {
                 is ApiResult.Failure -> return result
                 is ApiResult.Success -> {
@@ -285,7 +298,7 @@ class RepoPullRequestRepository @Inject constructor(
         firstPage?.nodes.orEmpty().filterNotNull().forEach { seen[it.id] = RepoBranch(it.id, it.name, false, it.target?.oid) }
         var after = firstPage?.pageInfo?.endCursor.takeIf { firstPage?.pageInfo?.hasNextPage == true }
         while (after != null) {
-            val refs = apolloClient.query(PullRequestBranchesQuery(owner, name, Optional.present(after)))
+            val refs = apolloClient.query(PullRequestBranchesQuery(owner, name, Optional.present(after), PageSize.BRANCHES))
                 .executeOrThrow().repository?.refs ?: break
             refs.nodes.orEmpty().filterNotNull().forEach { seen[it.id] = RepoBranch(it.id, it.name, false, it.target?.oid) }
             after = refs.pageInfo.endCursor.takeIf { refs.pageInfo.hasNextPage }
@@ -303,7 +316,7 @@ class RepoPullRequestRepository @Inject constructor(
         val nodes = initial.toMutableList()
         var after = cursor.takeIf { hasNext }
         while (true) {
-            val page = apolloClient.query(RepoLabelsQuery(owner, name, Optional.presentIfNotNull(after)))
+            val page = apolloClient.query(RepoLabelsQuery(owner, name, Optional.presentIfNotNull(after), PageSize.METADATA))
                 .executeOrThrow().repository?.labels ?: break
             nodes += page.nodes.orEmpty().filterNotNull().map { IssueLabel(it.id, it.name, it.color, it.description) }
             after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage } ?: break
@@ -321,7 +334,7 @@ class RepoPullRequestRepository @Inject constructor(
         val nodes = initial.toMutableList()
         var after = cursor.takeIf { hasNext }
         while (true) {
-            val page = apolloClient.query(RepoMilestonesQuery(owner, name, Optional.presentIfNotNull(after)))
+            val page = apolloClient.query(RepoMilestonesQuery(owner, name, Optional.presentIfNotNull(after), PageSize.METADATA))
                 .executeOrThrow().repository?.milestones ?: break
             nodes += page.nodes.orEmpty().filterNotNull().map { IssueMilestone(it.id, it.number, it.title, it.state.rawValue, it.dueOn) }
             after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage } ?: break
@@ -339,7 +352,7 @@ class RepoPullRequestRepository @Inject constructor(
         val nodes = initial.toMutableList()
         var after = cursor.takeIf { hasNext }
         while (true) {
-            val page = apolloClient.query(RepoAssignableUsersQuery(owner, name, Optional.presentIfNotNull(after)))
+            val page = apolloClient.query(RepoAssignableUsersQuery(owner, name, Optional.presentIfNotNull(after), PageSize.METADATA))
                 .executeOrThrow().repository?.assignableUsers ?: break
             nodes += page.nodes.orEmpty().filterNotNull().map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) }
             after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage } ?: break
@@ -357,7 +370,7 @@ class RepoPullRequestRepository @Inject constructor(
         val nodes = initial.toMutableList()
         var after = cursor.takeIf { hasNext }
         while (true) {
-            val page = apolloClient.query(RepoMentionableUsersQuery(owner, name, Optional.presentIfNotNull(after)))
+            val page = apolloClient.query(RepoMentionableUsersQuery(owner, name, Optional.presentIfNotNull(after), PageSize.METADATA))
                 .executeOrThrow().repository?.mentionableUsers ?: break
             nodes += page.nodes.orEmpty().filterNotNull().map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) }
             after = page.pageInfo.endCursor.takeIf { page.pageInfo.hasNextPage } ?: break
@@ -380,6 +393,7 @@ class RepoPullRequestRepository @Inject constructor(
                     body = Optional.present(input.body),
                     draft = Optional.present(input.draft),
                 ),
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -401,6 +415,7 @@ class RepoPullRequestRepository @Inject constructor(
                     assigneeIds = Optional.present(input.assigneeIds),
                     milestoneId = Optional.present(input.milestoneId),
                 ),
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -410,19 +425,19 @@ class RepoPullRequestRepository @Inject constructor(
         }
 
     suspend fun closePullRequest(id: String): ApiResult<RepoPullRequest> =
-        simpleMutation(CloseRepoPullRequestMutation(ClosePullRequestInput(pullRequestId = id))) { it.closePullRequest?.pullRequest?.pullRequestFields }
+        simpleMutation(CloseRepoPullRequestMutation(ClosePullRequestInput(pullRequestId = id), PageSize.METADATA)) { it.closePullRequest?.pullRequest?.pullRequestFields }
 
     suspend fun reopenPullRequest(id: String): ApiResult<RepoPullRequest> =
-        simpleMutation(ReopenRepoPullRequestMutation(ReopenPullRequestInput(pullRequestId = id))) { it.reopenPullRequest?.pullRequest?.pullRequestFields }
+        simpleMutation(ReopenRepoPullRequestMutation(ReopenPullRequestInput(pullRequestId = id), PageSize.METADATA)) { it.reopenPullRequest?.pullRequest?.pullRequestFields }
 
     suspend fun convertToDraft(id: String): ApiResult<RepoPullRequest> =
-        simpleMutation(ConvertPullRequestToDraftMutation(ConvertPullRequestToDraftInput(pullRequestId = id))) { it.convertPullRequestToDraft?.pullRequest?.pullRequestFields }
+        simpleMutation(ConvertPullRequestToDraftMutation(ConvertPullRequestToDraftInput(pullRequestId = id), PageSize.METADATA)) { it.convertPullRequestToDraft?.pullRequest?.pullRequestFields }
 
     suspend fun markReadyForReview(id: String): ApiResult<RepoPullRequest> =
-        simpleMutation(MarkPullRequestReadyForReviewMutation(MarkPullRequestReadyForReviewInput(pullRequestId = id))) { it.markPullRequestReadyForReview?.pullRequest?.pullRequestFields }
+        simpleMutation(MarkPullRequestReadyForReviewMutation(MarkPullRequestReadyForReviewInput(pullRequestId = id), PageSize.METADATA)) { it.markPullRequestReadyForReview?.pullRequest?.pullRequestFields }
 
     suspend fun updateBranch(id: String): ApiResult<RepoPullRequest> =
-        simpleMutation(UpdateRepoPullRequestBranchMutation(UpdatePullRequestBranchInput(pullRequestId = id))) { it.updatePullRequestBranch?.pullRequest?.pullRequestFields }
+        simpleMutation(UpdateRepoPullRequestBranchMutation(UpdatePullRequestBranchInput(pullRequestId = id), PageSize.METADATA)) { it.updatePullRequestBranch?.pullRequest?.pullRequestFields }
 
     suspend fun mergePullRequest(
         id: String,
@@ -440,6 +455,7 @@ class RepoPullRequestRepository @Inject constructor(
                     commitBody = Optional.presentIfNotNull(body?.takeIf(String::isNotBlank)),
                     expectedHeadOid = Optional.presentIfNotNull(expectedHeadOid),
                 ),
+                metadataFirst = PageSize.METADATA,
             ),
         ) { it.mergePullRequest?.pullRequest?.pullRequestFields }
 
@@ -451,11 +467,12 @@ class RepoPullRequestRepository @Inject constructor(
                         pullRequestId = id,
                         mergeMethod = Optional.present(PullRequestMergeMethod.safeValueOf(method.name)),
                     ),
+                    metadataFirst = PageSize.METADATA,
                 ),
             ) { it.enablePullRequestAutoMerge?.pullRequest?.pullRequestFields }
         } else {
             simpleMutation(
-                DisablePullRequestAutoMergeMutation(DisablePullRequestAutoMergeInput(pullRequestId = id)),
+                DisablePullRequestAutoMergeMutation(DisablePullRequestAutoMergeInput(pullRequestId = id), PageSize.METADATA),
             ) { it.disablePullRequestAutoMerge?.pullRequest?.pullRequestFields }
         }
 

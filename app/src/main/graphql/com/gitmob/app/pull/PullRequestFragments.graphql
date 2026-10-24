@@ -1,5 +1,5 @@
 # PR 公共字段片段（列表/详情/各 mutation 返回体共用）。
-# commentCount 统一取 totalCommentsCount。labels/assignees first: 20 = PageSize.METADATA。
+# commentCount 统一取 totalCommentsCount；$metadataFirst 由所有消费 operation 从 PageSize.METADATA 传入。
 fragment PullRequestFields on PullRequest {
     id
     url
@@ -35,7 +35,7 @@ fragment PullRequestFields on PullRequest {
     mergeable
     mergeStateStatus
     reviewDecision
-    labels(first: 20) {
+    labels(first: $metadataFirst) {
         nodes {
             id
             name
@@ -43,7 +43,7 @@ fragment PullRequestFields on PullRequest {
             description
         }
     }
-    assignees(first: 20) {
+    assignees(first: $metadataFirst) {
         nodes {
             id
             login

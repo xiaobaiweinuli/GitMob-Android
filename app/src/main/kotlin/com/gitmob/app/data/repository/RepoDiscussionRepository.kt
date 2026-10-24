@@ -4,6 +4,7 @@ import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.api.Optional
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
@@ -73,6 +74,9 @@ class RepoDiscussionRepository @Inject constructor(private val apolloClient: Apo
                 orderBy = Optional.present(order(filter.sort)),
                 categoryId = Optional.presentIfNotNull(filter.categoryId),
                 answered = Optional.presentIfNotNull(filter.answered),
+                first = PageSize.REPO_ISSUES,
+                categoriesFirst = PageSize.DISCUSSION_CATEGORIES,
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -96,7 +100,15 @@ class RepoDiscussionRepository @Inject constructor(private val apolloClient: Apo
 
     suspend fun getDiscussion(owner: String, name: String, number: Int, after: String? = null): ApiResult<RepoDiscussionDetail> =
         when (val result = apolloClient.query(
-            RepoDiscussionDetailQuery(owner, name, number, Optional.presentIfNotNull(after)),
+            RepoDiscussionDetailQuery(
+                owner = owner,
+                name = name,
+                number = number,
+                after = Optional.presentIfNotNull(after),
+                commentsFirst = PageSize.ISSUE_COMMENTS,
+                categoriesFirst = PageSize.DISCUSSION_CATEGORIES,
+                metadataFirst = PageSize.METADATA,
+            ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -120,6 +132,7 @@ class RepoDiscussionRepository @Inject constructor(private val apolloClient: Apo
         when (val result = apolloClient.mutation(
             CreateRepoDiscussionMutation(
                 CreateDiscussionInput(repositoryId = repositoryId, title = title, body = body, categoryId = categoryId),
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -138,6 +151,7 @@ class RepoDiscussionRepository @Inject constructor(private val apolloClient: Apo
                     body = Optional.present(body),
                     categoryId = Optional.presentIfNotNull(categoryId),
                 ),
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -149,7 +163,7 @@ class RepoDiscussionRepository @Inject constructor(private val apolloClient: Apo
 
     suspend fun closeDiscussion(id: String): ApiResult<RepoDiscussion> =
         when (val result = apolloClient.mutation(
-            CloseRepoDiscussionMutation(CloseDiscussionInput(discussionId = id)),
+            CloseRepoDiscussionMutation(CloseDiscussionInput(discussionId = id), PageSize.METADATA),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -160,7 +174,7 @@ class RepoDiscussionRepository @Inject constructor(private val apolloClient: Apo
 
     suspend fun reopenDiscussion(id: String): ApiResult<RepoDiscussion> =
         when (val result = apolloClient.mutation(
-            ReopenRepoDiscussionMutation(ReopenDiscussionInput(discussionId = id)),
+            ReopenRepoDiscussionMutation(ReopenDiscussionInput(discussionId = id), PageSize.METADATA),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -203,7 +217,7 @@ class RepoDiscussionRepository @Inject constructor(private val apolloClient: Apo
         var cursor: String? = null
         while (true) {
             when (val result = apolloClient.query(
-                RepoLabelsQuery(owner, name, Optional.presentIfNotNull(cursor)),
+                RepoLabelsQuery(owner, name, Optional.presentIfNotNull(cursor), PageSize.METADATA),
             ).executeAsApiResult()) {
                 is ApiResult.Failure -> return result
                 is ApiResult.Success -> {

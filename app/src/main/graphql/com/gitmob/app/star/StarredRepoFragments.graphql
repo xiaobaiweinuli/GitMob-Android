@@ -1,5 +1,5 @@
 # 星标仓库卡片公共字段片段，"全部星标"和"某个列表内"两个查询字段结构完全一样。
-# first: 10 对应 PageSize.TOPICS_PER_REPO。
+# $topicsFirst 由消费本片段的 operation 声明，并从 PageSize.TOPICS_PER_REPO 传入。
 fragment StarredRepoFields on Repository {
     id
     name
@@ -29,7 +29,7 @@ fragment StarredRepoFields on Repository {
     issues(states: [OPEN]) {
         totalCount
     }
-    repositoryTopics(first: 10) {
+    repositoryTopics(first: $topicsFirst) {
         nodes {
             topic {
                 name

@@ -7,6 +7,7 @@ import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.RepoComparisonResult
 import com.gitmob.app.data.model.RepoForkSyncInfo
@@ -59,7 +60,7 @@ class RepoGitCompareTest {
         assertTrue(result is ApiResult.Success)
         assertTrue((result as ApiResult.Success).data is RepoComparisonResult.Available)
         assertEquals(
-            "/repos/octo/repo/compare/release%2Fv2...feature%2Flogin?page=1&per_page=30",
+            "/repos/octo/repo/compare/release%2Fv2...feature%2Flogin?page=1&per_page=${PageSize.COMPARE_COMMITS}",
             server.takeRequest().path,
         )
     }
@@ -71,7 +72,7 @@ class RepoGitCompareTest {
         repository.compare("upstream", "repo", "main", "viewer", "fork", "feature/login")
 
         assertEquals(
-            "/repos/upstream/repo/compare/upstream:main...viewer:feature%2Flogin?page=1&per_page=30",
+            "/repos/upstream/repo/compare/upstream:main...viewer:feature%2Flogin?page=1&per_page=${PageSize.COMPARE_COMMITS}",
             server.takeRequest().path,
         )
     }
@@ -102,7 +103,7 @@ class RepoGitCompareTest {
         assertEquals(3, sync.behindBy)
         assertEquals("/graphql", server.takeRequest().path)
         assertEquals(
-            "/repos/upstream/repo/compare/upstream:upsha...viewer:forksha?page=1&per_page=30",
+            "/repos/upstream/repo/compare/upstream:upsha...viewer:forksha?page=1&per_page=${PageSize.COMPARE_COMMITS}",
             server.takeRequest().path,
         )
     }
@@ -117,7 +118,7 @@ class RepoGitCompareTest {
         assertEquals("main", (result as ApiResult.Success).data.branch)
         server.takeRequest()
         assertEquals(
-            "/repos/upstream/repo/compare/upstream:upsha...viewer:forksha?page=1&per_page=30",
+            "/repos/upstream/repo/compare/upstream:upsha...viewer:forksha?page=1&per_page=${PageSize.COMPARE_COMMITS}",
             server.takeRequest().path,
         )
     }
@@ -198,7 +199,35 @@ class RepoGitCompareTest {
         assertTrue(request.body.readUtf8().contains("main"))
     }
 
-    private fun compareJson(ahead: Int = 1, behind: Int = 0) = """
+    @Test
+    fun `compare文件容量前一项等于及超过上限保持裁剪和截断语义`() = runTest {
+        val limit = PageSize.COMPARE_FILES_LIMIT
+        for (count in listOf(limit - 1, limit, limit + 1)) {
+            val files = (1..count).joinToString(",") { """{"filename":"file-$it.kt","status":"modified","additions":1,"deletions":2}""" }
+            server.enqueue(MockResponse().setBody(compareJson(ahead = PageSize.COMPARE_COMMITS * 2 + 1, files = files)))
+
+            val result = repository.compare("octo", "repo", "main", "octo", "repo", "feature", page = 2) as ApiResult.Success
+            val comparison = (result.data as RepoComparisonResult.Available).comparison
+            val kept = minOf(count, limit)
+
+            assertEquals(kept, comparison.files.size)
+            assertEquals("file-$kept.kt", comparison.files.last().filename)
+            assertEquals(count >= limit, comparison.filesTruncated)
+            assertEquals(kept, comparison.additions)
+            assertEquals(kept * 2, comparison.deletions)
+            assertEquals(2, comparison.commitsPage)
+            assertTrue(comparison.commitsHasNextPage)
+            val request = server.takeRequest()
+            assertEquals(PageSize.COMPARE_COMMITS.toString(), request.requestUrl?.queryParameter("per_page"))
+            assertEquals("2", request.requestUrl?.queryParameter("page"))
+        }
+    }
+
+    private fun compareJson(
+        ahead: Int = 1,
+        behind: Int = 0,
+        files: String = """{"filename":"app.kt","status":"modified","additions":3,"deletions":1,"changes":4,"patch":"@@ -1 +1 @@"}""",
+    ) = """
         {
           "status":"ahead",
           "ahead_by":$ahead,
@@ -209,7 +238,7 @@ class RepoGitCompareTest {
             "commit":{"message":"Fix login\n\nDetails","author":{"date":"2026-08-01T00:00:00Z"},"committer":{"date":"2026-08-01T00:00:00Z"}},
             "author":{"login":"viewer"}
           }],
-          "files":[{"filename":"app.kt","status":"modified","additions":3,"deletions":1,"changes":4,"patch":"@@ -1 +1 @@"}]
+          "files":[$files]
         }
     """.trimIndent()
 

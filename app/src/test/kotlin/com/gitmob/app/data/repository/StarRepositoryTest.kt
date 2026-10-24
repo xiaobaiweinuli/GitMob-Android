@@ -3,14 +3,20 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -70,6 +76,9 @@ class StarRepositoryTest {
         assertEquals(2, lists.size)
         assertEquals("博客", lists[0].name)
         assertEquals(1, lists[0].itemCount)
+        assertEquals(JsonPrimitive(PageSize.STAR_LISTS), takeVariables()["first"])
+        assertEquals(result, repository.getLists())
+        assertEquals(1, server.requestCount)
     }
 
     @Test
@@ -93,6 +102,9 @@ class StarRepositoryTest {
         assertTrue(result is ApiResult.Success)
         val containingLists = (result as ApiResult.Success).data
         assertEquals(setOf("L1"), containingLists)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.STAR_LISTS_SCAN_LIMIT), variables["listsFirst"])
+        assertEquals(JsonPrimitive(PageSize.LIST_ITEMS_SCAN_LIMIT), variables["itemsFirst"])
     }
 
     @Test
@@ -132,6 +144,57 @@ class StarRepositoryTest {
         assertTrue(repo.isFork)
         assertEquals("upstream", repo.forkedFromOwner)
         assertEquals("origin", repo.forkedFromName)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.STARRED_REPOS), variables["first"])
+        assertEquals(JsonPrimitive(PageSize.TOPICS_PER_REPO), variables["topicsFirst"])
+        assertFalse("after" in variables)
+        assertEquals(result, repository.getViewerStarred())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `viewer和user星标续页分别传入容量和游标`() = runTest {
+        for (login in listOf(null, "octocat")) {
+            val root = if (login == null) "viewer" else "user"
+            server.enqueue(MockResponse().setBody("""{"data":{"$root":{"starredRepositories":{"totalCount":0,"edges":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+
+            val result = if (login == null) repository.getViewerStarred("previous") else repository.getUserStarred(login, "previous")
+
+            assertTrue(result is ApiResult.Success)
+            assertTrue((result as ApiResult.Success).data.items.isEmpty())
+            val variables = takeVariables()
+            assertEquals(JsonPrimitive(PageSize.STARRED_REPOS), variables["first"])
+            assertEquals(JsonPrimitive(PageSize.TOPICS_PER_REPO), variables["topicsFirst"])
+            assertEquals(JsonPrimitive("previous"), variables["after"])
+            assertEquals(login?.let(::JsonPrimitive), variables["login"])
+        }
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `清单项目使用独立分页容量和共享话题容量`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"data":{"node":{"__typename":"UserList","items":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
+
+        val result = repository.getListItems("L1", "previous") as ApiResult.Success
+
+        assertTrue(result.data.items.isEmpty())
+        assertTrue(result.data.hasNextPage)
+        assertEquals("next", result.data.endCursor)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive("L1"), variables["listId"])
+        assertEquals(JsonPrimitive(PageSize.LIST_ITEMS), variables["first"])
+        assertEquals(JsonPrimitive(PageSize.TOPICS_PER_REPO), variables["topicsFirst"])
+        assertEquals(JsonPrimitive("previous"), variables["after"])
+    }
+
+    @Test
+    fun `缺失根节点和权限失败不伪造成空星标或清单`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"data":{"user":null}}"""))
+        assertTrue(repository.getUserStarred("missing") is ApiResult.Failure)
+        server.enqueue(MockResponse().setBody("""{"data":{"node":null}}"""))
+        assertTrue(repository.getListItems("missing") is ApiResult.Failure)
+        server.enqueue(MockResponse().setResponseCode(403))
+        assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getViewerStarred())
     }
 
     @Test
@@ -169,4 +232,7 @@ class StarRepositoryTest {
 
         assertTrue(result is ApiResult.Success)
     }
+
+    private fun takeVariables() =
+        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
 }

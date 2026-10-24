@@ -5,6 +5,7 @@ import com.apollographql.apollo.api.Optional
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
@@ -85,6 +86,8 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
                 states = Optional.present(states(filter.state)),
                 orderBy = issueOrder(filter.sort),
                 filterBy = Optional.presentIfNotNull(issueFilters(filter)),
+                first = PageSize.REPO_ISSUES,
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -108,7 +111,14 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
 
     suspend fun getIssue(owner: String, name: String, number: Int, commentsAfter: String? = null): ApiResult<RepoIssueDetail> =
         when (val result = apolloClient.query(
-            RepoIssueDetailQuery(owner, name, number, Optional.presentIfNotNull(commentsAfter)),
+            RepoIssueDetailQuery(
+                owner = owner,
+                name = name,
+                number = number,
+                after = Optional.presentIfNotNull(commentsAfter),
+                commentsFirst = PageSize.ISSUE_COMMENTS,
+                metadataFirst = PageSize.METADATA,
+            ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -136,7 +146,7 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
         var cursor: String? = null
         while (true) {
             when (val result = apolloClient.query(
-                RepoLabelsQuery(owner, name, Optional.presentIfNotNull(cursor)),
+                RepoLabelsQuery(owner, name, Optional.presentIfNotNull(cursor), PageSize.METADATA),
             ).executeAsApiResult()) {
                 is ApiResult.Failure -> return result
                 is ApiResult.Success -> {
@@ -159,7 +169,7 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
         var cursor: String? = null
         while (true) {
             when (val result = apolloClient.query(
-                RepoMilestonesQuery(owner, name, Optional.presentIfNotNull(cursor)),
+                RepoMilestonesQuery(owner, name, Optional.presentIfNotNull(cursor), PageSize.METADATA),
             ).executeAsApiResult()) {
                 is ApiResult.Failure -> return result
                 is ApiResult.Success -> {
@@ -182,7 +192,7 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
         var cursor: String? = null
         while (true) {
             when (val result = apolloClient.query(
-                RepoAssignableUsersQuery(owner, name, Optional.presentIfNotNull(cursor)),
+                RepoAssignableUsersQuery(owner, name, Optional.presentIfNotNull(cursor), PageSize.METADATA),
             ).executeAsApiResult()) {
                 is ApiResult.Failure -> return result
                 is ApiResult.Success -> {
@@ -248,6 +258,7 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
                     assigneeIds = if (input.assigneeIds.isNotEmpty()) Optional.present(input.assigneeIds) else Optional.Absent,
                     milestoneId = Optional.presentIfNotNull(input.milestoneId),
                 ),
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -270,6 +281,7 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
                     assigneeIds = Optional.present(input.assigneeIds),
                     milestoneId = Optional.present(input.milestoneId),
                 ),
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -286,6 +298,7 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
                     issueId = issueId,
                     stateReason = Optional.present(IssueClosedStateReason.safeValueOf(reason.name)),
                 ),
+                metadataFirst = PageSize.METADATA,
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
@@ -297,7 +310,7 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
 
     suspend fun reopenIssue(issueId: String): ApiResult<RepoIssue> =
         when (val result = apolloClient.mutation(
-            ReopenRepoIssueMutation(ReopenIssueInput(issueId = issueId)),
+            ReopenRepoIssueMutation(ReopenIssueInput(issueId = issueId), PageSize.METADATA),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {

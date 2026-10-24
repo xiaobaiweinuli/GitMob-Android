@@ -1,16 +1,16 @@
 # 仓库 Discussion 分页列表 + 分类列表。
-# categories first: 100 = PageSize.DISCUSSION_CATEGORIES；discussions first: 20 = PageSize.REPO_ISSUES。
-query RepoDiscussions($owner: String!, $name: String!, $after: String, $states: [DiscussionState!], $orderBy: DiscussionOrder, $categoryId: ID, $answered: Boolean) {
+# 分类、列表与标签容量分别由 Repository 从 PageSize 传入。
+query RepoDiscussions($owner: String!, $name: String!, $after: String, $states: [DiscussionState!], $orderBy: DiscussionOrder, $categoryId: ID, $answered: Boolean, $first: Int!, $categoriesFirst: Int!, $metadataFirst: Int!) {
     repository(owner: $owner, name: $name) {
         id
         viewerPermission
         hasDiscussionsEnabled
-        categories: discussionCategories(first: 100) {
+        categories: discussionCategories(first: $categoriesFirst) {
             nodes {
                 ...DiscussionCategoryFields
             }
         }
-        discussions(first: 20, after: $after, states: $states, orderBy: $orderBy, categoryId: $categoryId, answered: $answered) {
+        discussions(first: $first, after: $after, states: $states, orderBy: $orderBy, categoryId: $categoryId, answered: $answered) {
             totalCount
             nodes {
                 ...DiscussionFields
@@ -26,19 +26,19 @@ query RepoDiscussions($owner: String!, $name: String!, $after: String, $states: 
     }
 }
 
-# 单个 Discussion 详情 + 评论分页。comments first: 20 = PageSize.ISSUE_COMMENTS。
-query RepoDiscussionDetail($owner: String!, $name: String!, $number: Int!, $after: String) {
+# 单个 Discussion 详情 + 评论分页。评论容量由 PageSize.ISSUE_COMMENTS 传入。
+query RepoDiscussionDetail($owner: String!, $name: String!, $number: Int!, $after: String, $commentsFirst: Int!, $categoriesFirst: Int!, $metadataFirst: Int!) {
     repository(owner: $owner, name: $name) {
         id
         viewerPermission
-        categories: discussionCategories(first: 100) {
+        categories: discussionCategories(first: $categoriesFirst) {
             nodes {
                 ...DiscussionCategoryFields
             }
         }
         discussion(number: $number) {
             ...DiscussionFields
-            comments(first: 20, after: $after) {
+            comments(first: $commentsFirst, after: $after) {
                 totalCount
                 nodes {
                     ...DiscussionCommentFields

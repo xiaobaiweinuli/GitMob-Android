@@ -238,7 +238,7 @@ class RepoRepositoryTest {
         assertEquals("beta", (second as ApiResult.Success).data.organizations.single().login)
         val firstBody = server.takeRequest().body.readUtf8()
         val secondBody = server.takeRequest().body.readUtf8()
-        assertTrue(firstBody.contains("\"first\":20"))
+        assertEquals(JsonPrimitive(PageSize.ORGS), Json.parseToJsonElement(firstBody).jsonObject.getValue("variables").jsonObject["first"])
         assertTrue(!firstBody.contains("\"after\":\"cursor-1\""))
         assertTrue(secondBody.contains("\"after\":\"cursor-1\""))
     }
@@ -287,6 +287,8 @@ class RepoRepositoryTest {
             assertEquals(JsonPrimitive("INTERNAL"), variables["visibility"])
             listOf("isArchived", "isFork", "hasIssuesEnabled").forEach { assertEquals(JsonPrimitive(false), variables[it]) }
             assertEquals(login?.let(::JsonPrimitive), variables["login"])
+            assertEquals(JsonPrimitive(PageSize.REPOS), variables["first"])
+            assertEquals(JsonPrimitive(PageSize.TOPICS_PER_REPO), variables["topicsFirst"])
             assertEquals(login ?: "me", result.data.ownerContext?.owner?.login)
             assertEquals(login != "acme", result.data.ownerContext?.owner?.canCreateRepository)
         }
@@ -354,58 +356,81 @@ class RepoRepositoryTest {
     @Test
     fun `累计命中达到目标时完整处理最后一页`() = runTest {
         server.enqueue(MockResponse().setBody(response(
-            (1..19).map { node("hit-$it") } + node("other"), cursor = "c1", total = 80,
+            (1 until PageSize.REPOS).map { node("hit-$it") } + node("other"), cursor = "c1", total = PageSize.REPOS * 4,
         )))
-        server.enqueue(MockResponse().setBody(response((20..39).map { node("hit-$it") }, cursor = "c2", total = 80)))
+        server.enqueue(MockResponse().setBody(response((PageSize.REPOS until PageSize.REPOS * 2).map { node("hit-$it") }, cursor = "c2", total = PageSize.REPOS * 4)))
 
         val batch = (repository.getRepos(filters = RepoFilters(query = "hit")) as ApiResult.Success).data
 
-        assertEquals(39, batch.items.size)
-        assertEquals("hit-39", batch.items.last().name)
+        assertEquals(PageSize.REPOS * 2 - 1, batch.items.size)
+        assertEquals("hit-${PageSize.REPOS * 2 - 1}", batch.items.last().name)
         assertEquals("c2", batch.endCursor)
         assertFalse(batch.requiresManualContinue)
         assertEquals(2, server.requestCount)
     }
 
     @Test
-    fun `空搜索批次最多检查五页并能继续找到首个百条以后的仓库`() = runTest {
-        repeat(5) { page ->
+    fun `空搜索批次达到预算后从完整末页游标继续`() = runTest {
+        val budget = PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT
+        val total = PageSize.REPOS * budget + 1
+        repeat(budget) { page ->
             server.enqueue(MockResponse().setBody(response(
-                (1..20).map { node("other-$page-$it") }, cursor = "c${page + 1}", total = 101,
+                (1..PageSize.REPOS).map { node("other-$page-$it") }, cursor = "c${page + 1}", total = total,
             )))
         }
         val filters = RepoFilters(query = "target")
         val first = (repository.getRepos(filters = filters) as ApiResult.Success).data
         assertTrue(first.items.isEmpty())
-        assertEquals("c5", first.endCursor)
+        assertEquals("c$budget", first.endCursor)
         assertTrue(first.requiresManualContinue)
-        assertEquals(5, server.requestCount)
+        assertEquals(budget, server.requestCount)
 
-        server.enqueue(MockResponse().setBody(response(listOf(node("TaRgEt")), total = 101)))
+        server.enqueue(MockResponse().setBody(response(listOf(node("TaRgEt")), total = total)))
         val last = (repository.getRepos(after = first.endCursor, filters = filters) as ApiResult.Success).data
         assertEquals("TaRgEt", last.items.single().name)
         assertFalse(last.hasNextPage)
         assertFalse(last.requiresManualContinue)
-        assertEquals(6, server.requestCount)
-        assertEquals(listOf(null, "c1", "c2", "c3", "c4", "c5"),
-            List(6) { takeVariables()["after"]?.jsonPrimitive?.content })
+        assertEquals(budget + 1, server.requestCount)
+        val requests = List(budget + 1) { takeVariables() }
+        assertEquals(listOf(null) + (1..budget).map { "c$it" }, requests.map { it["after"]?.jsonPrimitive?.content })
+        requests.forEach {
+            assertEquals(JsonPrimitive(PageSize.REPOS), it["first"])
+            assertEquals(JsonPrimitive(PageSize.TOPICS_PER_REPO), it["topicsFirst"])
+        }
     }
 
     @Test
     fun `预算耗尽保留非空命中并要求手动继续`() = runTest {
-        repeat(5) { page ->
+        repeat(PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT) { page ->
             server.enqueue(MockResponse().setBody(response(listOf(node("hit-$page")), cursor = "c$page")))
         }
         val batch = (repository.getRepos(filters = RepoFilters(query = "hit")) as ApiResult.Success).data
-        assertEquals(5, batch.items.size)
+        assertEquals(PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT, batch.items.size)
         assertTrue(batch.requiresManualContinue)
-        assertEquals("c4", batch.endCursor)
-        assertEquals(5, server.requestCount)
+        assertEquals("c${PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT - 1}", batch.endCursor)
+        assertEquals(PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT, server.requestCount)
+    }
+
+    @Test
+    fun `预算前一页收满目标不要求手动继续`() = runTest {
+        val pages = PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT - 1
+        repeat(pages) { page ->
+            val nodes = if (page == pages - 1) (1..PageSize.REPOS).map { node("hit-$it") } else emptyList()
+            server.enqueue(MockResponse().setBody(response(nodes, cursor = "c${page + 1}")))
+        }
+
+        val batch = (repository.getRepos(filters = RepoFilters(query = "hit")) as ApiResult.Success).data
+
+        assertEquals(PageSize.REPOS, batch.items.size)
+        assertTrue(batch.hasNextPage)
+        assertFalse(batch.requiresManualContinue)
+        assertEquals("c$pages", batch.endCursor)
+        assertEquals(pages, server.requestCount)
     }
 
     @Test
     fun `无搜索只取一页且空页暂停自动翻页`() = runTest {
-        server.enqueue(MockResponse().setBody(response(cursor = "next", total = 20)))
+        server.enqueue(MockResponse().setBody(response(cursor = "next", total = PageSize.REPOS)))
         val batch = (repository.getRepos() as ApiResult.Success).data
         assertEquals(1, server.requestCount)
         assertTrue(batch.requiresManualContinue)

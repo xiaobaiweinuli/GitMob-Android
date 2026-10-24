@@ -1,6 +1,6 @@
-query UserOrgs($login: String!, $after: String) {
+query UserOrgs($login: String!, $after: String, $first: Int!) {
   user(login: $login) {
-    organizations(first: 20, after: $after) {
+    organizations(first: $first, after: $after) {
       totalCount
       nodes { login name avatarUrl }
       pageInfo { hasNextPage endCursor }
@@ -8,9 +8,9 @@ query UserOrgs($login: String!, $after: String) {
   }
 }
 
-query OrgMembers($orgLogin: String!, $after: String) {
+query OrgMembers($orgLogin: String!, $after: String, $first: Int!) {
   organization(login: $orgLogin) {
-    membersWithRole(first: 30, after: $after) {
+    membersWithRole(first: $first, after: $after) {
       totalCount
       nodes { login name avatarUrl bio }
       pageInfo { hasNextPage endCursor }

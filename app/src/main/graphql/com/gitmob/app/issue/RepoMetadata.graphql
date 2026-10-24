@@ -1,7 +1,7 @@
-# 仓库标签分页。first: 20 = PageSize.METADATA。RepoIssueRepository 与 RepoDiscussionRepository 共用。
-query RepoLabels($owner: String!, $name: String!, $after: String) {
+# 仓库元数据分页容量由 PageSize.METADATA 传入，Issue/Discussion/PR 域共用。
+query RepoLabels($owner: String!, $name: String!, $after: String, $first: Int!) {
     repository(owner: $owner, name: $name) {
-        labels(first: 20, after: $after) {
+        labels(first: $first, after: $after) {
             nodes {
                 id
                 name
@@ -17,9 +17,9 @@ query RepoLabels($owner: String!, $name: String!, $after: String) {
 }
 
 # 仓库里程碑分页（只取 OPEN）。
-query RepoMilestones($owner: String!, $name: String!, $after: String) {
+query RepoMilestones($owner: String!, $name: String!, $after: String, $first: Int!) {
     repository(owner: $owner, name: $name) {
-        milestones(first: 20, after: $after, states: [OPEN]) {
+        milestones(first: $first, after: $after, states: [OPEN]) {
             nodes {
                 id
                 number
@@ -36,9 +36,9 @@ query RepoMilestones($owner: String!, $name: String!, $after: String) {
 }
 
 # 可指派用户分页。
-query RepoAssignableUsers($owner: String!, $name: String!, $after: String) {
+query RepoAssignableUsers($owner: String!, $name: String!, $after: String, $first: Int!) {
     repository(owner: $owner, name: $name) {
-        assignableUsers(first: 20, after: $after) {
+        assignableUsers(first: $first, after: $after) {
             nodes {
                 id
                 login

@@ -1,6 +1,6 @@
-query Followers($login: String!, $after: String) {
+query Followers($login: String!, $after: String, $first: Int!) {
   user(login: $login) {
-    followers(first: 30, after: $after) {
+    followers(first: $first, after: $after) {
       totalCount
       nodes { login name avatarUrl bio }
       pageInfo { hasNextPage endCursor }
@@ -8,9 +8,9 @@ query Followers($login: String!, $after: String) {
   }
 }
 
-query Following($login: String!, $after: String) {
+query Following($login: String!, $after: String, $first: Int!) {
   user(login: $login) {
-    following(first: 30, after: $after) {
+    following(first: $first, after: $after) {
       totalCount
       nodes { login name avatarUrl bio }
       pageInfo { hasNextPage endCursor }

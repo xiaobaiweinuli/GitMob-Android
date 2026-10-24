@@ -1,12 +1,12 @@
 # "添加到列表"弹窗预勾选：公开 API 没有从仓库反查所属列表的字段，
-# 只能拉出全部列表 + 每个列表的 items，客户端自己算交集。
-# first: 20 = PageSize.STAR_LISTS_SCAN_LIMIT，items first: 100 = PageSize.LIST_ITEMS_SCAN_LIMIT。
-query ListsContainingRepo {
+# 只能预取列表 + 每个列表的 items，客户端自己算交集。
+# 容量分别由 PageSize.STAR_LISTS_SCAN_LIMIT / LIST_ITEMS_SCAN_LIMIT 传入。
+query ListsContainingRepo($listsFirst: Int!, $itemsFirst: Int!) {
     viewer {
-        lists(first: 20) {
+        lists(first: $listsFirst) {
             nodes {
                 id
-                items(first: 100) {
+                items(first: $itemsFirst) {
                     nodes {
                         ... on Repository {
                             id

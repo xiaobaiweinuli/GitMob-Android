@@ -9,6 +9,9 @@ import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.data.model.RepoVisibility
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -35,7 +38,7 @@ private fun buildApolloClient(baseUrl: String): ApolloClient =
 
 /**
  * 用 MockWebServer 模拟真实 HTTP 响应，不 Mock 内部逻辑，纯 JVM 跑，
- * 不需要打包 APK / 装真机，见 references/testing.md。
+ * 仅作请求契约与边界的辅助回归，不能替代本轮 APK 的原生验收。
  */
 class UserRepositoryTest {
     private lateinit var server: MockWebServer
@@ -110,6 +113,11 @@ class UserRepositoryTest {
         assertEquals(1, profile.involvedPrCount)
         assertEquals(2, profile.involvedDiscussionCount)
         assertEquals(1, server.requestCount)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.SOCIAL_ACCOUNTS), variables["socialAccountsFirst"])
+        assertEquals(JsonPrimitive(PageSize.PINNED_ITEMS), variables["pinnedItemsFirst"])
+        assertEquals(result, repository.getViewerProfile())
+        assertEquals(1, server.requestCount)
     }
 
     @Test
@@ -125,6 +133,10 @@ class UserRepositoryTest {
         val profile = (result as ApiResult.Success).data
         assertFalse(profile.followState.isViewer)
         assertTrue(profile.followState.viewerCanFollow)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive("octocat"), variables["login"])
+        assertEquals(JsonPrimitive(PageSize.SOCIAL_ACCOUNTS), variables["socialAccountsFirst"])
+        assertEquals(JsonPrimitive(PageSize.PINNED_ITEMS), variables["pinnedItemsFirst"])
     }
 
     @Test
@@ -157,11 +169,73 @@ class UserRepositoryTest {
         assertEquals(0, repo.openIssueCount)
         assertEquals(Instant.parse("2026-02-01T00:00:00Z"), repo.updatedAt)
         assertEquals(null, repo.pushedAt)
-        val body = server.takeRequest().body.readUtf8()
-        assertTrue(body.contains("\"first\":${PageSize.REPOS}"))
-        assertTrue(body.contains("\"topicsFirst\":${PageSize.TOPICS_PER_REPO}"))
-        assertTrue(body.contains("\"after\":\"previous\""))
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.REPOS), variables["first"])
+        assertEquals(JsonPrimitive(PageSize.TOPICS_PER_REPO), variables["topicsFirst"])
+        assertEquals(JsonPrimitive("previous"), variables["after"])
     }
+
+    @Test
+    fun `关注和组织分页请求统一容量并保留游标`() = runTest {
+        val loaders = listOf<Triple<String, String, suspend () -> ApiResult<*>>>(
+            Triple("user", "followers", suspend { repository.getFollowers("octocat", "previous") }),
+            Triple("user", "following", suspend { repository.getFollowing("octocat", "previous") }),
+            Triple("user", "organizations", suspend { repository.getUserOrgs("octocat", "previous") }),
+            Triple("organization", "membersWithRole", suspend { repository.getOrgMembers("github", "previous") }),
+        )
+        for ((root, field, load) in loaders) {
+            server.enqueue(MockResponse().setBody("""{"data":{"$root":{"$field":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+
+            assertTrue(load() is ApiResult.Success)
+            val variables = takeVariables()
+            assertEquals(JsonPrimitive(if (field == "organizations") PageSize.ORGS else PageSize.USER_LIST), variables["first"])
+            assertEquals(JsonPrimitive("previous"), variables["after"])
+            assertEquals(JsonPrimitive(if (root == "organization") "github" else "octocat"), variables[if (root == "organization") "orgLogin" else "login"])
+        }
+    }
+
+    @Test
+    fun `viewer和user组织预览保持固定容量而不伪造分页`() = runTest {
+        for (login in listOf(null, "octocat")) {
+            val root = if (login == null) "viewer" else "user"
+            server.enqueue(MockResponse().setBody("""{"data":{"$root":{"organizations":{"nodes":[]}}}}"""))
+
+            assertTrue((repository.getOrganizations(login) as ApiResult.Success).data.isEmpty())
+            val variables = takeVariables()
+            assertEquals(JsonPrimitive(PageSize.ORGS_PREVIEW), variables["first"])
+            assertEquals(login?.let(::JsonPrimitive), variables["login"])
+            assertFalse("after" in variables)
+        }
+    }
+
+    @Test
+    fun `独立用户星标同时传入列表和话题容量`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"data":{"user":{"starredRepositories":{"totalCount":0,"edges":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
+
+        val page = (repository.getUserStars("octocat", "previous") as ApiResult.Success).data
+
+        assertTrue(page.items.isEmpty())
+        assertTrue(page.hasNextPage)
+        assertEquals("next", page.endCursor)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.STARRED_REPOS), variables["first"])
+        assertEquals(JsonPrimitive(PageSize.TOPICS_PER_REPO), variables["topicsFirst"])
+        assertEquals(JsonPrimitive("octocat"), variables["login"])
+        assertEquals(JsonPrimitive("previous"), variables["after"])
+    }
+
+    @Test
+    fun `缺失用户或组织根节点不伪造成空分页`() = runTest {
+        repeat(3) { server.enqueue(MockResponse().setBody("""{"data":{"user":null}}""")) }
+        assertTrue(repository.getUserProfile("missing") is ApiResult.Failure)
+        assertTrue(repository.getUserStars("missing") is ApiResult.Failure)
+        assertTrue(repository.getUserOrgs("missing") is ApiResult.Failure)
+        server.enqueue(MockResponse().setBody("""{"data":{"organization":null}}"""))
+        assertTrue(repository.getOrgMembers("missing") is ApiResult.Failure)
+    }
+
+    private fun takeVariables() =
+        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
 }
 
 class UserRepositoryProfileOwnerTest {
@@ -227,6 +301,10 @@ class UserRepositoryProfileOwnerTest {
         assertEquals(1, owner.pinnedRepos.size)
         assertEquals("octocat", owner.pinnedRepos.first().ownerLogin)
         assertEquals("repo1", owner.pinnedRepos.first().name)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.SOCIAL_ACCOUNTS), variables["socialAccountsFirst"])
+        assertEquals(JsonPrimitive(PageSize.PINNED_ITEMS), variables["pinnedItemsFirst"])
+        assertEquals(JsonPrimitive("octocat"), variables["login"])
     }
 
     @Test
@@ -260,6 +338,9 @@ class UserRepositoryProfileOwnerTest {
 
         val owner = (result as ApiResult.Success).data as com.gitmob.app.data.model.ProfileOwner.Person
         assertEquals(9, owner.gistCount)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.SOCIAL_ACCOUNTS), variables["socialAccountsFirst"])
+        assertEquals(JsonPrimitive(PageSize.PINNED_ITEMS), variables["pinnedItemsFirst"])
     }
 
     @Test
@@ -296,5 +377,18 @@ class UserRepositoryProfileOwnerTest {
         assertEquals(1, owner.pinnedRepos.size)
         assertEquals("github", owner.pinnedRepos.first().ownerLogin)
         assertEquals("docs", owner.pinnedRepos.first().name)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.SOCIAL_ACCOUNTS), variables["socialAccountsFirst"])
+        assertEquals(JsonPrimitive(PageSize.PINNED_ITEMS), variables["pinnedItemsFirst"])
+        assertEquals(JsonPrimitive("github"), variables["login"])
     }
+
+    @Test
+    fun `统一资料查询缺失owner时仍返回失败`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"login":"octocat","gists":{"totalCount":0}},"repositoryOwner":null}}"""))
+        assertTrue(repository.getProfileOwner("missing") is ApiResult.Failure)
+    }
+
+    private fun takeVariables() =
+        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
 }

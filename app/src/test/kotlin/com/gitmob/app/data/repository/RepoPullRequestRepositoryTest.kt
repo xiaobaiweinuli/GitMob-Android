@@ -5,12 +5,18 @@ import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.CommentAuthorAssociation
 import com.gitmob.app.data.model.CreateRepoPullRequestInput
 import com.gitmob.app.data.model.RepoPullRequestFilter
+import com.gitmob.app.data.model.RepoPullRequestMergeMethod
+import com.gitmob.app.data.model.UpdateRepoPullRequestInput
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
@@ -28,6 +34,7 @@ class RepoPullRequestRepositoryTest {
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoPullRequestRepository
     private val json = Json { ignoreUnknownKeys = true }
+    private val metadataFields = listOf("refs", "labels", "milestones", "assignableUsers", "mentionableUsers")
 
     @Before
     fun setUp() {
@@ -55,7 +62,7 @@ class RepoPullRequestRepositoryTest {
     fun `default list filter omits optional empty variables`() = runTest {
         server.enqueue(MockResponse().setBody(pageJson()))
 
-        val result = repository.getPullRequests("octo", "repo", RepoPullRequestFilter())
+        val result = repository.getPullRequests("octo", "repo", RepoPullRequestFilter(), after = "previous")
 
         assertTrue(result is ApiResult.Success)
         val page = (result as ApiResult.Success).data
@@ -71,6 +78,9 @@ class RepoPullRequestRepositoryTest {
         assertFalse("headRefName:" in query)
         assertTrue("states" in variables)
         assertTrue("orderBy" in variables)
+        assertEquals(JsonPrimitive(PageSize.REPO_ISSUES), variables["first"])
+        assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
+        assertEquals(JsonPrimitive("previous"), variables["after"])
     }
 
     @Test
@@ -99,6 +109,7 @@ class RepoPullRequestRepositoryTest {
         assertEquals("bug", labels[0].name)
         assertEquals("d73a4a", labels[0].color)
         assertEquals("LA_1", labels[0].id)
+        assertEquals(JsonPrimitive(PageSize.METADATA), takeVariables()["first"])
     }
 
     @Test
@@ -122,6 +133,8 @@ class RepoPullRequestRepositoryTest {
         val secondVariables = json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
         assertFalse("after" in firstVariables)
         assertEquals("C1", secondVariables.getValue("after").jsonPrimitive.content)
+        assertEquals(JsonPrimitive(PageSize.METADATA), firstVariables["first"])
+        assertEquals(JsonPrimitive(PageSize.METADATA), secondVariables["first"])
     }
 
     @Test
@@ -147,6 +160,109 @@ class RepoPullRequestRepositoryTest {
         assertEquals("BASE", input.getValue("repositoryId").jsonPrimitive.content)
         assertEquals("HEAD", input.getValue("headRepositoryId").jsonPrimitive.content)
         assertEquals("viewer:feature/login", input.getValue("headRefName").jsonPrimitive.content)
+        assertEquals(JsonPrimitive(PageSize.METADATA), request.getValue("variables").jsonObject["metadataFirst"])
+        assertFalse("metadataFirst" in input)
+    }
+
+    @Test
+    fun `PR详情全部连接容量来自PageSize且保留评论游标`() = runTest {
+        val connections = """,
+            "comments":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}},
+            "reviews":{"nodes":[]},"reviewThreads":{"nodes":[]},"commits":{"nodes":[]}
+        """.trimIndent()
+        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"id":"R1","viewerPermission":"READ","mergeCommitAllowed":true,"squashMergeAllowed":true,"rebaseMergeAllowed":true,"pullRequest":${prNodeJson(connections)}}}}"""))
+        server.enqueue(MockResponse().setBody("[]"))
+
+        val detail = (repository.getPullRequest("octo", "repo", 1, commentsAfter = "previous") as ApiResult.Success).data
+
+        assertTrue(detail.comments.isEmpty())
+        assertTrue(detail.commentsHasNextPage)
+        assertEquals("next", detail.commentsEndCursor)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.ISSUE_COMMENTS), variables["commentsFirst"])
+        assertEquals(JsonPrimitive(PageSize.PULL_REQUEST_REVIEWS), variables["reviewsFirst"])
+        assertEquals(JsonPrimitive(PageSize.PULL_REQUEST_REVIEW_THREADS), variables["reviewThreadsFirst"])
+        assertEquals(JsonPrimitive(PageSize.PULL_REQUEST_REVIEW_COMMENTS), variables["reviewCommentsFirst"])
+        assertEquals(JsonPrimitive(PageSize.PULL_REQUEST_COMMITS), variables["commitsFirst"])
+        assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
+        assertEquals(JsonPrimitive("previous"), variables["after"])
+        assertEquals(PageSize.PULL_REQUEST_FILES.toString(), server.takeRequest().requestUrl?.queryParameter("per_page"))
+    }
+
+    @Test
+    fun `分支读取和创建元数据首续页使用对应容量`() = runTest {
+        server.enqueue(MockResponse().setBody(metadataPageJson("refs")))
+        assertTrue(repository.getBranches("octo", "repo") is ApiResult.Success)
+        val branches = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.BRANCHES), branches["first"])
+        assertFalse("after" in branches)
+
+        server.enqueue(MockResponse().setBody(metadataJson()))
+        metadataFields.forEach { server.enqueue(MockResponse().setBody(metadataPageJson(it))) }
+        val metadata = (repository.getCreateMetadata("octo", "repo") as ApiResult.Success).data
+
+        assertEquals("R1", metadata.repositoryId)
+        assertEquals("octo", metadata.viewerLogin)
+        val first = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.BRANCHES), first["branchesFirst"])
+        assertEquals(JsonPrimitive(PageSize.METADATA), first["metadataFirst"])
+        for (field in metadataFields) {
+            val variables = takeVariables()
+            assertEquals(JsonPrimitive(if (field == "refs") PageSize.BRANCHES else PageSize.METADATA), variables["first"])
+            assertEquals(JsonPrimitive("$field-next"), variables["after"])
+        }
+    }
+
+    @Test
+    fun `元数据续页失败不返回部分成功且重试重读原始页`() = runTest {
+        server.enqueue(MockResponse().setBody(metadataJson()))
+        server.enqueue(MockResponse().setResponseCode(403))
+        assertTrue(repository.getCreateMetadata("octo", "repo") is ApiResult.Failure)
+
+        server.enqueue(MockResponse().setBody(metadataJson()))
+        metadataFields.forEach { server.enqueue(MockResponse().setBody(metadataPageJson(it))) }
+        assertTrue(repository.getCreateMetadata("octo", "repo") is ApiResult.Success)
+        val requests = List(metadataFields.size + 3) { takeVariables() }
+        assertEquals(listOf(null, JsonPrimitive("refs-next"), null) + metadataFields.map { JsonPrimitive("$it-next") }, requests.map { it["after"] })
+        assertEquals(requests[0], requests[2])
+    }
+
+    @Test
+    fun `其余PR共享片段mutation只增加响应容量变量`() = runTest {
+        val mutations = listOf<Pair<String, suspend () -> ApiResult<*>>>(
+            "updatePullRequest" to suspend { repository.updatePullRequest(UpdateRepoPullRequestInput("PR1", "Title", "Body", "main", emptyList(), emptyList(), null)) },
+            "closePullRequest" to suspend { repository.closePullRequest("PR1") },
+            "reopenPullRequest" to suspend { repository.reopenPullRequest("PR1") },
+            "convertPullRequestToDraft" to suspend { repository.convertToDraft("PR1") },
+            "markPullRequestReadyForReview" to suspend { repository.markReadyForReview("PR1") },
+            "updatePullRequestBranch" to suspend { repository.updateBranch("PR1") },
+            "mergePullRequest" to suspend { repository.mergePullRequest("PR1", RepoPullRequestMergeMethod.SQUASH, null, null, "sha") },
+            "enablePullRequestAutoMerge" to suspend { repository.setAutoMerge("PR1", true, RepoPullRequestMergeMethod.SQUASH) },
+            "disablePullRequestAutoMerge" to suspend { repository.setAutoMerge("PR1", false, RepoPullRequestMergeMethod.SQUASH) },
+        )
+        for ((field, mutate) in mutations) {
+            server.enqueue(MockResponse().setBody("""{"data":{"$field":{"pullRequest":${prNodeJson()}}}}"""))
+            assertTrue(mutate() is ApiResult.Success)
+            val variables = takeVariables()
+            assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
+            val input = variables.getValue("input").jsonObject
+            assertFalse("metadataFirst" in input)
+            assertEquals(JsonPrimitive("PR1"), input["pullRequestId"])
+            if (field == "updatePullRequest") {
+                assertEquals(JsonArray(emptyList()), input["labelIds"])
+                assertEquals(JsonArray(emptyList()), input["assigneeIds"])
+                assertEquals(JsonNull, input["milestoneId"])
+            }
+        }
+    }
+
+    @Test
+    fun `PR列表详情和创建元数据缺失根节点时仍失败`() = runTest {
+        repeat(3) { server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"login":"octo"},"repository":null}}""")) }
+        assertTrue(repository.getPullRequests("octo", "repo", RepoPullRequestFilter()) is ApiResult.Failure)
+        assertTrue(repository.getPullRequest("octo", "repo", 1) is ApiResult.Failure)
+        assertTrue(repository.getCreateMetadata("octo", "repo") is ApiResult.Failure)
+        assertEquals(3, server.requestCount)
     }
 
     @Test
@@ -207,7 +323,7 @@ class RepoPullRequestRepositoryTest {
      * Apollo 对非空字段严格校验，PR 片段请求的全部 Boolean/Int/枚举字段都必须出现在 mock 里；
      * author/editor 是 Actor 接口，必须带 __typename。
      */
-    private fun prNodeJson() = """{
+    private fun prNodeJson(connections: String = "") = """{
         "id":"PR1","url":"https://github.com/octo/repo/pull/1","number":1,"title":"Fix",
         "body":"body","bodyHTML":"<p>body</p>","state":"OPEN","isDraft":false,"locked":false,
         "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z",
@@ -221,7 +337,7 @@ class RepoPullRequestRepositoryTest {
         "statusCheckRollup":null,"autoMergeRequest":null,
         "viewerCanClose":true,"viewerCanReopen":false,"viewerCanUpdate":true,"viewerCanLabel":true,
         "viewerCanAssign":true,"viewerCanSubscribe":true,"viewerCanEnableAutoMerge":false,
-        "viewerCanDisableAutoMerge":false,"viewerCanUpdateBranch":false,"viewerSubscription":null
+        "viewerCanDisableAutoMerge":false,"viewerCanUpdateBranch":false,"viewerSubscription":null$connections
     }""".trimIndent()
 
     private fun pageJson() = """
@@ -248,4 +364,15 @@ class RepoPullRequestRepositoryTest {
 
     private fun createPullRequestJson() =
         """{"data":{"createPullRequest":{"pullRequest":${prNodeJson()}}}}"""
+
+    private fun takeVariables() =
+        json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+
+    private fun metadataJson(): String {
+        val fields = metadataFields.joinToString(",") { """"$it":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"$it-next"}}""" }
+        return """{"data":{"viewer":{"login":"octo"},"repository":{"id":"R1","defaultBranchRef":{"name":"main"},$fields}}}"""
+    }
+
+    private fun metadataPageJson(field: String) =
+        """{"data":{"repository":{"$field":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""
 }

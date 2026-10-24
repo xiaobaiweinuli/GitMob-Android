@@ -3,7 +3,9 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.RepoIssueFilter
 import com.gitmob.app.data.model.RepoIssueStateFilter
@@ -14,7 +16,12 @@ import com.gitmob.app.data.model.CreateRepoIssueInput
 import com.gitmob.app.data.model.IssueStateReason
 import com.gitmob.app.data.model.UpdateRepoIssueInput
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -54,6 +61,9 @@ class RepoIssueRepositoryTest {
         assertTrue(body.contains("\"assignee\":\"*\""))
         assertTrue(body.contains("\"milestoneNumber\":\"7\""))
         assertTrue(body.contains("\"viewerSubscribed\":true"))
+        val variables = Json.parseToJsonElement(body).jsonObject.getValue("variables").jsonObject
+        assertEquals(JsonPrimitive(PageSize.REPO_ISSUES), variables["first"])
+        assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
     }
 
     @Test
@@ -68,6 +78,59 @@ class RepoIssueRepositoryTest {
         val secondRequest = server.takeRequest().body.readUtf8()
         assertTrue(firstRequest.contains("\"after\":null") || !firstRequest.contains("\"after\""))
         assertTrue(secondRequest.contains("\"after\":\"NEXT\""))
+        for (body in listOf(firstRequest, secondRequest)) {
+            val variables = Json.parseToJsonElement(body).jsonObject.getValue("variables").jsonObject
+            assertEquals(JsonPrimitive(PageSize.REPO_ISSUES), variables["first"])
+            assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
+        }
+    }
+
+    @Test
+    fun `详情评论和共享元数据容量来自PageSize且保留游标`() = runTest {
+        val comments = """{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}"""
+        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"id":"R1","viewerPermission":"READ","issue":${issueNodeJson(1, comments)}}}}"""))
+
+        val result = repository.getIssue("o", "r", 1, commentsAfter = "comment-next")
+
+        assertTrue(result is ApiResult.Success)
+        val variables = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.ISSUE_COMMENTS), variables["commentsFirst"])
+        assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
+        assertEquals(JsonPrimitive("comment-next"), variables["after"])
+    }
+
+    @Test
+    fun `三个元数据连接所有页均引用统一容量`() = runTest {
+        val loaders = listOf<Pair<String, suspend () -> ApiResult<*>>>(
+            "labels" to suspend { repository.getLabels("o", "r") },
+            "milestones" to suspend { repository.getMilestones("o", "r") },
+            "assignableUsers" to suspend { repository.getAssignableUsers("o", "r") },
+        )
+        for ((field, load) in loaders) {
+            server.enqueue(MockResponse().setBody("""{"data":{"repository":{"$field":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
+            server.enqueue(MockResponse().setBody("""{"data":{"repository":{"$field":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+
+            assertTrue(load() is ApiResult.Success)
+            val first = takeVariables()
+            val second = takeVariables()
+            assertEquals(JsonPrimitive(PageSize.METADATA), first["first"])
+            assertEquals(JsonPrimitive(PageSize.METADATA), second["first"])
+            assertFalse("after" in first)
+            assertEquals(JsonPrimitive("next"), second["after"])
+        }
+    }
+
+    @Test
+    fun `元数据下一页失败不缓存部分结果`() = runTest {
+        val first = """{"data":{"repository":{"labels":{"nodes":[{"id":"L1","name":"bug","color":"ff0000"}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""
+        server.enqueue(MockResponse().setBody(first))
+        server.enqueue(MockResponse().setResponseCode(403))
+        assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getLabels("o", "r"))
+
+        server.enqueue(MockResponse().setBody(first))
+        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+        assertEquals(listOf("bug"), (repository.getLabels("o", "r") as ApiResult.Success).data.map { it.name })
+        assertEquals(listOf(null, "next", null, "next"), List(4) { takeVariables()["after"]?.jsonPrimitive?.content })
     }
 
     @Test
@@ -124,10 +187,20 @@ class RepoIssueRepositoryTest {
         server.enqueue(MockResponse().setBody(mutationJson("closeIssue")))
         server.enqueue(MockResponse().setBody(mutationJson("reopenIssue")))
         assertTrue(repository.createIssue(CreateRepoIssueInput("R1", "T", "B")) is ApiResult.Success)
-        assertFalse(server.takeRequest().body.readUtf8().contains("issueTemplate"))
+        val createBody = server.takeRequest().body.readUtf8()
+        assertFalse(createBody.contains("issueTemplate"))
+        assertEquals(JsonPrimitive(PageSize.METADATA), Json.parseToJsonElement(createBody).jsonObject.getValue("variables").jsonObject["metadataFirst"])
         assertTrue(repository.updateIssue(UpdateRepoIssueInput("ISSUE_1", "T2", "B2")) is ApiResult.Success)
+        val update = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.METADATA), update["metadataFirst"])
+        val input = update.getValue("input").jsonObject
+        assertEquals(JsonArray(emptyList()), input["labelIds"])
+        assertEquals(JsonArray(emptyList()), input["assigneeIds"])
+        assertEquals(JsonNull, input["milestoneId"])
         assertTrue(repository.closeIssue("ISSUE_1", IssueStateReason.COMPLETED) is ApiResult.Success)
+        assertEquals(JsonPrimitive(PageSize.METADATA), takeVariables()["metadataFirst"])
         assertTrue(repository.reopenIssue("ISSUE_1") is ApiResult.Success)
+        assertEquals(JsonPrimitive(PageSize.METADATA), takeVariables()["metadataFirst"])
     }
 
     @Test
@@ -136,18 +209,28 @@ class RepoIssueRepositoryTest {
         assertTrue(repository.getIssues("o", "r", RepoIssueFilter()) is ApiResult.Failure)
     }
 
+    @Test
+    fun `缺失仓库根节点不伪造成空列表或详情`() = runTest {
+        repeat(2) { server.enqueue(MockResponse().setBody("""{"data":{"repository":null}}""")) }
+        assertTrue(repository.getIssues("o", "r", RepoIssueFilter()) is ApiResult.Failure)
+        assertTrue(repository.getIssue("o", "r", 1) is ApiResult.Failure)
+    }
+
+    private fun takeVariables() =
+        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+
     private fun pageJson(cursor: String?, hasNext: Boolean, number: Int = 1) = """
         {"data":{"repository":{"id":"REPO_1","viewerPermission":"ADMIN","viewerCanCreateIssues":true,"hasIssuesEnabled":true,"issues":{"totalCount":2,"nodes":[${issueNodeJson(number)}],"pageInfo":{"hasNextPage":$hasNext,"endCursor":${cursor?.let { "\"$it\"" } ?: "null"}}}}}}
     """.trimIndent()
 
     private fun mutationJson(name: String) = "{\"data\":{\"$name\":{\"issue\":${issueNodeJson(1)}}}}"
 
-    private fun issueNodeJson(number: Int) = """{
+    private fun issueNodeJson(number: Int, comments: String = """{"totalCount":1}""") = """{
         "id":"ISSUE_$number","url":"https://github.com/octo/repo/issues/$number","number":$number,"title":"Issue $number","body":"body","bodyHTML":"<p>body</p>","state":"OPEN","stateReason":null,
         "author":{"__typename":"User","login":"octo","avatarUrl":"https://a/u1.png"},"authorAssociation":"NONE",
         "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z",
         "includesCreatedEdit":false,"lastEditedAt":null,"editor":null,"locked":false,
-        "comments":{"totalCount":1},"labels":{"nodes":[]},"assignees":{"nodes":[]},"milestone":null,
+        "comments":$comments,"labels":{"nodes":[]},"assignees":{"nodes":[]},"milestone":null,
         "viewerCanClose":true,"viewerCanDelete":true,"viewerCanLabel":true,"viewerCanSetMilestone":true,"viewerCanUpdate":true,"viewerCanSubscribe":true,"viewerCanReopen":false,"viewerSubscription":"UNSUBSCRIBED"
     }""".trimIndent()
 }

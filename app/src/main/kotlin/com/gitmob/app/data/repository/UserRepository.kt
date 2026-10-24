@@ -89,7 +89,10 @@ class UserRepository @Inject constructor(
      * 与 [getViewerProfile] 的唯一区别就是跳过缓存 get 这一步。
      */
     suspend fun getViewerProfileFresh(): ApiResult<ViewerProfile> =
-        when (val result = apolloClient.query(ViewerProfileQuery()).executeAsApiResult()) {
+        when (val result = apolloClient.query(ViewerProfileQuery(
+            socialAccountsFirst = PageSize.SOCIAL_ACCOUNTS,
+            pinnedItemsFirst = PageSize.PINNED_ITEMS,
+        )).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 val data = result.data
@@ -107,7 +110,11 @@ class UserRepository @Inject constructor(
 
     /** 查看别人（或用 login 查自己也可以）资料用这个，Follow 按钮要用到的 viewerCanFollow 等字段同一套 */
     suspend fun getUserProfile(login: String): ApiResult<ViewerProfile> =
-        when (val result = apolloClient.query(UserProfileQuery(login)).executeAsApiResult()) {
+        when (val result = apolloClient.query(UserProfileQuery(
+            login = login,
+            socialAccountsFirst = PageSize.SOCIAL_ACCOUNTS,
+            pinnedItemsFirst = PageSize.PINNED_ITEMS,
+        )).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 val node = result.data.user ?: throw UserVisibleException(R.string.error_user_not_found)
@@ -176,7 +183,7 @@ class UserRepository @Inject constructor(
 
     suspend fun getFollowers(login: String, after: String? = null): ApiResult<PagedUsers> =
         when (val result = apolloClient.query(
-            FollowersQuery(login, Optional.presentIfNotNull(after)),
+            FollowersQuery(login, Optional.presentIfNotNull(after), PageSize.USER_LIST),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -194,7 +201,7 @@ class UserRepository @Inject constructor(
 
     suspend fun getFollowing(login: String, after: String? = null): ApiResult<PagedUsers> =
         when (val result = apolloClient.query(
-            FollowingQuery(login, Optional.presentIfNotNull(after)),
+            FollowingQuery(login, Optional.presentIfNotNull(after), PageSize.USER_LIST),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -221,7 +228,7 @@ class UserRepository @Inject constructor(
      */
     suspend fun getOrganizations(login: String? = null): ApiResult<List<SimpleOrg>> {
         if (login == null) {
-            return when (val result = apolloClient.query(ViewerOrganizationsQuery()).executeAsApiResult()) {
+            return when (val result = apolloClient.query(ViewerOrganizationsQuery(PageSize.ORGS_PREVIEW)).executeAsApiResult()) {
                 is ApiResult.Failure -> result
                 is ApiResult.Success -> ApiResult.Success(
                     result.data.viewer.organizations.nodes.orEmpty().filterNotNull()
@@ -229,7 +236,7 @@ class UserRepository @Inject constructor(
                 )
             }
         }
-        return when (val result = apolloClient.query(UserOrganizationsQuery(login)).executeAsApiResult()) {
+        return when (val result = apolloClient.query(UserOrganizationsQuery(login, PageSize.ORGS_PREVIEW)).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> ApiResult.Success(
                 result.data.user?.organizations?.nodes.orEmpty().filterNotNull()
@@ -243,7 +250,11 @@ class UserRepository @Inject constructor(
      * 用 repositoryOwner(login:) + __typename 分流，一次查询搞定两种情况。
      */
     suspend fun getProfileOwner(login: String): ApiResult<ProfileOwner> =
-        when (val result = apolloClient.query(ProfileOwnerQuery(login)).executeAsApiResult()) {
+        when (val result = apolloClient.query(ProfileOwnerQuery(
+            login = login,
+            socialAccountsFirst = PageSize.SOCIAL_ACCOUNTS,
+            pinnedItemsFirst = PageSize.PINNED_ITEMS,
+        )).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 val data = result.data
@@ -418,7 +429,7 @@ class UserRepository @Inject constructor(
      */
     suspend fun getUserStars(login: String, after: String? = null): ApiResult<PagedStarredRepos> =
         when (val result = apolloClient.query(
-            UserStarsQuery(login, Optional.presentIfNotNull(after)),
+            UserStarsQuery(login, Optional.presentIfNotNull(after), PageSize.STARRED_REPOS, PageSize.TOPICS_PER_REPO),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -462,7 +473,7 @@ class UserRepository @Inject constructor(
      */
     suspend fun getUserOrgs(login: String, after: String? = null): ApiResult<PagedOrgs> =
         when (val result = apolloClient.query(
-            UserOrgsQuery(login, Optional.presentIfNotNull(after)),
+            UserOrgsQuery(login, Optional.presentIfNotNull(after), PageSize.ORGS),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -484,7 +495,7 @@ class UserRepository @Inject constructor(
      */
     suspend fun getOrgMembers(orgLogin: String, after: String? = null): ApiResult<PagedUsers> =
         when (val result = apolloClient.query(
-            OrgMembersQuery(orgLogin, Optional.presentIfNotNull(after)),
+            OrgMembersQuery(orgLogin, Optional.presentIfNotNull(after), PageSize.USER_LIST),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {

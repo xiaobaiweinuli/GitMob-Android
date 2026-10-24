@@ -24,8 +24,6 @@ import com.gitmob.app.graphql.type.OrderDirection
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val GIST_FILE_METADATA_LIMIT = 100
-private const val GIST_SCAN_BATCH_LIMIT = 5
 private const val GIST_CACHE_TTL_MS = 5 * 60_000L
 
 @Singleton
@@ -141,7 +139,7 @@ class GistRepository @Inject constructor(
         while (
             collected.size < PageSize.GISTS &&
             hasNextPage &&
-            scannedBatches < GIST_SCAN_BATCH_LIMIT
+            scannedBatches < PageSize.GIST_SCAN_BATCH_LIMIT
         ) {
             val batch = when (val result = fetchBatch(targetLogin, sort, cursor)) {
                 is ApiResult.Failure -> return result
@@ -243,7 +241,12 @@ class GistRepository @Inject constructor(
         val orderBy = Optional.presentIfNotNull(sort.toGistOrder())
         val cursor = Optional.presentIfNotNull(after)
         return if (login == null) {
-            when (val result = apolloClient.query(ViewerGistsQuery(cursor, orderBy)).executeAsApiResult()) {
+            when (val result = apolloClient.query(ViewerGistsQuery(
+                after = cursor,
+                orderBy = orderBy,
+                first = PageSize.GISTS,
+                fileMetadataLimit = PageSize.GIST_FILE_METADATA_LIMIT,
+            )).executeAsApiResult()) {
                 is ApiResult.Failure -> result
                 is ApiResult.Success -> ApiResult.Success(
                     GistBatch(
@@ -254,7 +257,13 @@ class GistRepository @Inject constructor(
                 )
             }
         } else {
-            when (val result = apolloClient.query(UserGistsQuery(login, cursor, orderBy)).executeAsApiResult()) {
+            when (val result = apolloClient.query(UserGistsQuery(
+                login = login,
+                after = cursor,
+                orderBy = orderBy,
+                first = PageSize.GISTS,
+                fileMetadataLimit = PageSize.GIST_FILE_METADATA_LIMIT,
+            )).executeAsApiResult()) {
                 is ApiResult.Failure -> result
                 is ApiResult.Success -> ApiResult.Success(
                     GistBatch(
@@ -312,7 +321,7 @@ class GistRepository @Inject constructor(
             commentCount = comments.totalCount,
             previewFile = previewFiles.orEmpty().filterNotNull().firstOrNull()?.toDomain(),
             fileCount = fileNodes.size,
-            isFileCountCapped = fileNodes.size >= GIST_FILE_METADATA_LIMIT,
+            isFileCountCapped = fileNodes.size >= PageSize.GIST_FILE_METADATA_LIMIT,
         )
     }
 

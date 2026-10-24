@@ -1,5 +1,5 @@
 # 用户/组织统一资料查询：只有 login 无法预判类型，repositoryOwner(login:) + __typename 分流
-query ProfileOwner($login: String!) {
+query ProfileOwner($login: String!, $socialAccountsFirst: Int!, $pinnedItemsFirst: Int!) {
   viewer {
     login
     gists(privacy: ALL) { totalCount }
@@ -18,7 +18,7 @@ query ProfileOwner($login: String!) {
       email
       pronouns
       status { emoji message }
-      socialAccounts(first: 10) { nodes { displayName provider url } }
+      socialAccounts(first: $socialAccountsFirst) { nodes { displayName provider url } }
       isDeveloperProgramMember
       isBountyHunter
       isCampusExpert
@@ -33,7 +33,7 @@ query ProfileOwner($login: String!) {
       gists(privacy: PUBLIC) { totalCount }
       websiteUrl
       repositories(ownerAffiliations: [OWNER]) { totalCount }
-      pinnedItems(first: 6, types: [REPOSITORY]) {
+      pinnedItems(first: $pinnedItemsFirst, types: [REPOSITORY]) {
         nodes { ...PinnedRepoFields }
       }
     }
@@ -46,7 +46,7 @@ query ProfileOwner($login: String!) {
       viewerCanCreateRepositories
       repositories(ownerAffiliations: [OWNER]) { totalCount }
       viewerIsFollowing
-      pinnedItems(first: 6, types: [REPOSITORY]) {
+      pinnedItems(first: $pinnedItemsFirst, types: [REPOSITORY]) {
         nodes { ...PinnedRepoFields }
       }
     }

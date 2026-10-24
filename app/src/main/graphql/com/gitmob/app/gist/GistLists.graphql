@@ -1,24 +1,25 @@
 # Gist 列表（当前用户）：隐私 ALL，排序/游标由变量控制
-query ViewerGists($after: String, $orderBy: GistOrder) {
+query ViewerGists($after: String, $orderBy: GistOrder, $first: Int!, $fileMetadataLimit: Int!) {
   viewer {
     login
-    gists(first: 20, after: $after, privacy: ALL, orderBy: $orderBy) {
+    gists(first: $first, after: $after, privacy: ALL, orderBy: $orderBy) {
       ...GistConnectionFields
     }
   }
 }
 
 # Gist 列表（他人公开）：根字段 user(login:)，viewer.login 仅用于归属判断
-query UserGists($login: String!, $after: String, $orderBy: GistOrder) {
+query UserGists($login: String!, $after: String, $orderBy: GistOrder, $first: Int!, $fileMetadataLimit: Int!) {
   viewer { login }
   user(login: $login) {
     login
-    gists(first: 20, after: $after, privacy: PUBLIC, orderBy: $orderBy) {
+    gists(first: $first, after: $after, privacy: PUBLIC, orderBy: $orderBy) {
       ...GistConnectionFields
     }
   }
 }
 
+# $fileMetadataLimit 由消费本片段的 operation 声明，并由 Repository 从 PageSize 传入。
 fragment GistConnectionFields on GistConnection {
   edges {
     cursor
@@ -34,6 +35,7 @@ fragment GistConnectionFields on GistConnection {
       stargazerCount
       comments { totalCount }
       url
+      # 只取第一个文件用于卡片预览，不是普通文件列表分页。
       previewFiles: files(limit: 1) {
         name
         text(truncate: 4000)
@@ -42,7 +44,7 @@ fragment GistConnectionFields on GistConnection {
         isImage
         language { name color }
       }
-      fileMetadata: files(limit: 100) { name }
+      fileMetadata: files(limit: $fileMetadataLimit) { name }
     }
   }
   pageInfo { hasNextPage endCursor }

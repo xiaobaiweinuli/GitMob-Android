@@ -7,6 +7,7 @@ import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.PagedStarredRepos
 import com.gitmob.app.data.model.StarredRepo
@@ -57,7 +58,7 @@ class StarRepository @Inject constructor(
 
     /** 下拉刷新/增删改后强制重新拉取列表，不走缓存 */
     suspend fun getListsFresh(): ApiResult<List<UserListSummary>> =
-        when (val result = apolloClient.query(ViewerListsQuery()).executeAsApiResult()) {
+        when (val result = apolloClient.query(ViewerListsQuery(PageSize.STAR_LISTS)).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 // 每个列表这里只读取 totalCount；单节点容量不是列表分页。
@@ -99,7 +100,11 @@ class StarRepository @Inject constructor(
         // viewer/user 两个根字段结构 100% 一致，共用 StarredRepoFields 片段做映射。
         if (login == null) {
             return when (val result = apolloClient.query(
-                ViewerStarredReposQuery(Optional.presentIfNotNull(after)),
+                ViewerStarredReposQuery(
+                    after = Optional.presentIfNotNull(after),
+                    first = PageSize.STARRED_REPOS,
+                    topicsFirst = PageSize.TOPICS_PER_REPO,
+                ),
             ).executeAsApiResult()) {
                 is ApiResult.Failure -> result
                 is ApiResult.Success -> safeCall {
@@ -115,7 +120,12 @@ class StarRepository @Inject constructor(
             }
         }
         return when (val result = apolloClient.query(
-            UserStarredReposQuery(login, Optional.presentIfNotNull(after)),
+            UserStarredReposQuery(
+                login = login,
+                after = Optional.presentIfNotNull(after),
+                first = PageSize.STARRED_REPOS,
+                topicsFirst = PageSize.TOPICS_PER_REPO,
+            ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -135,7 +145,12 @@ class StarRepository @Inject constructor(
     /** 某个具体列表内的仓库，用 node(id:) 通用查询（UserList 实现了 Node 接口，已核实） */
     suspend fun getListItems(listId: String, after: String? = null): ApiResult<PagedStarredRepos> =
         when (val result = apolloClient.query(
-            ListItemsQuery(listId, Optional.presentIfNotNull(after)),
+            ListItemsQuery(
+                listId = listId,
+                after = Optional.presentIfNotNull(after),
+                first = PageSize.LIST_ITEMS,
+                topicsFirst = PageSize.TOPICS_PER_REPO,
+            ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -155,10 +170,13 @@ class StarRepository @Inject constructor(
     /**
      * "添加到列表"弹窗打开时，需要知道这个仓库当前已经在哪些列表里（预勾选）。
      * 公开 API 没有从仓库反查所属清单的字段（Repository.lists 不存在，已核实过），
-     * 只能反过来：拉出全部列表 + 每个列表的 items，客户端自己算交集。
+     * 只能反过来：预取列表 + 每个列表的 items，客户端自己算交集。
      */
     suspend fun getListsContaining(repoId: String): ApiResult<Set<String>> =
-        when (val result = apolloClient.query(ListsContainingRepoQuery()).executeAsApiResult()) {
+        when (val result = apolloClient.query(ListsContainingRepoQuery(
+            listsFirst = PageSize.STAR_LISTS_SCAN_LIMIT,
+            itemsFirst = PageSize.LIST_ITEMS_SCAN_LIMIT,
+        )).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 result.data.viewer.lists.nodes.orEmpty().filterNotNull()
