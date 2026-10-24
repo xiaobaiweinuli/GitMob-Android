@@ -51,6 +51,13 @@ object PageSize {
     /** Gist 列表底层扫描页和 UI 目标页尺寸 */
     const val GISTS = 20
 
+    /** Gist REST 修订、复刻与评论列表。 */
+    const val GIST_REVISIONS = 30
+    /** 查找初始修订时使用 REST 允许的最大页容量，避免旧 Gist 产生过多请求。 */
+    const val GIST_REVISION_SCAN = 100
+    const val GIST_FORKS = 30
+    const val GIST_COMMENTS = 30
+
     /** 普通组织列表，以及创建仓库时的所有者组织选择器。 */
     const val ORGS = 20
 

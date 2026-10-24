@@ -72,10 +72,28 @@ fun UserListScreen(
             // WATCHERS 走 RepoWatchersScreen，一般不会到这里；兜底保持一致（仓库语境用 common_watchers）
             UserListMode.WATCHERS -> R.string.common_watchers
             UserListMode.STARGAZERS -> R.string.repo_stargazers
+            UserListMode.GIST_STARGAZERS -> R.string.gist_stargazers
         },
     )
     UserListBody(
         titleContent = { Text(title) },
+        viewModel = viewModel,
+        onUserClick = onUserClick,
+        onBack = onBack,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GistStargazersScreen(
+    nodeId: String,
+    onBack: () -> Unit,
+    onUserClick: (String) -> Unit,
+    viewModel: UserListViewModel = hiltViewModel(),
+) {
+    LaunchedEffect(nodeId) { viewModel.initForGistStargazers(nodeId) }
+    UserListBody(
+        titleContent = { Text(stringResource(R.string.gist_stargazers)) },
         viewModel = viewModel,
         onUserClick = onUserClick,
         onBack = onBack,

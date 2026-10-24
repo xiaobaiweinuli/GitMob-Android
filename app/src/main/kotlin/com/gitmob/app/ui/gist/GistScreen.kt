@@ -54,6 +54,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.GistCategory
+import com.gitmob.app.data.model.GistListItem
 import com.gitmob.app.data.model.GistSort
 import com.gitmob.app.data.model.GistVisibility
 import com.gitmob.app.ui.common.FilterCapsuleMenu
@@ -66,7 +67,8 @@ import kotlinx.coroutines.flow.filter
 fun GistScreen(
     login: String? = null,
     onBack: (() -> Unit)? = null,
-    onGistClick: (url: String) -> Unit = {},
+    onGistClick: (GistListItem) -> Unit = {},
+    onForkSourceClick: (id: String) -> Unit = {},
     viewModel: GistViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(login) { viewModel.init(login) }
@@ -121,6 +123,7 @@ fun GistScreen(
                         onRetry = viewModel::retry,
                         onLoadMore = viewModel::loadMore,
                         onGistClick = onGistClick,
+                        onForkSourceClick = onForkSourceClick,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -180,6 +183,8 @@ private fun GistControls(
             optionLabel = { stringResource(it.labelRes) },
             onSelected = onVisibilitySelected,
             filterLabel = stringResource(R.string.work_filter_visibility),
+            neutralLabel = stringResource(R.string.work_filter_visibility),
+            isNeutral = { it == GistVisibility.ALL },
         )
     }
 }
@@ -190,7 +195,8 @@ private fun GistList(
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
-    onGistClick: (String) -> Unit,
+    onGistClick: (GistListItem) -> Unit,
+    onForkSourceClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -254,6 +260,7 @@ private fun GistList(
                                 when {
                                     state.hasNextPage -> R.string.gist_empty_batch
                                     state.selectedVisibility != GistVisibility.ALL -> R.string.gist_empty_filtered
+                                    state.selectedCategory == GistCategory.ALL -> R.string.gist_empty_all
                                     state.selectedCategory == GistCategory.ORIGINAL -> R.string.gist_empty_original
                                     else -> R.string.gist_empty_forked
                                 },
@@ -279,7 +286,8 @@ private fun GistList(
                 else -> items(state.items, key = { it.id }) { gist ->
                     GistCard(
                         gist = gist,
-                        onClick = { onGistClick(gist.url) },
+                        onClick = { onGistClick(gist) },
+                        onForkSourceClick = onForkSourceClick,
                     )
                 }
             }
@@ -317,6 +325,7 @@ private fun androidx.compose.foundation.lazy.LazyItemScope.FullHeightMessage(
 
 private val GistCategory.labelRes: Int
     @StringRes get() = when (this) {
+        GistCategory.ALL -> R.string.common_all
         GistCategory.ORIGINAL -> R.string.gist_category_original
         GistCategory.FORKED -> R.string.gist_category_forked
     }

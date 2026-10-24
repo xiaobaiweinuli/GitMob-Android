@@ -67,6 +67,11 @@ import com.gitmob.app.ui.reporeleases.RepoReleaseDetailScreen
 import com.gitmob.app.ui.reporeleases.RepoReleaseEditorScreen
 import com.gitmob.app.ui.reporeleases.RepoReleaseListScreen
 import com.gitmob.app.ui.common.PlaceholderScreen
+import com.gitmob.app.ui.gist.GistDetailScreen
+import com.gitmob.app.ui.gist.GistFileEditorScreen
+import com.gitmob.app.ui.gist.GistForksScreen
+import com.gitmob.app.ui.gist.GistRevisionDetailScreen
+import com.gitmob.app.ui.gist.GistRevisionsScreen
 import com.gitmob.app.ui.gist.GistScreen
 import com.gitmob.app.ui.home.HomeScreen
 import com.gitmob.app.ui.inbox.InboxScreen
@@ -91,6 +96,7 @@ import com.gitmob.app.ui.stars.StarsScreen
 import com.gitmob.app.ui.userlist.OrgMembersScreen
 import com.gitmob.app.ui.userlist.RepoWatchersScreen
 import com.gitmob.app.ui.userlist.RepoStargazersScreen
+import com.gitmob.app.ui.userlist.GistStargazersScreen
 import com.gitmob.app.ui.userlist.UserListMode
 import com.gitmob.app.ui.userlist.UserListScreen
 import com.gitmob.app.ui.userstars.UserStarredReposScreen
@@ -289,7 +295,12 @@ private fun LoggedInApp(
             )
         }
         entry<GistRoute> {
-            GistScreen(onGistClick = openExternalUrl)
+            GistScreen(
+                onGistClick = { gist ->
+                    navigator.navigate(GistDetailRoute(gist.apiName))
+                },
+                onForkSourceClick = { id -> navigator.navigate(GistDetailRoute(id)) },
+            )
         }
         entry<SettingsRoute> {
             SettingsScreen(
@@ -861,7 +872,100 @@ private fun LoggedInApp(
             GistScreen(
                 login = route.login,
                 onBack = { navigator.goBack() },
-                onGistClick = openExternalUrl,
+                onGistClick = { gist ->
+                    navigator.navigate(GistDetailRoute(gist.apiName))
+                },
+                onForkSourceClick = { id -> navigator.navigate(GistDetailRoute(id)) },
+            )
+        }
+
+        entry<GistDetailRoute> { route ->
+            GistDetailScreen(
+                gistId = route.id,
+                onBack = { navigator.goBack() },
+                onOwnerClick = { navigator.navigate(ProfileRoute(it)) },
+                onForkSourceClick = { navigator.navigate(GistDetailRoute(it)) },
+                onRevisions = { navigator.navigate(GistRevisionsRoute(route.id)) },
+                onForks = { navigator.navigate(GistForksRoute(route.id)) },
+                onStargazers = { nodeId -> navigator.navigate(GistStargazersRoute(nodeId)) },
+                onAddFile = { navigator.navigate(GistFileEditorRoute(route.id)) },
+                onEditFile = { file -> navigator.navigate(GistFileEditorRoute(route.id, file.filename)) },
+                onCompose = { request ->
+                    navigator.navigate(
+                        ConversationComposerRoute(
+                            owner = "",
+                            name = "",
+                            number = 0,
+                            target = request.target,
+                            subjectId = request.subjectId,
+                            initialText = request.initialText,
+                            commentId = request.commentId,
+                            replyToId = request.replyToId,
+                            reviewEvent = request.reviewEvent,
+                        ),
+                    )
+                },
+                onForked = { fork -> navigator.navigate(GistDetailRoute(fork.id)) },
+                onDeleted = { navigator.goBack() },
+            )
+        }
+
+        entry<GistRevisionsRoute> { route ->
+            GistRevisionsScreen(
+                gistId = route.id,
+                onBack = { navigator.goBack() },
+                onRevisionClick = { revision, previous ->
+                    navigator.navigate(
+                        GistRevisionDetailRoute(
+                            id = route.id,
+                            version = revision.version,
+                            previousVersion = previous,
+                            committedAt = revision.committedAt,
+                            additions = revision.additions,
+                            deletions = revision.deletions,
+                            totalChanges = revision.totalChanges,
+                        ),
+                    )
+                },
+                onUserClick = { navigator.navigate(ProfileRoute(it)) },
+            )
+        }
+
+        entry<GistRevisionDetailRoute> { route ->
+            GistRevisionDetailScreen(
+                gistId = route.id,
+                version = route.version,
+                previousVersion = route.previousVersion,
+                committedAt = route.committedAt,
+                additions = route.additions,
+                deletions = route.deletions,
+                totalChanges = route.totalChanges,
+                onBack = { navigator.goBack() },
+            )
+        }
+
+        entry<GistForksRoute> { route ->
+            GistForksScreen(
+                gistId = route.id,
+                onBack = { navigator.goBack() },
+                onUserClick = { navigator.navigate(ProfileRoute(it)) },
+            )
+        }
+
+        entry<GistStargazersRoute> { route ->
+            GistStargazersScreen(
+                nodeId = route.nodeId,
+                onBack = { navigator.goBack() },
+                onUserClick = { navigator.navigate(ProfileRoute(it)) },
+            )
+        }
+
+        entry<GistFileEditorRoute> { route ->
+            GistFileEditorScreen(
+                gistId = route.id,
+                filename = route.filename,
+                onBack = { navigator.goBack() },
+                onSaved = { navigator.goBack() },
             )
         }
 

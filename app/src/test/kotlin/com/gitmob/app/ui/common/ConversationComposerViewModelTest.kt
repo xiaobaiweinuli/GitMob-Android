@@ -7,6 +7,7 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.core.event.GistUpdateEventBus
 import com.gitmob.app.core.markdown.MarkdownRenderer
 import com.gitmob.app.data.model.IssueComment
 import com.gitmob.app.data.model.RepoPullRequestReview
@@ -14,6 +15,7 @@ import com.gitmob.app.data.model.RepoPullRequestReviewEvent
 import com.gitmob.app.data.repository.RepoDiscussionRepository
 import com.gitmob.app.data.repository.RepoIssueRepository
 import com.gitmob.app.data.repository.RepoPullRequestRepository
+import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.navigation.ConversationComposerTarget
 import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
@@ -119,6 +121,36 @@ class ConversationComposerViewModelTest {
         viewModel.viewModelScope.cancel()
     }
 
+    @Test
+    fun `Gist comment success emits Gist refresh event`() = runTest {
+        val gistRepository = mockk<GistRepository>()
+        coEvery { gistRepository.createComment("gist-id", "hello") } returns ApiResult.Success(mockk())
+        val eventBus = GistUpdateEventBus()
+        val viewModel = viewModel(gistRepository = gistRepository, gistEventBus = eventBus)
+        viewModel.init(
+            owner = "",
+            name = "",
+            number = 0,
+            target = ConversationComposerTarget.GIST_COMMENT,
+            subjectId = "gist-id",
+            initialText = "",
+            commentId = null,
+            replyToId = null,
+            reviewEvent = null,
+        )
+
+        eventBus.events.test {
+            viewModel.updateText("hello")
+            viewModel.submit()
+            advanceUntilIdle()
+
+            assertEquals("gist-id", awaitItem())
+            coVerify(exactly = 1) { gistRepository.createComment("gist-id", "hello") }
+            cancelAndIgnoreRemainingEvents()
+        }
+        viewModel.viewModelScope.cancel()
+    }
+
     private fun init(viewModel: ConversationComposerViewModel) {
         viewModel.init(
             owner = "owner",
@@ -137,16 +169,20 @@ class ConversationComposerViewModelTest {
         issueRepository: RepoIssueRepository = mockk(relaxed = true),
         pullRequestRepository: RepoPullRequestRepository = mockk(relaxed = true),
         discussionRepository: RepoDiscussionRepository = mockk(relaxed = true),
+        gistRepository: GistRepository = mockk(relaxed = true),
         markdownRenderer: MarkdownRenderer = object : MarkdownRenderer {
             override fun renderToHtml(markdown: String): String = markdown
         },
         eventBus: RepoUpdateEventBus = RepoUpdateEventBus(),
+        gistEventBus: GistUpdateEventBus = GistUpdateEventBus(),
     ) = ConversationComposerViewModel(
         issueRepository = issueRepository,
         pullRequestRepository = pullRequestRepository,
         discussionRepository = discussionRepository,
+        gistRepository = gistRepository,
         markdownRenderer = markdownRenderer,
         errorEventBus = ErrorEventBus(),
         repoUpdateEventBus = eventBus,
+        gistUpdateEventBus = gistEventBus,
     )
 }

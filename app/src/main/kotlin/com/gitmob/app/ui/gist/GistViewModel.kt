@@ -32,14 +32,16 @@ data class GistCategoryUiState(
 )
 
 data class GistUiState(
-    val selectedCategory: GistCategory = GistCategory.ORIGINAL,
+    val selectedCategory: GistCategory = GistCategory.ALL,
     val selectedSort: GistSort = GistSort.RECENTLY_UPDATED,
     val selectedVisibility: GistVisibility = GistVisibility.ALL,
+    val all: GistCategoryUiState = GistCategoryUiState(),
     val original: GistCategoryUiState = GistCategoryUiState(),
     val forked: GistCategoryUiState = GistCategoryUiState(),
 ) {
     val current: GistCategoryUiState
         get() = when (selectedCategory) {
+            GistCategory.ALL -> all
             GistCategory.ORIGINAL -> original
             GistCategory.FORKED -> forked
         }
@@ -75,7 +77,7 @@ class GistViewModel @Inject constructor(
         GistUiState(
             selectedCategory = savedStateHandle.get<String>(CATEGORY_KEY)
                 ?.let { value -> runCatching { GistCategory.valueOf(value) }.getOrNull() }
-                ?: GistCategory.ORIGINAL,
+                ?: GistCategory.ALL,
             selectedSort = savedStateHandle.get<String>(SORT_KEY)
                 ?.let { value -> runCatching { GistSort.valueOf(value) }.getOrNull() }
                 ?: GistSort.RECENTLY_UPDATED,
@@ -280,6 +282,7 @@ class GistViewModel @Inject constructor(
 }
 
 private fun GistUiState.bucket(category: GistCategory): GistCategoryUiState = when (category) {
+    GistCategory.ALL -> all
     GistCategory.ORIGINAL -> original
     GistCategory.FORKED -> forked
 }
@@ -288,6 +291,7 @@ private fun GistUiState.withBucket(
     category: GistCategory,
     transform: (GistCategoryUiState) -> GistCategoryUiState,
 ): GistUiState = when (category) {
+    GistCategory.ALL -> copy(all = transform(all))
     GistCategory.ORIGINAL -> copy(original = transform(original))
     GistCategory.FORKED -> copy(forked = transform(forked))
 }

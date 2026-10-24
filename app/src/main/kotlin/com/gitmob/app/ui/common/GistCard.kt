@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Star
@@ -39,6 +40,7 @@ import com.gitmob.app.data.model.GistListItem
 fun GistCard(
     gist: GistListItem,
     onClick: () -> Unit,
+    onForkSourceClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val preview = gist.previewFile
@@ -75,6 +77,18 @@ fun GistCard(
                         fg = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }
+            }
+
+            val sourceId = gist.sourceId
+            val sourceOwner = gist.sourceOwnerLogin
+            if (gist.isFork && sourceId != null && sourceOwner != null) {
+                RepoMetadataLinkRow(
+                    icon = Icons.AutoMirrored.Default.CallSplit,
+                    text = stringResource(R.string.gist_forked_from, sourceOwner),
+                    contentDescription = stringResource(R.string.gist_open_source),
+                    onClick = { onForkSourceClick(sourceId) },
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
 
             gist.description?.takeIf { it.isNotBlank() }?.let { description ->

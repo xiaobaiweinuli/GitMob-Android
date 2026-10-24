@@ -19,6 +19,29 @@ query UserGists($login: String!, $after: String, $orderBy: GistOrder, $first: In
   }
 }
 
+# Gist 详情动作区：计数与 viewer 星标状态来自 Starrable/Gist 连接，不能用 REST 当前页数量代替。
+query GistSocial($id: ID!) {
+  node(id: $id) {
+    ... on Gist {
+      stargazerCount
+      viewerHasStarred
+      forks(first: 1) { totalCount }
+    }
+  }
+}
+
+query GistStargazers($id: ID!, $after: String, $first: Int!) {
+  node(id: $id) {
+    ... on Gist {
+      stargazers(first: $first, after: $after) {
+        totalCount
+        nodes { login name avatarUrl bio }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}
+
 # $fileMetadataLimit 由消费本片段的 operation 声明，并由 Repository 从 PageSize 传入。
 fragment GistConnectionFields on GistConnection {
   edges {

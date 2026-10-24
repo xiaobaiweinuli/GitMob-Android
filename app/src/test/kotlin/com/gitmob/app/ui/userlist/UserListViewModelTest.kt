@@ -6,6 +6,7 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.data.model.PagedUsers
 import com.gitmob.app.data.model.SimpleUser
 import com.gitmob.app.data.repository.RepoDetailRepository
+import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
@@ -31,7 +32,7 @@ class UserListViewModelTest {
             ApiResult.Success(PagedUsers(1, listOf(SimpleUser("a", null, null, null)), false, null))
         }
 
-        val viewModel = UserListViewModel(repo, mockk<RepoDetailRepository>(relaxed = true), ErrorEventBus())
+        val viewModel = viewModel(repo)
         viewModel.init("octocat", UserListMode.FOLLOWERS)
         viewModel.init("octocat", UserListMode.FOLLOWERS) // 重复调用
 
@@ -48,7 +49,7 @@ class UserListViewModelTest {
             PagedUsers(2, listOf(SimpleUser("b", null, null, null)), false, null),
         )
 
-        val viewModel = UserListViewModel(repo, mockk<RepoDetailRepository>(relaxed = true), ErrorEventBus())
+        val viewModel = viewModel(repo)
         viewModel.init("octocat", UserListMode.FOLLOWERS)
         viewModel.loadMore()
 
@@ -64,7 +65,7 @@ class UserListViewModelTest {
         val repo = mockk<UserRepository>()
         coEvery { repo.getFollowing("octocat", null) } returns ApiResult.Failure(ApiError.NetworkError)
 
-        val viewModel = UserListViewModel(repo, mockk<RepoDetailRepository>(relaxed = true), ErrorEventBus())
+        val viewModel = viewModel(repo)
         viewModel.init("octocat", UserListMode.FOLLOWING)
 
         assertEquals(true, viewModel.state.value.loadFailed)
@@ -76,11 +77,36 @@ class UserListViewModelTest {
         coEvery { detailRepository.getStargazers("octo", "repo", null) } returns ApiResult.Success(
             PagedUsers(1, listOf(SimpleUser("fan", "Fan", null, null)), false, null),
         )
-        val viewModel = UserListViewModel(mockk(), detailRepository, ErrorEventBus())
+        val viewModel = viewModel(repoDetailRepository = detailRepository)
 
         viewModel.initForRepoStargazers("octo", "repo")
 
         assertEquals("fan", viewModel.state.value.users.single().login)
         coVerify(exactly = 1) { detailRepository.getStargazers("octo", "repo", null) }
     }
+
+    @Test
+    fun `Gist stargazers use the shared paged user state`() = runTest {
+        val gistRepository = mockk<GistRepository>()
+        coEvery { gistRepository.getStargazers("node-id", null) } returns ApiResult.Success(
+            PagedUsers(1, listOf(SimpleUser("fan", "Fan", null, null)), false, null),
+        )
+        val viewModel = viewModel(gistRepository = gistRepository)
+
+        viewModel.initForGistStargazers("node-id")
+
+        assertEquals("fan", viewModel.state.value.users.single().login)
+        coVerify(exactly = 1) { gistRepository.getStargazers("node-id", null) }
+    }
+
+    private fun viewModel(
+        userRepository: UserRepository = mockk(relaxed = true),
+        repoDetailRepository: RepoDetailRepository = mockk(relaxed = true),
+        gistRepository: GistRepository = mockk(relaxed = true),
+    ) = UserListViewModel(
+        userRepository = userRepository,
+        repoDetailRepository = repoDetailRepository,
+        gistRepository = gistRepository,
+        errorEventBus = ErrorEventBus(),
+    )
 }

@@ -405,8 +405,8 @@ private fun RepoHeader(
                             enabled = canStar,
                             shape = RectangleShape,
                             colors = ButtonDefaults.textButtonColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
                             ),
                             modifier = Modifier.height(40.dp),
                         ) {
@@ -421,7 +421,7 @@ private fun RepoHeader(
                     }
                 }
             } else {
-                Button(onClick = onStarClick, enabled = canStar, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
+                OutlinedButton(onClick = onStarClick, enabled = canStar, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
                     Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
                     Text(stringResource(R.string.repo_star), modifier = Modifier.padding(start = 4.dp))
                 }

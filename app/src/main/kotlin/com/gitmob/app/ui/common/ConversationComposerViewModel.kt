@@ -2,15 +2,18 @@ package com.gitmob.app.ui.common
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.core.event.GistUpdateEventBus
 import com.gitmob.app.core.markdown.MarkdownRenderer
 import com.gitmob.app.data.model.RepoPullRequestReviewEvent
 import com.gitmob.app.data.repository.RepoDiscussionRepository
 import com.gitmob.app.data.repository.RepoIssueRepository
 import com.gitmob.app.data.repository.RepoPullRequestRepository
+import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.navigation.ConversationComposerTarget
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -42,9 +45,11 @@ class ConversationComposerViewModel @Inject constructor(
     private val issueRepository: RepoIssueRepository,
     private val pullRequestRepository: RepoPullRequestRepository,
     private val discussionRepository: RepoDiscussionRepository,
+    private val gistRepository: GistRepository,
     private val markdownRenderer: MarkdownRenderer,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
+    private val gistUpdateEventBus: GistUpdateEventBus,
 ) : ViewModel() {
     private val _state = MutableStateFlow(ConversationComposerUiState())
     val state: StateFlow<ConversationComposerUiState> = _state.asStateFlow()
@@ -135,19 +140,33 @@ class ConversationComposerViewModel @Inject constructor(
         }
     }
 
-    private suspend fun submitBody(body: String): ApiResult<Any> = when (target) {
-        ConversationComposerTarget.ISSUE_COMMENT -> if (commentId == null) issueRepository.addComment(subjectId, body).mapAny() else issueRepository.updateComment(commentId!!, body).mapAny()
-        ConversationComposerTarget.PULL_REQUEST_COMMENT -> if (commentId == null) pullRequestRepository.addComment(subjectId, body).mapAny() else pullRequestRepository.updateComment(commentId!!, body).mapAny()
-        ConversationComposerTarget.PULL_REQUEST_REVIEW -> pullRequestRepository.submitReview(subjectId, reviewEvent ?: RepoPullRequestReviewEvent.COMMENT, body).mapAny()
-        ConversationComposerTarget.PULL_REQUEST_THREAD -> pullRequestRepository.replyToThread(subjectId, body).mapAny()
-        ConversationComposerTarget.DISCUSSION_COMMENT -> if (commentId == null) discussionRepository.addComment(subjectId, body, replyToId).mapAny() else discussionRepository.updateComment(commentId!!, body).mapAny()
+    private suspend fun submitBody(body: String): ApiResult<Any> {
+        return when (target) {
+            ConversationComposerTarget.ISSUE_COMMENT -> if (commentId == null) issueRepository.addComment(subjectId, body).mapAny() else issueRepository.updateComment(commentId!!, body).mapAny()
+            ConversationComposerTarget.PULL_REQUEST_COMMENT -> if (commentId == null) pullRequestRepository.addComment(subjectId, body).mapAny() else pullRequestRepository.updateComment(commentId!!, body).mapAny()
+            ConversationComposerTarget.PULL_REQUEST_REVIEW -> pullRequestRepository.submitReview(subjectId, reviewEvent ?: RepoPullRequestReviewEvent.COMMENT, body).mapAny()
+            ConversationComposerTarget.PULL_REQUEST_THREAD -> pullRequestRepository.replyToThread(subjectId, body).mapAny()
+            ConversationComposerTarget.DISCUSSION_COMMENT -> if (commentId == null) discussionRepository.addComment(subjectId, body, replyToId).mapAny() else discussionRepository.updateComment(commentId!!, body).mapAny()
+            ConversationComposerTarget.GIST_COMMENT -> if (commentId == null) {
+                gistRepository.createComment(subjectId, body).mapAny()
+            } else {
+                val id = commentId!!.toLongOrNull()
+                    ?: return ApiResult.Failure(ApiError.Unknown("Invalid Gist comment id"))
+                gistRepository.updateComment(subjectId, id, body).mapAny()
+            }
+        }
     }
 
     private suspend fun emitChanged() {
+        if (target == ConversationComposerTarget.GIST_COMMENT) {
+            gistUpdateEventBus.emit(subjectId)
+            return
+        }
         val event = when (target) {
             ConversationComposerTarget.ISSUE_COMMENT -> RepoUpdateEvent.IssueCommentsChanged(owner, name, number)
             ConversationComposerTarget.PULL_REQUEST_COMMENT, ConversationComposerTarget.PULL_REQUEST_REVIEW, ConversationComposerTarget.PULL_REQUEST_THREAD -> RepoUpdateEvent.PullRequestCommentsChanged(owner, name, number)
             ConversationComposerTarget.DISCUSSION_COMMENT -> RepoUpdateEvent.DiscussionCommentsChanged(owner, name, number)
+            ConversationComposerTarget.GIST_COMMENT -> error("Handled above")
         }
         repoUpdateEventBus.emit(event)
     }

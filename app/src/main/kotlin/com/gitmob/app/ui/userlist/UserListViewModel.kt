@@ -7,6 +7,7 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.data.model.PagedUsers
 import com.gitmob.app.data.model.SimpleUser
 import com.gitmob.app.data.repository.RepoDetailRepository
+import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,8 @@ enum class UserListMode {
     WATCHERS,
     /** 仓库维度：某个仓库的 Stargazers（标星用户） */
     STARGAZERS,
+    /** Gist 维度：某个 Gist 的 Stargazers。 */
+    GIST_STARGAZERS,
     /** 组织维度：某个组织的 Members（成员），与上面三个走完全一样的 PagedUsers 渲染逻辑 */
     ORG_MEMBERS,
 }
@@ -49,6 +52,7 @@ data class UserListUiState(
 class UserListViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val repoDetailRepository: RepoDetailRepository,
+    private val gistRepository: GistRepository,
     private val errorEventBus: ErrorEventBus,
 ) : ViewModel() {
 
@@ -91,6 +95,14 @@ class UserListViewModel @Inject constructor(
         load()
     }
 
+    fun initForGistStargazers(nodeId: String) {
+        if (initialized) return
+        initialized = true
+        this.repoName = nodeId
+        this.mode = UserListMode.GIST_STARGAZERS
+        load()
+    }
+
     /**
      * 组织成员（ORG_MEMBERS，组织维度）。
      * 与 initForRepoWatchers 同构：都是单 login 参数 → 调用不同的 Repository 方法，
@@ -127,6 +139,7 @@ class UserListViewModel @Inject constructor(
         UserListMode.FOLLOWING -> userRepository.getFollowing(login, after)
         UserListMode.WATCHERS -> repoDetailRepository.getWatchers(repoOwner, repoName, after)
         UserListMode.STARGAZERS -> repoDetailRepository.getStargazers(repoOwner, repoName, after)
+        UserListMode.GIST_STARGAZERS -> gistRepository.getStargazers(repoName, after)
         // 组织成员：复用 UserRepository 已存在的 getOrgMembers(orgLogin, after) 方法
         UserListMode.ORG_MEMBERS -> userRepository.getOrgMembers(repoOwner, after)
     }

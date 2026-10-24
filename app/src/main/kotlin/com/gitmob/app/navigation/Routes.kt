@@ -53,6 +53,20 @@ data class RepoCreateRoute(
 
 /** 个人主页 Gist 统计项进入的参数化列表；null 表示 viewer（包含秘密 Gist）。 */
 @Serializable data class GistListRoute(val login: String? = null) : Route
+@Serializable data class GistDetailRoute(val id: String) : Route
+@Serializable data class GistRevisionsRoute(val id: String) : Route
+@Serializable data class GistRevisionDetailRoute(
+    val id: String,
+    val version: String,
+    val previousVersion: String? = null,
+    val committedAt: String,
+    val additions: Int,
+    val deletions: Int,
+    val totalChanges: Int,
+) : Route
+@Serializable data class GistForksRoute(val id: String) : Route
+@Serializable data class GistStargazersRoute(val nodeId: String) : Route
+@Serializable data class GistFileEditorRoute(val id: String, val filename: String? = null) : Route
 
 /**
  * 组织主页 → 点击"成员"统计项：指定组织 login 的成员列表。
@@ -86,7 +100,7 @@ data class RepoCreateRoute(
 @Serializable data class RepoDiscussionDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoDiscussionEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null) : Route
 @Serializable
-enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_THREAD, DISCUSSION_COMMENT }
+enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_THREAD, DISCUSSION_COMMENT, GIST_COMMENT }
 
 @Serializable data class ConversationComposerRoute(
     val owner: String,

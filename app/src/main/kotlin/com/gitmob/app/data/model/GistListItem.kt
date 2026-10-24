@@ -1,7 +1,11 @@
 
 package com.gitmob.app.data.model
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
 enum class GistCategory {
+    ALL,
     ORIGINAL,
     FORKED,
 }
@@ -48,10 +52,30 @@ data class GistListItem(
     val previewFile: GistFilePreview?,
     val fileCount: Int,
     val isFileCountCapped: Boolean,
+    val sourceId: String? = null,
+    val sourceOwnerLogin: String? = null,
+    val sourceUrl: String? = null,
 )
 
 data class GistPage(
     val items: List<GistListItem>,
     val hasNextPage: Boolean,
     val nextCursor: String?,
+)
+
+@Serializable
+data class GistDetailsDto(
+    @SerialName("fork_of") val forkOf: GistForkSourceDto? = null,
+)
+
+@Serializable
+data class GistForkSourceDto(
+    val id: String = "",
+    val owner: GistOwnerDto? = null,
+    @SerialName("html_url") val htmlUrl: String = "",
+)
+
+@Serializable
+data class GistOwnerDto(
+    val login: String = "",
 )

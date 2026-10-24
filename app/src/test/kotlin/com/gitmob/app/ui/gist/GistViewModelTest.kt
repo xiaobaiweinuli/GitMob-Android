@@ -33,19 +33,19 @@ class GistViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun `首次加载原创最近修改列表`() = runTest {
+    fun `首次加载全部最近修改列表`() = runTest {
         val repository = mockk<GistRepository>()
         coEvery {
-            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null)
-        } returns ApiResult.Success(page("original"))
+            repository.getGists(null, GistCategory.ALL, GistSort.RECENTLY_UPDATED, null)
+        } returns ApiResult.Success(page("all"))
 
-        val viewModel = createViewModel(repository)
+        val viewModel = createViewModel(repository, SavedStateHandle())
         viewModel.init(null)
 
-        assertEquals(GistCategory.ORIGINAL, viewModel.state.value.selectedCategory)
+        assertEquals(GistCategory.ALL, viewModel.state.value.selectedCategory)
         assertEquals(GistSort.RECENTLY_UPDATED, viewModel.state.value.selectedSort)
         assertEquals(GistVisibility.ALL, viewModel.state.value.selectedVisibility)
-        assertEquals(listOf("original"), viewModel.state.value.items.map { it.id })
+        assertEquals(listOf("all"), viewModel.state.value.items.map { it.id })
         assertFalse(viewModel.state.value.isLoading)
         viewModel.viewModelScope.cancel()
     }
@@ -82,8 +82,11 @@ class GistViewModelTest {
     }
 
     @Test
-    fun `原创和复刻切换保留各自列表`() = runTest {
+    fun `全部原创和复刻切换保留各自列表`() = runTest {
         val repository = mockk<GistRepository>()
+        coEvery {
+            repository.getGists(null, GistCategory.ALL, GistSort.RECENTLY_UPDATED, null)
+        } returns ApiResult.Success(page("all"))
         coEvery {
             repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null)
         } returns ApiResult.Success(page("original"))
@@ -94,14 +97,19 @@ class GistViewModelTest {
         val viewModel = createViewModel(repository, savedState)
         viewModel.init(null)
 
+        viewModel.selectCategory(GistCategory.ORIGINAL)
+        assertEquals(listOf("original"), viewModel.state.value.items.map { it.id })
+
         viewModel.selectCategory(GistCategory.FORKED)
         assertEquals(listOf("forked"), viewModel.state.value.items.map { it.id })
 
-        viewModel.selectCategory(GistCategory.ORIGINAL)
-        assertEquals(listOf("original"), viewModel.state.value.items.map { it.id })
-        assertEquals(GistCategory.ORIGINAL.name, savedState.get<String>("gist.selectedCategory"))
+        viewModel.selectCategory(GistCategory.ALL)
+        assertEquals(listOf("all"), viewModel.state.value.items.map { it.id })
+        assertEquals(GistCategory.ALL.name, savedState.get<String>("gist.selectedCategory"))
         coVerify(exactly = 1) {
+            repository.getGists(null, GistCategory.ALL, GistSort.RECENTLY_UPDATED, null)
             repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null)
+            repository.getGists(null, GistCategory.FORKED, GistSort.RECENTLY_UPDATED, null)
         }
         viewModel.viewModelScope.cancel()
     }
@@ -115,7 +123,7 @@ class GistViewModelTest {
         coEvery {
             repository.getGists(null, GistCategory.ORIGINAL, GistSort.OLDEST_CREATED, null)
         } returns ApiResult.Success(page("new"))
-        val savedState = SavedStateHandle()
+        val savedState = originalSavedState()
         val viewModel = createViewModel(repository, savedState)
         viewModel.init(null)
 
@@ -258,13 +266,13 @@ class GistViewModelTest {
         ))
         val repository = mockk<GistRepository>()
         coEvery {
-            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL)
+            repository.getGists(null, GistCategory.ALL, GistSort.RECENTLY_UPDATED, null, GistVisibility.ALL)
         } returns ApiResult.Success(page("default"))
         val viewModel = createViewModel(repository, savedState)
 
         viewModel.init(null)
 
-        assertEquals("ORIGINAL", savedState.get<String>("gist.selectedCategory"))
+        assertEquals("ALL", savedState.get<String>("gist.selectedCategory"))
         assertEquals("RECENTLY_UPDATED", savedState.get<String>("gist.selectedSort"))
         assertEquals("ALL", savedState.get<String>("gist.selectedVisibility"))
         assertEquals(listOf("default"), viewModel.state.value.items.map { it.id })
@@ -290,7 +298,7 @@ class GistViewModelTest {
         coEvery {
             repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, "c2", GistVisibility.PRIVATE)
         } returns ApiResult.Success(page("next-private"))
-        val savedState = SavedStateHandle()
+        val savedState = originalSavedState()
         val viewModel = createViewModel(repository, savedState)
         viewModel.init(null)
 
@@ -486,7 +494,14 @@ class GistViewModelTest {
             repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, "c1", GistVisibility.PRIVATE)
         } returns ApiResult.Failure(ApiError.NetworkError) andThen ApiResult.Success(page("next"))
         val bus = ErrorEventBus()
-        val viewModel = createViewModel(repository, SavedStateHandle(mapOf("gist.selectedVisibility" to "PRIVATE")), bus)
+        val viewModel = createViewModel(
+            repository,
+            SavedStateHandle(mapOf(
+                "gist.selectedCategory" to "ORIGINAL",
+                "gist.selectedVisibility" to "PRIVATE",
+            )),
+            bus,
+        )
         bus.events.test {
             viewModel.init(null)
             assertTrue(viewModel.state.value.loadFailed)
@@ -507,9 +522,13 @@ class GistViewModelTest {
 
     private fun createViewModel(
         repository: GistRepository,
-        savedStateHandle: SavedStateHandle = SavedStateHandle(),
+        savedStateHandle: SavedStateHandle = originalSavedState(),
         errorEventBus: ErrorEventBus = ErrorEventBus(),
     ) = GistViewModel(repository, errorEventBus, savedStateHandle)
+
+    private fun originalSavedState() = SavedStateHandle(
+        mapOf("gist.selectedCategory" to "ORIGINAL"),
+    )
 
     private fun page(
         id: String,

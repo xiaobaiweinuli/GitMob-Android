@@ -84,13 +84,17 @@ fun ConversationComposerScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    RepositoryContextTitle(
-                        owner = route.owner,
-                        repository = route.name,
-                        pageTitle = composerTitle(route),
-                        onOwnerClick = onOwnerClick,
-                        onRepositoryClick = onRepositoryClick,
-                    )
+                    if (route.target == ConversationComposerTarget.GIST_COMMENT) {
+                        Text(composerTitle(route))
+                    } else {
+                        RepositoryContextTitle(
+                            owner = route.owner,
+                            repository = route.name,
+                            pageTitle = composerTitle(route),
+                            onOwnerClick = onOwnerClick,
+                            onRepositoryClick = onRepositoryClick,
+                        )
+                    }
                 },
                 navigationIcon = { IconButton(onClick = ::requestBack, enabled = !state.isSubmitting) { Icon(Icons.Default.Close, stringResource(R.string.common_cancel)) } },
                 actions = {
