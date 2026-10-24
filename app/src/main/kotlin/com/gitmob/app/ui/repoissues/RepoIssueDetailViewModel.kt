@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.share.ShareLinkLauncher
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoCapabilities
@@ -47,6 +48,7 @@ class RepoIssueDetailViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val editRepository: ConversationEditRepository,
+    private val shareLinkLauncher: ShareLinkLauncher,
 ) : ViewModel() {
     private val _state = MutableStateFlow(RepoIssueDetailUiState())
     val state: StateFlow<RepoIssueDetailUiState> = _state.asStateFlow()
@@ -78,6 +80,7 @@ class RepoIssueDetailViewModel @Inject constructor(
 
     fun load() { cursor = null; viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getIssue(owner, name, number)) { is ApiResult.Success -> apply(result.data); is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun retry() = load()
+    fun share() { _state.value.issue?.url?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
 
     fun openEditHistory(nodeId: String) {
         editJob?.cancel()

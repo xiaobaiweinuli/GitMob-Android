@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -308,6 +309,11 @@ fun RepoPullRequestDetailScreen(
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                             DropdownMenu(menu, { menu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.conversation_share)) },
+                                    leadingIcon = { Icon(Icons.Default.Share, null) },
+                                    onClick = { menu = false; viewModel.share() },
+                                )
                                 if (pullRequest.viewerCanUpdate) DropdownMenuItem(text = { Text(stringResource(R.string.common_edit)) }, onClick = { menu = false; onEdit() })
                                 if (pullRequest.state == RepoPullRequestState.OPEN && pullRequest.viewerCanClose) DropdownMenuItem(text = { Text(stringResource(R.string.pr_close)) }, onClick = { menu = false; viewModel.close() })
                                 if (pullRequest.state == RepoPullRequestState.CLOSED && pullRequest.viewerCanReopen) DropdownMenuItem(text = { Text(stringResource(R.string.pr_reopen)) }, onClick = { menu = false; viewModel.reopen() })

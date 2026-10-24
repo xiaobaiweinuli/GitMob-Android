@@ -456,12 +456,10 @@ class RepoDetailViewModelTest {
 
         assertTrue(viewModel.state.value.showStarListSelector)
         assertEquals(setOf("L1"), viewModel.state.value.starListSelection)
-        viewModel.createFork()
         viewModel.dismissStarListSelector()
         viewModel.openStarListSelector()
         coVerify(exactly = 1) { starRepo.getLists() }
         coVerify(exactly = 1) { starRepo.getListsContaining("R_123") }
-        coVerify(exactly = 0) { detailRepo.createFork(any(), any()) }
         viewModel.viewModelScope.cancel()
     }
 
@@ -506,7 +504,7 @@ class RepoDetailViewModelTest {
         val vm = listViewModel(stars)
 
         assertTrue(vm.state.value.isLoadingStarLists)
-        assertTrue(vm.state.value.canStartAction)
+        assertTrue(vm.state.value.actionsEnabled)
         vm.openStarListSelector()
         vm.openStarListSelector()
         vm.toggleStarList("L2")
@@ -729,6 +727,32 @@ class RepoDetailViewModelTest {
         pending.complete(ApiResult.Success(setOf("L1")))
         advanceUntilIdle()
         assertEquals(setOf("L1"), vm.state.value.starListMembership)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `in flight star request blocks all action entries`() = runTest {
+        val stars = listRepository()
+        val details = mockk<RepoDetailRepository>()
+        val pending = CompletableDeferred<ApiResult<Unit>>()
+        coEvery { stars.unstarRepo("R_123") } coAnswers { pending.await() }
+        val vm = listViewModel(stars, details, fakeDetail(viewerHasStarred = true, capabilities = RepoPermission.ADMIN.toCapabilities()))
+
+        vm.toggleStar()
+        assertTrue(vm.state.value.isStarring)
+        assertFalse(vm.state.value.actionsEnabled)
+        vm.toggleStar()
+        vm.createFork()
+        vm.openStarListSelector()
+        vm.openManagement(RepoManagementAction.ARCHIVE)
+
+        assertFalse(vm.state.value.showStarListSelector)
+        assertNull(vm.state.value.managementAction)
+        coVerify(exactly = 1) { stars.unstarRepo("R_123") }
+        coVerify(exactly = 0) { details.createFork(any(), any()) }
+        pending.complete(ApiResult.Success(Unit))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.actionsEnabled)
         vm.viewModelScope.cancel()
     }
 

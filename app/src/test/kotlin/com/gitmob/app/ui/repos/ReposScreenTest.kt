@@ -118,6 +118,20 @@ class ReposScreenTest {
         assertEntry("org", RepositoryCreateOwner("o1", "org", "Organization", null, RepositoryCreateOwnerType.ORGANIZATION, false), true)
 
     @Test
+    fun `route login title stays identical before and after owner name loads`() {
+        val pending = CompletableDeferred<ApiResult<RepoList>>()
+        coEvery { repository.getRepos(any(), any(), any(), any()) } coAnswers { pending.await() }
+        setContent(viewModel(), login = "other", onBack = {})
+        val title = text(R.string.repos_owner_title, "other")
+        composeRule.onNodeWithText(title).assertIsDisplayed()
+        composeRule.runOnIdle {
+            pending.complete(ApiResult.Success(page(owner = RepositoryCreateOwner("u2", "other", "Display name", null, RepositoryCreateOwnerType.USER, false))))
+        }
+        composeRule.onNodeWithText(title).assertIsDisplayed()
+        composeRule.onNodeWithText("Display name").assertDoesNotExist()
+    }
+
+    @Test
     fun `清空按钮只清搜索词并保留四维筛选及排序`() {
         val vm = viewModel(SavedStateHandle(mapOf(
             "repos.query" to " needle ", "repos.visibility" to RepoVisibility.PRIVATE.name,
@@ -422,7 +436,8 @@ class ReposScreenTest {
     private fun assertEntry(login: String?, owner: RepositoryCreateOwner, hasBack: Boolean) {
         coEvery { repository.getRepos(any(), any(), any(), any()) } returns ApiResult.Success(page(owner = owner))
         setContent(viewModel(), login = login, onBack = if (hasBack) ({}) else null)
-        composeRule.onNodeWithText(owner.name ?: owner.login).assertIsDisplayed()
+        val title = login?.let { text(R.string.repos_owner_title, it) } ?: owner.name ?: owner.login
+        composeRule.onNodeWithText(title).assertIsDisplayed()
         if (hasBack) composeRule.onNodeWithContentDescription(text(R.string.common_back)).assertIsDisplayed()
         else composeRule.onNodeWithContentDescription(text(R.string.common_back)).assertDoesNotExist()
         val create = composeRule.onNodeWithContentDescription(text(R.string.repo_create_title))
@@ -432,7 +447,7 @@ class ReposScreenTest {
         } else create.assertDoesNotExist()
         val filterTop = capsule(R.string.work_filter_visibility, R.string.common_all).fetchSemanticsNode().boundsInRoot.top
         openSearch()
-        composeRule.onNodeWithText(owner.name ?: owner.login).assertDoesNotExist()
+        composeRule.onNodeWithText(title).assertDoesNotExist()
         composeRule.onNodeWithContentDescription(text(R.string.repos_search)).assertDoesNotExist()
         val input = composeRule.onNode(hasSetTextAction()).assertIsFocused().fetchSemanticsNode().boundsInRoot
         if (owner.canCreateRepository) assertTrue(input.right <= create.assertIsDisplayed().fetchSemanticsNode().boundsInRoot.left)

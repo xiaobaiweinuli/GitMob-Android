@@ -80,6 +80,7 @@ fun OcticonBadge(
     modifier: Modifier = Modifier,
     size: Dp = 16.dp,
     tint: Color = MaterialTheme.colorScheme.primary,
+    enableTooltip: Boolean = true,
 ) {
     val tooltipState = rememberTooltipState()
     TooltipBox(
@@ -93,6 +94,7 @@ fun OcticonBadge(
             }
         },
         state = tooltipState,
+        enableUserInput = enableTooltip,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

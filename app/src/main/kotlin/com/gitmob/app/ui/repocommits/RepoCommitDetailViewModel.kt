@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.diff.UnifiedDiffParser
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.share.ShareLinkLauncher
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoCapabilities
@@ -38,6 +39,7 @@ class RepoCommitDetailViewModel @Inject constructor(
     private val repository: RepoGitRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
+    private val shareLinkLauncher: ShareLinkLauncher,
 ) : ViewModel() {
     private val _state = MutableStateFlow(RepoCommitDetailUiState())
     val state: StateFlow<RepoCommitDetailUiState> = _state.asStateFlow()
@@ -65,6 +67,12 @@ class RepoCommitDetailViewModel @Inject constructor(
     }
 
     fun retry() = load()
+
+    fun share() {
+        _state.value.detail?.commit?.oid?.takeIf(String::isNotBlank)?.let {
+            shareLinkLauncher.share("https://github.com/$owner/$name/commit/$it")
+        }
+    }
 
     fun toggleFile(file: RepoChangedFile) = _state.update { current ->
         if (current.selectedFile?.filename == file.filename) {

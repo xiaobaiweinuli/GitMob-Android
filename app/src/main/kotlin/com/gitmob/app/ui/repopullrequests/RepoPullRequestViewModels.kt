@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.share.ShareLinkLauncher
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoCapabilities
@@ -159,6 +160,7 @@ class RepoPullRequestDetailViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val editRepository: ConversationEditRepository,
+    private val shareLinkLauncher: ShareLinkLauncher,
 ) : ViewModel() {
     private val _state = MutableStateFlow(RepoPullRequestDetailUiState())
     val state: StateFlow<RepoPullRequestDetailUiState> = _state.asStateFlow()
@@ -212,6 +214,8 @@ class RepoPullRequestDetailViewModel @Inject constructor(
     }
 
     fun retry() = load()
+
+    fun share() { _state.value.pullRequest?.url?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
 
     fun openEditHistory(nodeId: String) {
         editJob?.cancel()

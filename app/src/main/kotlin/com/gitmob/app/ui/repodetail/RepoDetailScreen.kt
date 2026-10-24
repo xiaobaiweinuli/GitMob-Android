@@ -7,7 +7,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -59,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -134,7 +133,7 @@ fun RepoDetailScreen(
                 actions = {
                     RepoManagementMenu(
                         detail = state.detail,
-                        enabled = state.canStartAction,
+                        enabled = state.actionsEnabled,
                         onShare = viewModel::share,
                         onAction = viewModel::openManagement,
                     )
@@ -197,8 +196,8 @@ fun RepoDetailScreen(
                                 if (forkOwner != null && forkName != null) onForkSourceClick(forkOwner, forkName)
                             },
                             onHomepageClick = onHomepageClick,
-                            canStar = state.canStartAction,
-                            canAct = state.canStartAction,
+                            canStar = state.actionsEnabled,
+                            canAct = state.actionsEnabled,
                             isForking = state.isForking,
                             selectedListIds = state.starListMembership,
                             lists = state.starLists,
@@ -344,29 +343,24 @@ private fun RepoHeader(
             )
         }
 
-        // 状态标签行：模板 / 私有 / 已归档
-        Row(modifier = Modifier.padding(top = 8.dp)) {
-            if (detail.isTemplate) StatusChip(stringResource(R.string.repo_template))
-            if (detail.isPrivate) StatusChip(stringResource(R.string.common_private))
-            if (detail.isArchived) StatusChip(stringResource(R.string.common_archived))
-        }
-
-        // 语言信息独占一行，颜色圆点和语言名称保持对齐。
-        detail.languageName?.let { lang ->
-            val dotColor = detail.languageColor
-                ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
-                ?: MaterialTheme.colorScheme.outline
+        if (detail.languageName != null || detail.isTemplate || detail.isPrivate || detail.isArchived) {
             Row(
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(10.dp)) {}
-                Text(
-                    text = lang,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(start = 4.dp),
-                )
+                detail.languageName?.let { lang ->
+                    val dotColor = detail.languageColor
+                        ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+                        ?: MaterialTheme.colorScheme.outline
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(10.dp)) {}
+                        Text(lang, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
+                    }
+                }
+                if (detail.isPrivate) StatusChip(stringResource(R.string.common_private))
+                if (detail.isArchived) StatusChip(stringResource(R.string.common_archived))
+                if (detail.isTemplate) StatusChip(stringResource(R.string.repo_template))
             }
         }
 
@@ -390,21 +384,22 @@ private fun RepoHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedButton(onClick = onStargazersClick) {
+            OutlinedButton(onClick = onStargazersClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
                 Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
                 Text(stringResource(R.string.repo_stargazers_count, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
             }
-            OutlinedButton(onClick = onForksClick) {
+            OutlinedButton(onClick = onForksClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
                 Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
                 Text(stringResource(R.string.repo_forks_count, detail.forkCount), modifier = Modifier.padding(start = 4.dp))
             }
             if (detail.viewerHasStarred) {
                 Surface(
+                    modifier = Modifier.minimumInteractiveComponentSize().height(40.dp),
                     shape = CircleShape,
                     color = Color.Transparent,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
-                    Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
                             onClick = onStarClick,
                             enabled = canStar,
@@ -413,26 +408,26 @@ private fun RepoHeader(
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                             ),
-                            modifier = Modifier.heightIn(min = 48.dp),
+                            modifier = Modifier.height(40.dp),
                         ) {
                             Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
                             Text(stringResource(R.string.repo_starred), modifier = Modifier.padding(start = 4.dp))
                         }
                         VerticalDivider(Modifier.fillMaxHeight())
-                        TextButton(onClick = onListsClick, enabled = canAct, shape = RectangleShape, modifier = Modifier.heightIn(min = 48.dp)) {
+                        TextButton(onClick = onListsClick, enabled = canAct, shape = RectangleShape, modifier = Modifier.height(40.dp)) {
                             Text(listLabel)
                             Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             } else {
-                Button(onClick = onStarClick, enabled = canStar) {
+                Button(onClick = onStarClick, enabled = canStar, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
                     Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
                     Text(stringResource(R.string.repo_star), modifier = Modifier.padding(start = 4.dp))
                 }
             }
             if (!detail.ownerIsViewer) {
-                OutlinedButton(onClick = onForkClick, enabled = canAct && detail.forkingAllowed && !isForking) {
+                OutlinedButton(onClick = onForkClick, enabled = canAct && detail.forkingAllowed && !isForking, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
                     if (isForking) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                     } else {
@@ -444,6 +439,7 @@ private fun RepoHeader(
             OutlinedButton(
                 onClick = onNotificationsClick,
                 enabled = canAct && detail.viewerCanSubscribe,
+                modifier = Modifier.minimumInteractiveComponentSize().height(40.dp),
             ) {
                 Icon(
                     if (detail.viewerSubscription == "IGNORED") Icons.Default.NotificationsOff else Icons.Default.Notifications,

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -116,7 +117,7 @@ fun AboutScreen(onBack: () -> Unit) {
             item {
                 AboutSection(title = stringResource(R.string.about_section_developer)) {
                     AboutLinkRow(
-                        icon = null,
+                        icon = Icons.Default.Person,
                         label = "xiaobaiweinuli",
                         sub = stringResource(R.string.about_developer_sub),
                         url = "https://github.com/xiaobaiweinuli",
@@ -198,7 +199,7 @@ private fun AboutLinkRow(icon: ImageVector?, label: String, sub: String, url: St
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon?.let {
-            Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
         }
         Column(modifier = Modifier.padding(start = if (icon != null) 16.dp else 0.dp)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)

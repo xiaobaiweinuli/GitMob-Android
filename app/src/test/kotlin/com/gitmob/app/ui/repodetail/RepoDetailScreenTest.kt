@@ -6,6 +6,8 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -24,7 +26,10 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.viewModelScope
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiResult
@@ -158,6 +163,9 @@ class RepoDetailScreenTest {
         val gap = lists.positionInRoot.x - star.positionInRoot.x - star.size.width
         assertTrue("Joined segments must share a divider, actual gap: $gap", gap in 0f..3f)
         assertEquals(star.size.height, lists.size.height)
+        node(R.string.repo_starred).assertHeightIsEqualTo(40.dp)
+        node(R.string.repo_star_lists).assertHeightIsEqualTo(40.dp)
+        composeRule.onNodeWithText(context.getString(R.string.repo_stargazers_count, 42)).assertHeightIsEqualTo(40.dp)
         coVerify(exactly = 1) { stars.getLists() }
         node(R.string.repo_fork).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_notifications))
@@ -327,6 +335,52 @@ class RepoDetailScreenTest {
         assertEquals("another", viewModel.state.value.transferOtherLogin)
         assertEquals("renamed", viewModel.state.value.editName)
         coVerify(exactly = 0) { repository.transferRepository(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `modal keeps background actions enabled`() {
+        render()
+        composeRule.runOnIdle { viewModel.openManagement(RepoManagementAction.NOTIFICATIONS) }
+        assertTrue(viewModel.state.value.actionsEnabled)
+        node(R.string.repo_starred).assertIsEnabled()
+        node(R.string.repo_star_lists).assertIsEnabled()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_more)).assertIsEnabled()
+        coVerify(exactly = 0) { stars.unstarRepo(any()) }
+        coVerify(exactly = 0) { stars.starRepo(any()) }
+        coVerify(exactly = 0) { repository.createFork(any(), any()) }
+    }
+
+    @Test
+    fun `list segment accepts touch in the reserved space above the forty dp background`() {
+        render()
+        node(R.string.repo_star_lists).performScrollTo().performTouchInput {
+            click(Offset(center.x, -2.dp.toPx()))
+        }
+        node(R.string.stars_create_new_list).assertIsDisplayed()
+        coVerify(exactly = 0) { stars.updateListsForItem(any(), any()) }
+    }
+
+    @Test
+    fun `language and all repository states share a centered row`() {
+        render(detail().copy(languageName = "Kotlin", languageColor = "#A97BFF", isPrivate = true, isArchived = true, isTemplate = true))
+        val nodes = listOf(
+            composeRule.onNodeWithText("Kotlin"), node(R.string.common_private),
+            node(R.string.common_archived), node(R.string.repo_template),
+        ).map { it.fetchSemanticsNode().boundsInRoot }
+        assertTrue(nodes.zipWithNext().all { (first, second) -> first.left < second.left })
+        assertTrue(nodes.all { kotlin.math.abs(it.center.y - nodes.first().center.y) <= 1f })
+    }
+
+    @Test
+    fun `busy and terminal states disable actions but modals do not`() {
+        val state = RepoDetailUiState()
+        val blocked = listOf(state.copy(isLoading = true), state.copy(isManaging = true), state.copy(isStarring = true),
+            state.copy(isForking = true), state.copy(isSavingStarLists = true), state.copy(isCreatingList = true),
+            state.copy(transferPending = true), state.copy(deleted = true))
+        assertTrue(blocked.all { !it.actionsEnabled })
+        val modals = listOf(state.copy(managementAction = RepoManagementAction.NOTIFICATIONS),
+            state.copy(showStarListSelector = true), state.copy(showCreateListDialog = true))
+        assertTrue(modals.all { it.actionsEnabled })
     }
 
     private fun node(resource: Int) = composeRule.onNodeWithText(context.getString(resource))

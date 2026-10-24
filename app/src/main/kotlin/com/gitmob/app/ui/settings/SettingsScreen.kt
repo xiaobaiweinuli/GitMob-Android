@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.Card
@@ -108,6 +109,7 @@ fun SettingsScreen(
                     currentValue = stringResource(currentLanguage.labelRes),
                     expanded = languageExpanded,
                     onToggle = { languageExpanded = !languageExpanded },
+                    icon = Icons.Default.Language,
                 ) {
                     Column(
                         modifier = Modifier.padding(vertical = 4.dp),

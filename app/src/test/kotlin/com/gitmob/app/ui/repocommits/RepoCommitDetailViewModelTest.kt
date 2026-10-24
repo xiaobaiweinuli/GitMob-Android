@@ -15,6 +15,7 @@ import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -34,7 +35,7 @@ class RepoCommitDetailViewModelTest {
         val repository = mockk<RepoGitRepository>()
         coEvery { repository.getCommitDetail("o", "r", "main", "sha") } returns ApiResult.Success(detail(RepoPermission.ADMIN))
         coEvery { repository.revertFile("o", "r", "main", "sha", "src/A.kt", "Revert file change", null) } returns ApiResult.Success(summary("new-sha"))
-        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk())
         viewModel.init("o", "r", "main", "sha", RepoPermission.ADMIN)
         advanceUntilIdle()
 
@@ -52,7 +53,7 @@ class RepoCommitDetailViewModelTest {
     fun `read permission does not call revert mutation`() = runTest {
         val repository = mockk<RepoGitRepository>()
         coEvery { repository.getCommitDetail("o", "r", "main", "sha") } returns ApiResult.Success(detail(RepoPermission.READ))
-        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk())
         viewModel.init("o", "r", "main", "sha", RepoPermission.READ)
         advanceUntilIdle()
 
@@ -68,7 +69,7 @@ class RepoCommitDetailViewModelTest {
         val repository = mockk<RepoGitRepository>()
         coEvery { repository.getCommitDetail("o", "r", "main", "sha") } returns ApiResult.Success(detail(RepoPermission.ADMIN))
         coEvery { repository.revertCommit("o", "r", "main", "sha", "Revert commit change") } returns ApiResult.Success(summary("new-sha"))
-        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk())
         viewModel.init("o", "r", "main", "sha", RepoPermission.ADMIN)
         advanceUntilIdle()
 
@@ -86,7 +87,7 @@ class RepoCommitDetailViewModelTest {
     fun `merge commit does not call whole commit revert`() = runTest {
         val repository = mockk<RepoGitRepository>()
         coEvery { repository.getCommitDetail("o", "r", "main", "sha") } returns ApiResult.Success(detail(RepoPermission.ADMIN, listOf("p1", "p2")))
-        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk())
         viewModel.init("o", "r", "main", "sha", RepoPermission.ADMIN)
         advanceUntilIdle()
 
@@ -94,6 +95,23 @@ class RepoCommitDetailViewModelTest {
         advanceUntilIdle()
 
         coVerify(exactly = 0) { repository.revertCommit(any(), any(), any(), any(), any()) }
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `read only archived commit shares resolved full SHA instead of abbreviated route`() = runTest {
+        val repository = mockk<RepoGitRepository>()
+        val share = mockk<com.gitmob.app.core.share.ShareLinkLauncher>(relaxUnitFun = true)
+        val oid = "0123456789abcdef0123456789abcdef01234567"
+        coEvery { repository.getCommitDetail("o", "r", "main", "0123456") } returns
+            ApiResult.Success(detail(RepoPermission.READ).copy(isArchived = true, commit = summary(oid)))
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), share)
+        viewModel.share()
+        verify(exactly = 0) { share.share(any()) }
+        viewModel.init("o", "r", "main", "0123456", RepoPermission.READ)
+        advanceUntilIdle()
+        viewModel.share()
+        verify(exactly = 1) { share.share("https://github.com/o/r/commit/$oid") }
         viewModel.viewModelScope.cancel()
     }
 

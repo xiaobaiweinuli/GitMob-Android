@@ -401,6 +401,7 @@
     <string name="gist_continue_search">Keep searching</string>
     <string name="userlist_title_followers">Followers</string>
     <string name="userlist_title_following">Following</string>
+    <string name="repos_owner_title">Repositories by %1$s</string>
     <string name="userstars_title">Stars by %1$s</string>
     <string name="login_title">Sign in to GitMob</string>
     <string name="login_subtitle">Sign in with a Personal Access Token created on GitHub</string>

@@ -274,7 +274,7 @@ fun ProfilePersonHeader(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 badges.forEach { (name, tip) ->
-                    OcticonBadge(name = name, tooltipText = tip)
+                    OcticonBadge(name = name, tooltipText = tip, enableTooltip = name != OcticonName.BADGE_DEVELOPER_PROGRAM)
                 }
             }
         }

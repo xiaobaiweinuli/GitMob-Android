@@ -81,10 +81,9 @@ data class RepoDetailUiState(
     val isCheckingTransfer: Boolean = false,
     val deleted: Boolean = false,
 ) {
-    val canStartAction: Boolean
+    val actionsEnabled: Boolean
         get() = !isLoading && !isManaging && !isStarring && !isForking &&
             !isSavingStarLists && !isCreatingList &&
-            managementAction == null && !showStarListSelector && !showCreateListDialog &&
             !transferPending && !deleted
 }
 
@@ -278,7 +277,7 @@ class RepoDetailViewModel @Inject constructor(
     fun toggleStar() {
         val state = _state.value
         val detail = state.detail ?: return
-        if (!state.canStartAction) return
+        if (!state.actionsEnabled) return
         starListsJob?.cancel()
         _state.update { it.copy(isStarring = true, isLoadingStarLists = false, starListsLoaded = false) }
         viewModelScope.launch {
@@ -312,7 +311,7 @@ class RepoDetailViewModel @Inject constructor(
     fun openStarListSelector() {
         val state = _state.value
         val detail = state.detail ?: return
-        if (!detail.viewerHasStarred || !state.canStartAction) return
+        if (!detail.viewerHasStarred || !state.actionsEnabled) return
         _state.update { it.copy(showStarListSelector = true, starListSelection = it.starListMembership) }
         loadStarLists()
     }
@@ -447,7 +446,7 @@ class RepoDetailViewModel @Inject constructor(
     fun createFork() {
         val state = _state.value
         val detail = state.detail ?: return
-        if (!state.canStartAction || detail.ownerIsViewer || !detail.forkingAllowed) return
+        if (!state.actionsEnabled || detail.ownerIsViewer || !detail.forkingAllowed) return
         _state.update { it.copy(isForking = true) }
         viewModelScope.launch {
             try {
@@ -470,7 +469,7 @@ class RepoDetailViewModel @Inject constructor(
     fun openManagement(action: RepoManagementAction) {
         val state = _state.value
         val detail = state.detail ?: return
-        if (!state.canStartAction || !isAllowed(action, detail)) return
+        if (!state.actionsEnabled || !isAllowed(action, detail)) return
         transferCheckJob?.cancel()
         topicsJob?.cancel()
         _state.update {

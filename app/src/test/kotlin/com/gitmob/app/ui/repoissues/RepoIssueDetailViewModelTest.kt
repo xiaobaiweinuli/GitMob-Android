@@ -13,6 +13,7 @@ import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -30,7 +31,7 @@ class RepoIssueDetailViewModelTest {
         val repository = repositoryMock()
         coEvery { repository.getIssue("o", "r", 1, null) } returns ApiResult.Success(detail())
         coEvery { repository.addComment("I1", "hello") } returns ApiResult.Success(comment())
-        val vm = RepoIssueDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk<ConversationEditRepository>())
+        val vm = RepoIssueDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk<ConversationEditRepository>(), mockk())
         vm.init("o", "r", 1, RepoPermission.READ); advanceUntilIdle()
         vm.addComment("hello") {}; advanceUntilIdle()
         assertEquals("Title", vm.state.value.issue?.title)
@@ -42,10 +43,29 @@ class RepoIssueDetailViewModelTest {
     fun `close mutation is not called without node permission`() = runTest {
         val repository = repositoryMock()
         coEvery { repository.getIssue("o", "r", 1, null) } returns ApiResult.Success(detail())
-        val vm = RepoIssueDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk<ConversationEditRepository>())
+        val vm = RepoIssueDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk<ConversationEditRepository>(), mockk())
         vm.init("o", "r", 1, null); advanceUntilIdle()
         vm.closeIssue(IssueStateReason.COMPLETED); advanceUntilIdle()
         coVerify(exactly = 0) { repository.closeIssue(any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `read only issue shares its response URL and never shares empty data`() = runTest {
+        val repository = repositoryMock()
+        val share = mockk<com.gitmob.app.core.share.ShareLinkLauncher>(relaxUnitFun = true)
+        val url = "https://github.com/o/r/issues/1"
+        coEvery { repository.getIssue("o", "r", 1, null) } returns
+            ApiResult.Success(detail().copy(issue = issue().copy(url = url))) andThen ApiResult.Success(detail())
+        val vm = RepoIssueDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), share)
+        vm.share()
+        verify(exactly = 0) { share.share(any()) }
+        vm.init("o", "r", 1, RepoPermission.READ); advanceUntilIdle()
+        vm.share()
+        verify(exactly = 1) { share.share(url) }
+        vm.retry(); advanceUntilIdle()
+        vm.share()
+        verify(exactly = 1) { share.share(any()) }
         vm.viewModelScope.cancel()
     }
 

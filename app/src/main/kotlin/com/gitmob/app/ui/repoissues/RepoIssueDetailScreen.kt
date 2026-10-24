@@ -70,6 +70,11 @@ fun RepoIssueDetailScreen(
                         Box {
                             IconButton(onClick = { pageMenuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                             DropdownMenu(pageMenuOpen, { pageMenuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.conversation_share)) },
+                                    leadingIcon = { Icon(Icons.Default.Share, null) },
+                                    onClick = { pageMenuOpen = false; viewModel.share() },
+                                )
                                 if (issue.state == IssueState.OPEN && issue.viewerCanClose) {
                                     DropdownMenuItem(text = { Text(stringResource(R.string.issue_close_completed)) }, onClick = { pageMenuOpen = false; viewModel.closeIssue(IssueStateReason.COMPLETED) })
                                     DropdownMenuItem(text = { Text(stringResource(R.string.issue_close_not_planned)) }, onClick = { pageMenuOpen = false; viewModel.closeIssue(IssueStateReason.NOT_PLANNED) })

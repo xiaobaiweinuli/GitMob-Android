@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.share.ShareLinkLauncher
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoCapabilities
@@ -33,11 +34,12 @@ class RepoReleaseListViewModel @Inject constructor(private val repository: RepoR
 
 data class RepoReleaseDetailUiState(val release: RepoRelease? = null, val permission: RepoPermission = RepoPermission.NONE, val capabilities: RepoCapabilities = RepoCapabilities.NONE, val isLoading: Boolean = false, val loadFailed: Boolean = false, val pendingDelete: Boolean = false, val pendingDeleteAsset: RepoReleaseAsset? = null, val openingAssetIds: Set<Long> = emptySet())
 @HiltViewModel
-class RepoReleaseDetailViewModel @Inject constructor(private val repository: RepoReleaseRepository, private val errorEventBus: ErrorEventBus, private val repoUpdateEventBus: RepoUpdateEventBus) : ViewModel() {
+class RepoReleaseDetailViewModel @Inject constructor(private val repository: RepoReleaseRepository, private val errorEventBus: ErrorEventBus, private val repoUpdateEventBus: RepoUpdateEventBus, private val shareLinkLauncher: ShareLinkLauncher) : ViewModel() {
     private val _state = MutableStateFlow(RepoReleaseDetailUiState()); val state: StateFlow<RepoReleaseDetailUiState> = _state.asStateFlow(); private var owner = ""; private var name = ""; private var tag = ""; private var releaseId: Long? = null; private var initialized = false
     fun init(owner: String, name: String, tag: String?, releaseId: Long?, permission: RepoPermission?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; this.tag = tag.orEmpty(); this.releaseId = releaseId; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } } ?: viewModelScope.launch { when (val result = repository.getRepositoryPermission(owner, name)) { is ApiResult.Success -> _state.update { it.copy(permission = result.data, capabilities = result.data.toCapabilities()) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }; load() }
     fun load() { viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; val result = if (releaseId != null) repository.getRelease(owner, name, releaseId!!) else repository.getReleaseByTag(owner, name, tag); when (result) { is ApiResult.Success -> _state.update { it.copy(release = result.data, isLoading = false) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun retry() = load()
+    fun share() { _state.value.release?.htmlUrl?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
     fun update(input: SaveRepoReleaseInput, done: () -> Unit = {}) { val release = _state.value.release ?: return; if (!_state.value.capabilities.canPush) return; viewModelScope.launch { when (val result = repository.updateRelease(owner, name, release.id, input)) { is ApiResult.Success -> { _state.update { it.copy(release = result.data) }; emitChanged(); done() }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
     fun delete(done: () -> Unit) { val release = _state.value.release ?: return; if (!_state.value.capabilities.canPush) return; viewModelScope.launch { when (val result = repository.deleteRelease(owner, name, release.id)) { is ApiResult.Success -> { emitChanged(); done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = false) } } } } }
     fun confirmDelete(value: Boolean) = _state.update { it.copy(pendingDelete = value) }

@@ -29,6 +29,7 @@ data class RepoRelease(
     val assets: List<RepoReleaseAsset>,
     val tarballUrl: String?,
     val zipballUrl: String?,
+    val htmlUrl: String = "",
 )
 
 data class RepoReleasePage(val items: List<RepoRelease>, val page: Int, val hasNextPage: Boolean)

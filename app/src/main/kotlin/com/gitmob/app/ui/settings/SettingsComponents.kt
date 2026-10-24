@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -20,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
@@ -68,6 +71,7 @@ internal fun CollapsibleSelectionSection(
     currentValue: String,
     expanded: Boolean,
     onToggle: () -> Unit,
+    icon: ImageVector? = null,
     content: @Composable () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -84,16 +88,24 @@ internal fun CollapsibleSelectionSection(
                     color = Color.Transparent,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Column(
+                    Row(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(title, style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            text = currentValue,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        icon?.let {
+                            Icon(it, contentDescription = null, modifier = Modifier.size(24.dp))
+                        }
+                        Column(
+                            modifier = Modifier.padding(start = if (icon != null) 16.dp else 0.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(title, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = currentValue,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
                 AnimatedVisibility(

@@ -165,7 +165,8 @@ fun ReposScreen(
                                 .semantics { contentDescription = searchHint },
                         )
                     } else {
-                        Text(state.ownerContext?.name ?: state.ownerContext?.login ?: stringResource(R.string.common_repository))
+                        Text(if (login != null) stringResource(R.string.repos_owner_title, login)
+                            else state.ownerContext?.name ?: state.ownerContext?.login ?: stringResource(R.string.common_repository))
                     }
                 },
                 navigationIcon = {

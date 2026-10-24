@@ -112,6 +112,22 @@ class RepoReleaseRepositoryTest {
     }
 
     @Test
+    fun `release list tag and id retain the actual web URL including draft URL`() = runTest {
+        val url = "https://github.com/octo/repo/releases/tag/untagged-draft"
+        val body = """{"id":7,"tag_name":"feature/slash","draft":true,"html_url":"$url"}"""
+        server.enqueue(MockResponse().setBody("[$body]"))
+        server.enqueue(MockResponse().setBody(body))
+        server.enqueue(MockResponse().setBody(body))
+
+        assertEquals(url, (repository.getReleases("octo", "repo") as ApiResult.Success).data.items.single().htmlUrl)
+        assertEquals(url, (repository.getReleaseByTag("octo", "repo", "feature/slash") as ApiResult.Success).data.htmlUrl)
+        assertEquals(url, (repository.getRelease("octo", "repo", 7) as ApiResult.Success).data.htmlUrl)
+        assertEquals("/repos/octo/repo/releases?per_page=${com.gitmob.app.core.network.PageSize.RELEASES}&page=1", server.takeRequest().path)
+        assertEquals("/repos/octo/repo/releases/tags/feature%2Fslash", server.takeRequest().path)
+        assertEquals("/repos/octo/repo/releases/7", server.takeRequest().path)
+    }
+
+    @Test
     fun `release asset download resolves redirect and opens external browser`() = runTest {
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "https://objects.example/gitmob.apk"))
         val asset = RepoReleaseAsset(8, "gitmob.apk", null, "application/vnd.android.package-archive", "uploaded", 2048, 3, "", "")

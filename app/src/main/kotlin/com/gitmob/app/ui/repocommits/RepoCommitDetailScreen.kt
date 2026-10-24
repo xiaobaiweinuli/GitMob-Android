@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -87,17 +88,24 @@ fun RepoCommitDetailScreen(
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    if (state.detail != null && state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && !state.detail!!.isArchived) {
+                    if (state.detail != null) {
                         androidx.compose.foundation.layout.Box {
                             IconButton(onClick = { commitMenuExpanded = true }, enabled = !state.isReverting) {
                                 Icon(Icons.Default.MoreVert, stringResource(R.string.common_more))
                             }
                             DropdownMenu(expanded = commitMenuExpanded, onDismissRequest = { commitMenuExpanded = false }) {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.git_revert_commit)) },
-                                    enabled = !state.detail!!.commit.isMergeCommit,
-                                    onClick = { commitMenuExpanded = false; commitRevertRequested = true },
+                                    text = { Text(stringResource(R.string.conversation_share)) },
+                                    leadingIcon = { Icon(Icons.Default.Share, null) },
+                                    onClick = { commitMenuExpanded = false; viewModel.share() },
                                 )
+                                if (state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && !state.detail!!.isArchived) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.git_revert_commit)) },
+                                        enabled = !state.detail!!.commit.isMergeCommit,
+                                        onClick = { commitMenuExpanded = false; commitRevertRequested = true },
+                                    )
+                                }
                             }
                         }
                     }

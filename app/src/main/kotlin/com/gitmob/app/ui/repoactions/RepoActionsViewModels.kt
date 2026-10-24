@@ -6,6 +6,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.share.ShareLinkLauncher
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoCapabilities
@@ -138,6 +139,7 @@ class RepoWorkflowRunViewModel @Inject constructor(
     private val repository: RepoActionsRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
+    private val shareLinkLauncher: ShareLinkLauncher,
 ) : ViewModel() {
     private val _state = MutableStateFlow(RepoWorkflowRunUiState())
     val state: StateFlow<RepoWorkflowRunUiState> = _state.asStateFlow()
@@ -145,6 +147,7 @@ class RepoWorkflowRunViewModel @Inject constructor(
     fun init(owner: String, name: String, runId: Long, permission: RepoPermission?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; this.runId = runId; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } } ?: viewModelScope.launch { when (val result = repository.getRepositoryPermission(owner, name)) { is ApiResult.Success -> _state.update { it.copy(permission = result.data, capabilities = result.data.toCapabilities()) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }; load() }
     fun load() { viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getRun(owner, name, runId)) { is ApiResult.Success -> _state.update { it.copy(detail = result.data, isLoading = false) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun cancel(force: Boolean = false) = runAction { repository.cancel(owner, name, runId, force) }
+    fun share() { _state.value.detail?.run?.htmlUrl?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
     fun rerun(failedOnly: Boolean = false) = runAction { repository.rerun(owner, name, runId, failedOnly) }
     fun confirmDelete(value: Boolean) = _state.update { it.copy(pendingDelete = value) }
     fun delete(done: () -> Unit) { if (!_state.value.capabilities.canPush) return; viewModelScope.launch { when (val result = repository.deleteRun(owner, name, runId)) { is ApiResult.Success -> { repoUpdateEventBus.emit(RepoUpdateEvent.ActionRunChanged(owner, name, runId)); done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = false) } } } } }
