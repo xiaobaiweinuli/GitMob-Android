@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.common
 
+import android.content.Context
 import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.R
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -26,6 +28,12 @@ class FilterCapsuleMenuTest {
 
     @get:Rule
     val composeRule = createComposeRule()
+
+    private fun text(@StringRes resource: Int, vararg args: Any): String =
+        ApplicationProvider.getApplicationContext<Context>().getString(resource, *args)
+
+    private fun description(@StringRes filter: Int, selected: String) =
+        text(R.string.work_select_filter_value, text(filter), selected)
 
     private enum class TestFilter(@StringRes val labelRes: Int) {
         ALL(R.string.common_all),
@@ -44,9 +52,9 @@ class FilterCapsuleMenuTest {
                 filterLabel = stringResource(R.string.work_filter_state),
             )
         }
-        composeRule.onNodeWithText("Open").assertIsDisplayed()
-        composeRule.onAllNodesWithText("All").assertCountEquals(0)
-        composeRule.onAllNodesWithText("Closed").assertCountEquals(0)
+        composeRule.onNodeWithText(text(R.string.work_filter_open)).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.common_all)).assertCountEquals(0)
+        composeRule.onAllNodesWithText(text(R.string.common_state_closed)).assertCountEquals(0)
     }
 
     @Test
@@ -60,11 +68,10 @@ class FilterCapsuleMenuTest {
                 filterLabel = stringResource(R.string.work_filter_state),
             )
         }
-        composeRule.onNodeWithContentDescription("Select State, current Open").performClick()
-        // 菜单弹出：全部 + 打开（选中）+ 关闭；"Open" 同时出现在胶囊和菜单项
-        composeRule.onNodeWithText("All").assertIsDisplayed()
-        composeRule.onNodeWithText("Closed").assertIsDisplayed()
-        composeRule.onAllNodesWithText("Open").assertCountEquals(2)
+        composeRule.onNodeWithContentDescription(description(R.string.work_filter_state, text(R.string.work_filter_open))).performClick()
+        composeRule.onNodeWithText(text(R.string.common_all)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.common_state_closed)).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.work_filter_open)).assertCountEquals(2)
     }
 
     @Test
@@ -79,8 +86,8 @@ class FilterCapsuleMenuTest {
                 filterLabel = stringResource(R.string.work_filter_state),
             )
         }
-        composeRule.onNodeWithContentDescription("Select State, current Open").performClick()
-        composeRule.onNodeWithText("Closed").performClick()
+        composeRule.onNodeWithContentDescription(description(R.string.work_filter_state, text(R.string.work_filter_open))).performClick()
+        composeRule.onNodeWithText(text(R.string.common_state_closed)).performClick()
         assertEquals(TestFilter.CLOSED, result)
     }
 
@@ -98,9 +105,43 @@ class FilterCapsuleMenuTest {
             )
         }
 
-        composeRule.onNodeWithText("State").assertIsDisplayed()
-        composeRule.onAllNodesWithText("All").assertCountEquals(0)
-        composeRule.onNodeWithContentDescription("Select State, current All").assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.work_filter_state)).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.common_all)).assertCountEquals(0)
+        composeRule.onNodeWithContentDescription(description(R.string.work_filter_state, text(R.string.common_all))).assertIsDisplayed()
+    }
+
+    @Test
+    fun `空选中值允许不在菜单中且重置后恢复中性胶囊`() {
+        var selected by mutableStateOf<Boolean?>(null)
+        composeRule.setContent {
+            FilterCapsuleMenu(
+                selected = selected,
+                options = listOf(false, true),
+                optionLabel = {
+                    stringResource(when (it) {
+                        null -> R.string.common_all
+                        false -> R.string.gist_category_original
+                        true -> R.string.repo_fork
+                    })
+                },
+                onSelected = { selected = it },
+                filterLabel = stringResource(R.string.repo_fork),
+                neutralLabel = stringResource(R.string.repo_fork),
+                isNeutral = { it == null },
+            )
+        }
+
+        composeRule.onNodeWithContentDescription(description(R.string.repo_fork, text(R.string.common_all))).performClick()
+        assertEquals(null, selected)
+        composeRule.onAllNodesWithText(text(R.string.common_all)).assertCountEquals(0)
+        composeRule.onAllNodesWithText(text(R.string.repo_fork)).assertCountEquals(2)
+        composeRule.onNodeWithText(text(R.string.gist_category_original)).assertIsDisplayed().performClick()
+        assertEquals(false, selected)
+        composeRule.onNodeWithContentDescription(description(R.string.repo_fork, text(R.string.gist_category_original))).assertIsDisplayed()
+
+        composeRule.runOnIdle { selected = null }
+        composeRule.onNodeWithContentDescription(description(R.string.repo_fork, text(R.string.common_all))).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.gist_category_original)).assertCountEquals(0)
     }
 
     @Test
@@ -116,9 +157,9 @@ class FilterCapsuleMenuTest {
                 filterLabel = stringResource(R.string.issue_labels),
             )
         }
-        composeRule.onNodeWithText("Labels").assertIsDisplayed()
-        composeRule.onAllNodesWithText("All").assertCountEquals(0)
-        composeRule.onNodeWithContentDescription("Select Labels, current All").assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.issue_labels)).assertIsDisplayed()
+        composeRule.onAllNodesWithText(text(R.string.common_all)).assertCountEquals(0)
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.common_all))).assertIsDisplayed()
     }
 
     @Test
@@ -135,9 +176,9 @@ class FilterCapsuleMenuTest {
                 filterLabel = stringResource(R.string.issue_labels),
             )
         }
-        composeRule.onNodeWithText("1 selected").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Select Labels, current 1 selected").performClick()
-        composeRule.onNodeWithText("Clear labels").assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.issue_filter_selected_count, 1)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.issue_filter_selected_count, 1))).performClick()
+        composeRule.onNodeWithText(text(R.string.issue_filter_clear_labels)).assertIsDisplayed()
         composeRule.onNodeWithText("enhancement").performClick()
         assertEquals(setOf("bug", "enhancement"), result)
     }
@@ -157,10 +198,10 @@ class FilterCapsuleMenuTest {
             )
         }
 
-        composeRule.onNodeWithContentDescription("Select Labels, current All").performClick()
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.common_all))).performClick()
         composeRule.onNodeWithText("bug").performClick()
         composeRule.onNodeWithText("enhancement").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText("Clear labels").assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.issue_filter_clear_labels)).assertIsDisplayed()
         assertEquals(setOf("bug", "enhancement"), selected)
     }
 
@@ -178,8 +219,8 @@ class FilterCapsuleMenuTest {
                 filterLabel = stringResource(R.string.issue_labels),
             )
         }
-        composeRule.onNodeWithContentDescription("Select Labels, current 1 selected").performClick()
-        composeRule.onNodeWithText("Clear labels").performClick()
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.issue_filter_selected_count, 1))).performClick()
+        composeRule.onNodeWithText(text(R.string.issue_filter_clear_labels)).performClick()
         assertEquals(emptySet<String>(), result)
     }
 }

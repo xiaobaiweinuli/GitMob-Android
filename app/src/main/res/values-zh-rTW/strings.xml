@@ -214,6 +214,30 @@
     <string name="common_done">完成</string>
     <string name="common_edit">編輯</string>
 
+    <!-- 儲存庫清單 · 搜尋與篩選 -->
+    <string name="repos_search">搜尋儲存庫</string>
+    <string name="repos_search_active">搜尋儲存庫，目前搜尋：%1$s</string>
+    <string name="repos_search_hint">搜尋儲存庫名稱或簡介</string>
+    <string name="repos_clear_search">清空搜尋</string>
+    <string name="repos_reset">重置</string>
+    <string name="repos_reset_filters">重置篩選與排序，保留搜尋詞</string>
+    <string name="repos_filter_archived">封存</string>
+    <string name="repos_not_archived">未封存</string>
+    <string name="repos_issues_enabled">開啟</string>
+    <string name="repos_issues_disabled">關閉</string>
+    <string name="repos_filter_time">時間</string>
+    <string name="repos_filter_name">名稱</string>
+    <string name="repos_sort_inactive">未啟用</string>
+    <string name="repos_sort_pushed_asc">最早推送</string>
+    <string name="repos_sort_pushed_desc">最近推送</string>
+    <string name="repos_sort_stars_asc">最少</string>
+    <string name="repos_sort_stars_desc">最多</string>
+    <string name="repos_sort_name_desc">倒序</string>
+    <string name="repos_sort_name_asc">正序</string>
+    <string name="repos_empty">沒有符合條件的儲存庫</string>
+    <string name="repos_empty_batch">尚未找到符合的儲存庫，可以繼續查找</string>
+    <string name="repos_continue_search">繼續查找</string>
+
     <!-- 儲存庫詳情 -->
     <string name="repo_forked_from">" 復刻自 %1$s/%2$s"</string>
     <string name="repo_template">範本</string>

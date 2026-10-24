@@ -6,9 +6,13 @@ fragment RepoListFields on Repository {
   owner { login avatarUrl }
   description
   homepageUrl
-  isPrivate
+  visibility
   isArchived
   isFork
+  hasIssuesEnabled
+  createdAt
+  updatedAt
+  pushedAt
   parent { name owner { login avatarUrl } }
   primaryLanguage { name color }
   stargazerCount
@@ -19,13 +23,13 @@ fragment RepoListFields on Repository {
 }
 
 # 当前登录用户自己的仓库（「仓库」Tab）
-query ViewerRepos($after: String, $first: Int!, $topicsFirst: Int!) {
+query ViewerRepos($after: String, $first: Int!, $topicsFirst: Int!, $visibility: RepositoryVisibility, $isArchived: Boolean, $isFork: Boolean, $hasIssuesEnabled: Boolean, $orderBy: RepositoryOrder!) {
   viewer {
     id
     login
     name
     avatarUrl
-    repositories(first: $first, after: $after, ownerAffiliations: [OWNER]) {
+    repositories(first: $first, after: $after, ownerAffiliations: [OWNER], visibility: $visibility, isArchived: $isArchived, isFork: $isFork, hasIssuesEnabled: $hasIssuesEnabled, orderBy: $orderBy) {
       totalCount
       nodes { ...RepoListFields }
       pageInfo { hasNextPage endCursor }
@@ -34,7 +38,7 @@ query ViewerRepos($after: String, $first: Int!, $topicsFirst: Int!) {
 }
 
 # 任意指定 owner（用户或组织）的仓库（个人/组织主页点「仓库」）
-query OwnerRepos($login: String!, $after: String, $first: Int!, $topicsFirst: Int!) {
+query OwnerRepos($login: String!, $after: String, $first: Int!, $topicsFirst: Int!, $visibility: RepositoryVisibility, $isArchived: Boolean, $isFork: Boolean, $hasIssuesEnabled: Boolean, $orderBy: RepositoryOrder!) {
   repositoryOwner(login: $login) {
     __typename
     id
@@ -42,7 +46,7 @@ query OwnerRepos($login: String!, $after: String, $first: Int!, $topicsFirst: In
     avatarUrl
     ... on User { name isViewer }
     ... on Organization { name viewerCanCreateRepositories }
-    repositories(first: $first, after: $after, ownerAffiliations: [OWNER]) {
+    repositories(first: $first, after: $after, ownerAffiliations: [OWNER], visibility: $visibility, isArchived: $isArchived, isFork: $isFork, hasIssuesEnabled: $hasIssuesEnabled, orderBy: $orderBy) {
       totalCount
       nodes { ...RepoListFields }
       pageInfo { hasNextPage endCursor }

@@ -1,22 +1,26 @@
 # 指定用户的仓库列表（他人主页 → 仓库统计项），ownerAffiliations 只传 OWNER
-query UserRepos($login: String!, $after: String) {
+query UserRepos($login: String!, $after: String, $first: Int!, $topicsFirst: Int!) {
   user(login: $login) {
-    repositories(first: 20, after: $after, ownerAffiliations: [OWNER]) {
+    repositories(first: $first, after: $after, ownerAffiliations: [OWNER]) {
       totalCount
       nodes {
         name
         owner { login avatarUrl }
         description
         homepageUrl
-        isPrivate
+        visibility
         isArchived
         isFork
+        hasIssuesEnabled
+        createdAt
+        updatedAt
+        pushedAt
         parent { name owner { login avatarUrl } }
         primaryLanguage { name color }
         stargazerCount
         forkCount
         issues(states: [OPEN]) { totalCount }
-        repositoryTopics(first: 10) { nodes { topic { name } } }
+        repositoryTopics(first: $topicsFirst) { nodes { topic { name } } }
         defaultBranchRef { name }
       }
       pageInfo { hasNextPage endCursor }

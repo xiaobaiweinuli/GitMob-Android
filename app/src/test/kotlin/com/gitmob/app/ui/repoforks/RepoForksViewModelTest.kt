@@ -4,6 +4,7 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.data.model.RepoList
 import com.gitmob.app.data.model.RepoListItem
+import com.gitmob.app.data.model.RepoVisibility
 import com.gitmob.app.data.repository.RepoDetailRepository
 import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
@@ -13,6 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
+import java.time.Instant
 
 class RepoForksViewModelTest {
     @get:Rule
@@ -23,9 +25,13 @@ class RepoForksViewModelTest {
         ownerLogin = owner,
         description = null,
         homepageUrl = null,
-        isPrivate = false,
+        visibility = RepoVisibility.PUBLIC,
         isArchived = false,
         isFork = true,
+        hasIssuesEnabled = true,
+        createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+        updatedAt = Instant.parse("2026-01-01T00:00:00Z"),
+        pushedAt = null,
         forkedFromOwner = "upstream",
         forkedFromName = "repo",
         languageName = null,

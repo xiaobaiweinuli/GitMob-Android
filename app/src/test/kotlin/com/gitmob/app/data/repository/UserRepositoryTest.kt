@@ -6,6 +6,8 @@ import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
+import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.data.model.RepoVisibility
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -16,6 +18,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.Instant
 
 private fun buildApolloClient(baseUrl: String): ApolloClient =
     ApolloClient.Builder()
@@ -132,6 +135,32 @@ class UserRepositoryTest {
 
         assertTrue(result is ApiResult.Failure)
         assertEquals(ApiError.Unauthorized, (result as ApiResult.Failure).error)
+    }
+
+    @Test
+    fun `独立用户仓库查询同步可见性日期议题开关及容量参数`() = runTest {
+        server.enqueue(MockResponse().setBody("""
+            {"data":{"user":{"repositories":{"totalCount":1,"nodes":[{
+                "name":"repo","owner":{"__typename":"User","login":"octocat","avatarUrl":"https://x/a.png"},
+                "description":null,"homepageUrl":null,"visibility":"PRIVATE","isArchived":false,"isFork":false,
+                "hasIssuesEnabled":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-02-01T00:00:00Z","pushedAt":null,
+                "parent":null,"primaryLanguage":null,"stargazerCount":0,"forkCount":0,"issues":{"totalCount":0},
+                "repositoryTopics":{"nodes":[]},"defaultBranchRef":null
+            }],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
+        """.trimIndent()))
+
+        val result = repository.getUserRepos("octocat", "previous") as ApiResult.Success
+
+        val repo = result.data.items.single()
+        assertEquals(RepoVisibility.PRIVATE, repo.visibility)
+        assertTrue(repo.hasIssuesEnabled)
+        assertEquals(0, repo.openIssueCount)
+        assertEquals(Instant.parse("2026-02-01T00:00:00Z"), repo.updatedAt)
+        assertEquals(null, repo.pushedAt)
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body.contains("\"first\":${PageSize.REPOS}"))
+        assertTrue(body.contains("\"topicsFirst\":${PageSize.TOPICS_PER_REPO}"))
+        assertTrue(body.contains("\"after\":\"previous\""))
     }
 }
 

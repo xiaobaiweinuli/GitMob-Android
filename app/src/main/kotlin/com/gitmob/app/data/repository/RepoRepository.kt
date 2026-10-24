@@ -13,10 +13,15 @@ import com.gitmob.app.graphql.OwnerReposQuery
 import com.gitmob.app.graphql.RepositoryCreateOwnersQuery
 import com.gitmob.app.graphql.ViewerReposQuery
 import com.gitmob.app.graphql.fragment.RepoListFields
+import com.gitmob.app.graphql.type.OrderDirection
+import com.gitmob.app.graphql.type.RepositoryOrder
+import com.gitmob.app.graphql.type.RepositoryOrderField
+import com.gitmob.app.graphql.type.RepositoryVisibility
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,57 +31,105 @@ class RepoRepository @Inject constructor(
     private val apolloClient: ApolloClient,
 ) {
 
-    // ── 缓存实例 ──────────────────────────────────────────────
-    /** viewer 自己的仓库第一页（login=null, after=null），TTL 5 min */
+    private companion object {
+        const val SEARCH_SCAN_PAGE_LIMIT = 5
+    }
+
+    /** 只缓存 viewer 默认条件第一页，TTL 5 min。 */
     private val viewerReposCache = MemoryCache<Unit, RepoList>(ttlMs = 5 * 60_000L)
+    private var cacheGeneration = 0L
 
     /**
      * 公开：登出时由 AuthRepository 统一调用，清空当前 Repository 的全部内存缓存。
      */
     fun invalidateAllCaches() {
-        viewerReposCache.invalidateAll()
-    }
-
-    /**
-     * 统一的仓库列表查询入口：当前登录用户 + 任意指定用户都走这一个方法。
-     *
-     * @param login 要查询的 owner login（用户或组织）。
-     *              `null` 时走 `viewer.repositories`（当前登录用户，「仓库」Tab）；
-     *              非空时走 `repositoryOwner(login:).repositories`（个人/组织主页点「仓库」。
- 
-     * @param after 分页游标，`null` 表示第一页。
-     * @return 仓库列表，两种模式下返回的 `RepoListConnection` 字段结构完全一致（GraphQL Schema 已核实）。
-     */
-    /**
-     * 仓库列表。
-     * 仅对「viewer 自己 + 第一页（login=null, after=null）」启用缓存（TTL 5 min）；
-     * 他人仓库/第二页及以后不走缓存。
-     */
-    suspend fun getRepos(login: String? = null, after: String? = null): ApiResult<RepoList> {
-        if (login == null && after == null) {
-            viewerReposCache.get(Unit)?.let { return ApiResult.Success(it) }
-            val result = getReposInternal(login, after)
-            if (result is ApiResult.Success) viewerReposCache.set(Unit, result.data)
-            return result
+        synchronized(viewerReposCache) {
+            cacheGeneration++
+            viewerReposCache.invalidateAll()
         }
-        return getReposInternal(login, after)
     }
 
     /**
-     * 下拉刷新专用：强制重新拉取 viewer 自己的仓库第一页，不走缓存。
+     * 查询当前主体拥有的仓库；login=null 表示 viewer，其他值表示用户或组织。
+     * 搜索逐页匹配名称／简介，每次最多扫描五页，返回最后完整处理页的游标。
      */
-    suspend fun getViewerReposFresh(): ApiResult<RepoList> {
-        val result = getReposInternal(login = null, after = null)
-        if (result is ApiResult.Success) viewerReposCache.set(Unit, result.data)
+    suspend fun getRepos(
+        login: String? = null,
+        after: String? = null,
+        filters: RepoFilters = RepoFilters(),
+        forceRefresh: Boolean = false,
+    ): ApiResult<RepoList> {
+        val query = filters.normalized()
+        val cacheable = login == null && after == null && query == RepoFilters()
+        val generation = synchronized(viewerReposCache) {
+            if (cacheable) {
+                if (forceRefresh) {
+                    cacheGeneration++
+                    viewerReposCache.invalidateAll()
+                } else {
+                    viewerReposCache.get(Unit)?.let { return ApiResult.Success(it) }
+                }
+            }
+            cacheGeneration
+        }
+        val result = scanRepos(login, after, query)
+        if (cacheable && result is ApiResult.Success) {
+            synchronized(viewerReposCache) {
+                if (generation == cacheGeneration) viewerReposCache.set(Unit, result.data)
+            }
+        }
         return result
     }
 
-    private suspend fun getReposInternal(login: String?, after: String?): ApiResult<RepoList> {
+    private suspend fun scanRepos(login: String?, after: String?, filters: RepoFilters): ApiResult<RepoList> {
+        val collected = linkedMapOf<String, RepoListItem>()
+        val cursors = mutableSetOf(after)
+        var cursor = after
+        var scannedPages = 0
+        var ownerId: String? = null
+        while (true) {
+            val page = when (val result = getReposPage(login, cursor, filters)) {
+                is ApiResult.Failure -> return result
+                is ApiResult.Success -> result.data
+            }
+            val batch = safeCall {
+                check(ownerId == null || ownerId == page.ownerContext?.owner?.id) { "Repository owner changed while scanning" }
+                ownerId = page.ownerContext?.owner?.id
+                if (page.hasNextPage) {
+                    check(!page.endCursor.isNullOrBlank() && cursors.add(page.endCursor)) { "Repository cursor did not advance" }
+                }
+                scannedPages++
+                page.items.filter(filters::matchesSearch).forEach { collected[it.key] = it }
+                page.copy(
+                    items = collected.values.toList(),
+                    requiresManualContinue = page.hasNextPage &&
+                        (collected.isEmpty() || (filters.query.isNotEmpty() && scannedPages == SEARCH_SCAN_PAGE_LIMIT)),
+                )
+            }
+            if (batch is ApiResult.Failure) return batch
+            if (!page.hasNextPage || filters.query.isEmpty() || collected.size >= PageSize.REPOS || scannedPages == SEARCH_SCAN_PAGE_LIMIT) {
+                return batch
+            }
+            cursor = page.endCursor
+        }
+    }
+
+    private suspend fun getReposPage(login: String?, after: String?, filters: RepoFilters): ApiResult<RepoList> {
+        val visibility = Optional.presentIfNotNull(filters.visibility?.let { RepositoryVisibility.valueOf(it.name) })
+        val archived = Optional.presentIfNotNull(filters.isArchived)
+        val fork = Optional.presentIfNotNull(filters.isFork)
+        val issues = Optional.presentIfNotNull(filters.hasIssuesEnabled)
+        val order = filters.sort.toOrder()
         return if (login == null) {
             when (val result = apolloClient.query(ViewerReposQuery(
                 after = Optional.presentIfNotNull(after),
                 first = PageSize.REPOS,
                 topicsFirst = PageSize.TOPICS_PER_REPO,
+                visibility = visibility,
+                isArchived = archived,
+                isFork = fork,
+                hasIssuesEnabled = issues,
+                orderBy = order,
             )).executeAsApiResult()) {
                 is ApiResult.Failure -> result
                 is ApiResult.Success -> safeCall {
@@ -106,6 +159,11 @@ class RepoRepository @Inject constructor(
                 after = Optional.presentIfNotNull(after),
                 first = PageSize.REPOS,
                 topicsFirst = PageSize.TOPICS_PER_REPO,
+                visibility = visibility,
+                isArchived = archived,
+                isFork = fork,
+                hasIssuesEnabled = issues,
+                orderBy = order,
             )).executeAsApiResult()) {
                 is ApiResult.Failure -> result
                 is ApiResult.Success -> safeCall {
@@ -200,7 +258,7 @@ class RepoRepository @Inject constructor(
         }
         val response = api.post<RestCreatedRepository, RepositoryCreateRequest>(path, request)
         if (input.owner.type == RepositoryCreateOwnerType.USER) {
-            viewerReposCache.invalidateAll()
+            invalidateAllCaches()
         }
         CreatedRepository(owner = response.owner.login, name = response.name)
     }
@@ -250,9 +308,13 @@ internal fun RepoListFields.toDomain() = RepoListItem(
     ownerLogin = owner.login,
     description = description,
     homepageUrl = homepageUrl,
-    isPrivate = isPrivate,
+    visibility = RepoVisibility.valueOf(visibility.rawValue),
     isArchived = isArchived,
     isFork = isFork,
+    hasIssuesEnabled = hasIssuesEnabled,
+    createdAt = Instant.parse(createdAt),
+    updatedAt = Instant.parse(updatedAt),
+    pushedAt = pushedAt?.let(Instant::parse),
     forkedFromOwner = parent?.owner?.login,
     forkedFromName = parent?.name,
     languageName = primaryLanguage?.name,
@@ -262,4 +324,18 @@ internal fun RepoListFields.toDomain() = RepoListItem(
     openIssueCount = issues.totalCount,
     topics = repositoryTopics.nodes.orEmpty().filterNotNull().map { it.topic.name },
     defaultBranchName = defaultBranchRef?.name,
+)
+
+private fun RepoSort.toOrder() = RepositoryOrder(
+    field = when (this) {
+        RepoSort.UPDATED_ASC, RepoSort.UPDATED_DESC -> RepositoryOrderField.UPDATED_AT
+        RepoSort.CREATED_ASC, RepoSort.CREATED_DESC -> RepositoryOrderField.CREATED_AT
+        RepoSort.PUSHED_ASC, RepoSort.PUSHED_DESC -> RepositoryOrderField.PUSHED_AT
+        RepoSort.STARS_ASC, RepoSort.STARS_DESC -> RepositoryOrderField.STARGAZERS
+        RepoSort.NAME_ASC, RepoSort.NAME_DESC -> RepositoryOrderField.NAME
+    },
+    direction = when (this) {
+        RepoSort.UPDATED_ASC, RepoSort.CREATED_ASC, RepoSort.PUSHED_ASC, RepoSort.STARS_ASC, RepoSort.NAME_ASC -> OrderDirection.ASC
+        RepoSort.UPDATED_DESC, RepoSort.CREATED_DESC, RepoSort.PUSHED_DESC, RepoSort.STARS_DESC, RepoSort.NAME_DESC -> OrderDirection.DESC
+    },
 )

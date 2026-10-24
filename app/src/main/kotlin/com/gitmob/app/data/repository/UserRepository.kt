@@ -7,6 +7,7 @@ import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.FollowState
 import com.gitmob.app.data.model.GHUser
@@ -18,6 +19,7 @@ import com.gitmob.app.data.model.ProfileExtra
 import com.gitmob.app.data.model.ProfileOwner
 import com.gitmob.app.data.model.RepoList
 import com.gitmob.app.data.model.RepoListItem
+import com.gitmob.app.data.model.RepoVisibility
 import com.gitmob.app.data.model.SimpleOrg
 import com.gitmob.app.data.model.SimpleUser
 import com.gitmob.app.data.model.SocialAccount
@@ -41,6 +43,7 @@ import com.gitmob.app.graphql.ViewerOrganizationsQuery
 import com.gitmob.app.graphql.ViewerProfileQuery
 import com.gitmob.app.graphql.fragment.PinnedRepoFields
 import com.gitmob.app.graphql.fragment.ProfileFields
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -365,12 +368,12 @@ class UserRepository @Inject constructor(
 
     /**
      * 指定用户的仓库列表（他人主页 → 点击"仓库"统计项）。
-     * 与 RepoRepository.getViewerRepos() 的区别：根字段是 user(login:) 不是 viewer，
+     * 与 RepoRepository.getRepos() 的区别：根字段是 user(login:) 不是 viewer，
      * 可以查任意 login 的公开仓库；ownerAffiliations 只传 OWNER（组织仓库不属于个人名下）。
      */
     suspend fun getUserRepos(login: String, after: String? = null): ApiResult<RepoList> =
         when (val result = apolloClient.query(
-            UserReposQuery(login, Optional.presentIfNotNull(after)),
+            UserReposQuery(login, Optional.presentIfNotNull(after), PageSize.REPOS, PageSize.TOPICS_PER_REPO),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -390,9 +393,13 @@ class UserRepository @Inject constructor(
         ownerLogin = owner.login,
         description = description,
         homepageUrl = homepageUrl,
-        isPrivate = isPrivate,
+        visibility = RepoVisibility.valueOf(visibility.rawValue),
         isArchived = isArchived,
         isFork = isFork,
+        hasIssuesEnabled = hasIssuesEnabled,
+        createdAt = Instant.parse(createdAt),
+        updatedAt = Instant.parse(updatedAt),
+        pushedAt = pushedAt?.let(Instant::parse),
         forkedFromOwner = parent?.owner?.login,
         forkedFromName = parent?.name,
         languageName = primaryLanguage?.name,

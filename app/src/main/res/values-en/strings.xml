@@ -214,6 +214,30 @@
     <string name="common_done">Done</string>
     <string name="common_edit">Edit</string>
 
+    <!-- Repository list · search and filters -->
+    <string name="repos_search">Search repositories</string>
+    <string name="repos_search_active">Search repositories, current search: %1$s</string>
+    <string name="repos_search_hint">Search repository names or descriptions</string>
+    <string name="repos_clear_search">Clear search</string>
+    <string name="repos_reset">Reset</string>
+    <string name="repos_reset_filters">Reset filters and sorting, keep the search text</string>
+    <string name="repos_filter_archived">Archive</string>
+    <string name="repos_not_archived">Not archived</string>
+    <string name="repos_issues_enabled">Enabled</string>
+    <string name="repos_issues_disabled">Disabled</string>
+    <string name="repos_filter_time">Time</string>
+    <string name="repos_filter_name">Name</string>
+    <string name="repos_sort_inactive">Not active</string>
+    <string name="repos_sort_pushed_asc">Least recently pushed</string>
+    <string name="repos_sort_pushed_desc">Recently pushed</string>
+    <string name="repos_sort_stars_asc">Fewest</string>
+    <string name="repos_sort_stars_desc">Most</string>
+    <string name="repos_sort_name_desc">Descending</string>
+    <string name="repos_sort_name_asc">Ascending</string>
+    <string name="repos_empty">No repositories match</string>
+    <string name="repos_empty_batch">No matches yet. Keep searching to check more repositories.</string>
+    <string name="repos_continue_search">Keep searching</string>
+
     <!-- Repository detail -->
     <string name="repo_forked_from">" Forked from %1$s/%2$s"</string>
     <string name="repo_template">Template</string>

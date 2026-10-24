@@ -7,6 +7,7 @@ import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
+import com.gitmob.app.data.model.RepoVisibility
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -110,13 +111,15 @@ class RepoDetailRepositoryTest {
     @Test
     fun `direct forks are mapped as repository cards`() = runTest {
         server.enqueue(MockResponse().setBody(
-            """{"data":{"repository":{"forks":{"totalCount":1,"nodes":[{"name":"repo","owner":{"__typename":"User","login":"forker","avatarUrl":null},"description":null,"homepageUrl":null,"isPrivate":false,"isArchived":false,"isFork":true,"parent":{"name":"repo","owner":{"__typename":"User","login":"octo","avatarUrl":null}},"primaryLanguage":null,"stargazerCount":0,"forkCount":0,"issues":{"totalCount":0},"repositoryTopics":{"nodes":[]},"defaultBranchRef":{"name":"main"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}""",
+            """{"data":{"repository":{"forks":{"totalCount":1,"nodes":[{"name":"repo","owner":{"__typename":"User","login":"forker","avatarUrl":null},"description":null,"homepageUrl":null,"visibility":"INTERNAL","isArchived":false,"isFork":true,"hasIssuesEnabled":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-02-01T00:00:00Z","pushedAt":null,"parent":{"name":"repo","owner":{"__typename":"User","login":"octo","avatarUrl":null}},"primaryLanguage":null,"stargazerCount":0,"forkCount":0,"issues":{"totalCount":0},"repositoryTopics":{"nodes":[]},"defaultBranchRef":{"name":"main"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}""",
         ))
 
         val result = repository.getForks("octo", "repo") as ApiResult.Success
 
         assertEquals("forker", result.data.items.single().ownerLogin)
         assertEquals("octo", result.data.items.single().forkedFromOwner)
+        assertEquals(RepoVisibility.INTERNAL, result.data.items.single().visibility)
+        assertTrue(result.data.items.single().hasIssuesEnabled)
     }
 
     @Test

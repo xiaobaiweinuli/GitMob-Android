@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoListItem
+import com.gitmob.app.data.model.RepoVisibility
 
 /**
  * 仓库卡片（"仓库"Tab、用户仓库列表通用）。
@@ -153,9 +154,9 @@ fun RepoCard(
 
                 // 右侧：私有 / 归档 / 分支胶囊 → 固定不滚动
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (repo.isPrivate) {
+                    if (repo.visibility != RepoVisibility.PUBLIC) {
                         StatusChip(
-                            stringResource(R.string.common_private),
+                            stringResource(if (repo.visibility == RepoVisibility.INTERNAL) R.string.work_visibility_internal else R.string.common_private),
                             MaterialTheme.colorScheme.errorContainer,
                             MaterialTheme.colorScheme.onErrorContainer,
                         )
