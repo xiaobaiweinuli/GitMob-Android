@@ -94,6 +94,7 @@ import com.gitmob.app.ui.settings.AboutScreen
 import com.gitmob.app.ui.settings.AppearanceScreen
 import com.gitmob.app.ui.settings.SettingsScreen
 import com.gitmob.app.ui.stars.StarsScreen
+import com.gitmob.app.ui.theme.ThemePreference
 import com.gitmob.app.ui.userlist.OrgMembersScreen
 import com.gitmob.app.ui.userlist.RepoWatchersScreen
 import com.gitmob.app.ui.userlist.RepoStargazersScreen
@@ -161,6 +162,7 @@ fun GitMobNavGraph(
     startLoggedIn: Boolean,
     errorEventBus: ErrorEventBus,
     repoUpdateEventBus: RepoUpdateEventBus,
+    themePreference: ThemePreference,
     enablePredictiveBack: Boolean,
     deepLinkDestination: DeepLinkDestination? = null,
     onDeepLinkConsumed: () -> Unit = {},
@@ -171,6 +173,7 @@ fun GitMobNavGraph(
         if (isLoggedIn) {
             LoggedInApp(
                 onLogout = { isLoggedIn = false },
+                themePreference = themePreference,
                 enablePredictiveBack = enablePredictiveBack,
                 deepLinkDestination = deepLinkDestination,
                 onDeepLinkConsumed = onDeepLinkConsumed,
@@ -206,6 +209,7 @@ fun GitMobNavGraph(
 @Composable
 private fun LoggedInApp(
     onLogout: () -> Unit,
+    themePreference: ThemePreference,
     enablePredictiveBack: Boolean,
     deepLinkDestination: DeepLinkDestination?,
     onDeepLinkConsumed: () -> Unit,
@@ -306,6 +310,7 @@ private fun LoggedInApp(
         }
         entry<SettingsRoute> {
             SettingsScreen(
+                preference = themePreference,
                 onAppearanceClick = { navigator.navigate(AppearanceRoute) },
                 onAboutClick = { navigator.navigate(AboutRoute) },
                 onLogout = onLogout,
@@ -352,7 +357,10 @@ private fun LoggedInApp(
             AboutScreen(onBack = { navigator.goBack() })
         }
         entry<AppearanceRoute> {
-            AppearanceScreen(onBack = { navigator.goBack() })
+            AppearanceScreen(
+                preference = themePreference,
+                onBack = { navigator.goBack() },
+            )
         }
         entry<FollowersRoute> { route ->
             UserListScreen(

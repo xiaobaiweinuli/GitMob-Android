@@ -3,6 +3,7 @@ package com.gitmob.app.ui.settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,10 +42,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
+import com.gitmob.app.BuildConfig
 import com.gitmob.app.R
 
 /**
@@ -92,8 +94,8 @@ fun AboutScreen(onBack: () -> Unit) {
                         shape = RoundedCornerShape(20.dp),
                         modifier = Modifier.size(80.dp),
                     ) {
-                        AsyncImage(
-                            model = R.drawable.ic_app_logo,
+                        Image(
+                            painter = painterResource(R.drawable.ic_app_logo),
                             contentDescription = stringResource(R.string.about_logo_desc),
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize(),
@@ -106,7 +108,7 @@ fun AboutScreen(onBack: () -> Unit) {
                         modifier = Modifier.padding(top = 16.dp),
                     )
                     Text(
-                        "v0.1.0", // TODO: 从 BuildConfig.VERSION_NAME 动态读取，而不是写死
+                        "v${BuildConfig.VERSION_NAME}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),

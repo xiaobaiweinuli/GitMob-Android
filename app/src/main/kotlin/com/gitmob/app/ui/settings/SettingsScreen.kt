@@ -43,19 +43,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.ui.theme.ThemeMode
+import com.gitmob.app.ui.theme.ThemePreference
 
 /** 底部 Tab「设置」。底部 NavigationBar 的高度由外层 NavDisplay 统一处理。 */
 @Composable
 fun SettingsScreen(
+    preference: ThemePreference,
     onAppearanceClick: () -> Unit = {},
     onAboutClick: () -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
-    val preference by viewModel.themePreference.collectAsStateWithLifecycle()
     val modeText = stringResource(
         when (preference.mode) {
             ThemeMode.SYSTEM -> R.string.settings_theme_mode_system
@@ -147,7 +147,7 @@ fun SettingsScreen(
                         icon = Icons.AutoMirrored.Filled.Logout,
                         title = stringResource(R.string.settings_logout),
                         summary = stringResource(R.string.settings_logout_summary),
-                        onClick = onLogout,
+                        onClick = { viewModel.logout(onLogout) },
                         contentColor = MaterialTheme.colorScheme.error,
                         showChevron = false,
                     )

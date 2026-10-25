@@ -31,3 +31,9 @@ data class ThemePreference(
     /** App 内容缩放比例；限制在 80%～110%，不改变系统窗口与系统栏。 */
     val pageScale: Float = 1f,
 )
+
+internal fun ThemePreference.isDarkTheme(systemInDarkTheme: Boolean): Boolean = when (mode) {
+    ThemeMode.SYSTEM -> systemInDarkTheme
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}

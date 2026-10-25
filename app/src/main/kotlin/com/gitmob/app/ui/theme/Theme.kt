@@ -28,11 +28,7 @@ fun GitMobTheme(
     preference: ThemePreference = ThemePreference(),
     content: @Composable () -> Unit,
 ) {
-    val isDark = when (preference.mode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
+    val isDark = preference.isDarkTheme(isSystemInDarkTheme())
 
     val seedColor = resolveSeedColor(preference, isDark)
     val targetColorScheme = rememberDynamicColorScheme(

@@ -1,57 +1,78 @@
 package com.gitmob.app.ui.settings
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.compose.ui.graphics.Color
+import com.gitmob.app.core.error.ApiError
+import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.preferences.ThemePreferenceStore
+import com.gitmob.app.data.repository.AuthRepository
 import com.gitmob.app.ui.theme.ThemeMode
-import com.gitmob.app.ui.theme.ThemePreference
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val themePreferenceStore: ThemePreferenceStore,
+    private val authRepository: AuthRepository,
+    private val errorEventBus: ErrorEventBus,
 ) : ViewModel() {
 
-    val themePreference: StateFlow<ThemePreference> = themePreferenceStore.preference
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemePreference())
-
     fun setThemeMode(mode: ThemeMode) {
-        viewModelScope.launch { themePreferenceStore.setMode(mode) }
+        savePreference { themePreferenceStore.setMode(mode) }
     }
 
     fun setUseDynamicColor(enabled: Boolean) {
-        viewModelScope.launch { themePreferenceStore.setUseDynamicColor(enabled) }
+        savePreference { themePreferenceStore.setUseDynamicColor(enabled) }
     }
 
     fun selectCustomSeedColor(color: Color?) {
-        viewModelScope.launch { themePreferenceStore.selectCustomSeedColor(color) }
+        savePreference { themePreferenceStore.selectCustomSeedColor(color) }
     }
 
     fun setUseAmoled(enabled: Boolean) {
-        viewModelScope.launch { themePreferenceStore.setUseAmoled(enabled) }
+        savePreference { themePreferenceStore.setUseAmoled(enabled) }
     }
 
     fun setPaletteStyle(style: PaletteStyle) {
-        viewModelScope.launch { themePreferenceStore.setPaletteStyle(style) }
+        savePreference { themePreferenceStore.setPaletteStyle(style) }
     }
 
     fun setColorSpec(spec: ColorSpec.SpecVersion) {
-        viewModelScope.launch { themePreferenceStore.setColorSpec(spec) }
+        savePreference { themePreferenceStore.setColorSpec(spec) }
     }
 
     fun setEnablePredictiveBack(enabled: Boolean) {
-        viewModelScope.launch { themePreferenceStore.setEnablePredictiveBack(enabled) }
+        savePreference { themePreferenceStore.setEnablePredictiveBack(enabled) }
     }
 
     fun setPageScale(scale: Float) {
-        viewModelScope.launch { themePreferenceStore.setPageScale(scale) }
+        savePreference { themePreferenceStore.setPageScale(scale) }
+    }
+
+    fun logout(onLoggedOut: () -> Unit) {
+        viewModelScope.launch {
+            when (val result = authRepository.logout()) {
+                is ApiResult.Success -> onLoggedOut()
+                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            }
+        }
+    }
+
+    private fun savePreference(update: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                update()
+            } catch (error: IOException) {
+                Log.e("GitMob-Settings", "保存设置失败", error)
+                errorEventBus.emit(ApiError.Unknown(error.message ?: "Failed to save settings"))
+            }
+        }
     }
 }

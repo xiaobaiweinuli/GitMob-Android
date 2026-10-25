@@ -73,10 +73,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.ui.theme.Coral
 import com.gitmob.app.ui.theme.ThemeMode
+import com.gitmob.app.ui.theme.ThemePreference
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
@@ -127,10 +127,10 @@ private val paletteStyleOptions = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceScreen(
+    preference: ThemePreference,
     onBack: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
-    val preference by viewModel.themePreference.collectAsStateWithLifecycle()
     val dynamicColorActive = preference.useDynamicColor &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val haptic = LocalHapticFeedback.current

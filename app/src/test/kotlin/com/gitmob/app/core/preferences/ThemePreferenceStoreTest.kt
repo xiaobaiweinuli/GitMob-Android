@@ -2,12 +2,14 @@ package com.gitmob.app.core.preferences
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import androidx.datastore.preferences.core.Preferences
 import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.ui.theme.ThemeMode
 import com.gitmob.app.ui.theme.ThemePreference
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,6 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.IOException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -75,5 +78,14 @@ class ThemePreferenceStoreTest {
 
         store.setPageScale(0.2f)
         assertEquals(0.8f, store.preference.first().pageScale)
+    }
+
+    @Test
+    fun `读取IOException时回退为空偏好而不是终止启动`() = runTest {
+        val failed = flow<Preferences> { throw IOException("read failed") }
+
+        val fallback = failed.withThemePreferenceReadFallback().first()
+
+        assertEquals(emptyMap<Preferences.Key<*>, Any>(), fallback.asMap())
     }
 }

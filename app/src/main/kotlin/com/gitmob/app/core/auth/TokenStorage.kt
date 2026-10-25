@@ -55,5 +55,13 @@ class TokenStorage @Inject constructor(
         context.dataStore.edit { prefs -> prefs.remove(tokenKey(login)) }
     }
 
+    /** 原子删除当前账号 token 与激活标记，避免登出后冷启动再次进入登录态。 */
+    suspend fun clearActiveAccount() {
+        context.dataStore.edit { prefs ->
+            prefs[activeLoginKey]?.let { login -> prefs.remove(tokenKey(login)) }
+            prefs.remove(activeLoginKey)
+        }
+    }
+
     suspend fun isLoggedIn(): Boolean = getToken() != null
 }

@@ -1,10 +1,13 @@
 package com.gitmob.app.core.preferences
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -15,11 +18,22 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private val Context.themeDataStore by preferencesDataStore("theme_preference_store")
+
+internal fun Flow<Preferences>.withThemePreferenceReadFallback(): Flow<Preferences> = catch { error ->
+    if (error is IOException) {
+        Log.e("GitMob-ThemeStore", "读取主题设置失败，回退默认值", error)
+        emit(emptyPreferences())
+    } else {
+        throw error
+    }
+}
 
 /** 主题偏好用普通明文 DataStore 即可，不是敏感数据，不需要走 TokenCipher 那套加密。 */
 @Singleton
@@ -35,7 +49,9 @@ class ThemePreferenceStore @Inject constructor(
     private val enablePredictiveBackKey = booleanPreferencesKey("enable_predictive_back")
     private val pageScaleKey = floatPreferencesKey("page_scale")
 
-    val preference: Flow<ThemePreference> = context.themeDataStore.data.map { prefs ->
+    val preference: Flow<ThemePreference> = context.themeDataStore.data
+        .withThemePreferenceReadFallback()
+        .map { prefs ->
         ThemePreference(
             isLoaded = true, // 能走到 map 就说明 DataStore 已吐出真实值（区别于数据类的构造默认值）
             mode = prefs[modeKey]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM,
@@ -51,7 +67,7 @@ class ThemePreferenceStore @Inject constructor(
             enablePredictiveBack = prefs[enablePredictiveBackKey] ?: true,
             pageScale = (prefs[pageScaleKey] ?: 1f).coerceIn(MIN_PAGE_SCALE, MAX_PAGE_SCALE),
         )
-    }
+        }
 
     suspend fun setMode(mode: ThemeMode) {
         context.themeDataStore.edit { it[modeKey] = mode.name }

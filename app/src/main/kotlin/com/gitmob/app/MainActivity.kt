@@ -1,14 +1,18 @@
 package com.gitmob.app
 
+import android.graphics.Color
 import android.os.Bundle
 import android.content.Intent
 import android.view.View
 import android.view.ViewTreeObserver
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -20,6 +24,7 @@ import com.gitmob.app.navigation.GitMobNavGraph
 import com.gitmob.app.navigation.DeepLinkDestination
 import com.gitmob.app.navigation.EXTRA_DEEP_LINK_DESTINATION
 import com.gitmob.app.ui.theme.GitMobTheme
+import com.gitmob.app.ui.theme.isDarkTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -69,12 +74,26 @@ class MainActivity : AppCompatActivity() {
 
             if (!isReady) return@setContent
 
+            val isDarkTheme = themePreference.isDarkTheme(isSystemInDarkTheme())
+            SideEffect {
+                val systemBarStyle = SystemBarStyle.auto(
+                    lightScrim = Color.TRANSPARENT,
+                    darkScrim = Color.TRANSPARENT,
+                    detectDarkMode = { isDarkTheme },
+                )
+                enableEdgeToEdge(
+                    statusBarStyle = systemBarStyle,
+                    navigationBarStyle = systemBarStyle,
+                )
+            }
+
             GitMobTheme(preference = themePreference) {
                 Surface(modifier = Modifier) {
                     GitMobNavGraph(
                         startLoggedIn = isLoggedIn,
                         errorEventBus = errorEventBus,
                         repoUpdateEventBus = repoUpdateEventBus,
+                        themePreference = themePreference,
                         enablePredictiveBack = themePreference.enablePredictiveBack,
                         deepLinkDestination = deepLinkDestination,
                         onDeepLinkConsumed = { deepLinkDestination = null },

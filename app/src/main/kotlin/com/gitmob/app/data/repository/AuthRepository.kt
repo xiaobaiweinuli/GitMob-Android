@@ -2,6 +2,7 @@ package com.gitmob.app.data.repository
 
 import com.gitmob.app.core.auth.TokenStorage
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.data.model.ViewerProfile
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -58,21 +59,14 @@ class AuthRepository @Inject constructor(
 
     suspend fun isLoggedIn(): Boolean = tokenStorage.isLoggedIn()
 
-    /**
-     * 登出流程：清除账号数据 + 清空全部 Repository 的内存缓存。
-     * 缓存必须清空，避免切换账号后残留上一个账号的星标/仓库/通知等数据。
-     *
-     * @param login 要登出的账号 login（tokenStorage 的 key）
-     */
-    suspend fun logout(login: String) {
-        tokenStorage.removeAccount(login)
-
-        // 按依赖注入顺序清空各 Repository 的内存缓存
+    /** 清空全部账号缓存后原子删除当前账号凭据；失败时保留登录界面。 */
+    suspend fun logout(): ApiResult<Unit> = safeCall {
         userRepository.invalidateAllCaches()
         starRepository.invalidateAllCaches()
         repoRepository.invalidateAllCaches()
         gistRepository.invalidateAllCaches()
         repoDetailRepository.invalidateAllCaches()
         notificationRepository.invalidateAllCaches()
+        tokenStorage.clearActiveAccount()
     }
 }
