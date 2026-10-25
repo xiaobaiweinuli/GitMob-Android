@@ -208,4 +208,17 @@ internal data class GistFileUpdateDto(
 )
 
 @Serializable
+internal data class GistCreateRequest(
+    val description: String? = null,
+    @SerialName("public") val isPublic: Boolean,
+    val files: Map<String, GistCreateFileRequest>,
+)
+
+@Serializable
+internal data class GistCreateFileRequest(val content: String)
+
+@Serializable
+internal data class GistCreateResponseDto(val id: String = "")
+
+@Serializable
 internal data class GistCommentRequest(val body: String)

@@ -68,6 +68,7 @@ import com.gitmob.app.ui.reporeleases.RepoReleaseEditorScreen
 import com.gitmob.app.ui.reporeleases.RepoReleaseListScreen
 import com.gitmob.app.ui.common.PlaceholderScreen
 import com.gitmob.app.ui.gist.GistDetailScreen
+import com.gitmob.app.ui.gist.GistCreateScreen
 import com.gitmob.app.ui.gist.GistFileEditorScreen
 import com.gitmob.app.ui.gist.GistForksScreen
 import com.gitmob.app.ui.gist.GistRevisionDetailScreen
@@ -296,6 +297,7 @@ private fun LoggedInApp(
         }
         entry<GistRoute> {
             GistScreen(
+                onCreateGist = { navigator.navigate(GistCreateRoute) },
                 onGistClick = { gist ->
                     navigator.navigate(GistDetailRoute(gist.apiName))
                 },
@@ -872,10 +874,25 @@ private fun LoggedInApp(
             GistScreen(
                 login = route.login,
                 onBack = { navigator.goBack() },
+                onCreateGist = if (route.login == null) {
+                    { navigator.navigate(GistCreateRoute) }
+                } else {
+                    null
+                },
                 onGistClick = { gist ->
                     navigator.navigate(GistDetailRoute(gist.apiName))
                 },
                 onForkSourceClick = { id -> navigator.navigate(GistDetailRoute(id)) },
+            )
+        }
+
+        entry<GistCreateRoute> {
+            GistCreateScreen(
+                onBack = { navigator.goBack() },
+                onCreated = { id ->
+                    navigator.goBack()
+                    navigator.navigate(GistDetailRoute(id))
+                },
             )
         }
 

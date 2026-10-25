@@ -406,6 +406,14 @@
     <string name="gist_empty_forked">还没有复刻 Gist</string>
     <string name="gist_empty_filtered">没有符合筛选条件的 Gist</string>
     <string name="gist_continue_search">继续查找</string>
+    <string name="gist_create_title">创建 Gist</string>
+    <string name="gist_create_description_optional">Gist 描述（可选）</string>
+    <string name="gist_create_public">公开 Gist</string>
+    <string name="gist_create_files">文件</string>
+    <string name="gist_create_add_file">添加文件</string>
+    <string name="gist_create_file_number">文件 %1$d</string>
+    <string name="gist_create_filename_required">请输入文件名</string>
+    <string name="gist_create_filename_duplicate">文件名不能重复</string>
     <string name="userlist_title_followers">关注者</string>
     <string name="userlist_title_following">关注</string>
     <string name="repos_owner_title">%1$s 的仓库</string>

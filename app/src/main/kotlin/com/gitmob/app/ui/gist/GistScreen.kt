@@ -50,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
@@ -67,6 +68,7 @@ import kotlinx.coroutines.flow.filter
 fun GistScreen(
     login: String? = null,
     onBack: (() -> Unit)? = null,
+    onCreateGist: (() -> Unit)? = null,
     onGistClick: (GistListItem) -> Unit = {},
     onForkSourceClick: (id: String) -> Unit = {},
     viewModel: GistViewModel = hiltViewModel(),
@@ -88,6 +90,13 @@ fun GistScreen(
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        }
+                    }
+                },
+                actions = {
+                    if (login == null && onCreateGist != null) {
+                        IconButton(onClick = onCreateGist) {
+                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.gist_create_title))
                         }
                     }
                 },

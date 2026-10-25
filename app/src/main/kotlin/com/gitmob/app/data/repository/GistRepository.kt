@@ -19,6 +19,9 @@ import com.gitmob.app.data.model.GistComment
 import com.gitmob.app.data.model.GistCommentDto
 import com.gitmob.app.data.model.GistCommentPage
 import com.gitmob.app.data.model.GistCommentRequest
+import com.gitmob.app.data.model.GistCreateFileRequest
+import com.gitmob.app.data.model.GistCreateRequest
+import com.gitmob.app.data.model.GistCreateResponseDto
 import com.gitmob.app.data.model.GistDetail
 import com.gitmob.app.data.model.GistDetailDto
 import com.gitmob.app.data.model.GistDetailsDto
@@ -238,6 +241,30 @@ class GistRepository @Inject constructor(
             .toDomain(viewerLogin, isStarred = false, stargazerCount = 0, forkCount = 0)
     }
 
+    suspend fun createGist(
+        description: String?,
+        isPublic: Boolean,
+        files: Map<String, String>,
+    ): ApiResult<String> = safeCall {
+        require(files.isNotEmpty()) { "At least one file is required" }
+        val normalized = files.map { (filename, content) -> filename.trim() to content }
+        require(normalized.all { (filename, _) -> filename.isNotEmpty() }) { "Filename must not be blank" }
+        require(normalized.map { it.first }.distinct().size == normalized.size) { "Filenames must be unique" }
+        val created = api.post<GistCreateResponseDto, GistCreateRequest>(
+            "/gists",
+            GistCreateRequest(
+                description = description?.takeIf(String::isNotBlank),
+                isPublic = isPublic,
+                files = normalized.associate { (filename, content) ->
+                    filename to GistCreateFileRequest(content)
+                },
+            ),
+        )
+        require(created.id.isNotBlank()) { "Created Gist id is missing" }
+        invalidateAllCaches()
+        created.id
+    }
+
     suspend fun updateDescription(id: String, description: String): ApiResult<Unit> = safeCall {
         api.patch<GistDetailDto, GistUpdateRequest>(id.path(), GistUpdateRequest(description = description))
     }
@@ -281,6 +308,7 @@ class GistRepository @Inject constructor(
 
     suspend fun deleteGist(id: String): ApiResult<Unit> = safeCall {
         api.delete<Unit>(id.path())
+        invalidateAllCaches()
     }
 
     suspend fun createComment(id: String, body: String): ApiResult<GistComment> = safeCall {

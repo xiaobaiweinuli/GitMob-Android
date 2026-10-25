@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.event.GistUpdateEventBus
 import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistListItem
 import com.gitmob.app.data.model.GistPage
@@ -65,6 +66,7 @@ class GistViewModel @Inject constructor(
     private val gistRepository: GistRepository,
     private val errorEventBus: ErrorEventBus,
     private val savedStateHandle: SavedStateHandle,
+    private val gistUpdateEventBus: GistUpdateEventBus,
 ) : ViewModel() {
 
     private companion object {
@@ -96,6 +98,9 @@ class GistViewModel @Inject constructor(
         savedStateHandle[CATEGORY_KEY] = _state.value.selectedCategory.name
         savedStateHandle[SORT_KEY] = _state.value.selectedSort.name
         savedStateHandle[VISIBILITY_KEY] = _state.value.selectedVisibility.name
+        viewModelScope.launch {
+            gistUpdateEventBus.listEvents.collect { onListChanged() }
+        }
     }
 
     fun init(login: String?) {
@@ -174,6 +179,19 @@ class GistViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun onListChanged() {
+        if (!initialized) return
+        val selected = _state.value.selectedCategory
+        _state.update { state ->
+            state.copy(
+                all = if (selected == GistCategory.ALL) state.all else GistCategoryUiState(),
+                original = if (selected == GistCategory.ORIGINAL) state.original else GistCategoryUiState(),
+                forked = if (selected == GistCategory.FORKED) state.forked else GistCategoryUiState(),
+            )
+        }
+        refresh()
     }
 
     private fun loadFirstPage(

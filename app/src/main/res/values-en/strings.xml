@@ -401,6 +401,14 @@
     <string name="gist_empty_forked">No forked gists yet</string>
     <string name="gist_empty_filtered">No gists match the filters</string>
     <string name="gist_continue_search">Keep searching</string>
+    <string name="gist_create_title">Create Gist</string>
+    <string name="gist_create_description_optional">Gist description (optional)</string>
+    <string name="gist_create_public">Public Gist</string>
+    <string name="gist_create_files">Files</string>
+    <string name="gist_create_add_file">Add file</string>
+    <string name="gist_create_file_number">File %1$d</string>
+    <string name="gist_create_filename_required">Enter a filename</string>
+    <string name="gist_create_filename_duplicate">Filenames must be unique</string>
     <string name="userlist_title_followers">Followers</string>
     <string name="userlist_title_following">Following</string>
     <string name="repos_owner_title">Repositories by %1$s</string>

@@ -115,14 +115,38 @@ class GistDetailViewModelTest {
         viewModel.viewModelScope.cancel()
     }
 
-    private fun viewModel(oldestVersion: String? = "oldest") = GistDetailViewModel(
+    @Test
+    fun `删除Gist成功后通知列表刷新并返回`() = runTest {
+        coEvery { repository.getGist("abc") } returns ApiResult.Success(detail())
+        coEvery { repository.getComments("abc", 1) } returns ApiResult.Success(GistCommentPage(emptyList(), null))
+        coEvery { repository.deleteGist("abc") } returns ApiResult.Success(Unit)
+        val updateBus = GistUpdateEventBus()
+        val viewModel = viewModel(updateBus = updateBus)
+        viewModel.init("abc")
+        advanceUntilIdle()
+        val changed = async(start = CoroutineStart.UNDISPATCHED) { updateBus.listEvents.first() }
+        var returned = false
+
+        viewModel.deleteGist { returned = true }
+        advanceUntilIdle()
+
+        changed.await()
+        assertTrue(returned)
+        coVerify(exactly = 1) { repository.deleteGist("abc") }
+        viewModel.viewModelScope.cancel()
+    }
+
+    private fun viewModel(
+        oldestVersion: String? = "oldest",
+        updateBus: GistUpdateEventBus = GistUpdateEventBus(),
+    ) = GistDetailViewModel(
         repository = repository,
         editRepository = editRepository,
         markdownRenderer = renderer,
         errorEventBus = errorBus,
         shareLinkLauncher = shareLauncher,
         downloadLauncher = downloadLauncher,
-        gistUpdateEventBus = GistUpdateEventBus(),
+        gistUpdateEventBus = updateBus,
     ).also {
         coEvery { repository.getOldestVersion("abc") } returns ApiResult.Success(oldestVersion)
     }

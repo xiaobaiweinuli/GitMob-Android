@@ -53,6 +53,7 @@ data class RepoCreateRoute(
 
 /** 个人主页 Gist 统计项进入的参数化列表；null 表示 viewer（包含秘密 Gist）。 */
 @Serializable data class GistListRoute(val login: String? = null) : Route
+@Serializable data object GistCreateRoute : Route
 @Serializable data class GistDetailRoute(val id: String) : Route
 @Serializable data class GistRevisionsRoute(val id: String) : Route
 @Serializable data class GistRevisionDetailRoute(

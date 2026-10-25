@@ -637,6 +637,35 @@ class GistRepositoryTest {
     }
 
     @Test
+    fun `创建Gist发送布尔公开值和两个字符串内容并使列表缓存失效`() = runTest {
+        enqueuePage(listOf(edge("old", gistNode("old", isFork = false))), false, "old")
+        repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED)
+        restServer.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"created-id"}"""))
+
+        val result = repository.createGist(
+            description = "sample",
+            isPublic = false,
+            files = linkedMapOf("empty.txt" to "", "readme.md" to "# hello"),
+        )
+
+        assertEquals(ApiResult.Success("created-id"), result)
+        val request = restServer.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/gists", request.path)
+        val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+        assertEquals(JsonPrimitive("sample"), body["description"])
+        assertEquals(JsonPrimitive(false), body["public"])
+        val files = body.getValue("files").jsonObject
+        assertEquals(JsonPrimitive(""), files.getValue("empty.txt").jsonObject["content"])
+        assertEquals(JsonPrimitive("# hello"), files.getValue("readme.md").jsonObject["content"])
+
+        enqueuePage(listOf(edge("fresh", gistNode("fresh", isFork = false))), false, "fresh")
+        val fresh = repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED)
+        assertEquals("fresh", (fresh as ApiResult.Success).data.items.single().id)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
     fun `复刻与评论写操作使用正确端点和正文`() = runTest {
         val commentJson = """{"id":7,"node_id":"comment-node","html_url":"https://gist.github.com/viewer/abc#comment-7","body":"hello","body_html":"<p>hello</p>","user":{"login":"viewer"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","author_association":"OWNER"}"""
         restServer.enqueue(MockResponse().setBody(detailJson()))

@@ -169,7 +169,14 @@ class GistDetailViewModel @Inject constructor(
 
     fun deleteGist(onDeleted: () -> Unit) {
         if (_state.value.detail?.isOwnedByViewer != true) return
-        mutate(R.string.gist_deleted) { repository.deleteGist(gistId).map { onDeleted() } }
+        mutate(R.string.gist_deleted) {
+            val result = repository.deleteGist(gistId)
+            if (result is ApiResult.Success) {
+                gistUpdateEventBus.emitListChanged()
+                onDeleted()
+            }
+            result
+        }
     }
 
     fun createComment(body: String, onDone: () -> Unit) {

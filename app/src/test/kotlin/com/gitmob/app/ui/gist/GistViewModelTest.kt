@@ -7,6 +7,7 @@ import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.BannerEvent
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.event.GistUpdateEventBus
 import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistListItem
 import com.gitmob.app.data.model.GistPage
@@ -18,8 +19,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.advanceUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -27,6 +30,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class GistViewModelTest {
 
     @get:Rule
@@ -520,11 +524,42 @@ class GistViewModelTest {
         viewModel.viewModelScope.cancel()
     }
 
+    @Test
+    fun `Gist列表变更事件强制刷新当前分类并清空其他分类快照`() = runTest {
+        val repository = mockk<GistRepository>()
+        coEvery {
+            repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null)
+        } returns ApiResult.Success(page("old"))
+        coEvery {
+            repository.getGistsFresh(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED)
+        } returns ApiResult.Success(page("fresh"))
+        coEvery {
+            repository.getGists(null, GistCategory.FORKED, GistSort.RECENTLY_UPDATED, null)
+        } returns ApiResult.Success(page("forked"))
+        val updateBus = GistUpdateEventBus()
+        val viewModel = createViewModel(repository, gistUpdateEventBus = updateBus)
+        viewModel.init(null)
+        viewModel.selectCategory(GistCategory.FORKED)
+        viewModel.selectCategory(GistCategory.ORIGINAL)
+
+        updateBus.emitListChanged()
+        advanceUntilIdle()
+
+        assertEquals(listOf("fresh"), viewModel.state.value.items.map { it.id })
+        viewModel.selectCategory(GistCategory.FORKED)
+        assertEquals(listOf("forked"), viewModel.state.value.items.map { it.id })
+        coVerify(exactly = 2) {
+            repository.getGists(null, GistCategory.FORKED, GistSort.RECENTLY_UPDATED, null)
+        }
+        viewModel.viewModelScope.cancel()
+    }
+
     private fun createViewModel(
         repository: GistRepository,
         savedStateHandle: SavedStateHandle = originalSavedState(),
         errorEventBus: ErrorEventBus = ErrorEventBus(),
-    ) = GistViewModel(repository, errorEventBus, savedStateHandle)
+        gistUpdateEventBus: GistUpdateEventBus = GistUpdateEventBus(),
+    ) = GistViewModel(repository, errorEventBus, savedStateHandle, gistUpdateEventBus)
 
     private fun originalSavedState() = SavedStateHandle(
         mapOf("gist.selectedCategory" to "ORIGINAL"),

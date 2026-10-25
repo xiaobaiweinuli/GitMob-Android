@@ -401,6 +401,14 @@
     <string name="gist_empty_forked">還沒有復刻 Gist</string>
     <string name="gist_empty_filtered">沒有符合篩選條件的 Gist</string>
     <string name="gist_continue_search">繼續查找</string>
+    <string name="gist_create_title">建立 Gist</string>
+    <string name="gist_create_description_optional">Gist 描述（選填）</string>
+    <string name="gist_create_public">公開 Gist</string>
+    <string name="gist_create_files">檔案</string>
+    <string name="gist_create_add_file">新增檔案</string>
+    <string name="gist_create_file_number">檔案 %1$d</string>
+    <string name="gist_create_filename_required">請輸入檔案名稱</string>
+    <string name="gist_create_filename_duplicate">檔案名稱不能重複</string>
     <string name="userlist_title_followers">追蹤者</string>
     <string name="userlist_title_following">正在追蹤</string>
     <string name="repos_owner_title">%1$s 的儲存庫</string>
