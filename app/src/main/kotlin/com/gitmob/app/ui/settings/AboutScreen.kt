@@ -4,9 +4,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -20,15 +20,17 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,13 +51,6 @@ import androidx.compose.ui.unit.dp
 import com.gitmob.app.BuildConfig
 import com.gitmob.app.R
 
-/**
- * "关于"页面——整页导航（不是弹窗），布局结构照抄 KernelSU 的 About 页面
- * （返回箭头 + 标题，居中的图标+名称+版本，往下是分组卡片的链接列表），
- * 每行保留图标+副标题（这一点和 KernelSU 纯文字扁平版不同，是刻意的折中，
- * 见方案讨论），具体内容目前和参照的 GitMob 项目保持一致，后续由用户自行调整
- * 各卡片的标题和链接。
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
@@ -75,23 +70,27 @@ fun AboutScreen(onBack: () -> Unit) {
                     .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
         },
-        contentWindowInsets = WindowInsets.safeDrawing
-            .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .wrapContentWidth()
+                .widthIn(max = 680.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             item {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 24.dp, bottom = 24.dp),
+                        .padding(top = 12.dp, bottom = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(80.dp),
                     ) {
                         Image(
@@ -117,7 +116,7 @@ fun AboutScreen(onBack: () -> Unit) {
             }
 
             item {
-                AboutSection(title = stringResource(R.string.about_section_developer)) {
+                SettingsSection(title = stringResource(R.string.about_section_developer)) {
                     AboutLinkRow(
                         icon = Icons.Default.Person,
                         label = "xiaobaiweinuli",
@@ -128,7 +127,7 @@ fun AboutScreen(onBack: () -> Unit) {
             }
 
             item {
-                AboutSection(title = stringResource(R.string.about_section_project)) {
+                SettingsSection(title = stringResource(R.string.about_section_project)) {
                     AboutLinkRow(
                         icon = Icons.Default.Code,
                         label = stringResource(R.string.about_repo_label),
@@ -139,7 +138,7 @@ fun AboutScreen(onBack: () -> Unit) {
             }
 
             item {
-                AboutSection(title = stringResource(R.string.about_section_permissions)) {
+                SettingsSection(title = stringResource(R.string.about_section_permissions)) {
                     AboutLinkRow(
                         icon = Icons.Default.Security,
                         label = stringResource(R.string.about_auth_label),
@@ -150,7 +149,7 @@ fun AboutScreen(onBack: () -> Unit) {
             }
 
             item {
-                AboutSection(title = stringResource(R.string.about_section_community)) {
+                SettingsSection(title = stringResource(R.string.about_section_community)) {
                     AboutLinkRow(
                         icon = Icons.AutoMirrored.Default.Send,
                         label = stringResource(R.string.about_telegram_label),
@@ -176,36 +175,13 @@ fun AboutScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun AboutSection(title: String, content: @Composable () -> Unit) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(
-            title,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-        )
-        Card(shape = RoundedCornerShape(16.dp)) {
-            content()
-        }
-    }
-}
-
-@Composable
 private fun AboutLinkRow(icon: ImageVector?, label: String, sub: String, url: String) {
     val context = LocalContext.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        icon?.let {
-            Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-        }
-        Column(modifier = Modifier.padding(start = if (icon != null) 16.dp else 0.dp)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+    SettingsNavigationRow(
+        icon = icon,
+        title = label,
+        summary = sub,
+        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
+        trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
+    )
 }

@@ -23,31 +23,30 @@ import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.SettingsBrightness
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -134,7 +133,6 @@ fun AppearanceScreen(
     val dynamicColorActive = preference.useDynamicColor &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val haptic = LocalHapticFeedback.current
-    var expandedSection by rememberSaveable { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -152,42 +150,47 @@ fun AppearanceScreen(
                     .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
         },
-        contentWindowInsets = WindowInsets.safeDrawing
-            .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .wrapContentWidth()
+                .widthIn(max = 680.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             item {
-                CollapsibleSelectionSection(
-                    title = stringResource(R.string.settings_theme_mode),
-                    currentValue = stringResource(themeModeLabel(preference.mode)),
-                    expanded = expandedSection == "theme_mode",
-                    onToggle = {
-                        expandedSection = if (expandedSection == "theme_mode") null else "theme_mode"
-                    },
-                ) {
-                    ThemeMode.entries.forEachIndexed { index, mode ->
-                        ThemeModeRow(
-                            mode = mode,
-                            selected = preference.mode == mode,
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                viewModel.setThemeMode(mode)
-                                expandedSection = null
-                            },
-                        )
-                        if (index != ThemeMode.entries.lastIndex) HorizontalDivider()
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_theme_mode),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        ThemeMode.entries.forEachIndexed { index, mode ->
+                            SegmentedButton(
+                                selected = preference.mode == mode,
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                    viewModel.setThemeMode(mode)
+                                },
+                                shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size),
+                                modifier = Modifier.heightIn(min = 54.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
+                                icon = {},
+                            ) {
+                                Text(stringResource(themeModeLabel(mode)))
+                            }
+                        }
                     }
                 }
             }
 
             item {
-                AppearanceSection(title = stringResource(R.string.settings_dark_display)) {
+                SettingsSection(title = stringResource(R.string.settings_dark_display)) {
                     PreferenceSwitchRow(
                         title = stringResource(R.string.settings_amoled_title),
                         description = stringResource(R.string.settings_amoled_desc),
@@ -199,40 +202,19 @@ fun AppearanceScreen(
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 item {
-                    AppearanceSection(title = stringResource(R.string.settings_color_source)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .toggleable(
-                                    value = preference.useDynamicColor,
-                                    role = Role.Switch,
-                                    onValueChange = viewModel::setUseDynamicColor,
-                                )
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    stringResource(R.string.settings_dynamic_color_title),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
-                                Text(
-                                    stringResource(R.string.settings_dynamic_color_desc),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Switch(
-                                checked = dynamicColorActive,
-                                onCheckedChange = null,
-                            )
-                        }
+                    SettingsSection(title = stringResource(R.string.settings_color_source)) {
+                        PreferenceSwitchRow(
+                            title = stringResource(R.string.settings_dynamic_color_title),
+                            description = stringResource(R.string.settings_dynamic_color_desc),
+                            checked = dynamicColorActive,
+                            onCheckedChange = viewModel::setUseDynamicColor,
+                        )
                     }
                 }
             }
 
             item {
-                AppearanceSection(title = stringResource(R.string.settings_theme_color)) {
+                SettingsSection(title = stringResource(R.string.settings_theme_color)) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -254,7 +236,7 @@ fun AppearanceScreen(
                         LazyRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            contentPadding = PaddingValues(horizontal = 2.dp),
+                            contentPadding = PaddingValues(4.dp),
                         ) {
                             items(
                                 count = seedColorOptions.size,
@@ -285,65 +267,55 @@ fun AppearanceScreen(
 
             item {
                 val currentStyle = paletteStyleOptions.first { it.style == preference.paletteStyle }
-                CollapsibleSelectionSection(
+                SettingsDropdownSection(
                     title = stringResource(R.string.settings_palette_style),
                     currentValue = stringResource(currentStyle.labelRes),
-                    expanded = expandedSection == "palette_style",
-                    onToggle = {
-                        expandedSection = if (expandedSection == "palette_style") null else "palette_style"
-                    },
-                ) {
-                    paletteStyleOptions.forEachIndexed { index, option ->
+                ) { dismiss ->
+                    paletteStyleOptions.forEach { option ->
                         SelectionRow(
                             title = stringResource(option.labelRes),
                             description = stringResource(option.descriptionRes),
                             selected = preference.paletteStyle == option.style,
                             onClick = {
+                                dismiss()
                                 haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
                                 viewModel.setPaletteStyle(option.style)
-                                expandedSection = null
                             },
                         )
-                        if (index != paletteStyleOptions.lastIndex) HorizontalDivider()
                     }
                 }
             }
 
             item {
-                CollapsibleSelectionSection(
+                SettingsDropdownSection(
                     title = stringResource(R.string.settings_color_spec),
                     currentValue = colorSpecLabel(preference.colorSpec),
-                    expanded = expandedSection == "color_spec",
-                    onToggle = {
-                        expandedSection = if (expandedSection == "color_spec") null else "color_spec"
-                    },
-                ) {
+                ) { dismiss ->
                     SelectionRow(
                         title = "Material 2021",
                         description = stringResource(R.string.settings_color_spec_2021_desc),
                         selected = preference.colorSpec == ColorSpec.SpecVersion.SPEC_2021,
                         onClick = {
+                            dismiss()
                             haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
                             viewModel.setColorSpec(ColorSpec.SpecVersion.SPEC_2021)
-                            expandedSection = null
                         },
                     )
-                    HorizontalDivider()
                     SelectionRow(
                         title = "Material 2025",
                         description = stringResource(R.string.settings_color_spec_2025_desc),
                         selected = preference.colorSpec == ColorSpec.SpecVersion.SPEC_2025,
                         onClick = {
+                            dismiss()
                             haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
                             viewModel.setColorSpec(ColorSpec.SpecVersion.SPEC_2025)
-                            expandedSection = null
                         },
                     )
                 }
             }
 
             item {
-                AppearanceSection(title = stringResource(R.string.settings_section_interaction)) {
+                SettingsSection(title = stringResource(R.string.settings_section_interaction)) {
                     Column {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             PreferenceSwitchRow(
@@ -389,7 +361,7 @@ private fun PageScaleRow(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
                 Text(
                     stringResource(R.string.settings_page_scale_title),
                     style = MaterialTheme.typography.bodyLarge,
@@ -441,10 +413,11 @@ private fun PreferenceSwitchRow(
                     onCheckedChange(it)
                 },
             )
+            .heightIn(min = 76.dp)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(
                 text = description,
@@ -453,24 +426,6 @@ private fun PreferenceSwitchRow(
             )
         }
         Switch(checked = checked, onCheckedChange = null)
-    }
-}
-
-@Composable
-private fun AppearanceSection(
-    title: String,
-    content: @Composable () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        Card(shape = RoundedCornerShape(8.dp)) {
-            content()
-        }
     }
 }
 
@@ -484,41 +439,6 @@ private fun themeModeLabel(mode: ThemeMode): Int = when (mode) {
 private fun colorSpecLabel(spec: ColorSpec.SpecVersion): String = when (spec) {
     ColorSpec.SpecVersion.SPEC_2021 -> "Material 2021"
     ColorSpec.SpecVersion.SPEC_2025 -> "Material 2025"
-}
-
-@Composable
-private fun ThemeModeRow(
-    mode: ThemeMode,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val (icon, labelRes) = when (mode) {
-        ThemeMode.SYSTEM -> Icons.Default.SettingsBrightness to R.string.settings_theme_mode_system
-        ThemeMode.LIGHT -> Icons.Default.LightMode to R.string.settings_theme_mode_light
-        ThemeMode.DARK -> Icons.Default.DarkMode to R.string.settings_theme_mode_dark
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(selected = selected, onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 8.dp),
-        )
-        Text(
-            text = stringResource(labelRes),
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 16.dp),
-        )
-        RadioButton(selected = selected, onClick = null)
-    }
 }
 
 @Composable
@@ -555,7 +475,7 @@ private fun SeedColorSwatch(
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -598,7 +518,7 @@ private fun SeedColorSwatch(
             ) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = optionName,
+                    contentDescription = null,
                     tint = previewScheme.onPrimaryContainer,
                     modifier = Modifier.size(18.dp),
                 )

@@ -6,8 +6,6 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -43,7 +41,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
-import androidx.navigation3.ui.NavDisplay
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ErrorBannerHost
 import com.gitmob.app.core.error.ErrorEventBus
@@ -1034,8 +1031,9 @@ private fun LoggedInApp(
     ) { innerPadding ->
         val navBarBottom = innerPadding.calculateBottomPadding()
 
-        NavDisplay(
+        GitMobNavDisplay(
             entries = navState.toDecoratedEntries(entryProvider),
+            enablePredictiveBack = enablePredictiveBack,
             onBack = {
                 val handled = navigator.goBack()
                 // navigator 返回 false = 已在 Home Tab 根页且栈空 → 交给系统 finish Activity
@@ -1043,19 +1041,6 @@ private fun LoggedInApp(
             },
             transitionSpec = { crossFadeTransition() },
             popTransitionSpec = { crossFadeTransition() },
-            predictivePopTransitionSpec = {
-                if (enablePredictiveBack) {
-                    // 预测性返回开启：保留跟手的横滑预览（平台标准观感）
-                    slideInHorizontally(initialOffsetX = { -it / 4 }) togetherWith
-                        slideOutHorizontally(targetOffsetX = { it / 4 })
-                } else {
-                    // 开关语义 = 关闭"跟手预览"，不是关闭动画：
-                    // 回退成与 popTransitionSpec 相同的淡入淡出，提交时播完整动画。
-                    // 之前这里是 None togetherWith None，全面屏手势下所有返回都走本
-                    // spec，等于把一切返回动画关掉了。
-                    crossFadeTransition()
-                }
-            },
             // 仅在显示 Tab 根页时加 bottom padding（等于 NavigationBar 高度），
             // 避免 push 路由页与它们内部的 WindowInsets.navigationBars Spacer 重复叠加。
             modifier = Modifier.fillMaxSize().then(

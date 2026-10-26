@@ -2,14 +2,12 @@ package com.gitmob.app.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -31,85 +29,25 @@ fun GitMobTheme(
     val isDark = preference.isDarkTheme(isSystemInDarkTheme())
 
     val seedColor = resolveSeedColor(preference, isDark)
-    val targetColorScheme = rememberDynamicColorScheme(
+    val colorScheme = rememberDynamicColorScheme(
         seedColor = seedColor,
         isDark = isDark,
         isAmoled = isDark && preference.useAmoled,
         style = preference.paletteStyle,
         specVersion = preference.colorSpec,
     )
-    val colorScheme = animateColorScheme(targetColorScheme)
     val systemDensity = LocalDensity.current
-    val scaledDensity = Density(
-        density = systemDensity.density * preference.pageScale.coerceIn(0.8f, 1.1f),
-        fontScale = systemDensity.fontScale,
-    )
+    val pageScale = preference.pageScale.coerceIn(0.8f, 1.1f)
+    val scaledDensity = remember(systemDensity.density, systemDensity.fontScale, pageScale) {
+        Density(
+            density = systemDensity.density * pageScale,
+            fontScale = systemDensity.fontScale,
+        )
+    }
 
     CompositionLocalProvider(LocalDensity provides scaledDensity) {
         MaterialTheme(colorScheme = colorScheme, content = content)
     }
-}
-
-@Composable
-private fun animateColorScheme(target: ColorScheme): ColorScheme {
-    val animationSpec = tween<Color>(durationMillis = 300)
-    @Composable
-    fun animate(color: Color, label: String): Color = animateColorAsState(
-        targetValue = color,
-        animationSpec = animationSpec,
-        label = label,
-    ).value
-
-    return target.copy(
-        primary = animate(target.primary, "theme-primary"),
-        onPrimary = animate(target.onPrimary, "theme-on-primary"),
-        primaryContainer = animate(target.primaryContainer, "theme-primary-container"),
-        onPrimaryContainer = animate(target.onPrimaryContainer, "theme-on-primary-container"),
-        inversePrimary = animate(target.inversePrimary, "theme-inverse-primary"),
-        secondary = animate(target.secondary, "theme-secondary"),
-        onSecondary = animate(target.onSecondary, "theme-on-secondary"),
-        secondaryContainer = animate(target.secondaryContainer, "theme-secondary-container"),
-        onSecondaryContainer = animate(target.onSecondaryContainer, "theme-on-secondary-container"),
-        tertiary = animate(target.tertiary, "theme-tertiary"),
-        onTertiary = animate(target.onTertiary, "theme-on-tertiary"),
-        tertiaryContainer = animate(target.tertiaryContainer, "theme-tertiary-container"),
-        onTertiaryContainer = animate(target.onTertiaryContainer, "theme-on-tertiary-container"),
-        background = animate(target.background, "theme-background"),
-        onBackground = animate(target.onBackground, "theme-on-background"),
-        surface = animate(target.surface, "theme-surface"),
-        onSurface = animate(target.onSurface, "theme-on-surface"),
-        surfaceVariant = animate(target.surfaceVariant, "theme-surface-variant"),
-        onSurfaceVariant = animate(target.onSurfaceVariant, "theme-on-surface-variant"),
-        surfaceTint = animate(target.surfaceTint, "theme-surface-tint"),
-        inverseSurface = animate(target.inverseSurface, "theme-inverse-surface"),
-        inverseOnSurface = animate(target.inverseOnSurface, "theme-inverse-on-surface"),
-        error = animate(target.error, "theme-error"),
-        onError = animate(target.onError, "theme-on-error"),
-        errorContainer = animate(target.errorContainer, "theme-error-container"),
-        onErrorContainer = animate(target.onErrorContainer, "theme-on-error-container"),
-        outline = animate(target.outline, "theme-outline"),
-        outlineVariant = animate(target.outlineVariant, "theme-outline-variant"),
-        scrim = animate(target.scrim, "theme-scrim"),
-        surfaceBright = animate(target.surfaceBright, "theme-surface-bright"),
-        surfaceDim = animate(target.surfaceDim, "theme-surface-dim"),
-        surfaceContainer = animate(target.surfaceContainer, "theme-surface-container"),
-        surfaceContainerHigh = animate(target.surfaceContainerHigh, "theme-surface-container-high"),
-        surfaceContainerHighest = animate(target.surfaceContainerHighest, "theme-surface-container-highest"),
-        surfaceContainerLow = animate(target.surfaceContainerLow, "theme-surface-container-low"),
-        surfaceContainerLowest = animate(target.surfaceContainerLowest, "theme-surface-container-lowest"),
-        primaryFixed = animate(target.primaryFixed, "theme-primary-fixed"),
-        primaryFixedDim = animate(target.primaryFixedDim, "theme-primary-fixed-dim"),
-        onPrimaryFixed = animate(target.onPrimaryFixed, "theme-on-primary-fixed"),
-        onPrimaryFixedVariant = animate(target.onPrimaryFixedVariant, "theme-on-primary-fixed-variant"),
-        secondaryFixed = animate(target.secondaryFixed, "theme-secondary-fixed"),
-        secondaryFixedDim = animate(target.secondaryFixedDim, "theme-secondary-fixed-dim"),
-        onSecondaryFixed = animate(target.onSecondaryFixed, "theme-on-secondary-fixed"),
-        onSecondaryFixedVariant = animate(target.onSecondaryFixedVariant, "theme-on-secondary-fixed-variant"),
-        tertiaryFixed = animate(target.tertiaryFixed, "theme-tertiary-fixed"),
-        tertiaryFixedDim = animate(target.tertiaryFixedDim, "theme-tertiary-fixed-dim"),
-        onTertiaryFixed = animate(target.onTertiaryFixed, "theme-on-tertiary-fixed"),
-        onTertiaryFixedVariant = animate(target.onTertiaryFixedVariant, "theme-on-tertiary-fixed-variant"),
-    )
 }
 
 @Composable

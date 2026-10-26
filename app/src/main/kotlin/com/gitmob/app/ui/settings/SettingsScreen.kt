@@ -1,53 +1,48 @@
 package com.gitmob.app.ui.settings
 
 import android.os.Build
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material3.Card
-import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gitmob.app.R
 import com.gitmob.app.ui.theme.ThemeMode
 import com.gitmob.app.ui.theme.ThemePreference
 
 /** 底部 Tab「设置」。底部 NavigationBar 的高度由外层 NavDisplay 统一处理。 */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     preference: ThemePreference,
@@ -72,20 +67,29 @@ fun SettingsScreen(
         }
     )
     val appearanceSummary = "$modeText · $colorSourceText"
+    val haptic = LocalHapticFeedback.current
+    val currentLanguage = AppLanguage.current()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var pendingLanguage by remember { mutableStateOf<AppLanguage?>(null) }
 
     Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing
-            .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.nav_tab_settings)) },
+                windowInsets = WindowInsets.safeDrawing
+                    .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                horizontal = 16.dp,
-                vertical = 20.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .padding(innerPadding)
+                .wrapContentWidth()
+                .widthIn(max = 680.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             item {
                 SettingsSection(title = stringResource(R.string.settings_section_preferences)) {
@@ -95,34 +99,35 @@ fun SettingsScreen(
                         summary = appearanceSummary,
                         onClick = onAppearanceClick,
                     )
-                }
-            }
-
-            item {
-                // 语言切换走 AppCompatDelegate（见 AppLanguage）：选中后 ≤32 会重建 Activity、
-                // 33+ 触发配置变更重组，两条路径都会让整个 UI 立即切到新语言。
-                val haptic = LocalHapticFeedback.current
-                var languageExpanded by rememberSaveable { mutableStateOf(false) }
-                val currentLanguage = AppLanguage.current()
-                CollapsibleSelectionSection(
-                    title = stringResource(R.string.settings_language),
-                    currentValue = stringResource(currentLanguage.labelRes),
-                    expanded = languageExpanded,
-                    onToggle = { languageExpanded = !languageExpanded },
-                    icon = Icons.Default.Language,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 4.dp),
-                    ) {
+                    HorizontalDivider(modifier = Modifier.padding(start = 72.dp))
+                    SettingsDropdownRow(
+                        title = stringResource(R.string.settings_language),
+                        currentValue = stringResource(currentLanguage.labelRes),
+                        icon = Icons.Default.Language,
+                        onClosed = {
+                            val selected = pendingLanguage
+                            pendingLanguage = null
+                            // NavDisplay keeps outgoing scenes composed at STARTED during a
+                            // transition. Do not change locale after leaving this settings page.
+                            if (selected != null &&
+                                lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                                selected != AppLanguage.current()
+                            ) {
+                                AppLanguage.apply(selected)
+                            }
+                        },
+                    ) { dismiss ->
                         AppLanguage.entries.forEach { language ->
                             SelectionRow(
                                 title = stringResource(language.labelRes),
                                 description = stringResource(language.descriptionRes),
                                 selected = language == currentLanguage,
                                 onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                    languageExpanded = false
-                                    AppLanguage.apply(language)
+                                    if (pendingLanguage == null) {
+                                        pendingLanguage = language
+                                        dismiss()
+                                        haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                    }
                                 },
                             )
                         }
@@ -149,7 +154,7 @@ fun SettingsScreen(
                         summary = stringResource(R.string.settings_logout_summary),
                         onClick = { viewModel.logout(onLogout) },
                         contentColor = MaterialTheme.colorScheme.error,
-                        showChevron = false,
+                        trailingIcon = null,
                     )
                 }
             }
@@ -173,70 +178,3 @@ private val AppLanguage.descriptionRes: Int
         AppLanguage.TRADITIONAL_CHINESE -> R.string.lang_desc_zh_hant
         AppLanguage.ENGLISH -> R.string.lang_desc_en
     }
-
-@Composable
-private fun SettingsSection(
-    title: String,
-    content: @Composable () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        Card(shape = RoundedCornerShape(8.dp)) {
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SettingsNavigationRow(
-    icon: ImageVector,
-    title: String,
-    summary: String,
-    onClick: () -> Unit,
-    contentColor: Color = MaterialTheme.colorScheme.onSurface,
-    showChevron: Boolean = true,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = contentColor,
-            modifier = Modifier.size(24.dp),
-        )
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 16.dp),
-        ) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge, color = contentColor)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (contentColor == MaterialTheme.colorScheme.error) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-        }
-        if (showChevron) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
