@@ -59,7 +59,7 @@ class GistRevisionsViewModel @Inject constructor(
             _state.update { it.copy(isLoadingMore = true) }
             when (val result = repository.getRevisions(gistId, page)) {
                 is ApiResult.Success -> _state.update {
-                    it.copy(items = it.items + result.data.items, nextPage = result.data.nextPage, isLoadingMore = false)
+                    it.copy(items = (it.items + result.data.items).distinctBy(GistRevision::version), nextPage = result.data.nextPage, isLoadingMore = false)
                 }
                 is ApiResult.Failure -> {
                     errorEventBus.emit(result.error)

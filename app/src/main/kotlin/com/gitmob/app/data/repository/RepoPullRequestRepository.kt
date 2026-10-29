@@ -315,7 +315,7 @@ class RepoPullRequestRepository @Inject constructor(
     ): List<IssueLabel> {
         val nodes = initial.toMutableList()
         var after = cursor.takeIf { hasNext }
-        while (true) {
+        while (after != null) {
             val page = apolloClient.query(RepoLabelsQuery(owner, name, Optional.presentIfNotNull(after), PageSize.METADATA))
                 .executeOrThrow().repository?.labels ?: break
             nodes += page.nodes.orEmpty().filterNotNull().map { IssueLabel(it.id, it.name, it.color, it.description) }
@@ -333,7 +333,7 @@ class RepoPullRequestRepository @Inject constructor(
     ): List<IssueMilestone> {
         val nodes = initial.toMutableList()
         var after = cursor.takeIf { hasNext }
-        while (true) {
+        while (after != null) {
             val page = apolloClient.query(RepoMilestonesQuery(owner, name, Optional.presentIfNotNull(after), PageSize.METADATA))
                 .executeOrThrow().repository?.milestones ?: break
             nodes += page.nodes.orEmpty().filterNotNull().map { IssueMilestone(it.id, it.number, it.title, it.state.rawValue, it.dueOn) }
@@ -351,7 +351,7 @@ class RepoPullRequestRepository @Inject constructor(
     ): List<SimpleUser> {
         val nodes = initial.toMutableList()
         var after = cursor.takeIf { hasNext }
-        while (true) {
+        while (after != null) {
             val page = apolloClient.query(RepoAssignableUsersQuery(owner, name, Optional.presentIfNotNull(after), PageSize.METADATA))
                 .executeOrThrow().repository?.assignableUsers ?: break
             nodes += page.nodes.orEmpty().filterNotNull().map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) }
@@ -369,7 +369,7 @@ class RepoPullRequestRepository @Inject constructor(
     ): List<SimpleUser> {
         val nodes = initial.toMutableList()
         var after = cursor.takeIf { hasNext }
-        while (true) {
+        while (after != null) {
             val page = apolloClient.query(RepoMentionableUsersQuery(owner, name, Optional.presentIfNotNull(after), PageSize.METADATA))
                 .executeOrThrow().repository?.mentionableUsers ?: break
             nodes += page.nodes.orEmpty().filterNotNull().map { SimpleUser(it.login, it.name, it.avatarUrl, it.bio, it.id) }

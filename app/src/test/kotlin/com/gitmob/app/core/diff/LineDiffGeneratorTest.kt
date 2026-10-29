@@ -49,4 +49,27 @@ class LineDiffGeneratorTest {
         val diff = requireNotNull(LineDiffGenerator.generate("a\n", "a\nb\n"))
         assertEquals(listOf("a", "b"), diff.hunks.single().lines.map { it.text })
     }
+
+    @Test
+    fun `超大差异退化为整块替换而不是失败`() {
+        val oldText = (1..3000).joinToString("\n") { "old-$it" }
+        val newText = (1..3000).joinToString("\n") { "new-$it" }
+
+        val lines = requireNotNull(LineDiffGenerator.generate(oldText, newText)).hunks.single().lines
+
+        assertEquals(0, lines.count { it.type == DiffLineType.CONTEXT })
+        assertEquals(3000, lines.count { it.type == DiffLineType.DELETION })
+        assertEquals(3000, lines.count { it.type == DiffLineType.ADDITION })
+    }
+
+    @Test
+    fun `大文件的小改动仍然逐行精确`() {
+        val oldText = (1..3000).joinToString("\n") { "line-$it" }
+        val newText = (1..3000).joinToString("\n") { if (it == 1500) "changed" else "line-$it" }
+
+        val lines = requireNotNull(LineDiffGenerator.generate(oldText, newText)).hunks.single().lines
+
+        assertEquals(1, lines.count { it.type == DiffLineType.DELETION })
+        assertEquals(1, lines.count { it.type == DiffLineType.ADDITION })
+    }
 }

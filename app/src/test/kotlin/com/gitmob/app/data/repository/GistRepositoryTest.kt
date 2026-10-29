@@ -362,6 +362,27 @@ class GistRepositoryTest {
     }
 
     @Test
+    fun `复刻数超过并发上限时全部补全来源且不死锁`() = runTest {
+        val ids = (1..6).map { "fork-$it" }
+        enqueuePage(
+            edges = ids.mapIndexed { index, id -> edge("c$index", gistNode(id, isFork = true)) },
+            hasNextPage = false,
+            endCursor = "c5",
+        )
+        // 每个 fork 的响应内容相同：MockWebServer 按到达顺序发响应，并发下无法与请求一一对应
+        repeat(ids.size) { enqueueForkSource("any", sourceId = "shared-source") }
+
+        val page = (repository.getGists(
+            category = GistCategory.FORKED,
+            sort = GistSort.RECENTLY_UPDATED,
+        ) as ApiResult.Success).data
+
+        assertEquals(ids, page.items.map { it.id })
+        assertTrue(page.items.all { it.sourceId == "shared-source" })
+        assertEquals(ids.size, restServer.requestCount)
+    }
+
+    @Test
     fun `可见性过滤跨越不匹配批次与空批次并正确推进游标`() = runTest {
         enqueuePage(
             edges = listOf(

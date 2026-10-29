@@ -58,13 +58,21 @@ import com.gitmob.app.graphql.type.GistOrderField
 import com.gitmob.app.graphql.type.OrderDirection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val GIST_CACHE_TTL_MS = 5 * 60_000L
 private const val GIST_COMMENT_ACCEPT = "application/vnd.github.full+json"
+
+/** fork 源信息并发查询的并行度；OkHttp 默认 maxRequestsPerHost 为 5，这里留一个余量 */
+private const val FORK_LOOKUP_PARALLELISM = 4
 
 @Singleton
 class GistRepository @Inject constructor(
@@ -604,23 +612,30 @@ class GistRepository @Inject constructor(
         languageColor = language?.color,
     )
 
-    private suspend fun GistPage.withForkSources(): GistPage = copy(
-        items = items.map { item ->
-            if (!item.isFork) return@map item
-            try {
-                val source = api.get<GistDetailsDto>("/gists/${item.apiName}").forkOf ?: return@map item
-                item.copy(
-                    sourceId = source.id.takeIf(String::isNotBlank),
-                    sourceOwnerLogin = source.owner?.login?.takeIf(String::isNotBlank),
-                    sourceUrl = source.htmlUrl.takeIf(String::isNotBlank),
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                item
-            }
-        },
-    )
+    private suspend fun GistPage.withForkSources(): GistPage = coroutineScope {
+        val limiter = Semaphore(FORK_LOOKUP_PARALLELISM)
+        copy(
+            items = items.map { item ->
+                async {
+                    if (!item.isFork) return@async item
+                    try {
+                        val source = limiter.withPermit {
+                            api.get<GistDetailsDto>("/gists/${item.apiName}")
+                        }.forkOf ?: return@async item
+                        item.copy(
+                            sourceId = source.id.takeIf(String::isNotBlank),
+                            sourceOwnerLogin = source.owner?.login?.takeIf(String::isNotBlank),
+                            sourceUrl = source.htmlUrl.takeIf(String::isNotBlank),
+                        )
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Throwable) {
+                        item
+                    }
+                }
+            }.awaitAll(),
+        )
+    }
 
     private fun GistDetailDto.toDomain(
         viewerLogin: String,

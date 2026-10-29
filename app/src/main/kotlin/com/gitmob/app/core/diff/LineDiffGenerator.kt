@@ -2,6 +2,9 @@ package com.gitmob.app.core.diff
 
 /** Exact Myers line diff used for adjacent Gist text snapshots. */
 object LineDiffGenerator {
+    /** trace 快照占用的 int 总量上限（约 32 MB）；超出则不再追求逐行精确 */
+    private const val MAX_TRACE_INTS = 8_000_000
+
     private enum class Kind { EQUAL, INSERT, DELETE }
     private data class Operation(val kind: Kind, val text: String)
 
@@ -47,8 +50,10 @@ object LineDiffGenerator {
         val offset = max
         val frontier = IntArray(max * 2 + 1)
         val trace = mutableListOf<IntArray>()
+        // 每份快照固定 2*max+1，预算按内存反推，而不是写死编辑距离
+        val budget = minOf(max, MAX_TRACE_INTS / (2 * max + 1))
 
-        for (distance in 0..max) {
+        for (distance in 0..budget) {
             for (diagonal in -distance..distance step 2) {
                 val index = offset + diagonal
                 var x = if (
@@ -72,7 +77,8 @@ object LineDiffGenerator {
             }
             trace += frontier.copyOf()
         }
-        error("Line diff did not converge")
+        // 超出预算：不再精确对齐，整块删除 + 整块新增
+        return old.map { Operation(Kind.DELETE, it) } + new.map { Operation(Kind.INSERT, it) }
     }
 
     private fun backtrack(
