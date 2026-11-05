@@ -13,6 +13,7 @@ import com.gitmob.app.data.model.StarredRepo
 import com.gitmob.app.data.model.UserListSummary
 import com.gitmob.app.data.repository.StarRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -47,6 +48,7 @@ import org.junit.Test
  *   - 并发：refresh + loadMore 顺序执行不崩
  */
 class StarsViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -79,7 +81,7 @@ class StarsViewModelTest {
         coEvery { starRepo.getLists() } returns ApiResult.Success(fakeLists())
         coEvery { starRepo.getViewerStarred(after = null) } returns ApiResult.Success(fakeStarred("a", 5))
 
-        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus())
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
 
         assertFalse(vm.state.value.isLoading)
@@ -98,7 +100,7 @@ class StarsViewModelTest {
                 ApiResult.Failure(ApiError.NetworkError) andThen
                 ApiResult.Success(fakeStarred("b", 2))
 
-        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus())
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         assertTrue(vm.state.value.loadFailed)
         assertEquals(0, vm.state.value.repos.size)
@@ -118,7 +120,7 @@ class StarsViewModelTest {
         coEvery { starRepo.getViewerStarred(after = null) } returns ApiResult.Success(allPage)
         coEvery { starRepo.getListItems("L1", null) } returns ApiResult.Success(listPage)
 
-        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus())
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         val allSize = vm.state.value.repos.size
         assertTrue(vm.state.value.selectedFilter is StarFilter.All)
@@ -142,7 +144,7 @@ class StarsViewModelTest {
         coEvery { starRepo.getViewerStarred(after = null) } returns ApiResult.Success(p1)
         coEvery { starRepo.getViewerStarred(after = "cur") } returns ApiResult.Success(p2)
 
-        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus())
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         assertEquals(3, vm.state.value.repos.size)
         assertTrue(vm.state.value.hasNextPage)
@@ -162,13 +164,13 @@ class StarsViewModelTest {
         coEvery { starRepo.getViewerStarred(after = null) } returns ApiResult.Success(fakeStarred("u", 3))
         coEvery { starRepo.unstarRepo(any()) } returns ApiResult.Success(Unit)
 
-        val vm = StarsViewModel(starRepo, bus, ErrorEventBus())
+        val vm = StarsViewModel(starRepo, bus, ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         val beforeSize = vm.state.value.repos.size // 3
         val target = vm.state.value.repos[1] // id=u-2, name=repo2, ownerLogin=u
         val expectedCountAfter = (target.stargazerCount - 1).coerceAtLeast(0)
 
-        bus.events.test {
+        bus.eventsFor(accounts.session.epoch).test {
             vm.unstarRepo(target)
             assertEquals(beforeSize - 1, vm.state.value.repos.size)
             assertFalse(vm.state.value.repos.any { it.id == target.id })
@@ -196,13 +198,13 @@ class StarsViewModelTest {
     }
 
     @Test
-    fun `跨VM事件_收到StarChanged取消星标时从repos移除对应条目`() = runTest {
+    fun `跨VM事件_收到StarChanged取消星标时从repos移除对应条目`() = runTest(accounts.context) {
         val starRepo = mockk<StarRepository>()
         val bus = RepoUpdateEventBus()
         coEvery { starRepo.getLists() } returns ApiResult.Success(emptyList())
         coEvery { starRepo.getViewerStarred(after = null) } returns ApiResult.Success(fakeStarred("v", 3))
 
-        val vm = StarsViewModel(starRepo, bus, ErrorEventBus())
+        val vm = StarsViewModel(starRepo, bus, ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         assertEquals(3, vm.state.value.repos.size)
 
@@ -230,7 +232,7 @@ class StarsViewModelTest {
         coEvery { starRepo.getViewerStarred(after = "cur") } returns
                 ApiResult.Success(fakeStarred("y", 1, hasNext = false))
 
-        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus())
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         vm.refresh()
         vm.loadMore()

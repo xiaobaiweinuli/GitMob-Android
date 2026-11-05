@@ -12,6 +12,7 @@ import com.gitmob.app.data.model.RepositoryLicense
 import com.gitmob.app.data.repository.RepoRepository
 import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -22,6 +23,7 @@ import org.junit.Rule
 import org.junit.Test
 
 class RepoCreateViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -126,7 +128,7 @@ class RepoCreateViewModelTest {
         val created = CreatedRepository("octocat", "new-repo")
         coEvery { repository.getRepositoryCreateOwners(null) } returns ApiResult.Success(ownerPage())
         coEvery { repository.createRepository(any()) } returns ApiResult.Success(created)
-        val viewModel = RepoCreateViewModel(repository, userRepository, RepoUpdateEventBus(), ErrorEventBus())
+        val viewModel = RepoCreateViewModel(repository, userRepository, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
         viewModel.initialize(user)
         viewModel.updateName("new-repo")
 
@@ -159,6 +161,7 @@ class RepoCreateViewModelTest {
         mockk<UserRepository>(relaxed = true),
         RepoUpdateEventBus(),
         ErrorEventBus(),
+        accounts.session,
     )
 
     private fun owner(id: String, login: String, type: RepositoryCreateOwnerType) = RepositoryCreateOwner(

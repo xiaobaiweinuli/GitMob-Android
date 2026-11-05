@@ -1,7 +1,8 @@
 package com.gitmob.app.ui.repos
 
 import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -53,7 +54,8 @@ class ReposViewModel @Inject constructor(
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val errorEventBus: ErrorEventBus,
     private val savedStateHandle: SavedStateHandle,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private companion object {
         const val QUERY_KEY = "repos.query"
@@ -227,7 +229,7 @@ class ReposViewModel @Inject constructor(
 
     private fun observeRepoUpdates() {
         viewModelScope.launch {
-            repoUpdateEventBus.events.collect { event ->
+            repoUpdateEventBus.eventsFor(accountEpoch).collect { event ->
                 if (!initialized) return@collect
                 val current = _state.value
                 val owner = current.ownerContext?.login ?: login

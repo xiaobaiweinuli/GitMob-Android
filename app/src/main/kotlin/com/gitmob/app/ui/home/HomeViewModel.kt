@@ -1,12 +1,15 @@
 package com.gitmob.app.ui.home
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.data.model.ViewerProfile
+import com.gitmob.app.data.model.EditableProfile
+import com.gitmob.app.data.model.withEditableProfile
 import com.gitmob.app.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,20 +33,28 @@ data class HomeUiState(
 class HomeViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val errorEventBus: ErrorEventBus,
-    private val repoUpdateEventBus: RepoUpdateEventBus = RepoUpdateEventBus(),
-) : ViewModel() {
+    private val repoUpdateEventBus: RepoUpdateEventBus,
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
+    private var latestSavedProfile: EditableProfile? = null
 
     init {
         load()
         observeRepositoryCreated()
+        viewModelScope.launch {
+            userRepository.profileUpdatesFor(accountEpoch).collect { profile ->
+                latestSavedProfile = profile
+                _state.update { it.copy(profile = it.profile?.withEditableProfile(profile)) }
+            }
+        }
     }
 
     private fun observeRepositoryCreated() {
         viewModelScope.launch {
-            repoUpdateEventBus.events.collect { event ->
+            repoUpdateEventBus.eventsFor(accountEpoch).collect { event ->
                 if (event is RepoUpdateEvent.RepositoryCreated && event.owner == _state.value.profile?.user?.login) {
                     _state.update { state -> state.copy(profile = state.profile?.copy(repoCount = state.profile.repoCount + 1)) }
                 }
@@ -56,8 +67,9 @@ class HomeViewModel @Inject constructor(
      */
     fun load() {
         viewModelScope.launch {
+            val savedAtStart = latestSavedProfile
             _state.update { it.copy(isLoading = true, loadFailed = false) }
-            handleResult(userRepository.getViewerProfile())
+            handleResult(userRepository.getViewerProfile(), savedAtStart)
         }
     }
 
@@ -66,8 +78,9 @@ class HomeViewModel @Inject constructor(
      */
     fun refresh() {
         viewModelScope.launch {
+            val savedAtStart = latestSavedProfile
             _state.update { it.copy(isRefreshing = true) }
-            handleResult(userRepository.getViewerProfileFresh())
+            handleResult(userRepository.getViewerProfileFresh(), savedAtStart)
         }
     }
 
@@ -142,10 +155,11 @@ class HomeViewModel @Inject constructor(
      *
      * @param result 网络请求结果（Success/Failure 两态）
      */
-    private fun handleResult(result: ApiResult<ViewerProfile>) {
+    private fun handleResult(result: ApiResult<ViewerProfile>, savedAtStart: EditableProfile?) {
         when (result) {
             is ApiResult.Success -> _state.update {
-                it.copy(profile = result.data, isLoading = false, isRefreshing = false, loadFailed = false)
+                val saved = latestSavedProfile?.takeIf { profile -> profile !== savedAtStart }
+                it.copy(profile = saved?.let(result.data::withEditableProfile) ?: result.data, isLoading = false, isRefreshing = false, loadFailed = false)
             }
             is ApiResult.Failure -> {
                 viewModelScope.launch { errorEventBus.emit(result.error) }

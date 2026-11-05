@@ -5,6 +5,7 @@ import com.apollographql.apollo.api.http.HttpResponse
 import com.apollographql.apollo.network.http.HttpInterceptor
 import com.apollographql.apollo.network.http.HttpInterceptorChain
 import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.network.USER_AGENT
 
 /**
@@ -19,11 +20,13 @@ class AuthHttpInterceptor(
         request: HttpRequest,
         chain: HttpInterceptorChain,
     ): HttpResponse {
+        val epoch = AccountContext.ensureCurrent()
         val builder = request.newBuilder()
             .addHeader("User-Agent", USER_AGENT)
         tokenProvider.getToken()?.let { token ->
             builder.addHeader("Authorization", "Bearer $token")
         }
-        return chain.proceed(builder.build())
+        epoch.ensureCurrent()
+        return chain.proceed(builder.build()).also { epoch.ensureCurrent() }
     }
 }

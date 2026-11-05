@@ -16,6 +16,7 @@ import com.gitmob.app.data.model.RepoIssueFilter
 import com.gitmob.app.data.model.RepoIssuePage
 import com.gitmob.app.data.repository.RepoIssueRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -31,6 +32,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RepoIssueEditorViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -50,7 +52,7 @@ class RepoIssueEditorViewModelTest {
             ApiResult.Failure(ApiError.NetworkError),
             ApiResult.Success(IssueTemplateLoadResult(true, listOf(template))),
         )
-        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
 
         viewModel.init("o", "r", null)
         advanceUntilIdle()
@@ -67,7 +69,7 @@ class RepoIssueEditorViewModelTest {
     fun `creating issue forwards generated markdown from editor`() = runTest {
         val repository = repositoryMock()
         coEvery { repository.createIssue(any()) } returns ApiResult.Success(issue())
-        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
 
         viewModel.init("o", "r", null)
         advanceUntilIdle()

@@ -10,6 +10,7 @@ import com.gitmob.app.data.model.UserIssueStateFilter
 import com.gitmob.app.data.model.UserPullRequestStateFilter
 import com.gitmob.app.data.repository.WorkRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -21,6 +22,7 @@ import org.junit.Rule
 import org.junit.Test
 
 class WorkListViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -36,7 +38,7 @@ class WorkListViewModelTest {
     fun `issue view model loads only once`() = runTest {
         val repository = mockk<WorkRepository>()
         coEvery { repository.getUserIssues(any(), after = null) } returns ApiResult.Success(emptyPage)
-        val viewModel = WorkIssueListViewModel(repository, ErrorEventBus())
+        val viewModel = WorkIssueListViewModel(repository, ErrorEventBus(), accounts.session)
 
         viewModel.loadIfNeeded()
         viewModel.loadIfNeeded()
@@ -51,7 +53,7 @@ class WorkListViewModelTest {
     fun `pull request view model uses pull request repository entry`() = runTest {
         val repository = mockk<WorkRepository>()
         coEvery { repository.getUserPullRequests(any(), after = null) } returns ApiResult.Success(emptyPage)
-        val viewModel = WorkPullRequestListViewModel(repository, ErrorEventBus())
+        val viewModel = WorkPullRequestListViewModel(repository, ErrorEventBus(), accounts.session)
 
         viewModel.loadIfNeeded()
 
@@ -65,7 +67,7 @@ class WorkListViewModelTest {
     fun `issue filter selection resets data and reloads only when changed`() = runTest {
         val repository = mockk<WorkRepository>()
         coEvery { repository.getUserIssues(any(), after = null) } returns ApiResult.Success(emptyPage)
-        val viewModel = WorkIssueListViewModel(repository, ErrorEventBus())
+        val viewModel = WorkIssueListViewModel(repository, ErrorEventBus(), accounts.session)
         viewModel.loadIfNeeded()
 
         viewModel.setStateFilter(UserIssueStateFilter.CLOSED)
@@ -81,7 +83,7 @@ class WorkListViewModelTest {
     fun `pull request filter selection reloads with merged state`() = runTest {
         val repository = mockk<WorkRepository>()
         coEvery { repository.getUserPullRequests(any(), after = null) } returns ApiResult.Success(emptyPage)
-        val viewModel = WorkPullRequestListViewModel(repository, ErrorEventBus())
+        val viewModel = WorkPullRequestListViewModel(repository, ErrorEventBus(), accounts.session)
         viewModel.loadIfNeeded()
 
         viewModel.setStateFilter(UserPullRequestStateFilter.MERGED)
@@ -97,7 +99,7 @@ class WorkListViewModelTest {
         val repository = mockk<WorkRepository>()
         val page = PagedWorkDiscussions(2, emptyList(), false, null)
         coEvery { repository.getUserDiscussions(any(), after = null) } returns ApiResult.Success(page)
-        val viewModel = WorkDiscussionListViewModel(repository, ErrorEventBus())
+        val viewModel = WorkDiscussionListViewModel(repository, ErrorEventBus(), accounts.session)
         viewModel.loadIfNeeded()
 
         viewModel.setAnswerFilter(UserDiscussionAnswerFilter.UNANSWERED)

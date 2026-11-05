@@ -11,6 +11,7 @@ import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.RepoActionArtifact
 import com.gitmob.app.data.model.RepoWorkflow
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -25,8 +26,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class RepoActionsRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoActionsRepository
     private lateinit var downloadLauncher: ExternalDownloadLauncher
@@ -67,7 +70,7 @@ class RepoActionsRepositoryTest {
     }
 
     @Test
-    fun `repository permission comes from GraphQL viewerPermission`() = runTest {
+    fun `repository permission comes from GraphQL viewerPermission`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"repository":{"viewerPermission":"WRITE"}}}"""))
 
         val result = repository.getRepositoryPermission("octo", "repo")
@@ -79,7 +82,7 @@ class RepoActionsRepositoryTest {
     }
 
     @Test
-    fun `actions page maps workflows and runs and forwards page`() = runTest {
+    fun `actions page maps workflows and runs and forwards page`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """{"total_count":1,"workflows":[{"id":10,"node_id":"W10","name":"CI","path":".github/workflows/ci.yml","state":"active"}]}""",
@@ -104,7 +107,7 @@ class RepoActionsRepositoryTest {
     }
 
     @Test
-    fun `dispatch inputs read workflow yaml from selected ref through GraphQL`() = runTest {
+    fun `dispatch inputs read workflow yaml from selected ref through GraphQL`() = runTest(accounts.context) {
         val yaml = """
             name: Manual
             on:
@@ -131,7 +134,7 @@ class RepoActionsRepositoryTest {
     }
 
     @Test
-    fun `cancel run accepts empty success response`() = runTest {
+    fun `cancel run accepts empty success response`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(204))
 
         val result = repository.cancel("octo", "repo", runId = 42)
@@ -143,7 +146,7 @@ class RepoActionsRepositoryTest {
     }
 
     @Test
-    fun `delete run accepts empty success response`() = runTest {
+    fun `delete run accepts empty success response`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(204))
 
         val result = repository.deleteRun("octo", "repo", runId = 42)
@@ -155,7 +158,7 @@ class RepoActionsRepositoryTest {
     }
 
     @Test
-    fun `artifact download resolves redirect and opens external browser`() = runTest {
+    fun `artifact download resolves redirect and opens external browser`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "https://objects.example/build.zip"))
         val artifact = RepoActionArtifact(42, "build", 1024, expired = false, expiresAt = null)
 
@@ -168,7 +171,7 @@ class RepoActionsRepositoryTest {
     }
 
     @Test
-    fun `artifact download rejects non https redirect`() = runTest {
+    fun `artifact download rejects non https redirect`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "http://objects.example/build.zip"))
         val artifact = RepoActionArtifact(42, "build", 1024, expired = false, expiresAt = null)
 

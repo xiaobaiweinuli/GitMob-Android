@@ -28,11 +28,16 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -42,11 +47,14 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import com.gitmob.app.R
+import com.gitmob.app.core.auth.AccountEpoch
+import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.core.error.ErrorBannerHost
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.data.model.RepositoryCreateOwner
+import com.gitmob.app.data.model.AccountState
 import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.ui.branches.BranchesScreen
 import com.gitmob.app.ui.common.ConversationComposerScreen
@@ -75,6 +83,7 @@ import com.gitmob.app.ui.home.HomeScreen
 import com.gitmob.app.ui.inbox.InboxScreen
 import com.gitmob.app.ui.login.LoginScreen
 import com.gitmob.app.ui.profile.ProfileScreen
+import com.gitmob.app.ui.profile.ProfileEditorScreen
 import com.gitmob.app.ui.repodetail.RepoDetailScreen
 import com.gitmob.app.ui.repodiscussions.RepoDiscussionDetailScreen
 import com.gitmob.app.ui.repodiscussions.RepoDiscussionEditorScreen
@@ -156,7 +165,8 @@ private fun GitMobNavState.isShowingTabRoot(): Boolean {
  */
 @Composable
 fun GitMobNavGraph(
-    startLoggedIn: Boolean,
+    accountState: AccountState,
+    accountSession: AccountSession,
     errorEventBus: ErrorEventBus,
     repoUpdateEventBus: RepoUpdateEventBus,
     themePreference: ThemePreference,
@@ -164,29 +174,44 @@ fun GitMobNavGraph(
     deepLinkDestination: DeepLinkDestination? = null,
     onDeepLinkConsumed: () -> Unit = {},
 ) {
-    var isLoggedIn by remember { mutableStateOf(startLoggedIn) }
-
+    val epoch = accountSession.epoch
+    if (epoch.id != accountState.sessionId) return
+    val savedStates = rememberSaveableStateHolder()
+    // 同账号配置变更保留状态；换会话销毁父 Store 及五栈 entry，不靠根 key 猜测生命周期。
+    key(accountState.sessionId) {
+    val provider = rememberViewModelStoreProvider(key = epoch.id)
+    val owner = rememberViewModelStoreOwner(key = epoch.id, provider = provider)
+    DisposableEffect(epoch) {
+        onDispose { if (!epoch.isCurrent) savedStates.removeState(epoch.id) }
+    }
+    CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
+    savedStates.SaveableStateProvider(epoch.id) {
     Box(modifier = Modifier.fillMaxSize()) {
-        if (isLoggedIn) {
+        if (accountState.activeAccount != null) {
             LoggedInApp(
-                onLogout = { isLoggedIn = false },
+                onLogout = {},
                 themePreference = themePreference,
                 enablePredictiveBack = enablePredictiveBack,
                 deepLinkDestination = deepLinkDestination,
                 onDeepLinkConsumed = onDeepLinkConsumed,
                 repoUpdateEventBus = repoUpdateEventBus,
+                epoch = epoch,
             )
         } else {
-            LoginScreen(onLoginSuccess = { isLoggedIn = true })
+            LoginScreen(sessionId = accountState.sessionId)
         }
 
         ErrorBannerHost(
             errorEventBus = errorEventBus,
+            epoch = epoch,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 8.dp)
                 .windowInsetsPadding(WindowInsets.statusBars),
         )
+    }
+    }
+    }
     }
 }
 
@@ -211,13 +236,15 @@ private fun LoggedInApp(
     deepLinkDestination: DeepLinkDestination?,
     onDeepLinkConsumed: () -> Unit,
     repoUpdateEventBus: RepoUpdateEventBus,
+    epoch: AccountEpoch,
 ) {
     val navState = rememberGitMobNavState(startRoute = HomeRoute)
-    val navigator = remember(navState) { GitMobNavigator(navState) }
+    val navigator = remember(navState, epoch) { GitMobNavigator(navState, epoch) }
     val activity = LocalActivity.current
     val uriHandler = LocalUriHandler.current
-    val openExternalUrl: (String) -> Unit = remember(uriHandler) {
+    val openExternalUrl: (String) -> Unit = remember(uriHandler, epoch) {
         { rawUrl ->
+            if (epoch.isCurrent) {
             val target = if (rawUrl.startsWith("http://", ignoreCase = true) ||
                 rawUrl.startsWith("https://", ignoreCase = true)
             ) {
@@ -226,15 +253,17 @@ private fun LoggedInApp(
                 "https://$rawUrl"
             }
             runCatching { uriHandler.openUri(target) }
+            }
         }
     }
     val showingTabRoot = navState.isShowingTabRoot()
 
     LaunchedEffect(repoUpdateEventBus, navigator) {
-        repoUpdateEventBus.events.collect(navigator::onRepositoryUpdate)
+        repoUpdateEventBus.eventsFor(epoch).collect(navigator::onRepositoryUpdate)
     }
 
     LaunchedEffect(deepLinkDestination) {
+        if (!epoch.isCurrent) return@LaunchedEffect
         val destination = deepLinkDestination ?: return@LaunchedEffect
         when (destination) {
             is DeepLinkDestination.Profile -> navigator.navigate(ProfileRoute(destination.login))
@@ -310,6 +339,7 @@ private fun LoggedInApp(
                 preference = themePreference,
                 onAppearanceClick = { navigator.navigate(AppearanceRoute) },
                 onAboutClick = { navigator.navigate(AboutRoute) },
+                onEditProfileClick = { navigator.navigate(ProfileEditorRoute) },
                 onLogout = onLogout,
             )
         }
@@ -358,6 +388,9 @@ private fun LoggedInApp(
                 preference = themePreference,
                 onBack = { navigator.goBack() },
             )
+        }
+        entry<ProfileEditorRoute> {
+            ProfileEditorScreen(onBack = { navigator.goBack() })
         }
         entry<FollowersRoute> { route ->
             UserListScreen(

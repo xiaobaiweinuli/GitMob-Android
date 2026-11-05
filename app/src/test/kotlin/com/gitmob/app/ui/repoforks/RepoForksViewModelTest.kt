@@ -7,6 +7,7 @@ import com.gitmob.app.data.model.RepoListItem
 import com.gitmob.app.data.model.RepoVisibility
 import com.gitmob.app.data.repository.RepoDetailRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -17,6 +18,7 @@ import org.junit.Test
 import java.time.Instant
 
 class RepoForksViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -52,7 +54,7 @@ class RepoForksViewModelTest {
         coEvery { repository.getForks("upstream", "repo", "next") } returns ApiResult.Success(
             RepoList(2, listOf(repo("two")), false, null),
         )
-        val viewModel = RepoForksViewModel(repository, ErrorEventBus())
+        val viewModel = RepoForksViewModel(repository, ErrorEventBus(), accounts.session)
 
         viewModel.init("upstream", "repo")
         viewModel.loadMore()

@@ -1,8 +1,10 @@
 package com.gitmob.app.core.event
 
 import app.cash.turbine.test
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Rule
 import org.junit.Test
 
 /**
@@ -11,13 +13,14 @@ import org.junit.Test
  * 标准范式：JUnit4 + kotlinx-coroutines-test + Turbine 测 Flow。
  */
 class RepoUpdateEventBusTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @Test
-    fun `emit的事件能被订阅者收到`() = runTest {
+    fun `emit的事件能被订阅者收到`() = runTest(accounts.context) {
         val bus = RepoUpdateEventBus()
         val event = RepoUpdateEvent.BranchSwitched("owner", "repo", "develop")
 
-        bus.events.test {
+        bus.eventsFor(accounts.session.epoch).test {
             bus.emit(event)
             assertEquals(event, awaitItem())
             cancelAndIgnoreRemainingEvents()

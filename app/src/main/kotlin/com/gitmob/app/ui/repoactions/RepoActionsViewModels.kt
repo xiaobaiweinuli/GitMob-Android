@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repoactions
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
@@ -49,7 +50,8 @@ class RepoActionsViewModel @Inject constructor(
     private val repository: RepoActionsRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoActionsUiState())
     val state: StateFlow<RepoActionsUiState> = _state.asStateFlow()
     private var owner = ""; private var name = ""; private var initialized = false
@@ -116,7 +118,7 @@ class RepoActionsViewModel @Inject constructor(
 
     private fun observeRunChanges() {
         viewModelScope.launch {
-            repoUpdateEventBus.events.filterIsInstance<RepoUpdateEvent.ActionRunChanged>().collect { event ->
+            repoUpdateEventBus.eventsFor(accountEpoch).filterIsInstance<RepoUpdateEvent.ActionRunChanged>().collect { event ->
                 if (event.owner != owner || event.name != name) return@collect
                 if (!locallyDeletedRunIds.remove(event.runId)) load()
             }
@@ -140,14 +142,15 @@ class RepoWorkflowRunViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val shareLinkLauncher: ShareLinkLauncher,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoWorkflowRunUiState())
     val state: StateFlow<RepoWorkflowRunUiState> = _state.asStateFlow()
     private var owner = ""; private var name = ""; private var runId = 0L; private var initialized = false
     fun init(owner: String, name: String, runId: Long, permission: RepoPermission?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; this.runId = runId; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } } ?: viewModelScope.launch { when (val result = repository.getRepositoryPermission(owner, name)) { is ApiResult.Success -> _state.update { it.copy(permission = result.data, capabilities = result.data.toCapabilities()) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }; load() }
     fun load() { viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getRun(owner, name, runId)) { is ApiResult.Success -> _state.update { it.copy(detail = result.data, isLoading = false) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun cancel(force: Boolean = false) = runAction { repository.cancel(owner, name, runId, force) }
-    fun share() { _state.value.detail?.run?.htmlUrl?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
+    fun share() { if (accountEpoch.isCurrent) _state.value.detail?.run?.htmlUrl?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
     fun rerun(failedOnly: Boolean = false) = runAction { repository.rerun(owner, name, runId, failedOnly) }
     fun confirmDelete(value: Boolean) = _state.update { it.copy(pendingDelete = value) }
     fun delete(done: () -> Unit) { if (!_state.value.capabilities.canPush) return; viewModelScope.launch { when (val result = repository.deleteRun(owner, name, runId)) { is ApiResult.Success -> { repoUpdateEventBus.emit(RepoUpdateEvent.ActionRunChanged(owner, name, runId)); done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = false) } } } } }

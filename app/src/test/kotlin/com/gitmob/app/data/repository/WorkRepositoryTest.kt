@@ -25,6 +25,7 @@ import com.gitmob.app.data.model.UserPullRequestRelationFilter
 import com.gitmob.app.data.model.UserPullRequestSortFilter
 import com.gitmob.app.data.model.UserPullRequestStateFilter
 import com.gitmob.app.data.model.UserPullRequestVisibilityFilter
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -34,8 +35,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class WorkRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: WorkRepository
 
@@ -64,7 +67,7 @@ class WorkRepositoryTest {
     }
 
     @Test
-    fun `getUserIssues解析search结果并标记isPullRequest为false`() = runTest {
+    fun `getUserIssues解析search结果并标记isPullRequest为false`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -97,7 +100,7 @@ class WorkRepositoryTest {
     }
 
     @Test
-    fun `getUserPullRequests解析草稿和锁定状态`() = runTest {
+    fun `getUserPullRequests解析草稿和锁定状态`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -126,7 +129,7 @@ class WorkRepositoryTest {
     }
 
     @Test
-    fun `getUserDiscussions用discussionCount而不是issueCount`() = runTest {
+    fun `getUserDiscussions用discussionCount而不是issueCount`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """

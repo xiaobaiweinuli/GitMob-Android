@@ -1,17 +1,15 @@
 package com.gitmob.app.core.network
 
 import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.error.UnauthorizedException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import java.net.URI
 import javax.inject.Inject
 import javax.inject.Named
@@ -90,11 +88,7 @@ class GHApiClient @Inject constructor(
 
     /** 二进制文件和目录 ZIP 组装使用；不得先转 String，避免破坏任意字节内容。 */
     suspend fun getRawBytes(path: String, accept: String): ByteArray =
-        rawCall("GET", path, body = null, accept = accept).use { response ->
-            val bytes = response.body.bytes()
-            if (!response.isSuccessful) throw HttpStatusException(response.code, bytes.decodeToString())
-            bytes
-        }
+        readRest("GET", path, body = null, accept = accept)
 
     /**
      * Resolve a GitHub REST download endpoint without following its redirect.
@@ -102,7 +96,9 @@ class GHApiClient @Inject constructor(
      * by an external browser without leaking the PAT.
      */
     suspend fun resolveRestDownloadUrl(path: String, accept: String = DEFAULT_ACCEPT): String? {
+        val epoch = AccountContext.ensureCurrent()
         val token = tokenProvider.getToken() ?: throw UnauthorizedException()
+        epoch.ensureCurrent()
         val request = Request.Builder()
             .url("$restBaseUrl$path")
             .header("Authorization", "Bearer $token")
@@ -115,29 +111,28 @@ class GHApiClient @Inject constructor(
             .followRedirects(false)
             .followSslRedirects(false)
             .build()
-        return withContext(Dispatchers.IO) {
-            noRedirectClient.newCall(request).execute().use { response ->
-                if (response.code !in setOf(301, 302, 303, 307, 308)) {
-                    if (!response.isSuccessful) {
-                        throw HttpStatusException(response.code, "Download endpoint returned ${response.code}")
-                    }
-                    return@use null
+        return noRedirectClient.newCall(request).readCancellable { response ->
+            if (response.code !in setOf(301, 302, 303, 307, 308)) {
+                if (!response.isSuccessful) {
+                    throw HttpStatusException(response.code, "Download endpoint returned ${response.code}")
                 }
-                val location = response.header("Location")
-                    ?: return@use null
-                val resolved = runCatching { URI(request.url.toString()).resolve(location).normalize() }.getOrNull()
-                    ?: return@use null
-                if (!resolved.isAbsolute || !resolved.scheme.equals("https", ignoreCase = true) || resolved.userInfo != null) {
-                    return@use null
-                }
-                resolved.toString()
+                return@readCancellable null
             }
-        }
+            val location = response.header("Location") ?: return@readCancellable null
+            val resolved = runCatching { URI(request.url.toString()).resolve(location).normalize() }.getOrNull()
+                ?: return@readCancellable null
+            if (!resolved.isAbsolute || !resolved.scheme.equals("https", ignoreCase = true) || resolved.userInfo != null) {
+                return@readCancellable null
+            }
+            resolved.toString()
+        }.also { epoch.ensureCurrent() }
     }
 
     /** Release asset 使用 uploads.github.com 的绝对 URL，仍复用统一鉴权和错误映射。 */
     suspend inline fun <reified T> uploadBytes(url: String, contentType: String, bytes: ByteArray): T {
+        val epoch = AccountContext.ensureCurrent()
         val token = tokenProvider.getToken() ?: throw UnauthorizedException()
+        epoch.ensureCurrent()
         val request = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $token")
@@ -146,44 +141,30 @@ class GHApiClient @Inject constructor(
             .header("User-Agent", USER_AGENT)
             .post(bytes.toRequestBody(contentType.toMediaType()))
             .build()
-        return withContext(Dispatchers.IO) {
-            okHttpClient.newCall(request).execute().use { response ->
-                val responseBytes = response.body.bytes()
-                if (!response.isSuccessful) throw HttpStatusException(response.code, responseBytes.decodeToString())
-                json.decodeFromString(responseBytes.decodeToString())
-            }
-        }
+        return json.decodeFromString(readUpload(request).decodeToString())
     }
 
     suspend inline fun <reified T> executeRest(method: String, path: String, body: String?, accept: String): T {
-        rawCall(method, path, body, accept).use { response ->
-            val bytes = response.body.bytes()
-            if (!response.isSuccessful) throw HttpStatusException(response.code, bytes.decodeToString())
-            // 部分 REST 接口成功时返回 204 No Content（空响应体），比如通知相关的
-            // PATCH/PUT/DELETE——这种情况调用方声明的 T 应该是 Unit，直接返回，
-            // 不要尝试对空字符串做 JSON 解码（会抛序列化异常）。
-            if (bytes.isEmpty() && T::class == Unit::class) {
-                @Suppress("UNCHECKED_CAST")
-                return Unit as T
-            }
-            return json.decodeFromString(bytes.decodeToString())
+        val bytes = readRest(method, path, body, accept)
+        if (bytes.isEmpty() && T::class == Unit::class) {
+            @Suppress("UNCHECKED_CAST")
+            return Unit as T
         }
+        return json.decodeFromString(bytes.decodeToString())
     }
 
     suspend fun executeRestRaw(method: String, path: String, accept: String): String {
-        rawCall(method, path, body = null, accept = accept).use { response ->
-            val text = response.body.string()
-            if (!response.isSuccessful) throw HttpStatusException(response.code, text)
-            return text
-        }
+        return readRest(method, path, body = null, accept = accept).decodeToString()
     }
 
     // executeRest（public inline）直接调用这个函数，同样必须至少 internal 才能过编译，
     // 但它自己内部访问 restBaseUrl 这些私有成员没问题——它本身不是 inline，字节码不会被
     // 复制到别处，"泄漏"规则只约束 inline 函数体直接引用到的符号，不会顺着调用链传递。
     @PublishedApi
-    internal suspend fun rawCall(method: String, path: String, body: String?, accept: String): Response {
+    internal suspend fun readRest(method: String, path: String, body: String?, accept: String): ByteArray {
+        val epoch = AccountContext.ensureCurrent()
         val token = tokenProvider.getToken() ?: throw UnauthorizedException()
+        epoch.ensureCurrent()
         val requestBuilder = Request.Builder()
             .url("$restBaseUrl$path")
             .header("Authorization", "Bearer $token")
@@ -210,15 +191,16 @@ class GHApiClient @Inject constructor(
             else -> throw IllegalArgumentException("不支持的方法: $method")
         }.build()
 
-        // ⚠️ OkHttp Call.execute() 是同步阻塞 API（DNS 解析 + TCP 握手 + SSL 握手 + socket 读写全程阻塞）
-        // 必须切到 Dispatchers.IO 再执行，否则在 Main 线程调用会被 Android StrictMode 拦截成
-        // NetworkOnMainThreadException，safeCall 归类成 catch-all 后 UI 就会看到"未知错误"。
-        // 参考 Kotlin 官方协程文档：suspend 函数必须保持"main-safe"，不得阻塞调用方线程。
-        return withContext(Dispatchers.IO) {
-            okHttpClient.newCall(request).execute()
-            // 仓库 zipball/tarball 下载走 302 跳转到 codeload.github.com，
-            // OkHttpClient 默认 followRedirects(true) 会自动处理。
-        }
+        return readUpload(request)
     }
 
+    @PublishedApi
+    internal suspend fun readUpload(request: Request): ByteArray {
+        val epoch = AccountContext.ensureCurrent()
+        return okHttpClient.newCall(request).readCancellable { response ->
+            val bytes = response.body.bytes()
+            if (!response.isSuccessful) throw HttpStatusException(response.code, bytes.decodeToString())
+            bytes
+        }.also { epoch.ensureCurrent() }
+    }
 }

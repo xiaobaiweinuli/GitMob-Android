@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repopullrequests
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -43,7 +44,8 @@ data class RepoPullRequestListUiState(
 class RepoPullRequestListViewModel @Inject constructor(
     private val repository: RepoPullRequestRepository,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoPullRequestListUiState())
     val state: StateFlow<RepoPullRequestListUiState> = _state.asStateFlow()
     private var owner = ""
@@ -161,7 +163,8 @@ class RepoPullRequestDetailViewModel @Inject constructor(
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val editRepository: ConversationEditRepository,
     private val shareLinkLauncher: ShareLinkLauncher,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoPullRequestDetailUiState())
     val state: StateFlow<RepoPullRequestDetailUiState> = _state.asStateFlow()
     private var owner = ""
@@ -184,14 +187,14 @@ class RepoPullRequestDetailViewModel @Inject constructor(
 
     private fun observeCommentChanges() {
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.PullRequestCommentsChanged>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name && event.number == number) load()
                 }
         }
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.CodeChanged>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name) load()
@@ -215,7 +218,7 @@ class RepoPullRequestDetailViewModel @Inject constructor(
 
     fun retry() = load()
 
-    fun share() { _state.value.pullRequest?.url?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
+    fun share() { if (accountEpoch.isCurrent) _state.value.pullRequest?.url?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
 
     fun openEditHistory(nodeId: String) {
         editJob?.cancel()

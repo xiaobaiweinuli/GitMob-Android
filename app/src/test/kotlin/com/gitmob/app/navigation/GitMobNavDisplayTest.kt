@@ -53,6 +53,7 @@ import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import com.gitmob.app.R
+import com.gitmob.app.testutil.AccountSessionRule
 import com.gitmob.app.ui.settings.SelectionRow
 import com.gitmob.app.ui.settings.SettingsDropdownRow
 import org.junit.Assert.assertEquals
@@ -61,6 +62,7 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -68,8 +70,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class GitMobNavDisplayTest {
-    @get:Rule
     val composeRule = createComposeRule()
+    private val accounts = AccountSessionRule()
+    @get:Rule val rules: RuleChain = RuleChain.outerRule(accounts).around(composeRule)
 
     private val input = BackInput()
     private val enabled = mutableStateOf(false)
@@ -575,7 +578,7 @@ class GitMobNavDisplayTest {
                     }
                 },
         )
-        navigator = GitMobNavigator(navState)
+        navigator = GitMobNavigator(navState, accounts.session.epoch)
         composeRule.setContent {
             MaterialTheme {
                 val owner = requireNotNull(LocalNavigationEventDispatcherOwner.current)

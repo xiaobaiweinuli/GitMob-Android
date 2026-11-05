@@ -4,14 +4,26 @@ import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.event.AccountEventBus
+import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.data.model.AuthenticatedUser
+import com.gitmob.app.data.model.EditableProfile
 import com.gitmob.app.data.model.FollowState
+import com.gitmob.app.data.model.ProfileDraft
 import com.gitmob.app.data.model.ProfileOwner
+import com.gitmob.app.data.model.withEditableProfile
 import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,10 +50,16 @@ import org.junit.Test
  *   - toggleFollow Org 分支：viewerIsFollowing 翻转，调用 followOrganization 而不是 followUser
  *   - toggleFollow 失败时两种 sealed 分支都不修改任何状态
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ProfileViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    private fun repository() = mockk<UserRepository> {
+        every { profileUpdatesFor(any()) } returns emptyFlow()
+    }
 
     private fun fakePerson(following: Boolean = false, followers: Int = 14) = ProfileOwner.Person(
         id = "U_person", login = "octocat", avatarUrl = null, name = "cat",
@@ -61,11 +79,11 @@ class ProfileViewModelTest {
 
     @Test
     fun `加载Person类型成功时填充owner并复位loading`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         val expected = fakePerson()
         coEvery { userRepo.getProfileOwner("octocat") } returns ApiResult.Success(expected)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus())
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         vm.init("octocat")
 
         assertTrue(vm.state.value.owner is ProfileOwner.Person)
@@ -77,11 +95,11 @@ class ProfileViewModelTest {
 
     @Test
     fun `加载Org类型成功时填充Org分支并复位loading`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         val expected = fakeOrg()
         coEvery { userRepo.getProfileOwner("github") } returns ApiResult.Success(expected)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus())
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         vm.init("github")
 
         val owner = vm.state.value.owner
@@ -93,12 +111,12 @@ class ProfileViewModelTest {
 
     @Test
     fun `加载失败时loadFailed为true retry复位initialized重新请求`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         coEvery { userRepo.getProfileOwner("foo") } returns
                 ApiResult.Failure(ApiError.NetworkError) andThen
                 ApiResult.Success(fakePerson())
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus())
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         vm.init("foo")
 
         // 第一次失败
@@ -116,12 +134,12 @@ class ProfileViewModelTest {
 
     @Test
     fun `toggleFollow Person未关注转关注 翻布尔并乐观followers加1`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         coEvery { userRepo.getProfileOwner(any()) } returns
                 ApiResult.Success(fakePerson(following = false, followers = 14))
         coEvery { userRepo.followUser(any()) } returns ApiResult.Success(Unit)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus())
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         vm.init("octocat")
         val before = vm.state.value.owner as ProfileOwner.Person
         assertFalse(before.followState.viewerIsFollowing)
@@ -136,12 +154,12 @@ class ProfileViewModelTest {
 
     @Test
     fun `toggleFollow Person已关注转取消 翻布尔且followers为0时被钳制不小于0`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         coEvery { userRepo.getProfileOwner(any()) } returns
                 ApiResult.Success(fakePerson(following = true, followers = 0))
         coEvery { userRepo.unfollowUser(any()) } returns ApiResult.Success(Unit)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus())
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         vm.init("octocat")
         vm.toggleFollow()
         val after = vm.state.value.owner as ProfileOwner.Person
@@ -152,12 +170,12 @@ class ProfileViewModelTest {
 
     @Test
     fun `toggleFollow Org未关注转关注 只翻布尔不动followers并调用followOrganization`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         coEvery { userRepo.getProfileOwner("github") } returns
                 ApiResult.Success(fakeOrg(following = false))
         coEvery { userRepo.followOrganization(any()) } returns ApiResult.Success(Unit)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus())
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         vm.init("github")
         val before = vm.state.value.owner as ProfileOwner.Org
         assertFalse(before.viewerIsFollowing)
@@ -173,12 +191,12 @@ class ProfileViewModelTest {
 
     @Test
     fun `toggleFollow失败时两种sealed分支都不修改任何状态`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         coEvery { userRepo.getProfileOwner("octo") } returns
                 ApiResult.Success(fakePerson(following = false, followers = 9))
         coEvery { userRepo.followUser(any()) } returns ApiResult.Failure(ApiError.Forbidden)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus())
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         vm.init("octo")
         val before = vm.state.value.owner as ProfileOwner.Person
 
@@ -189,4 +207,84 @@ class ProfileViewModelTest {
         assertEquals(before.followersCount, after.followersCount)
         vm.viewModelScope.cancel()
     }
+
+    @Test
+    fun `保存事件仅同步相同node身份的个人资料并保留只读数据`() = runTest(accounts.context) {
+        val userRepo = repository()
+        val events = AccountEventBus<EditableProfile>(4)
+        every { userRepo.profileUpdatesFor(any()) } answers { events.eventsFor(firstArg()) }
+        val before = fakePerson()
+        coEvery { userRepo.getProfileOwner("octocat") } returns ApiResult.Success(before)
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        try {
+            vm.init("octocat")
+            val saved = savedProfile()
+            events.emit(saved)
+            runCurrent()
+            assertEquals(before.withEditableProfile(saved), vm.state.value.owner)
+            coVerify(exactly = 1) { userRepo.getProfileOwner("octocat") }
+
+            events.emit(saved.copy(user = saved.user.copy(nodeId = "U_other"), values = ProfileDraft(name = "Other account")))
+            runCurrent()
+            assertEquals(before.withEditableProfile(saved), vm.state.value.owner)
+        } finally {
+            vm.viewModelScope.cancel()
+        }
+    }
+
+    @Test
+    fun `迟到加载采用期间保存的资料且后续请求不锁死在保存值`() = runTest(accounts.context) {
+        val userRepo = repository()
+        val events = AccountEventBus<EditableProfile>(4)
+        every { userRepo.profileUpdatesFor(any()) } answers { events.eventsFor(firstArg()) }
+        val loading = CompletableDeferred<ApiResult<ProfileOwner>>()
+        coEvery { userRepo.getProfileOwner("octocat") } coAnswers { loading.await() }
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        try {
+            vm.init("octocat")
+            assertTrue(vm.state.value.isLoading)
+            val saved = savedProfile()
+            events.emit(saved)
+            runCurrent()
+            loading.complete(ApiResult.Success(fakePerson()))
+            runCurrent()
+            assertEquals(fakePerson().withEditableProfile(saved), vm.state.value.owner)
+            assertFalse(vm.state.value.isLoading)
+
+            val remote = fakePerson(followers = 21).copy(name = "New remote")
+            coEvery { userRepo.getProfileOwner("octocat") } returns ApiResult.Success(remote)
+            vm.retry()
+            assertEquals(remote, vm.state.value.owner)
+        } finally {
+            vm.viewModelScope.cancel()
+        }
+    }
+
+    @Test
+    fun `个人保存事件不改变组织资料也不污染迟到组织响应`() = runTest(accounts.context) {
+        val userRepo = repository()
+        val events = AccountEventBus<EditableProfile>(4)
+        every { userRepo.profileUpdatesFor(any()) } answers { events.eventsFor(firstArg()) }
+        val loading = CompletableDeferred<ApiResult<ProfileOwner>>()
+        coEvery { userRepo.getProfileOwner("github") } coAnswers { loading.await() }
+        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        try {
+            vm.init("github")
+            events.emit(savedProfile())
+            runCurrent()
+            loading.complete(ApiResult.Success(fakeOrg()))
+            runCurrent()
+            assertEquals(fakeOrg(), vm.state.value.owner)
+            events.emit(savedProfile())
+            runCurrent()
+            assertEquals(fakeOrg(), vm.state.value.owner)
+        } finally {
+            vm.viewModelScope.cancel()
+        }
+    }
+
+    private fun savedProfile() = EditableProfile(
+        AuthenticatedUser(1, "U_person", "renamed", "Saved name", "https://example.test/avatar.png"),
+        ProfileDraft("Saved name", "Saved bio", "Saved company", "Saved location", "https://example.test", "saved@example.test", "saved_twitter", true),
+    )
 }

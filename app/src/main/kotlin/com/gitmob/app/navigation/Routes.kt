@@ -23,6 +23,9 @@ sealed interface Route : NavKey
 /** 用户/组织统一资料页，从"选择组织"弹窗或任意头像点击跳转进来 */
 @Serializable data class ProfileRoute(val login: String) : Route
 
+/** 仅编辑当前会话的八字段资料；不接受其他用户身份参数。 */
+@Serializable data object ProfileEditorRoute : Route
+
 /**
  * 指定 login 用户的仓库列表（不是底部 Tab 的"我的仓库"，从 Home/Profile 点击"仓库"统计项跳转进来）。
  * 指向参数化后的 ReposScreen(login=route.login)，与底部 Tab ReposRoute→ReposScreen(login=null) 共用同一套 Screen/ViewModel，

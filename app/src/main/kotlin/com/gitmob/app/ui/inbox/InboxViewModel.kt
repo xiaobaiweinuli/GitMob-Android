@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.inbox
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -31,7 +32,8 @@ data class InboxUiState(
 class InboxViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(InboxUiState())
     val state: StateFlow<InboxUiState> = _state.asStateFlow()

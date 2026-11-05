@@ -16,6 +16,7 @@ import com.gitmob.app.data.repository.RepoActionsRepository
 import com.gitmob.app.data.repository.RepoPullRequestRepository
 import com.gitmob.app.data.repository.RepoReleaseRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import com.gitmob.app.ui.repoactions.RepoWorkflowRunViewModel
 import com.gitmob.app.ui.repopullrequests.RepoPullRequestDetailViewModel
 import com.gitmob.app.ui.reporeleases.RepoReleaseDetailViewModel
@@ -32,6 +33,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DetailShareViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
     @Test
@@ -42,7 +44,7 @@ class DetailShareViewModelTest {
         val repository = mockk<RepoReleaseRepository>()
         coEvery { repository.getRelease("o", "r", 7) } returns ApiResult.Success(release) andThen ApiResult.Success(empty)
         val share = mockk<ShareLinkLauncher>(relaxUnitFun = true)
-        val vm = RepoReleaseDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), share)
+        val vm = RepoReleaseDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), share, accounts.session)
         vm.share()
         verify(exactly = 0) { share.share(any()) }
         vm.init("o", "r", null, 7, RepoPermission.READ); advanceUntilIdle()
@@ -62,7 +64,7 @@ class DetailShareViewModelTest {
         val repository = mockk<RepoActionsRepository>()
         coEvery { repository.getRun("o", "r", 7) } returns ApiResult.Success(detail)
         val share = mockk<ShareLinkLauncher>(relaxUnitFun = true)
-        val vm = RepoWorkflowRunViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), share)
+        val vm = RepoWorkflowRunViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), share, accounts.session)
         vm.share()
         verify(exactly = 0) { share.share(any()) }
         vm.init("o", "r", 7, RepoPermission.READ); advanceUntilIdle()
@@ -81,7 +83,7 @@ class DetailShareViewModelTest {
         val repository = mockk<RepoPullRequestRepository>()
         coEvery { repository.getPullRequest("o", "r", 7, null) } returns ApiResult.Success(detail) andThen ApiResult.Success(detail.copy(pullRequest = empty))
         val share = mockk<ShareLinkLauncher>(relaxUnitFun = true)
-        val vm = RepoPullRequestDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), share)
+        val vm = RepoPullRequestDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), share, accounts.session)
         vm.share()
         verify(exactly = 0) { share.share(any()) }
         vm.init("o", "r", 7, RepoPermission.READ); advanceUntilIdle()

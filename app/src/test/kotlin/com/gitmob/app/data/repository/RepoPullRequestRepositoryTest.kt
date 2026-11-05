@@ -12,6 +12,7 @@ import com.gitmob.app.data.model.CreateRepoPullRequestInput
 import com.gitmob.app.data.model.RepoPullRequestFilter
 import com.gitmob.app.data.model.RepoPullRequestMergeMethod
 import com.gitmob.app.data.model.UpdateRepoPullRequestInput
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -29,8 +30,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class RepoPullRequestRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoPullRequestRepository
     private val json = Json { ignoreUnknownKeys = true }
@@ -59,7 +62,7 @@ class RepoPullRequestRepositoryTest {
     fun tearDown() = server.shutdown()
 
     @Test
-    fun `default list filter omits optional empty variables`() = runTest {
+    fun `default list filter omits optional empty variables`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(pageJson()))
 
         val result = repository.getPullRequests("octo", "repo", RepoPullRequestFilter(), after = "previous")
@@ -84,7 +87,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `getLabels 解析仓库标签列表`() = runTest {
+    fun `getLabels 解析仓库标签列表`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""
             {
               "data": {
@@ -113,7 +116,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `getLabels 错误响应映射为失败`() = runTest {
+    fun `getLabels 错误响应映射为失败`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(500).setBody("""{"message":"boom"}"""))
 
         val result = repository.getLabels("octo", "repo")
@@ -122,7 +125,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `getLabels 在 Repository 内遍历 cursor`() = runTest {
+    fun `getLabels 在 Repository 内遍历 cursor`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[{"id":"L1","name":"one","color":"111111"}],"pageInfo":{"hasNextPage":true,"endCursor":"C1"}}}}}"""))
         server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[{"id":"L2","name":"two","color":"222222"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
 
@@ -138,7 +141,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `cross repository create namespaces head ref and sends head repository id`() = runTest {
+    fun `cross repository create namespaces head ref and sends head repository id`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(createPullRequestJson()))
 
         val result = repository.createPullRequest(
@@ -165,7 +168,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `PR详情全部连接容量来自PageSize且保留评论游标`() = runTest {
+    fun `PR详情全部连接容量来自PageSize且保留评论游标`() = runTest(accounts.context) {
         val connections = """,
             "comments":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}},
             "reviews":{"nodes":[]},"reviewThreads":{"nodes":[]},"commits":{"nodes":[]}
@@ -190,7 +193,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `分支读取和创建元数据首续页使用对应容量`() = runTest {
+    fun `分支读取和创建元数据首续页使用对应容量`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(metadataPageJson("refs")))
         assertTrue(repository.getBranches("octo", "repo") is ApiResult.Success)
         val branches = takeVariables()
@@ -214,7 +217,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `元数据续页失败不返回部分成功且重试重读原始页`() = runTest {
+    fun `元数据续页失败不返回部分成功且重试重读原始页`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(metadataJson()))
         server.enqueue(MockResponse().setResponseCode(403))
         assertTrue(repository.getCreateMetadata("octo", "repo") is ApiResult.Failure)
@@ -228,7 +231,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `其余PR共享片段mutation只增加响应容量变量`() = runTest {
+    fun `其余PR共享片段mutation只增加响应容量变量`() = runTest(accounts.context) {
         val mutations = listOf<Pair<String, suspend () -> ApiResult<*>>>(
             "updatePullRequest" to suspend { repository.updatePullRequest(UpdateRepoPullRequestInput("PR1", "Title", "Body", "main", emptyList(), emptyList(), null)) },
             "closePullRequest" to suspend { repository.closePullRequest("PR1") },
@@ -257,7 +260,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `PR列表详情和创建元数据缺失根节点时仍失败`() = runTest {
+    fun `PR列表详情和创建元数据缺失根节点时仍失败`() = runTest(accounts.context) {
         repeat(3) { server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"login":"octo"},"repository":null}}""")) }
         assertTrue(repository.getPullRequests("octo", "repo", RepoPullRequestFilter()) is ApiResult.Failure)
         assertTrue(repository.getPullRequest("octo", "repo", 1) is ApiResult.Failure)
@@ -266,7 +269,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `requestReviews sends schema verified user id variables`() = runTest {
+    fun `requestReviews sends schema verified user id variables`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"requestReviews":{"clientMutationId":null}}}"""))
 
         val result = repository.requestReviews("PR1", listOf("U1", "U2"))
@@ -282,7 +285,7 @@ class RepoPullRequestRepositoryTest {
     }
 
     @Test
-    fun `findOpenPullRequest maps summary fields and encodes fork head`() = runTest {
+    fun `findOpenPullRequest maps summary fields and encodes fork head`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""
             [{
               "number":7,

@@ -23,6 +23,7 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.GistUpdateEventBus
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -39,9 +40,10 @@ import org.robolectric.annotation.Config
 class GistCreateScreenTest {
     private val mainDispatcherRule = MainDispatcherRule()
     private val composeRule = createComposeRule()
+    private val accounts = AccountSessionRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(mainDispatcherRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(mainDispatcherRule).around(accounts).around(composeRule)
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
@@ -110,5 +112,6 @@ class GistCreateScreenTest {
         repository,
         ErrorEventBus(),
         GistUpdateEventBus(),
+        accounts.session,
     )
 }

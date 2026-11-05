@@ -17,6 +17,7 @@ import com.gitmob.app.data.model.PagedBranches
 import com.gitmob.app.data.model.RepoBranch
 import com.gitmob.app.data.repository.RepoDetailRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.mockk
 import org.junit.Rule
@@ -31,9 +32,10 @@ import org.robolectric.annotation.Config
 class BranchesScreenTest {
     private val mainDispatcherRule = MainDispatcherRule()
     private val composeRule = createComposeRule()
+    private val accounts = AccountSessionRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(mainDispatcherRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(mainDispatcherRule).around(accounts).around(composeRule)
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
@@ -93,6 +95,6 @@ class BranchesScreenTest {
         coEvery { repository.getBranches("owner", "repo", null) } returns ApiResult.Success(
             PagedBranches(branches.toList(), hasNextPage = false, endCursor = null),
         )
-        return BranchesViewModel(repository, RepoUpdateEventBus(), ErrorEventBus())
+        return BranchesViewModel(repository, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
     }
 }

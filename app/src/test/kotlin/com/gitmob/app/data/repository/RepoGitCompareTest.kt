@@ -12,6 +12,7 @@ import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.RepoComparisonResult
 import com.gitmob.app.data.model.RepoForkSyncInfo
 import com.gitmob.app.data.model.RepoForkSyncStatus
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -23,8 +24,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class RepoGitCompareTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoGitRepository
 
@@ -52,7 +55,7 @@ class RepoGitCompareTest {
     fun tearDown() = server.shutdown()
 
     @Test
-    fun `same repository comparison encodes slashes in refs`() = runTest {
+    fun `same repository comparison encodes slashes in refs`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(compareJson()))
 
         val result = repository.compare("octo", "repo", "release/v2", "octo", "repo", "feature/login")
@@ -66,7 +69,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `cross repository comparison namespaces both refs`() = runTest {
+    fun `cross repository comparison namespaces both refs`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(compareJson()))
 
         repository.compare("upstream", "repo", "main", "viewer", "fork", "feature/login")
@@ -78,7 +81,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `no common ancestor is a domain result`() = runTest {
+    fun `no common ancestor is a domain result`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setResponseCode(404).setBody(
                 """{"message":"No common ancestor between upstream:main and viewer:feature."}""",
@@ -91,7 +94,16 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `fork sync compares captured upstream and fork SHAs with correct direction`() = runTest {
+    fun `ordinary missing comparison remains a failure`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"message":"Not Found"}"""))
+
+        val result = repository.compare("upstream", "repo", "main", "viewer", "fork", "feature")
+
+        assertTrue(result is ApiResult.Failure)
+    }
+
+    @Test
+    fun `fork sync compares captured upstream and fork SHAs with correct direction`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(forkGraphJson()))
         server.enqueue(MockResponse().setBody(compareJson(ahead = 2, behind = 3)))
 
@@ -109,7 +121,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `fork sync normalizes qualified branch before comparison`() = runTest {
+    fun `fork sync normalizes qualified branch before comparison`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(forkGraphJson()))
         server.enqueue(MockResponse().setBody(compareJson()))
 
@@ -124,7 +136,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `force align rechecks both heads and sends guarded ref update`() = runTest {
+    fun `force align rechecks both heads and sends guarded ref update`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(forkGraphJson()))
         server.enqueue(MockResponse().setBody("""{"data":{"updateRefs":{"clientMutationId":"gitmob"}}}"""))
 
@@ -140,7 +152,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `force align does not mutate when either head changed`() = runTest {
+    fun `force align does not mutate when either head changed`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(forkGraphJson(currentOid = "new-forksha")))
 
         val result = repository.forceAlignFork("viewer", "fork", syncInfo())
@@ -151,7 +163,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `merge upstream does not mislabel validation failure as a conflict`() = runTest {
+    fun `merge upstream does not mislabel validation failure as a conflict`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(422).setBody("""{"message":"Validation failed"}"""))
 
         val result = repository.mergeUpstream("viewer", "fork", "main") as ApiResult.Failure
@@ -161,7 +173,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `archived code tree has no write capabilities`() = runTest {
+    fun `archived code tree has no write capabilities`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""
             {"data":{"repository":{"id":"R1","isFork":true,"isArchived":true,"viewerPermission":"ADMIN",
             "ref":{"name":"main","target":{"__typename":"Commit","oid":"sha"}},
@@ -176,7 +188,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `force align also refuses a changed upstream SHA`() = runTest {
+    fun `force align also refuses a changed upstream SHA`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(forkGraphJson(upstreamOid = "new-upsha")))
 
         val result = repository.forceAlignFork("viewer", "fork", syncInfo())
@@ -186,7 +198,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `merge upstream maps conflict to user visible error`() = runTest {
+    fun `merge upstream maps conflict to user visible error`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(409).setBody("""{"message":"Conflict"}"""))
 
         val result = repository.mergeUpstream("viewer", "fork", "main")
@@ -200,7 +212,7 @@ class RepoGitCompareTest {
     }
 
     @Test
-    fun `compare文件容量前一项等于及超过上限保持裁剪和截断语义`() = runTest {
+    fun `compare文件容量前一项等于及超过上限保持裁剪和截断语义`() = runTest(accounts.context) {
         val limit = PageSize.COMPARE_FILES_LIMIT
         for (count in listOf(limit - 1, limit, limit + 1)) {
             val files = (1..count).joinToString(",") { """{"filename":"file-$it.kt","status":"modified","additions":1,"deletions":2}""" }

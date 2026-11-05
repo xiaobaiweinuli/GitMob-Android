@@ -1,13 +1,13 @@
 package com.gitmob.app.ui.repopullrequests
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.markdown.MarkdownRenderer
-import com.gitmob.app.core.markdown.CommonMarkRenderer
 import com.gitmob.app.ui.common.MarkdownEditorTab
 import com.gitmob.app.ui.common.MarkdownEditorUiState
 import com.gitmob.app.data.model.*
@@ -35,8 +35,8 @@ class RepoPullRequestEditorViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val markdownRenderer: MarkdownRenderer,
-) : ViewModel() {
-    constructor(repository: RepoPullRequestRepository, errorEventBus: ErrorEventBus, repoUpdateEventBus: RepoUpdateEventBus) : this(repository, errorEventBus, repoUpdateEventBus, CommonMarkRenderer())
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoPullRequestEditorUiState())
     val state: StateFlow<RepoPullRequestEditorUiState> = _state.asStateFlow()
     private var owner = ""

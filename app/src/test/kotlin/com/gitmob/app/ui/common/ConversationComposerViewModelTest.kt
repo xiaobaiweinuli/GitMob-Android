@@ -18,6 +18,7 @@ import com.gitmob.app.data.repository.RepoPullRequestRepository
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.navigation.ConversationComposerTarget
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -35,6 +36,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConversationComposerViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -63,7 +65,7 @@ class ConversationComposerViewModelTest {
         val viewModel = viewModel(issueRepository = issueRepository, eventBus = eventBus)
         init(viewModel)
 
-        eventBus.events.test {
+        eventBus.eventsFor(accounts.session.epoch).test {
             viewModel.updateText("hello")
             viewModel.submit()
             advanceUntilIdle()
@@ -139,7 +141,7 @@ class ConversationComposerViewModelTest {
             reviewEvent = null,
         )
 
-        eventBus.events.test {
+        eventBus.eventsFor(accounts.session.epoch).test {
             viewModel.updateText("hello")
             viewModel.submit()
             advanceUntilIdle()
@@ -184,5 +186,6 @@ class ConversationComposerViewModelTest {
         errorEventBus = ErrorEventBus(),
         repoUpdateEventBus = eventBus,
         gistUpdateEventBus = gistEventBus,
+        session = accounts.session,
     )
 }

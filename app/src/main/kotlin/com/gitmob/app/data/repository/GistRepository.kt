@@ -3,7 +3,7 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.api.Optional
 import com.gitmob.app.R
-import com.gitmob.app.core.auth.TokenStorage
+import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.diff.LineDiffGenerator
 import com.gitmob.app.core.error.HttpStatusException
@@ -61,7 +61,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -78,10 +77,8 @@ private const val FORK_LOOKUP_PARALLELISM = 4
 class GistRepository @Inject constructor(
     private val api: GHApiClient,
     private val apolloClient: ApolloClient,
-    private val tokenStorage: TokenStorage,
 ) {
     private data class CacheKey(
-        val viewerLogin: String,
         val targetLogin: String?,
         val category: GistCategory,
         val sort: GistSort,
@@ -102,12 +99,8 @@ class GistRepository @Inject constructor(
 
     private val firstPageCache = MemoryCache<CacheKey, GistPage>(GIST_CACHE_TTL_MS)
 
-    @Volatile
-    private var currentViewerLogin: String? = null
-
     fun invalidateAllCaches() {
         firstPageCache.invalidateAll()
-        currentViewerLogin = null
     }
 
     suspend fun getGists(
@@ -118,10 +111,8 @@ class GistRepository @Inject constructor(
         visibility: GistVisibility = GistVisibility.ALL,
     ): ApiResult<GistPage> {
         if (after == null) {
-            currentViewerLogin?.let { viewerLogin ->
-                firstPageCache.get(CacheKey(viewerLogin, login?.lowercase(), category, sort, visibility))?.let {
-                    return ApiResult.Success(it)
-                }
+            firstPageCache.get(CacheKey(login?.lowercase(), category, sort, visibility))?.let {
+                return ApiResult.Success(it)
             }
         }
 
@@ -359,9 +350,7 @@ class GistRepository @Inject constructor(
         )
     }
 
-    private suspend fun activeLogin(): String = requireNotNull(tokenStorage.activeLogin.first()) {
-        "Active login is required"
-    }
+    private fun activeLogin(): String = checkNotNull(AccountContext.ensureCurrent().login) { "Active login is required" }
 
     private fun String.path(): String {
         require(isNotBlank()) { "Gist id must not be blank" }
@@ -377,11 +366,10 @@ class GistRepository @Inject constructor(
         cacheFirstPage: Boolean,
     ): ApiResult<GistPage> = when (val result = scanGists(login, category, sort, after, visibility)) {
         is ApiResult.Success -> {
-            currentViewerLogin = result.data.viewerLogin
             val page = result.data.page.withForkSources()
             if (cacheFirstPage) {
                 firstPageCache.set(
-                    CacheKey(result.data.viewerLogin, login?.lowercase(), category, sort, visibility),
+                    CacheKey(login?.lowercase(), category, sort, visibility),
                     page,
                 )
             }

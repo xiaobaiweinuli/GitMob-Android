@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.userlist
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -54,7 +55,8 @@ class UserListViewModel @Inject constructor(
     private val repoDetailRepository: RepoDetailRepository,
     private val gistRepository: GistRepository,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(UserListUiState())
     val state: StateFlow<UserListUiState> = _state.asStateFlow()

@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repopullrequests
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -77,7 +78,8 @@ class RepoPullRequestCreateViewModel @Inject constructor(
     private val gitRepository: RepoGitRepository,
     private val pullRequestRepository: RepoPullRequestRepository,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoPullRequestCreateUiState())
     val state: StateFlow<RepoPullRequestCreateUiState> = _state.asStateFlow()
     private var owner = ""

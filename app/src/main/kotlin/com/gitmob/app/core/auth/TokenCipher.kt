@@ -18,6 +18,7 @@ object TokenCipher {
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val IV_LENGTH = 12 // GCM 标准 IV 长度
 
+    @Synchronized
     private fun getOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         val existing = keyStore.getKey(KEYSTORE_ALIAS, null) as? SecretKey

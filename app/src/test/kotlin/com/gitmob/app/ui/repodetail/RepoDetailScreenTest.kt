@@ -49,6 +49,7 @@ import com.gitmob.app.data.repository.RepoDetailRepository
 import com.gitmob.app.data.repository.RepoRepository
 import com.gitmob.app.data.repository.StarRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.justRun
@@ -74,9 +75,10 @@ import org.robolectric.shadows.ShadowDialog
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class RepoDetailScreenTest {
     private val composeRule = createComposeRule()
+    private val accounts = AccountSessionRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(MainDispatcherRule()).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(MainDispatcherRule()).around(accounts).around(composeRule)
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
     private val repository = mockk<RepoDetailRepository>(relaxed = true)
@@ -398,7 +400,7 @@ class RepoDetailScreenTest {
                 listOf(target), false, null,
             ),
         )
-        viewModel = RepoDetailViewModel(repository, owners, stars, mockk(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore())
+        viewModel = RepoDetailViewModel(repository, owners, stars, mockk(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session)
         composeRule.setContent {
             MaterialTheme {
                 RepoDetailScreen(

@@ -10,6 +10,7 @@ import com.gitmob.app.data.model.PagedRepoCommits
 import com.gitmob.app.data.model.RepoCommitSummary
 import com.gitmob.app.data.repository.RepoGitRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -22,15 +23,16 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RepoCommitsViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun `initial load exposes commits and event reloads matching branch`() = runTest {
+    fun `initial load exposes commits and event reloads matching branch`() = runTest(accounts.context) {
         val repository = mockk<RepoGitRepository>()
         val eventBus = RepoUpdateEventBus()
         coEvery { repository.getCommitHistory("o", "r", "main", null, any()) } returns ApiResult.Success(page())
-        val viewModel = RepoCommitsViewModel(repository, ErrorEventBus(), eventBus)
+        val viewModel = RepoCommitsViewModel(repository, ErrorEventBus(), eventBus, accounts.session)
 
         viewModel.init("o", "r", "main", null, RepoPermission.READ)
         advanceUntilIdle()

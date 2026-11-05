@@ -7,6 +7,7 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.GistUpdateEventBus
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -24,6 +25,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GistCreateViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
     @Test
@@ -60,7 +62,7 @@ class GistCreateViewModelTest {
         val second = viewModel.state.value.files.last()
         viewModel.updateFilename(second.id, "b.md")
         viewModel.updateContent(second.id, "# b")
-        val listChanged = async(start = CoroutineStart.UNDISPATCHED) { updateBus.listEvents.first() }
+        val listChanged = async(start = CoroutineStart.UNDISPATCHED) { updateBus.listEventsFor(accounts.session.epoch).first() }
         val created = async(start = CoroutineStart.UNDISPATCHED) { viewModel.createdEvents.first() }
 
         viewModel.create()
@@ -82,7 +84,7 @@ class GistCreateViewModelTest {
         val errorBus = ErrorEventBus()
         val viewModel = viewModel(repository, errorBus)
         viewModel.updateFilename(0, "a.txt")
-        val error = async(start = CoroutineStart.UNDISPATCHED) { errorBus.events.first() }
+        val error = async(start = CoroutineStart.UNDISPATCHED) { errorBus.eventsFor(accounts.session.epoch).first() }
 
         viewModel.create()
         advanceUntilIdle()
@@ -95,5 +97,5 @@ class GistCreateViewModelTest {
         repository: GistRepository = mockk(relaxed = true),
         errorEventBus: ErrorEventBus = ErrorEventBus(),
         gistUpdateEventBus: GistUpdateEventBus = GistUpdateEventBus(),
-    ) = GistCreateViewModel(repository, errorEventBus, gistUpdateEventBus)
+    ) = GistCreateViewModel(repository, errorEventBus, gistUpdateEventBus, accounts.session)
 }

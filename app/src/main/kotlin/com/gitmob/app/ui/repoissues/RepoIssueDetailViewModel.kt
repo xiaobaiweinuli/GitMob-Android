@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repoissues
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -49,7 +50,8 @@ class RepoIssueDetailViewModel @Inject constructor(
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val editRepository: ConversationEditRepository,
     private val shareLinkLauncher: ShareLinkLauncher,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoIssueDetailUiState())
     val state: StateFlow<RepoIssueDetailUiState> = _state.asStateFlow()
     private var owner = ""; private var name = ""; private var number = 0; private var cursor: String? = null; private var initialized = false
@@ -70,7 +72,7 @@ class RepoIssueDetailViewModel @Inject constructor(
 
     private fun observeCommentChanges() {
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.IssueCommentsChanged>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name && event.number == number) load()
@@ -80,7 +82,7 @@ class RepoIssueDetailViewModel @Inject constructor(
 
     fun load() { cursor = null; viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getIssue(owner, name, number)) { is ApiResult.Success -> apply(result.data); is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun retry() = load()
-    fun share() { _state.value.issue?.url?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
+    fun share() { if (accountEpoch.isCurrent) _state.value.issue?.url?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
 
     fun openEditHistory(nodeId: String) {
         editJob?.cancel()

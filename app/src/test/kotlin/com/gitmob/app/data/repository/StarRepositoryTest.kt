@@ -7,6 +7,7 @@ import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,6 +21,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 private fun buildApolloClient(baseUrl: String): ApolloClient =
     ApolloClient.Builder()
@@ -41,6 +43,7 @@ private fun buildApolloClient(baseUrl: String): ApolloClient =
  * avatarUrl 在 schema 中是非空 String!，mock 不能给 null。
  */
 class StarRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: StarRepository
 
@@ -57,7 +60,7 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `getLists解析列表摘要`() = runTest {
+    fun `getLists解析列表摘要`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -82,7 +85,7 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `getListsContaining通过反向索引算出仓库所属列表`() = runTest {
+    fun `getListsContaining通过反向索引算出仓库所属列表`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -108,7 +111,7 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `getViewerStarred解析星标仓库分页数据`() = runTest {
+    fun `getViewerStarred解析星标仓库分页数据`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -153,7 +156,7 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `viewer和user星标续页分别传入容量和游标`() = runTest {
+    fun `viewer和user星标续页分别传入容量和游标`() = runTest(accounts.context) {
         for (login in listOf(null, "octocat")) {
             val root = if (login == null) "viewer" else "user"
             server.enqueue(MockResponse().setBody("""{"data":{"$root":{"starredRepositories":{"totalCount":0,"edges":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
@@ -172,7 +175,7 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `清单项目使用独立分页容量和共享话题容量`() = runTest {
+    fun `清单项目使用独立分页容量和共享话题容量`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"node":{"__typename":"UserList","items":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
 
         val result = repository.getListItems("L1", "previous") as ApiResult.Success
@@ -188,7 +191,7 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `缺失根节点和权限失败不伪造成空星标或清单`() = runTest {
+    fun `缺失根节点和权限失败不伪造成空星标或清单`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"user":null}}"""))
         assertTrue(repository.getUserStarred("missing") is ApiResult.Failure)
         server.enqueue(MockResponse().setBody("""{"data":{"node":null}}"""))
@@ -198,7 +201,7 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `updateList解析更新后的列表`() = runTest {
+    fun `updateList解析更新后的列表`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -216,7 +219,7 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `deleteList成功时返回Unit`() = runTest {
+    fun `deleteList成功时返回Unit`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"deleteUserList":{"clientMutationId":null}}}"""))
 
         val result = repository.deleteList("L1")
@@ -225,7 +228,7 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `unstarRepo成功时返回Unit`() = runTest {
+    fun `unstarRepo成功时返回Unit`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"removeStar":{"clientMutationId":null}}}"""))
 
         val result = repository.unstarRepo("R1")

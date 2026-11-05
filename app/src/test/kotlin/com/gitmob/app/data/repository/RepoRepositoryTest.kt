@@ -15,6 +15,7 @@ import com.gitmob.app.data.model.RepoVisibility
 import com.gitmob.app.data.model.RepositoryCreateInput
 import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.data.model.RepositoryCreateOwnerType
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -37,12 +38,14 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class RepoRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoRepository
 
@@ -73,7 +76,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `解析仓库列表包含fork来源和topics`() = runTest {
+    fun `解析仓库列表包含fork来源和topics`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -138,7 +141,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `创建个人仓库使用user repos并显式发送false默认值`() = runTest {
+    fun `创建个人仓库使用user repos并显式发送false默认值`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -169,7 +172,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `创建组织仓库使用组织repos并映射owner`() = runTest {
+    fun `创建组织仓库使用组织repos并映射owner`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -201,7 +204,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `license和gitignore模板路径正确映射`() = runTest {
+    fun `license和gitignore模板路径正确映射`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("[{\"key\":\"mit\",\"name\":\"MIT License\"}]"))
         server.enqueue(MockResponse().setBody("[\"Kotlin\",\"Android\"]"))
 
@@ -215,7 +218,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `创建仓库所有者查询使用PageSize并传递下一页cursor`() = runTest {
+    fun `创建仓库所有者查询使用PageSize并传递下一页cursor`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -244,7 +247,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `组织仓库列表返回真实创建权限上下文`() = runTest {
+    fun `组织仓库列表返回真实创建权限上下文`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -262,7 +265,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `默认查询省略四维中性条件并限定所有者和PageSize`() = runTest {
+    fun `默认查询省略四维中性条件并限定所有者和PageSize`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(response()))
         repository.getRepos()
 
@@ -278,7 +281,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `viewer用户和组织发送四维交集且false不丢失`() = runTest {
+    fun `viewer用户和组织发送四维交集且false不丢失`() = runTest(accounts.context) {
         for (login in listOf(null, "me", "acme")) {
             server.enqueue(MockResponse().setBody(response(owner = login, organization = login == "acme")))
             val filters = RepoFilters(visibility = RepoVisibility.INTERNAL, isArchived = false, isFork = false, hasIssuesEnabled = false)
@@ -295,7 +298,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `十种主排序映射到真实字段及方向`() = runTest {
+    fun `十种主排序映射到真实字段及方向`() = runTest(accounts.context) {
         val expected = listOf(
             RepoSort.UPDATED_DESC to ("UPDATED_AT" to "DESC"),
             RepoSort.CREATED_ASC to ("CREATED_AT" to "ASC"),
@@ -318,7 +321,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `可见性精确映射且零议题仍可开启功能`() = runTest {
+    fun `可见性精确映射且零议题仍可开启功能`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(response(RepoVisibility.entries.map { node(it.name, visibility = it.name) })))
         val repos = (repository.getRepos() as ApiResult.Success).data.items
         assertEquals(RepoVisibility.entries, repos.map { it.visibility })
@@ -326,7 +329,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `未知可见性缺失必需字段和非法日期均失败`() = runTest {
+    fun `未知可见性缺失必需字段和非法日期均失败`() = runTest(accounts.context) {
         for (invalid in listOf(
             node("repo", visibility = "FUTURE"),
             node("repo").replace("\"createdAt\":\"2026-01-01T00:00:00Z\"", "\"createdAt\":\"invalid\""),
@@ -339,7 +342,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `搜索匹配名称或简介且不解释搜索语法`() = runTest {
+    fun `搜索匹配名称或简介且不解释搜索语法`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(response(listOf(
             node("Needle-repo"), node("description-match", "Some NEEDLE text"), node("unrelated"),
         ))))
@@ -354,7 +357,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `累计命中达到目标时完整处理最后一页`() = runTest {
+    fun `累计命中达到目标时完整处理最后一页`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(response(
             (1 until PageSize.REPOS).map { node("hit-$it") } + node("other"), cursor = "c1", total = PageSize.REPOS * 4,
         )))
@@ -370,7 +373,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `空搜索批次达到预算后从完整末页游标继续`() = runTest {
+    fun `空搜索批次达到预算后从完整末页游标继续`() = runTest(accounts.context) {
         val budget = PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT
         val total = PageSize.REPOS * budget + 1
         repeat(budget) { page ->
@@ -400,7 +403,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `预算耗尽保留非空命中并要求手动继续`() = runTest {
+    fun `预算耗尽保留非空命中并要求手动继续`() = runTest(accounts.context) {
         repeat(PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT) { page ->
             server.enqueue(MockResponse().setBody(response(listOf(node("hit-$page")), cursor = "c$page")))
         }
@@ -412,7 +415,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `预算前一页收满目标不要求手动继续`() = runTest {
+    fun `预算前一页收满目标不要求手动继续`() = runTest(accounts.context) {
         val pages = PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT - 1
         repeat(pages) { page ->
             val nodes = if (page == pages - 1) (1..PageSize.REPOS).map { node("hit-$it") } else emptyList()
@@ -429,7 +432,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `无搜索只取一页且空页暂停自动翻页`() = runTest {
+    fun `无搜索只取一页且空页暂停自动翻页`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(response(cursor = "next", total = PageSize.REPOS)))
         val batch = (repository.getRepos() as ApiResult.Success).data
         assertEquals(1, server.requestCount)
@@ -439,7 +442,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `批内按忽略大小写的地址去重并保留最后的数据`() = runTest {
+    fun `批内按忽略大小写的地址去重并保留最后的数据`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(response(listOf(node("hit")), cursor = "next")))
         server.enqueue(MockResponse().setBody(response(listOf(node("HIT", "new description"), node("hit-two")))))
         val batch = (repository.getRepos(filters = RepoFilters(query = "hit")) as ApiResult.Success).data
@@ -449,7 +452,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `缺失空白停滞及批内循环游标返回失败`() = runTest {
+    fun `缺失空白停滞及批内循环游标返回失败`() = runTest(accounts.context) {
         for ((after, cursor) in listOf(null to null, null to " ", "same" to "same")) {
             server.enqueue(MockResponse().setBody(response(cursor = cursor, hasNext = true)))
             assertTrue(repository.getRepos(after = after, filters = RepoFilters(query = "hit")) is ApiResult.Failure)
@@ -461,14 +464,14 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `扫描中主体改变时不提交混合账号结果`() = runTest {
+    fun `扫描中主体改变时不提交混合账号结果`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(response(listOf(node("hit")), cursor = "next")))
         server.enqueue(MockResponse().setBody(response(listOf(node("hit-two")), id = "another-account")))
         assertTrue(repository.getRepos(filters = RepoFilters(query = "hit")) is ApiResult.Failure)
     }
 
     @Test
-    fun `批内失败原子丢弃临时结果并从原游标重试`() = runTest {
+    fun `批内失败原子丢弃临时结果并从原游标重试`() = runTest(accounts.context) {
         val first = response(listOf(node("hit-one")), cursor = "middle")
         server.enqueue(MockResponse().setBody(first))
         server.enqueue(MockResponse().setResponseCode(403))
@@ -484,7 +487,7 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `仅viewer默认首页缓存且强制刷新替换缓存`() = runTest {
+    fun `仅viewer默认首页缓存且强制刷新替换缓存`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(response(listOf(node("cached")))))
         repository.getRepos()
         assertEquals("cached", (repository.getRepos() as ApiResult.Success).data.items.single().name)
@@ -510,10 +513,10 @@ class RepoRepositoryTest {
     }
 
     @Test
-    fun `失效后的迟到响应不能重新写入缓存`() = runTest { assertLateCacheWriteIgnored(forceRefresh = false) }
+    fun `失效后的迟到响应不能重新写入缓存`() = runTest(accounts.context) { assertLateCacheWriteIgnored(forceRefresh = false) }
 
     @Test
-    fun `强制刷新后的迟到响应不能覆盖新缓存`() = runTest { assertLateCacheWriteIgnored(forceRefresh = true) }
+    fun `强制刷新后的迟到响应不能覆盖新缓存`() = runTest(accounts.context) { assertLateCacheWriteIgnored(forceRefresh = true) }
 
     private suspend fun assertLateCacheWriteIgnored(forceRefresh: Boolean) = coroutineScope {
         val started = CountDownLatch(1)

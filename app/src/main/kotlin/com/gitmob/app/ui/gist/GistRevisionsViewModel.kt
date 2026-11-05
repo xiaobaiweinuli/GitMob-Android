@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.gist
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -26,7 +27,8 @@ data class GistRevisionsUiState(
 class GistRevisionsViewModel @Inject constructor(
     private val repository: GistRepository,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(GistRevisionsUiState())
     val state: StateFlow<GistRevisionsUiState> = _state.asStateFlow()
     private var gistId = ""

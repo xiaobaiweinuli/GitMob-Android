@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repodiscussions
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -44,7 +45,8 @@ class RepoDiscussionListViewModel @Inject constructor(
     private val repository: RepoDiscussionRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoDiscussionListUiState())
     val state: StateFlow<RepoDiscussionListUiState> = _state.asStateFlow()
     private var owner = ""
@@ -93,13 +95,14 @@ class RepoDiscussionDetailViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val editRepository: ConversationEditRepository,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoDiscussionDetailUiState())
     val state: StateFlow<RepoDiscussionDetailUiState> = _state.asStateFlow()
     private var owner = ""; private var name = ""; private var number = 0; private var cursor: String? = null; private var initialized = false
     private var editJob: Job? = null
     fun init(owner: String, name: String, number: Int, permission: RepoPermission?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; this.number = number; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } }; observeCommentChanges(); load() }
-    private fun observeCommentChanges() { viewModelScope.launch { repoUpdateEventBus.events.filterIsInstance<RepoUpdateEvent.DiscussionCommentsChanged>().collect { event -> if (event.owner == owner && event.name == name && event.number == number) load() } } }
+    private fun observeCommentChanges() { viewModelScope.launch { repoUpdateEventBus.eventsFor(accountEpoch).filterIsInstance<RepoUpdateEvent.DiscussionCommentsChanged>().collect { event -> if (event.owner == owner && event.name == name && event.number == number) load() } } }
     fun load() { cursor = null; viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getDiscussion(owner, name, number)) { is ApiResult.Success -> apply(result.data); is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
     fun retry() = load()
     fun openEditHistory(nodeId: String) {

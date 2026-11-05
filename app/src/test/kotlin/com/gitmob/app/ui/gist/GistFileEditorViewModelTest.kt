@@ -7,6 +7,7 @@ import com.gitmob.app.core.event.GistUpdateEventBus
 import com.gitmob.app.data.model.GistFile
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -21,6 +22,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GistFileEditorViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
     @Test
@@ -28,13 +30,13 @@ class GistFileEditorViewModelTest {
         val repository = mockk<GistRepository>()
         coEvery { repository.addFile("gist-id", "new.txt", "hello") } returns ApiResult.Success(Unit)
         val eventBus = GistUpdateEventBus()
-        val viewModel = GistFileEditorViewModel(repository, ErrorEventBus(), eventBus)
+        val viewModel = GistFileEditorViewModel(repository, ErrorEventBus(), eventBus, accounts.session)
         var saved = false
         viewModel.init("gist-id", null)
         viewModel.updatePath("new.txt")
         viewModel.updateContent("hello")
 
-        eventBus.events.test {
+        eventBus.eventsFor(accounts.session.epoch).test {
             viewModel.save("gist-id") { saved = true }
             advanceUntilIdle()
 
@@ -53,7 +55,7 @@ class GistFileEditorViewModelTest {
         coEvery { repository.getGistFile("gist-id", "old.txt") } returns ApiResult.Success(file)
         coEvery { repository.updateFile("gist-id", "old.txt", "new.txt", "updated") } returns ApiResult.Success(Unit)
         val eventBus = GistUpdateEventBus()
-        val viewModel = GistFileEditorViewModel(repository, ErrorEventBus(), eventBus)
+        val viewModel = GistFileEditorViewModel(repository, ErrorEventBus(), eventBus, accounts.session)
         var saved = false
 
         viewModel.init("gist-id", "old.txt")
@@ -61,7 +63,7 @@ class GistFileEditorViewModelTest {
         assertEquals("old.txt", viewModel.state.value.path)
         assertEquals("hello", viewModel.state.value.content)
 
-        eventBus.events.test {
+        eventBus.eventsFor(accounts.session.epoch).test {
             viewModel.updatePath("new.txt")
             viewModel.updateContent("updated")
             viewModel.save("gist-id") { saved = true }

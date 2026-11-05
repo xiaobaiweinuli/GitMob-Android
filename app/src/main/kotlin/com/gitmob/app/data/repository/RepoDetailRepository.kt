@@ -3,6 +3,7 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.api.Optional
 import com.gitmob.app.R
+import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
@@ -463,7 +464,9 @@ class RepoDetailRepository @Inject constructor(
 
     suspend fun getTransferTarget(login: String, newName: String): ApiResult<RepositoryTransferTarget> {
         val result = try {
+            val epoch = AccountContext.ensureCurrent()
             val response = apolloClient.query(RepoTransferTargetQuery(login, newName)).execute()
+            epoch.ensureCurrent()
             val account = response.data?.repositoryOwner
             // Only this existence check accepts a missing repository alongside a resolved account.
             val expectedMissingRepository = account != null && account.id.isNotBlank() && account.login.isNotBlank() &&

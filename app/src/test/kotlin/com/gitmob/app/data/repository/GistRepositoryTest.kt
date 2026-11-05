@@ -3,7 +3,6 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
-import com.gitmob.app.core.auth.TokenStorage
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
@@ -14,9 +13,7 @@ import com.gitmob.app.data.model.GistPage
 import com.gitmob.app.data.model.GistRevision
 import com.gitmob.app.data.model.GistSort
 import com.gitmob.app.data.model.GistVisibility
-import io.mockk.every
-import io.mockk.mockk
-import kotlinx.coroutines.flow.flowOf
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -32,8 +29,10 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class GistRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var restServer: MockWebServer
     private lateinit var repository: GistRepository
@@ -62,9 +61,7 @@ class GistRepositoryTest {
             tokenProvider = tokenProvider,
             restBaseUrl = restServer.url("/").toString().removeSuffix("/"),
         )
-        val tokenStorage = mockk<TokenStorage>()
-        every { tokenStorage.activeLogin } returns flowOf("viewer")
-        repository = GistRepository(api, apolloClient, tokenStorage)
+        repository = GistRepository(api, apolloClient)
     }
 
     @After
@@ -74,7 +71,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `原创列表过滤复刻并映射代码预览与秘密状态`() = runTest {
+    fun `原创列表过滤复刻并映射代码预览与秘密状态`() = runTest(accounts.context) {
         enqueuePage(
             edges = listOf(
                 edge("c1", gistNode("g1", isFork = true)),
@@ -119,7 +116,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `目标项不足时继续扫描下一底层页`() = runTest {
+    fun `目标项不足时继续扫描下一底层页`() = runTest(accounts.context) {
         enqueuePage(
             edges = listOf(edge("c1", gistNode("fork", isFork = true))),
             hasNextPage = true,
@@ -141,7 +138,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `收集满目标项时停在最后检查的edge并保留未检查数据`() = runTest {
+    fun `收集满目标项时停在最后检查的edge并保留未检查数据`() = runTest(accounts.context) {
         val edges = (1..PageSize.GISTS + 1).map { index ->
             edge("c$index", gistNode("g$index", isFork = false))
         }
@@ -156,7 +153,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `达到扫描批次上限时允许空页但保留下一页`() = runTest {
+    fun `达到扫描批次上限时允许空页但保留下一页`() = runTest(accounts.context) {
         repeat(PageSize.GIST_SCAN_BATCH_LIMIT) { batch ->
             val cursor = "c${batch + 1}"
             enqueuePage(
@@ -176,7 +173,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `四种排序只生成校验过的GraphQL枚举值`() = runTest {
+    fun `四种排序只生成校验过的GraphQL枚举值`() = runTest(accounts.context) {
         GistSort.entries.forEach {
             enqueuePage(edges = emptyList(), hasNextPage = false, endCursor = null)
             repository.getGistsFresh(category = GistCategory.ORIGINAL, sort = it)
@@ -194,7 +191,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `第一页命中缓存而fresh强制重新请求`() = runTest {
+    fun `第一页命中缓存而fresh强制重新请求`() = runTest(accounts.context) {
         enqueuePage(
             edges = listOf(edge("c1", gistNode("cached", isFork = false))),
             hasNextPage = false,
@@ -217,7 +214,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `他人列表使用user根和PUBLIC且不会误判为viewer所有`() = runTest {
+    fun `他人列表使用user根和PUBLIC且不会误判为viewer所有`() = runTest(accounts.context) {
         enqueueUserPage(
             targetLogin = "octocat",
             edges = listOf(edge("c1", gistNode("public-gist", isFork = false, ownerLogin = "octocat"))),
@@ -243,7 +240,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `viewer与不同用户的第一页缓存互不串用`() = runTest {
+    fun `viewer与不同用户的第一页缓存互不串用`() = runTest(accounts.context) {
         enqueuePage(
             edges = listOf(edge("v1", gistNode("viewer-gist", isFork = false))),
             hasNextPage = false,
@@ -271,7 +268,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `GraphQL权限错误映射到统一错误类型`() = runTest {
+    fun `GraphQL权限错误映射到统一错误类型`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """{"errors":[{"message":"Resource not accessible","type":"FORBIDDEN"}]}""",
@@ -286,7 +283,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `类别与可见性共同筛选且全部保留两种可见性`() = runTest {
+    fun `类别与可见性共同筛选且全部保留两种可见性`() = runTest(accounts.context) {
         val cases = listOf(
             Triple(GistCategory.ALL, GistVisibility.ALL, listOf("original-public", "original-private", "fork-public", "fork-private")),
             Triple(GistCategory.ALL, GistVisibility.PUBLIC, listOf("original-public", "fork-public")),
@@ -320,7 +317,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `复刻项通过REST补全来源`() = runTest {
+    fun `复刻项通过REST补全来源`() = runTest(accounts.context) {
         enqueuePage(
             edges = listOf(edge("c1", gistNode("fork", isFork = true))),
             hasNextPage = false,
@@ -341,7 +338,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `来源REST失败不影响复刻列表`() = runTest {
+    fun `来源REST失败不影响复刻列表`() = runTest(accounts.context) {
         enqueuePage(
             edges = listOf(edge("c1", gistNode("fork", isFork = true))),
             hasNextPage = false,
@@ -362,7 +359,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `复刻数超过并发上限时全部补全来源且不死锁`() = runTest {
+    fun `复刻数超过并发上限时全部补全来源且不死锁`() = runTest(accounts.context) {
         val ids = (1..6).map { "fork-$it" }
         enqueuePage(
             edges = ids.mapIndexed { index, id -> edge("c$index", gistNode(id, isFork = true)) },
@@ -383,7 +380,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `可见性过滤跨越不匹配批次与空批次并正确推进游标`() = runTest {
+    fun `可见性过滤跨越不匹配批次与空批次并正确推进游标`() = runTest(accounts.context) {
         enqueuePage(
             edges = listOf(
                 "null",
@@ -416,7 +413,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `可见性筛选页中截断后下一页从最后检查的edge续接`() = runTest {
+    fun `可见性筛选页中截断后下一页从最后检查的edge续接`() = runTest(accounts.context) {
         val edges = (1..PageSize.GISTS + 1).flatMap { index ->
             listOf(
                 edge("skip$index", gistNode("public$index", isFork = false)),
@@ -452,7 +449,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `可见性扫描达到预算后保留继续查找能力`() = runTest {
+    fun `可见性扫描达到预算后保留继续查找能力`() = runTest(accounts.context) {
         val budget = PageSize.GIST_SCAN_BATCH_LIMIT
         repeat(budget) { batch ->
             val cursor = "c${batch + 1}"
@@ -484,7 +481,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `预算前一批收满目标不再请求`() = runTest {
+    fun `预算前一批收满目标不再请求`() = runTest(accounts.context) {
         val batches = PageSize.GIST_SCAN_BATCH_LIMIT - 1
         repeat(batches) { batch ->
             val edges = if (batch == batches - 1) {
@@ -504,7 +501,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `文件元数据容量前一项与达到容量使用同源封顶判断`() = runTest {
+    fun `文件元数据容量前一项与达到容量使用同源封顶判断`() = runTest(accounts.context) {
         for (count in listOf(PageSize.GIST_FILE_METADATA_LIMIT - 1, PageSize.GIST_FILE_METADATA_LIMIT)) {
             enqueuePage(listOf(edge("last", gistNode("gist-$count", isFork = false, fileCount = count))), false, "last")
 
@@ -517,7 +514,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `扫描失败不提交半批结果且重试沿用原游标`() = runTest {
+    fun `扫描失败不提交半批结果且重试沿用原游标`() = runTest(accounts.context) {
         enqueuePage(listOf(edge("middle", gistNode("first", isFork = false))), true, "middle")
         server.enqueue(MockResponse().setResponseCode(403))
         assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED, after = "start"))
@@ -531,7 +528,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `空列表成功但缺失根节点仍失败`() = runTest {
+    fun `空列表成功但缺失根节点仍失败`() = runTest(accounts.context) {
         enqueuePage(emptyList(), false, null)
         val empty = repository.getGistsFresh(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED) as ApiResult.Success
         assertTrue(empty.data.items.isEmpty())
@@ -542,7 +539,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `三种可见性首屏缓存隔离且刷新只更新对应缓存`() = runTest {
+    fun `三种可见性首屏缓存隔离且刷新只更新对应缓存`() = runTest(accounts.context) {
         val expected = mapOf(
             GistVisibility.ALL to listOf("public", "private"),
             GistVisibility.PUBLIC to listOf("public"),
@@ -578,7 +575,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `他人私有筛选仍使用公开查询并返回最终无匹配`() = runTest {
+    fun `他人私有筛选仍使用公开查询并返回最终无匹配`() = runTest(accounts.context) {
         enqueueUserPage("octocat", listOf(edge("c1", gistNode("public", false, ownerLogin = "octocat"))), false, "c1")
         val result = repository.getGists(
             login = "octocat", category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED,
@@ -592,7 +589,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `详情合并GraphQL社交数据`() = runTest {
+    fun `详情合并GraphQL社交数据`() = runTest(accounts.context) {
         restServer.enqueue(MockResponse().setBody(detailJson(
             forkOf = """{
                 "id":"source-id",
@@ -620,7 +617,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `详情历史缺失时从文件原始地址获取当前版本`() = runTest {
+    fun `详情历史缺失时从文件原始地址获取当前版本`() = runTest(accounts.context) {
         val version = "0123456789abcdef0123456789abcdef01234567"
         restServer.enqueue(MockResponse().setBody(detailJson(
             history = "[]",
@@ -634,7 +631,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `编辑文件只读取详情REST并映射完整内容`() = runTest {
+    fun `编辑文件只读取详情REST并映射完整内容`() = runTest(accounts.context) {
         restServer.enqueue(MockResponse().setBody(detailJson()))
 
         val file = (repository.getGistFile("abc", "main.txt") as ApiResult.Success).data
@@ -646,7 +643,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `星标写操作使用无请求体PUT并接受204`() = runTest {
+    fun `星标写操作使用无请求体PUT并接受204`() = runTest(accounts.context) {
         restServer.enqueue(MockResponse().setResponseCode(204))
 
         assertEquals(ApiResult.Success(true), repository.setStarred("abc", true))
@@ -658,7 +655,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `创建Gist发送布尔公开值和两个字符串内容并使列表缓存失效`() = runTest {
+    fun `创建Gist发送布尔公开值和两个字符串内容并使列表缓存失效`() = runTest(accounts.context) {
         enqueuePage(listOf(edge("old", gistNode("old", isFork = false))), false, "old")
         repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED)
         restServer.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"created-id"}"""))
@@ -687,7 +684,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `复刻与评论写操作使用正确端点和正文`() = runTest {
+    fun `复刻与评论写操作使用正确端点和正文`() = runTest(accounts.context) {
         val commentJson = """{"id":7,"node_id":"comment-node","html_url":"https://gist.github.com/viewer/abc#comment-7","body":"hello","body_html":"<p>hello</p>","user":{"login":"viewer"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","author_association":"OWNER"}"""
         restServer.enqueue(MockResponse().setBody(detailJson()))
         restServer.enqueue(MockResponse().setBody(commentJson))
@@ -716,7 +713,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `更新文件只提交原文件键且删除提交null`() = runTest {
+    fun `更新文件只提交原文件键且删除提交null`() = runTest(accounts.context) {
         restServer.enqueue(MockResponse().setBody("{}"))
         restServer.enqueue(MockResponse().setBody("{}"))
 
@@ -732,7 +729,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `修订复刻评论列表使用集中分页容量`() = runTest {
+    fun `修订复刻评论列表使用集中分页容量`() = runTest(accounts.context) {
         restServer.enqueue(MockResponse().setBody("""[{"version":"sha","committed_at":"2026-01-01T00:00:00Z","change_status":{"total":2,"additions":1,"deletions":1}}]"""))
         restServer.enqueue(MockResponse().setBody("""[{"id":"fork","owner":{"login":"octocat"},"created_at":"2026-01-01T00:00:00Z"}]"""))
         restServer.enqueue(MockResponse().setBody("""[{"id":7,"node_id":"node","html_url":"https://gist.github.com/a/b#comment-7","body":"hello","body_html":"<p>hello</p>","user":{"login":"viewer"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","author_association":"OWNER"}]"""))
@@ -749,7 +746,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `相邻修订只比较完整文本并标记截断内容`() = runTest {
+    fun `相邻修订只比较完整文本并标记截断内容`() = runTest(accounts.context) {
         restServer.enqueue(MockResponse().setBody(detailJson(
             history = """[{"version":"older-than-selected","committed_at":"2026-01-15T00:00:00Z"}]""",
             files = """{
@@ -775,7 +772,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `最早修订扫描全部REST分页`() = runTest {
+    fun `最早修订扫描全部REST分页`() = runTest(accounts.context) {
         val firstPage = (1..PageSize.GIST_REVISION_SCAN).joinToString(",") { index ->
             """{"version":"sha-$index","committed_at":"2026-01-01T00:00:00Z","change_status":{}}"""
         }
@@ -796,7 +793,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `添加文件先拒绝同名再只提交新文件`() = runTest {
+    fun `添加文件先拒绝同名再只提交新文件`() = runTest(accounts.context) {
         restServer.enqueue(MockResponse().setBody(detailJson()))
         assertTrue(repository.addFile("abc", "main.txt", "new") is ApiResult.Failure)
         assertEquals("GET", restServer.takeRequest().method)
@@ -815,7 +812,7 @@ class GistRepositoryTest {
     }
 
     @Test
-    fun `Gist标星用户使用GraphQL游标分页`() = runTest {
+    fun `Gist标星用户使用GraphQL游标分页`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(
             """
             {

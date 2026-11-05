@@ -36,18 +36,20 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
+import com.gitmob.app.core.auth.AccountEpoch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 /**
  * 全局唯一的顶部错误提示条，挂在 Nav 根节点。
  * 不在每个 Screen 里重复实现错误提示 UI。
  */
 @Composable
-fun ErrorBannerHost(errorEventBus: ErrorEventBus, modifier: Modifier = Modifier) {
-    var current by remember { mutableStateOf<BannerEvent?>(null) }
+fun ErrorBannerHost(errorEventBus: ErrorEventBus, epoch: AccountEpoch, modifier: Modifier = Modifier) {
+    var current by remember(epoch) { mutableStateOf<BannerEvent?>(null) }
 
-    LaunchedEffect(Unit) {
-        errorEventBus.events.collect { event ->
+    LaunchedEffect(errorEventBus, epoch) {
+        errorEventBus.eventsFor(epoch).collectLatest { event ->
             current = event
             delay(3000)
             current = null

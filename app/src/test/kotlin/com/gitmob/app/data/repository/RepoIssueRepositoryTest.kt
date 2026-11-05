@@ -15,6 +15,7 @@ import com.gitmob.app.data.model.RepoMilestoneFilter
 import com.gitmob.app.data.model.CreateRepoIssueInput
 import com.gitmob.app.data.model.IssueStateReason
 import com.gitmob.app.data.model.UpdateRepoIssueInput
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -31,8 +32,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class RepoIssueRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoIssueRepository
 
@@ -50,7 +53,7 @@ class RepoIssueRepositoryTest {
     @After fun tearDown() = server.shutdown()
 
     @Test
-    fun `issue filters and order are encoded in repository query`() = runTest {
+    fun `issue filters and order are encoded in repository query`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(pageJson(cursor = "CURSOR", hasNext = true)))
         val result = repository.getIssues("octo", "repo", RepoIssueFilter(state = RepoIssueStateFilter.ALL, sort = RepoIssueSort.COMMENTS_ASC, assignee = RepoAssigneeFilter.ANY, milestone = RepoMilestoneFilter.Number(7), subscribed = true))
         assertTrue(result is ApiResult.Success)
@@ -67,7 +70,7 @@ class RepoIssueRepositoryTest {
     }
 
     @Test
-    fun `issue pagination forwards end cursor`() = runTest {
+    fun `issue pagination forwards end cursor`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(pageJson(cursor = "NEXT", hasNext = true)))
         server.enqueue(MockResponse().setBody(pageJson(cursor = null, hasNext = false, number = 2)))
         val filter = RepoIssueFilter()
@@ -86,7 +89,7 @@ class RepoIssueRepositoryTest {
     }
 
     @Test
-    fun `详情评论和共享元数据容量来自PageSize且保留游标`() = runTest {
+    fun `详情评论和共享元数据容量来自PageSize且保留游标`() = runTest(accounts.context) {
         val comments = """{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}"""
         server.enqueue(MockResponse().setBody("""{"data":{"repository":{"id":"R1","viewerPermission":"READ","issue":${issueNodeJson(1, comments)}}}}"""))
 
@@ -100,7 +103,7 @@ class RepoIssueRepositoryTest {
     }
 
     @Test
-    fun `三个元数据连接所有页均引用统一容量`() = runTest {
+    fun `三个元数据连接所有页均引用统一容量`() = runTest(accounts.context) {
         val loaders = listOf<Pair<String, suspend () -> ApiResult<*>>>(
             "labels" to suspend { repository.getLabels("o", "r") },
             "milestones" to suspend { repository.getMilestones("o", "r") },
@@ -121,7 +124,7 @@ class RepoIssueRepositoryTest {
     }
 
     @Test
-    fun `元数据下一页失败不缓存部分结果`() = runTest {
+    fun `元数据下一页失败不缓存部分结果`() = runTest(accounts.context) {
         val first = """{"data":{"repository":{"labels":{"nodes":[{"id":"L1","name":"bug","color":"ff0000"}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""
         server.enqueue(MockResponse().setBody(first))
         server.enqueue(MockResponse().setResponseCode(403))
@@ -134,7 +137,7 @@ class RepoIssueRepositoryTest {
     }
 
     @Test
-    fun `delete issue uses issue id mutation`() = runTest {
+    fun `delete issue uses issue id mutation`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("{\"data\":{\"deleteIssue\":{\"clientMutationId\":null}}}"))
         assertTrue(repository.deleteIssue("ISSUE_1") is ApiResult.Success)
         val body = server.takeRequest().body.readUtf8()
@@ -143,7 +146,7 @@ class RepoIssueRepositoryTest {
     }
 
     @Test
-    fun `templates and issue mutations are parsed`() = runTest {
+    fun `templates and issue mutations are parsed`() = runTest(accounts.context) {
         val yaml = """
             name: Bug report
             description: Report a bug
@@ -204,13 +207,13 @@ class RepoIssueRepositoryTest {
     }
 
     @Test
-    fun `graphql errors become api failure`() = runTest {
+    fun `graphql errors become api failure`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("{\"data\":null,\"errors\":[{\"message\":\"denied\",\"type\":\"FORBIDDEN\"}]}"))
         assertTrue(repository.getIssues("o", "r", RepoIssueFilter()) is ApiResult.Failure)
     }
 
     @Test
-    fun `缺失仓库根节点不伪造成空列表或详情`() = runTest {
+    fun `缺失仓库根节点不伪造成空列表或详情`() = runTest(accounts.context) {
         repeat(2) { server.enqueue(MockResponse().setBody("""{"data":{"repository":null}}""")) }
         assertTrue(repository.getIssues("o", "r", RepoIssueFilter()) is ApiResult.Failure)
         assertTrue(repository.getIssue("o", "r", 1) is ApiResult.Failure)

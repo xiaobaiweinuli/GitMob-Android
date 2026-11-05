@@ -1,5 +1,7 @@
 package com.gitmob.app.core.cache
 
+import com.gitmob.app.core.auth.AccountContext
+import com.gitmob.app.core.auth.AccountEpoch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -29,18 +31,32 @@ class MemoryCache<K : Any, V : Any>(private val ttlMs: Long) {
     /** 内部条目：保存值 + 写入时间戳 */
     private data class Entry<V>(val value: V, val timestamp: Long)
 
-    private val store = ConcurrentHashMap<K, Entry<V>>()
+    private val stores = mutableMapOf<AccountEpoch, ConcurrentHashMap<K, Entry<V>>>()
+
+    private fun store(): ConcurrentHashMap<K, Entry<V>> {
+        val epoch = AccountContext.ensureCurrent()
+        check(epoch.accountKey != null) { "An authenticated account is required for business caches" }
+        return synchronized(stores) {
+            epoch.ensureCurrent()
+            stores[epoch] ?: ConcurrentHashMap<K, Entry<V>>().also { partition ->
+                stores[epoch] = partition
+                epoch.job.invokeOnCompletion { synchronized(stores) { stores.remove(epoch) } }
+            }
+        }
+    }
 
     /**
      * 命中且未过期时返回缓存值；否则返回 null。
      * 过期条目会在 get() 时被惰性移除，不需要单独的清扫线程。
      */
     fun get(key: K): V? {
+        val store = store()
         val entry = store[key] ?: return null
         if (System.currentTimeMillis() - entry.timestamp > ttlMs) {
-            store.remove(key)
+            store.remove(key, entry)
             return null
         }
+        AccountContext.ensureCurrent()
         return entry.value
     }
 
@@ -49,16 +65,17 @@ class MemoryCache<K : Any, V : Any>(private val ttlMs: Long) {
      * 相同 key 会覆盖旧值（典型：下拉刷新成功后重新 set）。
      */
     fun set(key: K, value: V) {
-        store[key] = Entry(value, System.currentTimeMillis())
+        store()[key] = Entry(value, System.currentTimeMillis())
+        AccountContext.ensureCurrent()
     }
 
     /** 主动失效指定 key（mutation 后调用，保证下次读一定走网络）。 */
     fun invalidate(key: K) {
-        store.remove(key)
+        store().remove(key)
     }
 
-    /** 清空全部缓存（logout 时调用，避免账号切换后残留上一账号数据）。 */
+    /** 只失效发起会话的分区；会话结束时自动释放整个分区。 */
     fun invalidateAll() {
-        store.clear()
+        store().clear()
     }
 }

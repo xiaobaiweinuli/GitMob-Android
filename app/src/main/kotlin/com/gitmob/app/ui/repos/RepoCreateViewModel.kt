@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repos
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -65,7 +66,8 @@ class RepoCreateViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private var initialized = false
 

@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repoissues
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -51,7 +52,8 @@ class RepoIssueListViewModel @Inject constructor(
     private val repository: RepoIssueRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoIssueListUiState())
     val state: StateFlow<RepoIssueListUiState> = _state.asStateFlow()
     private var owner = ""
@@ -67,7 +69,7 @@ class RepoIssueListViewModel @Inject constructor(
         _state.update { it.copy(permission = permission ?: RepoPermission.NONE, capabilities = (permission ?: RepoPermission.NONE).let { p -> p.toCapabilities() }, viewerCanCreateIssues = viewerCanCreateIssues ?: false) }
         load()
         viewModelScope.launch {
-            repoUpdateEventBus.events.filterIsInstance<RepoUpdateEvent.IssueCountChanged>().collect { event ->
+            repoUpdateEventBus.eventsFor(accountEpoch).filterIsInstance<RepoUpdateEvent.IssueCountChanged>().collect { event ->
                 if (event.owner == owner && event.name == name) {
                     if (suppressNextIssueCountRefresh) suppressNextIssueCountRefresh = false else load()
                 }

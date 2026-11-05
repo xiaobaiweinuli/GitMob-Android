@@ -1,19 +1,17 @@
 package com.gitmob.app.core.event
 
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import com.gitmob.app.core.auth.AccountEpoch
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /** Gist 写操作后通知返回栈中的详情页或列表刷新。 */
 @Singleton
 class GistUpdateEventBus @Inject constructor() {
-    private val _events = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    val events: SharedFlow<String> = _events.asSharedFlow()
-    private val _listEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val listEvents: SharedFlow<Unit> = _listEvents.asSharedFlow()
+    private val events = AccountEventBus<String>(capacity = 8)
+    private val listEvents = AccountEventBus<Unit>(capacity = 1)
+    fun eventsFor(epoch: AccountEpoch) = events.eventsFor(epoch)
+    fun listEventsFor(epoch: AccountEpoch) = listEvents.eventsFor(epoch)
 
-    suspend fun emit(gistId: String) = _events.emit(gistId)
-    suspend fun emitListChanged() = _listEvents.emit(Unit)
+    suspend fun emit(gistId: String) = events.emit(gistId)
+    suspend fun emitListChanged() = listEvents.emit(Unit)
 }

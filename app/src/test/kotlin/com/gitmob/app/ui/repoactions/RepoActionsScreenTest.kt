@@ -41,6 +41,7 @@ import com.gitmob.app.data.model.RepoActionsPage
 import com.gitmob.app.data.model.RepoWorkflowRun
 import com.gitmob.app.data.repository.RepoActionsRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -63,9 +64,10 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class RepoActionsScreenTest {
     private val composeRule = createComposeRule()
+    private val accounts = AccountSessionRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(MainDispatcherRule()).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(MainDispatcherRule()).around(accounts).around(composeRule)
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
     private val repository = mockk<RepoActionsRepository>()
@@ -268,7 +270,7 @@ class RepoActionsScreenTest {
         coEvery { repository.getActions("octo", "repo") } returns ApiResult.Success(
             RepoActionsPage(1, emptyList(), listOf(record), 1, false),
         )
-        viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         composeRule.setContent {
             MaterialTheme {
                 background = MaterialTheme.colorScheme.background

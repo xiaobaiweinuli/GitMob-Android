@@ -3,13 +3,25 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.api.Optional
 import com.gitmob.app.R
+import com.gitmob.app.core.auth.AccountContext
+import com.gitmob.app.core.auth.AccountEpoch
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.core.auth.TokenStorage
 import com.gitmob.app.core.cache.MemoryCache
+import com.gitmob.app.core.event.AccountEventBus
 import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
+import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.FollowState
+import com.gitmob.app.data.model.AuthenticatedUser
+import com.gitmob.app.data.model.EditableProfile
+import com.gitmob.app.data.model.ProfileDraft
+import com.gitmob.app.data.model.ProfileField
+import com.gitmob.app.data.model.ProfileSaveResult
+import com.gitmob.app.data.model.withEditableProfile
 import com.gitmob.app.data.model.GHUser
 import com.gitmob.app.data.model.PagedOrgs
 import com.gitmob.app.data.model.PagedUsers
@@ -43,12 +55,21 @@ import com.gitmob.app.graphql.ViewerOrganizationsQuery
 import com.gitmob.app.graphql.ViewerProfileQuery
 import com.gitmob.app.graphql.fragment.PinnedRepoFields
 import com.gitmob.app.graphql.fragment.ProfileFields
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 只用 GraphQL，不用 REST——本项目主页/用户资料统一走 GraphQL 单一查询，
+ * 主页/公开资料仍走 GraphQL 单一查询；独立八字段编辑使用 REST /user，
  * 一次往返拿全部数据（基础资料 + pronouns/status/socialAccounts/置顶仓库/关注状态 + 统计数字）。
  *
  * B1 起切换 Apollo：查询语句与模型由 .graphql 文件 + 官方 schema 生成，
@@ -57,11 +78,67 @@ import javax.inject.Singleton
 @Singleton
 class UserRepository @Inject constructor(
     private val apolloClient: ApolloClient,
+    private val api: GHApiClient,
+    private val tokenStorage: TokenStorage,
+    private val session: AccountSession,
 ) {
 
     // ── 缓存实例 ──────────────────────────────────────────────
     /** viewer 自己的完整资料（底部 Tab「主页」+ 登录校验用），TTL 5 min */
     private val viewerProfileCache = MemoryCache<Unit, ViewerProfile>(ttlMs = 5 * 60_000L)
+    private val savedProfileCache = MemoryCache<Unit, EditableProfile>(ttlMs = Long.MAX_VALUE)
+    private val profileUpdates = AccountEventBus<EditableProfile>(capacity = 4)
+
+    fun profileUpdatesFor(epoch: AccountEpoch) = profileUpdates.eventsFor(epoch)
+
+    suspend fun getEditableProfile(): ApiResult<EditableProfile> = safeCall {
+        val epoch = AccountContext.ensureCurrent()
+        api.get<EditableProfileResponse>("/user").toDomain().also {
+            epoch.ensureCurrent()
+            check(it.user.id.toString() == epoch.accountKey) { "Profile belongs to another account" }
+        }
+    }
+
+    suspend fun saveEditableProfile(original: EditableProfile, values: ProfileDraft): ApiResult<ProfileSaveResult> = safeCall {
+        val epoch = AccountContext.ensureCurrent()
+        check(original.user.id.toString() == epoch.accountKey) { "Profile belongs to another account" }
+        if (values.validationErrors().isNotEmpty()) throw UserVisibleException(R.string.profile_validation_failed)
+        val body = buildJsonObject {
+            ProfileField.entries.forEach { field ->
+                if (values.value(field) != original.values.value(field)) {
+                    val key = when (field) {
+                        ProfileField.TWITTER_USERNAME -> "twitter_username"
+                        else -> field.name.lowercase(java.util.Locale.ROOT)
+                    }
+                    // Twitter 是唯一允许 null 的请求文本字段；其他清空值仍明确发送空字符串。
+                    put(key, if (field == ProfileField.TWITTER_USERNAME && values.value(field).isEmpty()) JsonNull else JsonPrimitive(values.value(field)))
+                }
+            }
+            if (values.hireable != original.values.hireable) put("hireable", values.hireable)
+        }
+        if (body.isEmpty()) return@safeCall ProfileSaveResult(original)
+        val saved = api.patch<EditableProfileResponse, kotlinx.serialization.json.JsonObject>("/user", body).toDomain()
+        epoch.ensureCurrent()
+        check(saved.user.id == original.user.id) { "Profile belongs to another account" }
+        val localSyncFailed = session.changes.withLock {
+            epoch.ensureCurrent()
+            withContext(NonCancellable) {
+                epoch.ensureCurrent()
+                val result = safeCall { tokenStorage.updateIdentity(saved.user) }
+                session.updateAccounts(session.state.value.accounts.map { account ->
+                    if (account.key == epoch.accountKey) account.copy(
+                        login = saved.user.login, name = saved.user.name, avatarUrl = saved.user.avatarUrl, nodeId = saved.user.nodeId,
+                    ) else account
+                })
+                result is ApiResult.Failure
+            }
+        }
+        epoch.ensureCurrent()
+        savedProfileCache.set(Unit, saved)
+        viewerProfileCache.get(Unit)?.let { viewerProfileCache.set(Unit, it.withEditableProfile(saved)) }
+        profileUpdates.emit(saved)
+        ProfileSaveResult(saved, localSyncFailed)
+    }
 
     /**
      * 公开：登出时由 AuthRepository 统一调用，清空当前 Repository 的全部内存缓存，
@@ -88,25 +165,28 @@ class UserRepository @Inject constructor(
      * 下拉刷新专用：绕过缓存，强制走网络，成功后刷新缓存时间戳。
      * 与 [getViewerProfile] 的唯一区别就是跳过缓存 get 这一步。
      */
-    suspend fun getViewerProfileFresh(): ApiResult<ViewerProfile> =
-        when (val result = apolloClient.query(ViewerProfileQuery(
+    suspend fun getViewerProfileFresh(): ApiResult<ViewerProfile> {
+        val savedAtStart = savedProfileCache.get(Unit)
+        return when (val result = apolloClient.query(ViewerProfileQuery(
             socialAccountsFirst = PageSize.SOCIAL_ACCOUNTS,
             pinnedItemsFirst = PageSize.PINNED_ITEMS,
         )).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 val data = result.data
-                val profile = data.viewer.profileFields.toDomain(
+                var profile = data.viewer.profileFields.toDomain(
                     gistCount = data.viewer.gists.totalCount,
                 ).copy(
                     involvedIssueCount = data.issuesInvolvingMe.issueCount,
                     involvedPrCount = data.prsInvolvingMe.issueCount,
                     involvedDiscussionCount = data.discussionsInvolvingMe.discussionCount,
                 )
+                savedProfileCache.get(Unit)?.takeIf { it !== savedAtStart }?.let { profile = profile.withEditableProfile(it) }
                 viewerProfileCache.set(Unit, profile)
                 profile
             }
         }
+    }
 
     /** 查看别人（或用 login 查自己也可以）资料用这个，Follow 按钮要用到的 viewerCanFollow 等字段同一套 */
     suspend fun getUserProfile(login: String): ApiResult<ViewerProfile> =
@@ -249,8 +329,9 @@ class UserRepository @Inject constructor(
      * 用户/组织统一资料查询——只有一个 login 时无法预先判断类型，
      * 用 repositoryOwner(login:) + __typename 分流，一次查询搞定两种情况。
      */
-    suspend fun getProfileOwner(login: String): ApiResult<ProfileOwner> =
-        when (val result = apolloClient.query(ProfileOwnerQuery(
+    suspend fun getProfileOwner(login: String): ApiResult<ProfileOwner> {
+        val savedAtStart = savedProfileCache.get(Unit)
+        return when (val result = apolloClient.query(ProfileOwnerQuery(
             login = login,
             socialAccountsFirst = PageSize.SOCIAL_ACCOUNTS,
             pinnedItemsFirst = PageSize.PINNED_ITEMS,
@@ -262,7 +343,7 @@ class UserRepository @Inject constructor(
                     ?: throw UserVisibleException(R.string.error_owner_not_found)
                 val onUser = node.onUser
                 val onOrg = node.onOrganization
-                when {
+                val owner = when {
                     onUser != null -> ProfileOwner.Person(
                         id = node.id,
                         login = node.login,
@@ -312,8 +393,11 @@ class UserRepository @Inject constructor(
                     )
                     else -> throw IllegalStateException("未知的 owner 类型: ${node.__typename}")
                 }
+                val saved = savedProfileCache.get(Unit)?.takeIf { it !== savedAtStart }
+                if (owner is ProfileOwner.Person && saved != null) owner.withEditableProfile(saved) else owner
             }
         }
+    }
 
     private fun ProfileFields.toDomain(gistCount: Int): ViewerProfile = ViewerProfile(
         user = GHUser(
@@ -510,4 +594,28 @@ class UserRepository @Inject constructor(
                 )
             }
         }
+}
+
+@Serializable
+private data class EditableProfileResponse(
+    val id: Long = 0,
+    @SerialName("node_id") val nodeId: String = "",
+    val login: String = "",
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    val name: String? = null,
+    val email: String? = null,
+    val blog: String? = null,
+    @SerialName("twitter_username") val twitterUsername: String? = null,
+    val company: String? = null,
+    val location: String? = null,
+    val hireable: Boolean? = null,
+    val bio: String? = null,
+) {
+    fun toDomain(): EditableProfile {
+        check(id > 0 && nodeId.isNotBlank() && login.isNotBlank()) { "Profile response is missing its identity" }
+        return EditableProfile(
+            AuthenticatedUser(id, nodeId, login, name, avatarUrl),
+            ProfileDraft(name.orEmpty(), bio.orEmpty(), company.orEmpty(), location.orEmpty(), blog.orEmpty(), email.orEmpty(), twitterUsername.orEmpty(), hireable == true),
+        )
+    }
 }

@@ -3,6 +3,7 @@ package com.gitmob.app.core.network.graphql
 import com.apollographql.apollo.ApolloCall
 import com.apollographql.apollo.api.Operation
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.auth.AccountContext
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -14,7 +15,9 @@ import kotlinx.coroutines.CancellationException
  * 业务映射（UserVisibleException 等）仍由调用方在拿到 Success 后用 safeCall 包裹。
  */
 suspend fun <D : Operation.Data> ApolloCall<D>.executeAsApiResult(): ApiResult<D> = try {
+    AccountContext.ensureCurrent()
     val response = execute()
+    AccountContext.ensureCurrent()
     GraphQLErrorMapper.toApiResult(response.data, response.errors, response.exception)
 } catch (e: CancellationException) {
     throw e

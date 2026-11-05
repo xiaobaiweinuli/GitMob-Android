@@ -10,6 +10,7 @@ import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.RepoReleaseAsset
 import com.gitmob.app.data.model.SaveRepoReleaseInput
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -23,8 +24,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class RepoReleaseRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoReleaseRepository
     private lateinit var downloadLauncher: ExternalDownloadLauncher
@@ -65,7 +68,7 @@ class RepoReleaseRepositoryTest {
     }
 
     @Test
-    fun `repository permission comes from GraphQL viewerPermission`() = runTest {
+    fun `repository permission comes from GraphQL viewerPermission`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"repository":{"viewerPermission":"ADMIN"}}}"""))
 
         val result = repository.getRepositoryPermission("octo", "repo")
@@ -75,7 +78,7 @@ class RepoReleaseRepositoryTest {
     }
 
     @Test
-    fun `create release sends draft and prerelease state`() = runTest {
+    fun `create release sends draft and prerelease state`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """{"id":7,"node_id":"R7","tag_name":"v1.0.0","target_commitish":"main","name":"Version 1","body":"Notes","draft":true,"prerelease":false,"created_at":"2026-01-01T00:00:00Z","assets":[]}""",
@@ -100,7 +103,7 @@ class RepoReleaseRepositoryTest {
     }
 
     @Test
-    fun `delete release accepts empty success response`() = runTest {
+    fun `delete release accepts empty success response`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(204))
 
         val result = repository.deleteRelease("octo", "repo", releaseId = 7)
@@ -112,7 +115,7 @@ class RepoReleaseRepositoryTest {
     }
 
     @Test
-    fun `release list tag and id retain the actual web URL including draft URL`() = runTest {
+    fun `release list tag and id retain the actual web URL including draft URL`() = runTest(accounts.context) {
         val url = "https://github.com/octo/repo/releases/tag/untagged-draft"
         val body = """{"id":7,"tag_name":"feature/slash","draft":true,"html_url":"$url"}"""
         server.enqueue(MockResponse().setBody("[$body]"))
@@ -128,7 +131,7 @@ class RepoReleaseRepositoryTest {
     }
 
     @Test
-    fun `release asset download resolves redirect and opens external browser`() = runTest {
+    fun `release asset download resolves redirect and opens external browser`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "https://objects.example/gitmob.apk"))
         val asset = RepoReleaseAsset(8, "gitmob.apk", null, "application/vnd.android.package-archive", "uploaded", 2048, 3, "", "")
 

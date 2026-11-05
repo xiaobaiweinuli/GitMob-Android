@@ -8,6 +8,7 @@ import com.gitmob.app.data.model.InboxReadFilter
 import com.gitmob.app.data.model.PagedNotifications
 import com.gitmob.app.data.repository.NotificationRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -23,6 +24,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class InboxViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -52,7 +54,7 @@ class InboxViewModelTest {
             repo.getNotifications(sourcePage = 1, filter = InboxReadFilter.UNREAD)
         } returns page(fakeNotifications("a", 3, 1..2))
 
-        val vm = InboxViewModel(repo, ErrorEventBus())
+        val vm = InboxViewModel(repo, ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
 
         assertFalse(vm.state.value.isLoading)
@@ -71,7 +73,7 @@ class InboxViewModelTest {
             page(fakeNotifications("b", 2, 1..1)),
         )
 
-        val vm = InboxViewModel(repo, ErrorEventBus())
+        val vm = InboxViewModel(repo, ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         assertTrue(vm.state.value.loadFailed)
 
@@ -93,7 +95,7 @@ class InboxViewModelTest {
             repo.getNotifications(sourcePage = 1, filter = InboxReadFilter.READ)
         } returns page(fakeNotifications("read", 2, IntRange.EMPTY))
 
-        val vm = InboxViewModel(repo, ErrorEventBus())
+        val vm = InboxViewModel(repo, ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         vm.setReadFilter(InboxReadFilter.READ)
 
@@ -113,7 +115,7 @@ class InboxViewModelTest {
         } returns page(list)
         coEvery { repo.markAsRead(any()) } returns ApiResult.Success(Unit)
 
-        val vm = InboxViewModel(repo, ErrorEventBus())
+        val vm = InboxViewModel(repo, ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         vm.markAsRead(list.first())
 
@@ -129,7 +131,7 @@ class InboxViewModelTest {
         } returns page(list)
         coEvery { repo.markAsRead(any()) } returns ApiResult.Success(Unit)
 
-        val vm = InboxViewModel(repo, ErrorEventBus())
+        val vm = InboxViewModel(repo, ErrorEventBus(), accounts.session)
         vm.setReadFilter(InboxReadFilter.ALL)
         vm.markAsRead(list.first())
 
@@ -148,7 +150,7 @@ class InboxViewModelTest {
             repo.getNotifications(sourcePage = 4, filter = InboxReadFilter.UNREAD)
         } returns page(second, nextSourcePage = 5, hasNextPage = false)
 
-        val vm = InboxViewModel(repo, ErrorEventBus())
+        val vm = InboxViewModel(repo, ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         vm.loadMore()
 
@@ -172,7 +174,7 @@ class InboxViewModelTest {
             repo.getNotifications(sourcePage = 1, filter = InboxReadFilter.READ)
         } returns page(fakeNotifications("read", 1, IntRange.EMPTY))
 
-        val vm = InboxViewModel(repo, ErrorEventBus())
+        val vm = InboxViewModel(repo, ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         vm.loadMore()
         vm.setReadFilter(InboxReadFilter.READ)

@@ -33,14 +33,14 @@ class RepoRepository @Inject constructor(
 
     /** 只缓存 viewer 默认条件第一页，TTL 5 min。 */
     private val viewerReposCache = MemoryCache<Unit, RepoList>(ttlMs = 5 * 60_000L)
-    private var cacheGeneration = 0L
+    private val cacheGeneration = MemoryCache<Unit, Long>(ttlMs = Long.MAX_VALUE)
 
     /**
-     * 公开：登出时由 AuthRepository 统一调用，清空当前 Repository 的全部内存缓存。
+     * 只失效当前会话；世代用于防止同一账号刷新前的迟到响应重新回填。
      */
     fun invalidateAllCaches() {
         synchronized(viewerReposCache) {
-            cacheGeneration++
+            cacheGeneration.set(Unit, (cacheGeneration.get(Unit) ?: 0) + 1)
             viewerReposCache.invalidateAll()
         }
     }
@@ -60,18 +60,18 @@ class RepoRepository @Inject constructor(
         val generation = synchronized(viewerReposCache) {
             if (cacheable) {
                 if (forceRefresh) {
-                    cacheGeneration++
+                    cacheGeneration.set(Unit, (cacheGeneration.get(Unit) ?: 0) + 1)
                     viewerReposCache.invalidateAll()
                 } else {
                     viewerReposCache.get(Unit)?.let { return ApiResult.Success(it) }
                 }
             }
-            cacheGeneration
+            cacheGeneration.get(Unit) ?: 0
         }
         val result = scanRepos(login, after, query)
         if (cacheable && result is ApiResult.Success) {
             synchronized(viewerReposCache) {
-                if (generation == cacheGeneration) viewerReposCache.set(Unit, result.data)
+                if (generation == (cacheGeneration.get(Unit) ?: 0)) viewerReposCache.set(Unit, result.data)
             }
         }
         return result

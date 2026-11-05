@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repocommits
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.diff.UnifiedDiffParser
 import com.gitmob.app.core.error.ApiResult
@@ -40,7 +41,8 @@ class RepoCommitDetailViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val shareLinkLauncher: ShareLinkLauncher,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoCommitDetailUiState())
     val state: StateFlow<RepoCommitDetailUiState> = _state.asStateFlow()
     private var initialized = false
@@ -69,6 +71,7 @@ class RepoCommitDetailViewModel @Inject constructor(
     fun retry() = load()
 
     fun share() {
+        if (!accountEpoch.isCurrent) return
         _state.value.detail?.commit?.oid?.takeIf(String::isNotBlank)?.let {
             shareLinkLauncher.share("https://github.com/$owner/$name/commit/$it")
         }

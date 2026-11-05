@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.branches
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -31,7 +32,8 @@ class BranchesViewModel @Inject constructor(
     private val repoDetailRepository: RepoDetailRepository,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(BranchesUiState())
     val state: StateFlow<BranchesUiState> = _state.asStateFlow()

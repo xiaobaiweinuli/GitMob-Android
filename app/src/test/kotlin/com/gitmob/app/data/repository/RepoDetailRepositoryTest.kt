@@ -8,6 +8,7 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.RepoVisibility
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -19,8 +20,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class RepoDetailRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoDetailRepository
 
@@ -51,7 +54,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `getRepoDetail解析权限并派生RepoCapabilities`() = runTest {
+    fun `getRepoDetail解析权限并派生RepoCapabilities`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -96,7 +99,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `stargazers are mapped with cursor pagination`() = runTest {
+    fun `stargazers are mapped with cursor pagination`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(
             """{"data":{"repository":{"stargazers":{"totalCount":2,"nodes":[{"login":"octocat","name":"Octo Cat","avatarUrl":"https://avatars.example.com/octocat","bio":"Hi"}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}""",
         ))
@@ -109,7 +112,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `direct forks are mapped as repository cards`() = runTest {
+    fun `direct forks are mapped as repository cards`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(
             """{"data":{"repository":{"forks":{"totalCount":1,"nodes":[{"name":"repo","owner":{"__typename":"User","login":"forker","avatarUrl":null},"description":null,"homepageUrl":null,"visibility":"INTERNAL","isArchived":false,"isFork":true,"hasIssuesEnabled":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-02-01T00:00:00Z","pushedAt":null,"parent":{"name":"repo","owner":{"__typename":"User","login":"octo","avatarUrl":null}},"primaryLanguage":null,"stargazerCount":0,"forkCount":0,"issues":{"totalCount":0},"repositoryTopics":{"nodes":[]},"defaultBranchRef":{"name":"main"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}""",
         ))
@@ -123,7 +126,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `create fork accepts 202 with an empty JSON body`() = runTest {
+    fun `create fork accepts 202 with an empty JSON body`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(202).setBody("""{"name":"repo"}"""))
 
         val result = repository.createFork("octo", "repo")
@@ -136,7 +139,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `deleteBranch成功时返回Unit`() = runTest {
+    fun `deleteBranch成功时返回Unit`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"deleteRef":{"clientMutationId":null}}}"""))
 
         val result = repository.deleteBranch("REF_123", "xiaobaiweinuli", "GitMob-Android")
@@ -145,7 +148,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `setDefaultBranch走REST并正确解析完整仓库响应`() = runTest {
+    fun `setDefaultBranch走REST并正确解析完整仓库响应`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """{"name":"GitMob-Android","default_branch":"claude"}""",
@@ -158,7 +161,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `createBranch读取来源提交并创建完整heads引用`() = runTest {
+    fun `createBranch读取来源提交并创建完整heads引用`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setBody(
                 """{"ref":"refs/heads/feature/source","object":{"sha":"abc123"}}""",
@@ -193,7 +196,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `createEmptyBranch使用REST创建空tree根提交和引用`() = runTest {
+    fun `createEmptyBranch使用REST创建空tree根提交和引用`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(201).setBody("""{"sha":"tree123"}"""))
         server.enqueue(MockResponse().setResponseCode(201).setBody("""{"sha":"commit123"}"""))
         server.enqueue(MockResponse().setResponseCode(201).setBody("""{"ref":"refs/heads/empty"}"""))
@@ -229,7 +232,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `renameBranch使用REST并编码含斜杠的旧分支名`() = runTest {
+    fun `renameBranch使用REST并编码含斜杠的旧分支名`() = runTest(accounts.context) {
         server.enqueue(
             MockResponse().setResponseCode(201).setBody(
                 """{"name":"feature/renamed"}""",
@@ -254,7 +257,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `transfer preflight accepts only missing repository errors with valid account data`() = runTest {
+    fun `transfer preflight accepts only missing repository errors with valid account data`() = runTest(accounts.context) {
         listOf("\"type\":\"NOT_FOUND\"", "\"extensions\":{\"type\":\"NOT_FOUND\"}").forEach { type ->
             server.enqueue(MockResponse().setBody(transferTargetResponse(
                 errors = """[{"message":"Could not resolve to a Repository with the name 'Worker-TG-Bot/gpt_academic'.","path":["repositoryOwner","repository"],$type}]""",
@@ -273,7 +276,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `transfer preflight keeps visible name conflicts`() = runTest {
+    fun `transfer preflight keeps visible name conflicts`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(transferTargetResponse(repository = """{"id":"R2"}""")))
 
         val result = repository.getTransferTarget("Worker-TG-Bot", "gpt_academic")
@@ -282,7 +285,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `transfer preflight rejects other paths types and mixed errors`() = runTest {
+    fun `transfer preflight rejects other paths types and mixed errors`() = runTest(accounts.context) {
         val expected = """{"message":"Missing repository","path":["repositoryOwner","repository"],"type":"NOT_FOUND"}"""
         listOf(
             """[{"message":"Missing owner","path":["repositoryOwner"],"type":"NOT_FOUND"}]""",
@@ -302,7 +305,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `transfer preflight never accepts missing account or transport failure`() = runTest {
+    fun `transfer preflight never accepts missing account or transport failure`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(
             """{"data":{"repositoryOwner":null},"errors":[{"message":"Missing","path":["repositoryOwner","repository"],"type":"NOT_FOUND"}]}""",
         ))
@@ -319,7 +322,7 @@ class RepoDetailRepositoryTest {
     """.trimIndent()
 
     @Test
-    fun `transfer accepts 202 without treating response as the completed address`() = runTest {
+    fun `transfer accepts 202 without treating response as the completed address`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(202).setBody("""{"name":"repo"}"""))
 
         val result = repository.transferRepository("octo", "repo", "target", "renamed")
@@ -332,7 +335,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `delete repository accepts empty 204 response`() = runTest {
+    fun `delete repository accepts empty 204 response`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(204))
 
         val result = repository.deleteRepository("octo", "repo")
@@ -342,7 +345,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `visibility forbidden response remains a permission error`() = runTest {
+    fun `visibility forbidden response remains a permission error`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(403).setBody("""{"message":"Forbidden"}"""))
 
         val result = repository.setVisibility("octo", "repo", "private")
@@ -352,7 +355,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `topics mutation returns invalid names for partial success handling`() = runTest {
+    fun `topics mutation returns invalid names for partial success handling`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"updateTopics":{"invalidTopicNames":["bad topic"]}}}"""))
 
         val result = repository.updateTopics("R1", listOf("android", "bad-topic"))
@@ -361,7 +364,7 @@ class RepoDetailRepositoryTest {
     }
 
     @Test
-    fun `settings mutation with empty payload fails instead of reporting success`() = runTest {
+    fun `settings mutation with empty payload fails instead of reporting success`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"updateRepository":null}}"""))
 
         val result = repository.updateSettings("R1", description = "updated")

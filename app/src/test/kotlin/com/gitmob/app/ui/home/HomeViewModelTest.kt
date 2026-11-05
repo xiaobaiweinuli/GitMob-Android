@@ -4,15 +4,27 @@ import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.event.AccountEventBus
+import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.data.model.AuthenticatedUser
+import com.gitmob.app.data.model.EditableProfile
 import com.gitmob.app.data.model.FollowState
 import com.gitmob.app.data.model.GHUser
+import com.gitmob.app.data.model.ProfileDraft
 import com.gitmob.app.data.model.ViewerProfile
+import com.gitmob.app.data.model.withEditableProfile
 import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,10 +46,16 @@ import org.junit.Test
  * 覆盖：加载成功/失败、refresh、retry、toggleFollow 乐观更新+失败回滚、
  *      并发（refresh+load 同时触发时数据一致性）
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    private fun repository() = mockk<UserRepository> {
+        every { profileUpdatesFor(any()) } returns emptyFlow()
+    }
 
     private fun makeFakeProfile(
         isViewer: Boolean = true,
@@ -54,11 +72,11 @@ class HomeViewModelTest {
 
     @Test
     fun `初始化触发一次加载，成功时填充profile并复位loading`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         val expected = makeFakeProfile()
         coEvery { userRepo.getViewerProfile() } returns ApiResult.Success(expected)
 
-        val vm = HomeViewModel(userRepo, ErrorEventBus())
+        val vm = HomeViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         // init {} 会自动触发 load
         assertNotNull(vm.state.value.profile)
         assertFalse(vm.state.value.isLoading)
@@ -68,12 +86,12 @@ class HomeViewModelTest {
 
     @Test
     fun `加载失败时loadFailed=true，有数据的refresh失败不影响旧数据`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         coEvery { userRepo.getViewerProfile() } returns
                 ApiResult.Failure(ApiError.NetworkError) andThen
                 ApiResult.Success(makeFakeProfile())
 
-        val vm = HomeViewModel(userRepo, ErrorEventBus())
+        val vm = HomeViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         // 第一次（init里触发）失败
         assertTrue(vm.state.value.loadFailed)
         assertFalse(vm.state.value.isLoading)
@@ -88,12 +106,12 @@ class HomeViewModelTest {
 
     @Test
     fun `toggleFollow未关注转关注 viewerIsFollowing翻转true且followers加1`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         coEvery { userRepo.getViewerProfile() } returns
                 ApiResult.Success(makeFakeProfile(isViewer = false, following = false, followers = 14))
         coEvery { userRepo.followUser(any()) } returns ApiResult.Success(Unit)
 
-        val vm = HomeViewModel(userRepo, ErrorEventBus())
+        val vm = HomeViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         // 等初始化完
         val before = vm.state.value.profile!!
         assertFalse(before.followState.viewerIsFollowing)
@@ -108,12 +126,12 @@ class HomeViewModelTest {
 
     @Test
     fun `toggleFollow失败时乐观值回滚到原值，不变更`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         coEvery { userRepo.getViewerProfile() } returns
                 ApiResult.Success(makeFakeProfile(isViewer = false, following = false, followers = 7))
         coEvery { userRepo.followUser(any()) } returns ApiResult.Failure(ApiError.NetworkError)
 
-        val vm = HomeViewModel(userRepo, ErrorEventBus())
+        val vm = HomeViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         val before = vm.state.value.profile!!
         assertFalse(before.followState.viewerIsFollowing)
 
@@ -130,12 +148,12 @@ class HomeViewModelTest {
 
     @Test
     fun `并发场景_refresh和load串行请求时最终状态正确`() = runTest {
-        val userRepo = mockk<UserRepository>()
+        val userRepo = repository()
         coEvery { userRepo.getViewerProfile() } returns
                 ApiResult.Success(makeFakeProfile(followers = 11))
         coEvery { userRepo.getViewerProfileFresh() } returns
                 ApiResult.Success(makeFakeProfile(followers = 12))
-        val vm = HomeViewModel(userRepo, ErrorEventBus())
+        val vm = HomeViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         assertEquals(11, vm.state.value.profile!!.user.followers)
 
         vm.refresh()
@@ -146,4 +164,71 @@ class HomeViewModelTest {
         coVerify(exactly = 1) { userRepo.getViewerProfileFresh() }
         vm.viewModelScope.cancel()
     }
+
+    @Test
+    fun `资料保存事件同步主页展示且不覆盖统计和只读字段`() = runTest(accounts.context) {
+        val userRepo = repository()
+        val events = AccountEventBus<EditableProfile>(4)
+        every { userRepo.profileUpdatesFor(any()) } answers { events.eventsFor(firstArg()) }
+        val before = makeFakeProfile()
+        coEvery { userRepo.getViewerProfile() } returns ApiResult.Success(before)
+        val vm = HomeViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val saved = savedProfile()
+        try {
+            events.emit(saved)
+            runCurrent()
+            assertEquals(before.withEditableProfile(saved), vm.state.value.profile)
+            coVerify(exactly = 1) { userRepo.getViewerProfile() }
+
+            events.emit(saved.copy(user = saved.user.copy(nodeId = "U_other"), values = ProfileDraft(name = "Other account")))
+            runCurrent()
+            assertEquals(before.withEditableProfile(saved), vm.state.value.profile)
+        } finally {
+            vm.viewModelScope.cancel()
+        }
+    }
+
+    @Test
+    fun `首次加载和刷新迟到响应不覆盖期间保存且后续刷新采用新远端值`() = runTest(accounts.context) {
+        val userRepo = repository()
+        val events = AccountEventBus<EditableProfile>(4)
+        every { userRepo.profileUpdatesFor(any()) } answers { events.eventsFor(firstArg()) }
+        val initial = CompletableDeferred<ApiResult<ViewerProfile>>()
+        coEvery { userRepo.getViewerProfile() } coAnswers { initial.await() }
+        val vm = HomeViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        try {
+            assertTrue(vm.state.value.isLoading)
+            val saved = savedProfile()
+            events.emit(saved)
+            runCurrent()
+            initial.complete(ApiResult.Success(makeFakeProfile()))
+            runCurrent()
+            assertEquals(makeFakeProfile().withEditableProfile(saved), vm.state.value.profile)
+            assertFalse(vm.state.value.isLoading)
+
+            val refreshing = CompletableDeferred<ApiResult<ViewerProfile>>()
+            coEvery { userRepo.getViewerProfileFresh() } coAnswers { refreshing.await() }
+            vm.refresh()
+            assertTrue(vm.state.value.isRefreshing)
+            val newer = saved.copy(values = saved.values.copy(name = "Newer save"))
+            events.emit(newer)
+            runCurrent()
+            refreshing.complete(ApiResult.Success(makeFakeProfile(followers = 20)))
+            runCurrent()
+            assertEquals(makeFakeProfile(followers = 20).withEditableProfile(newer), vm.state.value.profile)
+            assertFalse(vm.state.value.isRefreshing)
+
+            val remote = makeFakeProfile(followers = 21).copy(user = makeFakeProfile().user.copy(name = "New remote", followers = 21))
+            coEvery { userRepo.getViewerProfileFresh() } returns ApiResult.Success(remote)
+            vm.refresh()
+            assertEquals(remote, vm.state.value.profile)
+        } finally {
+            vm.viewModelScope.cancel()
+        }
+    }
+
+    private fun savedProfile() = EditableProfile(
+        AuthenticatedUser(1, "U_123", "renamed", "Saved name", "https://example.test/avatar.png"),
+        ProfileDraft("Saved name", "Saved bio", "Saved company", "Saved location", "https://example.test", "saved@example.test", "saved_twitter", true),
+    )
 }

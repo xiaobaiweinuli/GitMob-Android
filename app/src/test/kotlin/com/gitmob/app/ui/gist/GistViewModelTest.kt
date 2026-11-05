@@ -15,6 +15,7 @@ import com.gitmob.app.data.model.GistSort
 import com.gitmob.app.data.model.GistVisibility
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -32,6 +33,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GistViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -391,7 +393,7 @@ class GistViewModelTest {
             } returns ApiResult.Success(page("private"))
             val bus = ErrorEventBus()
             val viewModel = createViewModel(repository, errorEventBus = bus)
-            bus.events.test {
+            bus.eventsFor(accounts.session.epoch).test {
                 viewModel.init(null)
                 viewModel.selectVisibility(GistVisibility.PRIVATE)
                 viewModel.selectVisibility(GistVisibility.ALL)
@@ -443,7 +445,7 @@ class GistViewModelTest {
         } returns ApiResult.Success(page("public"))
         val bus = ErrorEventBus()
         val viewModel = createViewModel(repository, errorEventBus = bus)
-        bus.events.test {
+        bus.eventsFor(accounts.session.epoch).test {
             viewModel.init(null)
             viewModel.refresh()
             viewModel.selectVisibility(GistVisibility.PUBLIC)
@@ -471,7 +473,7 @@ class GistViewModelTest {
             } coAnswers { if (++calls == 1) old.await() else latest.await() }
             val bus = ErrorEventBus()
             val viewModel = createViewModel(repository, errorEventBus = bus)
-            bus.events.test {
+            bus.eventsFor(accounts.session.epoch).test {
                 viewModel.init(null)
                 viewModel.loadMore()
                 viewModel.refresh()
@@ -506,7 +508,7 @@ class GistViewModelTest {
             )),
             bus,
         )
-        bus.events.test {
+        bus.eventsFor(accounts.session.epoch).test {
             viewModel.init(null)
             assertTrue(viewModel.state.value.loadFailed)
             assertEquals(BannerEvent.Error(ApiError.NetworkError), awaitItem())
@@ -525,7 +527,7 @@ class GistViewModelTest {
     }
 
     @Test
-    fun `Gist列表变更事件强制刷新当前分类并清空其他分类快照`() = runTest {
+    fun `Gist列表变更事件强制刷新当前分类并清空其他分类快照`() = runTest(accounts.context) {
         val repository = mockk<GistRepository>()
         coEvery {
             repository.getGists(null, GistCategory.ORIGINAL, GistSort.RECENTLY_UPDATED, null)
@@ -559,7 +561,7 @@ class GistViewModelTest {
         savedStateHandle: SavedStateHandle = originalSavedState(),
         errorEventBus: ErrorEventBus = ErrorEventBus(),
         gistUpdateEventBus: GistUpdateEventBus = GistUpdateEventBus(),
-    ) = GistViewModel(repository, errorEventBus, savedStateHandle, gistUpdateEventBus)
+    ) = GistViewModel(repository, errorEventBus, savedStateHandle, gistUpdateEventBus, accounts.session)
 
     private fun originalSavedState() = SavedStateHandle(
         mapOf("gist.selectedCategory" to "ORIGINAL"),

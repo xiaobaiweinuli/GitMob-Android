@@ -4,6 +4,7 @@ import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.data.model.InboxReadFilter
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -14,8 +15,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class NotificationRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: NotificationRepository
 
@@ -40,7 +43,7 @@ class NotificationRepositoryTest {
     }
 
     @Test
-    fun `getNotifications parses response and returns source page metadata`() = runTest {
+    fun `getNotifications parses response and returns source page metadata`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(notificationArray(id = "1", unread = true)))
 
         val result = repository.getNotifications()
@@ -55,7 +58,7 @@ class NotificationRepositoryTest {
     }
 
     @Test
-    fun `READ filter scans full source pages until read items are collected`() = runTest {
+    fun `READ filter scans full source pages until read items are collected`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(notificationArray(30, unread = true)))
         server.enqueue(MockResponse().setBody(notificationArray(id = "read-1", unread = false)))
 
@@ -71,7 +74,7 @@ class NotificationRepositoryTest {
     }
 
     @Test
-    fun `ALL filter requests all notifications`() = runTest {
+    fun `ALL filter requests all notifications`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(notificationArray(id = "1", unread = false)))
 
         val result = repository.getNotifications(filter = InboxReadFilter.ALL)
@@ -81,7 +84,7 @@ class NotificationRepositoryTest {
     }
 
     @Test
-    fun `markAsRead handles empty 205 response`() = runTest {
+    fun `markAsRead handles empty 205 response`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(205))
 
         val result = repository.markAsRead("thread-1")
@@ -90,7 +93,7 @@ class NotificationRepositoryTest {
     }
 
     @Test
-    fun `markAllAsRead uses PUT without request body`() = runTest {
+    fun `markAllAsRead uses PUT without request body`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setResponseCode(202))
 
         val result = repository.markAllAsRead()

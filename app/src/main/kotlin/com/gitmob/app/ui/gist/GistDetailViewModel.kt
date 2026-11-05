@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.gist
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.R
 import com.gitmob.app.core.download.ExternalDownloadLauncher
@@ -49,7 +50,8 @@ class GistDetailViewModel @Inject constructor(
     private val shareLinkLauncher: ShareLinkLauncher,
     private val downloadLauncher: ExternalDownloadLauncher,
     private val gistUpdateEventBus: GistUpdateEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(GistDetailUiState())
     val state: StateFlow<GistDetailUiState> = _state.asStateFlow()
     private var gistId = ""
@@ -62,7 +64,7 @@ class GistDetailViewModel @Inject constructor(
         initializedId = id
         gistId = id
         viewModelScope.launch {
-            gistUpdateEventBus.events.filter { it == id }.collect { load() }
+            gistUpdateEventBus.eventsFor(accountEpoch).filter { it == id }.collect { load() }
         }
         load()
         loadOldestVersion()
@@ -222,9 +224,9 @@ class GistDetailViewModel @Inject constructor(
         }
     }
 
-    fun share() = _state.value.detail?.url?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share)
+    fun share() { if (accountEpoch.isCurrent) _state.value.detail?.url?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
 
-    fun shareFile(file: GistFile) = file.rawUrl.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share)
+    fun shareFile(file: GistFile) { if (accountEpoch.isCurrent) file.rawUrl.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
 
     fun downloadZip() {
         val detail = _state.value.detail ?: return
@@ -307,6 +309,7 @@ class GistDetailViewModel @Inject constructor(
     private fun GistComment.isBy(login: String): Boolean = author?.login?.equals(login, ignoreCase = true) == true
 
     private fun openDownload(url: String) {
+        if (!accountEpoch.isCurrent) return
         try {
             downloadLauncher.open(url)
         } catch (error: UserVisibleException) {

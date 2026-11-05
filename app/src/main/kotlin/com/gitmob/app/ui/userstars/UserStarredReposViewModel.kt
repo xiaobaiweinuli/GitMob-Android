@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.userstars
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -40,7 +41,8 @@ data class UserStarredReposUiState(
 class UserStarredReposViewModel @Inject constructor(
     private val starRepository: StarRepository,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(UserStarredReposUiState())
     val state: StateFlow<UserStarredReposUiState> = _state.asStateFlow()

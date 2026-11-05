@@ -32,6 +32,10 @@ object NetworkModule {
     fun provideGraphQLUrl(): String = "https://api.github.com/graphql"
 
     @Provides
+    @Named("oauthBaseUrl")
+    fun provideOAuthBaseUrl(): String = "https://github.com"
+
+    @Provides
     @Singleton
     fun provideJson(): Json = Json {
         ignoreUnknownKeys = true

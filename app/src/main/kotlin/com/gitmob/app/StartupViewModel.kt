@@ -3,13 +3,15 @@ package com.gitmob.app
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.preferences.ThemePreferenceStore
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.data.repository.AuthRepository
 import com.gitmob.app.ui.theme.ThemePreference
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -23,12 +25,13 @@ import javax.inject.Inject
 class StartupViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     themePreferenceStore: ThemePreferenceStore,
+    private val errorEventBus: ErrorEventBus,
+    session: AccountSession,
 ) : ViewModel() {
 
     private val _isRouteResolved = MutableStateFlow(false)
 
-    private val _isLoggedIn = MutableStateFlow(false)
-    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+    val accountState = authRepository.accountState
 
     val themePreference: StateFlow<ThemePreference> = themePreferenceStore.preference
         .stateIn(viewModelScope, SharingStarted.Eagerly, ThemePreference())
@@ -44,8 +47,12 @@ class StartupViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
+        val started = session.epoch
         viewModelScope.launch {
-            _isLoggedIn.value = authRepository.isLoggedIn()
+            when (val result = authRepository.initialize(started)) {
+                is ApiResult.Success -> Unit
+                is ApiResult.Failure -> errorEventBus.emit(result.error, started)
+            }
             _isRouteResolved.value = true
         }
     }

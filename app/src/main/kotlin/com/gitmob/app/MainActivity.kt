@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.navigation.GitMobNavGraph
 import com.gitmob.app.navigation.DeepLinkDestination
@@ -33,6 +34,7 @@ class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var errorEventBus: ErrorEventBus
     @Inject lateinit var repoUpdateEventBus: RepoUpdateEventBus
+    @Inject lateinit var accountSession: AccountSession
 
     private val startupViewModel: StartupViewModel by viewModels()
     private var deepLinkDestination by mutableStateOf<DeepLinkDestination?>(null)
@@ -68,7 +70,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         setContent {
-            val isLoggedIn by startupViewModel.isLoggedIn.collectAsStateWithLifecycle()
+            val accountState by startupViewModel.accountState.collectAsStateWithLifecycle()
             val isReady by startupViewModel.isReady.collectAsStateWithLifecycle()
             val themePreference by startupViewModel.themePreference.collectAsStateWithLifecycle()
 
@@ -90,7 +92,8 @@ class MainActivity : AppCompatActivity() {
             GitMobTheme(preference = themePreference) {
                 Surface(modifier = Modifier) {
                     GitMobNavGraph(
-                        startLoggedIn = isLoggedIn,
+                        accountState = accountState,
+                        accountSession = accountSession,
                         errorEventBus = errorEventBus,
                         repoUpdateEventBus = repoUpdateEventBus,
                         themePreference = themePreference,

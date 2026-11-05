@@ -17,6 +17,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.runtime.serialization.NavKeySerializer
 import androidx.savedstate.compose.serialization.serializers.MutableStateSerializer
 import com.gitmob.app.core.event.RepoUpdateEvent
+import com.gitmob.app.core.auth.AccountEpoch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
@@ -139,6 +140,7 @@ class GitMobNavState(
  */
 class GitMobNavigator(
     val state: GitMobNavState,
+    private val epoch: AccountEpoch,
 ) {
     /** Tab 再次点击（reselect）事件，可被 Screen 订阅用于回到列表顶部等交互。 */
     private val _reselectEvents = MutableSharedFlow<Route>(extraBufferCapacity = 1)
@@ -150,6 +152,7 @@ class GitMobNavigator(
      * @param route 目标路由：是 topLevelRoute 就切 Tab，否则 push 到当前栈
      */
     fun navigate(route: Route) {
+        if (!epoch.isCurrent) return
         if (route in topLevelRoutes) {
             state.topLevelRoute = route
         } else {
@@ -162,10 +165,12 @@ class GitMobNavigator(
      * 用于 HomeScreen 的列表滚到顶部等"重置当前页"交互。
      */
     fun onReselect(route: Route) {
+        if (!epoch.isCurrent) return
         _reselectEvents.tryEmit(route)
     }
 
     fun onRepositoryUpdate(event: RepoUpdateEvent) {
+        if (!epoch.isCurrent) return
         when (event) {
             is RepoUpdateEvent.RepositoryAddressChanged -> state.backStacks.values.forEach { stack ->
                 stack.indices.forEach { index ->
@@ -192,6 +197,7 @@ class GitMobNavigator(
      * @return `true` 表示本方法已处理返回事件；`false` 表示当前栈已空，交给系统 finish Activity
      */
     fun goBack(): Boolean {
+        if (!epoch.isCurrent) return true
         val currentStack = state.backStacks[state.topLevelRoute]
             ?: error("GitMobNavigator: Stack for ${state.topLevelRoute} not found")
 

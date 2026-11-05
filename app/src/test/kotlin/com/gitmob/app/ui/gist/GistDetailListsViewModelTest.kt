@@ -9,6 +9,7 @@ import com.gitmob.app.data.model.GistRevision
 import com.gitmob.app.data.model.GistRevisionPage
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,6 +23,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GistDetailListsViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
     private val repository = mockk<GistRepository>()
     private val errorBus = ErrorEventBus()
@@ -30,7 +32,7 @@ class GistDetailListsViewModelTest {
     fun `修订分页防重并追加下一页`() = runTest {
         coEvery { repository.getRevisions("abc", 1) } returns ApiResult.Success(GistRevisionPage(listOf(revision("new")), 2))
         coEvery { repository.getRevisions("abc", 2) } returns ApiResult.Success(GistRevisionPage(listOf(revision("old")), null))
-        val viewModel = GistRevisionsViewModel(repository, errorBus)
+        val viewModel = GistRevisionsViewModel(repository, errorBus, accounts.session)
 
         viewModel.init("abc")
         advanceUntilIdle()
@@ -47,7 +49,7 @@ class GistDetailListsViewModelTest {
     fun `复刻分页追加下一页`() = runTest {
         coEvery { repository.getForks("abc", 1) } returns ApiResult.Success(GistForkPage(listOf(GistFork("one", null, "", "")), 2))
         coEvery { repository.getForks("abc", 2) } returns ApiResult.Success(GistForkPage(listOf(GistFork("two", null, "", "")), null))
-        val viewModel = GistForksViewModel(repository, errorBus)
+        val viewModel = GistForksViewModel(repository, errorBus, accounts.session)
 
         viewModel.init("abc")
         advanceUntilIdle()

@@ -9,6 +9,7 @@ import com.gitmob.app.data.repository.RepoDetailRepository
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.coVerify
@@ -19,6 +20,7 @@ import org.junit.Rule
 import org.junit.Test
 
 class UserListViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -108,5 +110,6 @@ class UserListViewModelTest {
         repoDetailRepository = repoDetailRepository,
         gistRepository = gistRepository,
         errorEventBus = ErrorEventBus(),
+        session = accounts.session,
     )
 }

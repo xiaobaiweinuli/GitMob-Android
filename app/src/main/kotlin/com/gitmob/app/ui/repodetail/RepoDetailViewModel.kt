@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repodetail
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
@@ -99,7 +100,8 @@ class RepoDetailViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val shareLinkLauncher: ShareLinkLauncher,
     private val transferPendingStore: RepoTransferPendingStore,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(RepoDetailUiState())
     val state: StateFlow<RepoDetailUiState> = _state.asStateFlow()
@@ -163,7 +165,7 @@ class RepoDetailViewModel @Inject constructor(
      */
     private fun observeRepoUpdates() {
         viewModelScope.launch {
-            repoUpdateEventBus.events.collect { event ->
+            repoUpdateEventBus.eventsFor(accountEpoch).collect { event ->
                 if (event.owner != owner || event.name != name) return@collect
                 when (event) {
                     is RepoUpdateEvent.WatchStateChanged -> _state.update {
@@ -176,7 +178,7 @@ class RepoDetailViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.BranchSwitched>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name) {
@@ -186,7 +188,7 @@ class RepoDetailViewModel @Inject constructor(
                 }
         }
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.IssueCountChanged>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name) {
@@ -195,7 +197,7 @@ class RepoDetailViewModel @Inject constructor(
                 }
         }
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.PullRequestCountChanged>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name) {
@@ -204,7 +206,7 @@ class RepoDetailViewModel @Inject constructor(
                 }
         }
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.DiscussionCountChanged>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name) {
@@ -215,7 +217,7 @@ class RepoDetailViewModel @Inject constructor(
                 }
         }
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.ReleaseChanged>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name) {
@@ -239,7 +241,7 @@ class RepoDetailViewModel @Inject constructor(
 
     private fun observePendingTransfer() {
         viewModelScope.launch {
-            transferPendingStore.transfers.collect {
+            transferPendingStore.transfersFor(accountEpoch).collect {
                 val detail = _state.value.detail
                 _state.update { state ->
                     state.copy(transferPending = transferPendingStore.find(detail?.id, owner, name) != null)

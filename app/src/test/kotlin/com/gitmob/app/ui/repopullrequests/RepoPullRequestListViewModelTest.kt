@@ -12,6 +12,7 @@ import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.RepoPullRequestPage
 import com.gitmob.app.data.repository.RepoPullRequestRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -28,6 +29,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RepoPullRequestListViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -36,7 +38,7 @@ class RepoPullRequestListViewModelTest {
         val labels = listOf(IssueLabel("L1", "bug", "d73a4a", null))
         val repository = repositoryMock()
         coEvery { repository.getLabels("o", "r") } returns ApiResult.Success(labels)
-        val viewModel = RepoPullRequestListViewModel(repository, ErrorEventBus())
+        val viewModel = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session)
 
         viewModel.init("o", "r", RepoPermission.READ)
         advanceUntilIdle()
@@ -51,8 +53,8 @@ class RepoPullRequestListViewModelTest {
         val repository = repositoryMock()
         coEvery { repository.getLabels("o", "r") } returns ApiResult.Failure(ApiError.NetworkError)
         val errorEventBus = ErrorEventBus()
-        val event = async(start = CoroutineStart.UNDISPATCHED) { errorEventBus.events.first() }
-        val viewModel = RepoPullRequestListViewModel(repository, errorEventBus)
+        val event = async(start = CoroutineStart.UNDISPATCHED) { errorEventBus.eventsFor(accounts.session.epoch).first() }
+        val viewModel = RepoPullRequestListViewModel(repository, errorEventBus, accounts.session)
 
         viewModel.init("o", "r", RepoPermission.READ)
         advanceUntilIdle()

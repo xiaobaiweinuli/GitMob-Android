@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repocommits
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -38,7 +39,8 @@ class RepoCommitsViewModel @Inject constructor(
     private val repository: RepoGitRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoCommitsUiState())
     val state: StateFlow<RepoCommitsUiState> = _state.asStateFlow()
     private var owner = ""
@@ -60,7 +62,7 @@ class RepoCommitsViewModel @Inject constructor(
 
     private fun observeCodeChanges() {
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.CodeChanged>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name && event.ref == ref &&

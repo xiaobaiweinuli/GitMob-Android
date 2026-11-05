@@ -1,6 +1,6 @@
 package com.gitmob.app.ui.common
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -50,7 +50,8 @@ class ConversationComposerViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val gistUpdateEventBus: GistUpdateEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(ConversationComposerUiState())
     val state: StateFlow<ConversationComposerUiState> = _state.asStateFlow()
     private var previewJob: Job? = null

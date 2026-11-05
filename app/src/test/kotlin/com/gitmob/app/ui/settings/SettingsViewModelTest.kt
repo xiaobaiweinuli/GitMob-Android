@@ -9,6 +9,7 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.preferences.ThemePreferenceStore
 import com.gitmob.app.data.repository.AuthRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import com.gitmob.app.ui.theme.ThemeMode
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
@@ -31,6 +32,7 @@ import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -69,7 +71,7 @@ class SettingsViewModelTest {
         }
         val errorBus = ErrorEventBus()
         val viewModel = viewModel(store = store, errorEventBus = errorBus)
-        val error = async(start = CoroutineStart.UNDISPATCHED) { errorBus.events.first() }
+        val error = async(start = CoroutineStart.UNDISPATCHED) { errorBus.eventsFor(accounts.session.epoch).first() }
 
         viewModel.setThemeMode(ThemeMode.DARK)
         advanceUntilIdle()
@@ -102,7 +104,7 @@ class SettingsViewModelTest {
         }
         val errorBus = ErrorEventBus()
         val viewModel = viewModel(authRepository = authRepository, errorEventBus = errorBus)
-        val error = async(start = CoroutineStart.UNDISPATCHED) { errorBus.events.first() }
+        val error = async(start = CoroutineStart.UNDISPATCHED) { errorBus.eventsFor(accounts.session.epoch).first() }
         var loggedOut = false
 
         viewModel.logout { loggedOut = true }
@@ -117,5 +119,5 @@ class SettingsViewModelTest {
         store: ThemePreferenceStore = mockk(relaxed = true),
         authRepository: AuthRepository = mockk(relaxed = true),
         errorEventBus: ErrorEventBus = ErrorEventBus(),
-    ) = SettingsViewModel(store, authRepository, errorEventBus)
+    ) = SettingsViewModel(store, authRepository, errorEventBus, accounts.session)
 }

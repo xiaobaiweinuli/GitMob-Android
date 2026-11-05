@@ -13,6 +13,7 @@ import com.gitmob.app.data.repository.RepoDetailRepository
 import com.gitmob.app.data.repository.RepoGitRepository
 import com.gitmob.app.data.repository.RepoPullRequestRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -27,6 +28,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RepoPullRequestCreateViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -36,7 +38,7 @@ class RepoPullRequestCreateViewModelTest {
         val gitRepository = mockk<RepoGitRepository>(relaxed = true)
         val pullRequestRepository = mockk<RepoPullRequestRepository>(relaxed = true)
         coEvery { detailRepository.getRepoDetail("octo", "repo") } returns ApiResult.Success(repo())
-        val viewModel = RepoPullRequestCreateViewModel(detailRepository, gitRepository, pullRequestRepository, ErrorEventBus())
+        val viewModel = RepoPullRequestCreateViewModel(detailRepository, gitRepository, pullRequestRepository, ErrorEventBus(), accounts.session)
 
         viewModel.init("octo", "repo")
         advanceUntilIdle()
@@ -57,7 +59,7 @@ class RepoPullRequestCreateViewModelTest {
         coEvery { detailRepository.getBranches("octo", "repo", null) } returns ApiResult.Success(
             PagedBranches(listOf(RepoBranch("B1", "main", true, "oid")), false, null),
         )
-        val viewModel = RepoPullRequestCreateViewModel(detailRepository, gitRepository, pullRequestRepository, ErrorEventBus())
+        val viewModel = RepoPullRequestCreateViewModel(detailRepository, gitRepository, pullRequestRepository, ErrorEventBus(), accounts.session)
         viewModel.init("octo", "repo")
         advanceUntilIdle()
 
@@ -80,7 +82,7 @@ class RepoPullRequestCreateViewModelTest {
         val upstream = repo(owner = "upstream", name = "repo", id = "BASE", defaultBranch = "main")
         coEvery { detailRepository.getRepoDetail("viewer", "repo") } returns ApiResult.Success(fork)
         coEvery { detailRepository.getRepoDetail("upstream", "repo") } returns ApiResult.Success(upstream)
-        val viewModel = RepoPullRequestCreateViewModel(detailRepository, gitRepository, pullRequestRepository, ErrorEventBus())
+        val viewModel = RepoPullRequestCreateViewModel(detailRepository, gitRepository, pullRequestRepository, ErrorEventBus(), accounts.session)
 
         viewModel.init("viewer", "repo")
         advanceUntilIdle()
@@ -110,7 +112,7 @@ class RepoPullRequestCreateViewModelTest {
         )
         coEvery { detailRepository.getRepoDetail("viewer", "repo") } returns ApiResult.Success(fork)
 
-        val viewModel = RepoPullRequestCreateViewModel(detailRepository, gitRepository, pullRequestRepository, ErrorEventBus())
+        val viewModel = RepoPullRequestCreateViewModel(detailRepository, gitRepository, pullRequestRepository, ErrorEventBus(), accounts.session)
         viewModel.init("viewer", "repo")
         advanceUntilIdle()
         assertEquals(RepoPullRequestCreatePage.TARGET, viewModel.state.value.page)

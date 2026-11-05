@@ -12,6 +12,7 @@ import com.gitmob.app.data.model.RepoCommitDetail
 import com.gitmob.app.data.model.RepoCommitSummary
 import com.gitmob.app.data.repository.RepoGitRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -27,6 +28,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RepoCommitDetailViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -35,7 +37,7 @@ class RepoCommitDetailViewModelTest {
         val repository = mockk<RepoGitRepository>()
         coEvery { repository.getCommitDetail("o", "r", "main", "sha") } returns ApiResult.Success(detail(RepoPermission.ADMIN))
         coEvery { repository.revertFile("o", "r", "main", "sha", "src/A.kt", "Revert file change", null) } returns ApiResult.Success(summary("new-sha"))
-        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk())
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
         viewModel.init("o", "r", "main", "sha", RepoPermission.ADMIN)
         advanceUntilIdle()
 
@@ -53,7 +55,7 @@ class RepoCommitDetailViewModelTest {
     fun `read permission does not call revert mutation`() = runTest {
         val repository = mockk<RepoGitRepository>()
         coEvery { repository.getCommitDetail("o", "r", "main", "sha") } returns ApiResult.Success(detail(RepoPermission.READ))
-        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk())
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
         viewModel.init("o", "r", "main", "sha", RepoPermission.READ)
         advanceUntilIdle()
 
@@ -69,7 +71,7 @@ class RepoCommitDetailViewModelTest {
         val repository = mockk<RepoGitRepository>()
         coEvery { repository.getCommitDetail("o", "r", "main", "sha") } returns ApiResult.Success(detail(RepoPermission.ADMIN))
         coEvery { repository.revertCommit("o", "r", "main", "sha", "Revert commit change") } returns ApiResult.Success(summary("new-sha"))
-        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk())
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
         viewModel.init("o", "r", "main", "sha", RepoPermission.ADMIN)
         advanceUntilIdle()
 
@@ -87,7 +89,7 @@ class RepoCommitDetailViewModelTest {
     fun `merge commit does not call whole commit revert`() = runTest {
         val repository = mockk<RepoGitRepository>()
         coEvery { repository.getCommitDetail("o", "r", "main", "sha") } returns ApiResult.Success(detail(RepoPermission.ADMIN, listOf("p1", "p2")))
-        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk())
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
         viewModel.init("o", "r", "main", "sha", RepoPermission.ADMIN)
         advanceUntilIdle()
 
@@ -105,7 +107,7 @@ class RepoCommitDetailViewModelTest {
         val oid = "0123456789abcdef0123456789abcdef01234567"
         coEvery { repository.getCommitDetail("o", "r", "main", "0123456") } returns
             ApiResult.Success(detail(RepoPermission.READ).copy(isArchived = true, commit = summary(oid)))
-        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), share)
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), share, accounts.session)
         viewModel.share()
         verify(exactly = 0) { share.share(any()) }
         viewModel.init("o", "r", "main", "0123456", RepoPermission.READ)

@@ -27,6 +27,7 @@ import com.gitmob.app.data.model.RepoForkSyncStatus
 import com.gitmob.app.data.repository.RepoGitRepository
 import com.gitmob.app.data.repository.RepoPullRequestRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -48,9 +49,10 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class RepoCodeScreenTest {
     private val composeRule = createComposeRule()
+    private val accounts = AccountSessionRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(MainDispatcherRule()).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(MainDispatcherRule()).around(accounts).around(composeRule)
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
     private val repository = mockk<RepoGitRepository>()
@@ -205,7 +207,7 @@ class RepoCodeScreenTest {
             ),
         )
         coEvery { repository.getForkSync("viewer", "fork", "main") } returns ApiResult.Success(comparison)
-        viewModel = RepoCodeViewModel(repository, pullRequests, ErrorEventBus(), mockk(), RepoUpdateEventBus())
+        viewModel = RepoCodeViewModel(repository, pullRequests, ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
         composeRule.setContent {
             MaterialTheme {
                 RepoCodeScreen(

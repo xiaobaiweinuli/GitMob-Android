@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repocode
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -39,7 +40,8 @@ class RepoFileDetailViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val downloadLauncher: ExternalDownloadLauncher,
     private val repoUpdateEventBus: RepoUpdateEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoFileDetailUiState())
     val state: StateFlow<RepoFileDetailUiState> = _state.asStateFlow()
     private var initialized = false
@@ -57,7 +59,7 @@ class RepoFileDetailViewModel @Inject constructor(
 
     private fun observeCodeChanges() {
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.CodeChanged>()
                 .collect { event ->
                     if (event.owner == owner && event.name == name && event.ref == ref && path in event.changedPaths) load()

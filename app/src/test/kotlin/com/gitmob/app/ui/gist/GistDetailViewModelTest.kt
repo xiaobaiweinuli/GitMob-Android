@@ -17,6 +17,7 @@ import com.gitmob.app.data.model.GistUser
 import com.gitmob.app.data.repository.ConversationEditRepository
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -36,6 +37,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GistDetailViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
     private val repository = mockk<GistRepository>()
@@ -89,7 +91,7 @@ class GistDetailViewModelTest {
         val viewModel = viewModel()
         viewModel.init("abc")
         advanceUntilIdle()
-        val event = async(start = CoroutineStart.UNDISPATCHED) { errorBus.events.first() }
+        val event = async(start = CoroutineStart.UNDISPATCHED) { errorBus.eventsFor(accounts.session.epoch).first() }
         viewModel.loadMoreComments()
         advanceUntilIdle()
 
@@ -124,7 +126,7 @@ class GistDetailViewModelTest {
         val viewModel = viewModel(updateBus = updateBus)
         viewModel.init("abc")
         advanceUntilIdle()
-        val changed = async(start = CoroutineStart.UNDISPATCHED) { updateBus.listEvents.first() }
+        val changed = async(start = CoroutineStart.UNDISPATCHED) { updateBus.listEventsFor(accounts.session.epoch).first() }
         var returned = false
 
         viewModel.deleteGist { returned = true }
@@ -147,6 +149,7 @@ class GistDetailViewModelTest {
         shareLinkLauncher = shareLauncher,
         downloadLauncher = downloadLauncher,
         gistUpdateEventBus = updateBus,
+        session = accounts.session,
     ).also {
         coEvery { repository.getOldestVersion("abc") } returns ApiResult.Success(oldestVersion)
     }

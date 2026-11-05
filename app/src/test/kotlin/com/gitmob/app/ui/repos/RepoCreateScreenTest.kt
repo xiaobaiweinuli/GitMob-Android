@@ -27,6 +27,7 @@ import com.gitmob.app.data.model.RepositoryLicense
 import com.gitmob.app.data.repository.RepoRepository
 import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -44,9 +45,10 @@ class RepoCreateScreenTest {
 
     private val mainDispatcherRule = MainDispatcherRule()
     private val composeRule = createComposeRule()
+    private val accounts = AccountSessionRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(mainDispatcherRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(mainDispatcherRule).around(accounts).around(composeRule)
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
@@ -157,6 +159,7 @@ class RepoCreateScreenTest {
         mockk<UserRepository>(relaxed = true),
         RepoUpdateEventBus(),
         ErrorEventBus(),
+        accounts.session,
     )
 
     private fun owner(id: String, login: String, type: RepositoryCreateOwnerType) = RepositoryCreateOwner(

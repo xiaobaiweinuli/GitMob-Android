@@ -9,6 +9,7 @@ import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.CommentAuthorAssociation
 import com.gitmob.app.data.model.RepoDiscussionFilter
 import com.gitmob.app.data.model.RepoDiscussionState
+import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -22,8 +23,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 
 class RepoDiscussionRepositoryTest {
+    @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoDiscussionRepository
 
@@ -44,7 +47,7 @@ class RepoDiscussionRepositoryTest {
     fun tearDown() = server.shutdown()
 
     @Test
-    fun `detail uses closed and maps author metadata`() = runTest {
+    fun `detail uses closed and maps author metadata`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(detailJson()))
 
         val result = repository.getDiscussion("octo", "repo", 7, after = "comment-next")
@@ -69,7 +72,7 @@ class RepoDiscussionRepositoryTest {
     }
 
     @Test
-    fun `讨论列表分类和标签容量来自PageSize`() = runTest {
+    fun `讨论列表分类和标签容量来自PageSize`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"repository":{"id":"R1","viewerPermission":"READ","hasDiscussionsEnabled":true,"categories":{"nodes":[]},"discussions":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
 
         val result = repository.getDiscussions("o", "r", RepoDiscussionFilter(), after = "start")
@@ -83,7 +86,7 @@ class RepoDiscussionRepositoryTest {
     }
 
     @Test
-    fun `讨论复用标签查询每页均传PageSize`() = runTest {
+    fun `讨论复用标签查询每页均传PageSize`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
         server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
 
@@ -97,7 +100,7 @@ class RepoDiscussionRepositoryTest {
     }
 
     @Test
-    fun `全部讨论mutation共享片段容量不混入写入input`() = runTest {
+    fun `全部讨论mutation共享片段容量不混入写入input`() = runTest(accounts.context) {
         val node = Json.parseToJsonElement(detailJson()).jsonObject.getValue("data").jsonObject
             .getValue("repository").jsonObject.getValue("discussion")
         val mutations = listOf<Pair<String, suspend () -> ApiResult<*>>>(
@@ -116,7 +119,7 @@ class RepoDiscussionRepositoryTest {
     }
 
     @Test
-    fun `缺失仓库与权限失败不伪造成空讨论`() = runTest {
+    fun `缺失仓库与权限失败不伪造成空讨论`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"repository":null}}"""))
         assertTrue(repository.getDiscussions("o", "r", RepoDiscussionFilter()) is ApiResult.Failure)
         server.enqueue(MockResponse().setResponseCode(403))

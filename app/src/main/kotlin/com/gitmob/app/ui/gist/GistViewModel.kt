@@ -1,7 +1,8 @@
 package com.gitmob.app.ui.gist
 
 import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -67,7 +68,8 @@ class GistViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val savedStateHandle: SavedStateHandle,
     private val gistUpdateEventBus: GistUpdateEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private companion object {
         const val CATEGORY_KEY = "gist.selectedCategory"
@@ -99,7 +101,7 @@ class GistViewModel @Inject constructor(
         savedStateHandle[SORT_KEY] = _state.value.selectedSort.name
         savedStateHandle[VISIBILITY_KEY] = _state.value.selectedVisibility.name
         viewModelScope.launch {
-            gistUpdateEventBus.listEvents.collect { onListChanged() }
+            gistUpdateEventBus.listEventsFor(accountEpoch).collect { onListChanged() }
         }
     }
 

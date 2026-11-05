@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.stars
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -47,7 +48,8 @@ class StarsViewModel @Inject constructor(
     private val starRepository: StarRepository,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(StarsUiState())
     val state: StateFlow<StarsUiState> = _state.asStateFlow()
@@ -66,7 +68,7 @@ class StarsViewModel @Inject constructor(
      */
     private fun observeRepoUpdates() {
         viewModelScope.launch {
-            repoUpdateEventBus.events
+            repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.StarChanged>()
                 .collect { event ->
                     _state.update { state ->

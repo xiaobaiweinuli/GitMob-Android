@@ -10,6 +10,7 @@ import com.gitmob.app.data.model.RepoActionsPage
 import com.gitmob.app.data.model.RepoWorkflowRun
 import com.gitmob.app.data.repository.RepoActionsRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -24,6 +25,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RepoActionsViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -33,7 +35,7 @@ class RepoActionsViewModelTest {
         val run = run(status = "completed")
         coEvery { repository.getActions("octo", "repo") } returns ApiResult.Success(page(run))
         coEvery { repository.deleteRun("octo", "repo", run.id) } returns ApiResult.Success(Unit)
-        val viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         viewModel.init("octo", "repo", RepoPermission.WRITE, "main")
         advanceUntilIdle()
 
@@ -54,7 +56,7 @@ class RepoActionsViewModelTest {
         val run = run(status = "completed")
         coEvery { repository.getActions("octo", "repo") } returns ApiResult.Success(page(run))
         coEvery { repository.deleteRun("octo", "repo", run.id) } returns ApiResult.Failure(ApiError.Forbidden)
-        val viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         viewModel.init("octo", "repo", RepoPermission.WRITE, "main")
         advanceUntilIdle()
 
@@ -71,7 +73,7 @@ class RepoActionsViewModelTest {
         val repository = mockk<RepoActionsRepository>()
         val run = run(status = "in_progress")
         coEvery { repository.getActions("octo", "repo") } returns ApiResult.Success(page(run))
-        val viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus())
+        val viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
         viewModel.init("octo", "repo", RepoPermission.WRITE, "main")
         advanceUntilIdle()
 

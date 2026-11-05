@@ -1,11 +1,17 @@
 package com.gitmob.app.ui.settings
 
 import android.os.Build
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -14,30 +20,46 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.ui.login.AccountAuthActions
+import com.gitmob.app.ui.login.AccountAuthSheet
+import com.gitmob.app.ui.login.AccountIdentity
+import com.gitmob.app.ui.login.AccountOption
+import com.gitmob.app.ui.login.LoginViewModel
 import com.gitmob.app.ui.theme.ThemeMode
 import com.gitmob.app.ui.theme.ThemePreference
 
@@ -48,9 +70,16 @@ fun SettingsScreen(
     preference: ThemePreference,
     onAppearanceClick: () -> Unit = {},
     onAboutClick: () -> Unit = {},
+    onEditProfileClick: () -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
+    accountViewModel: LoginViewModel = hiltViewModel(),
 ) {
+    val accounts by accountViewModel.accountState.collectAsStateWithLifecycle()
+    val authState by accountViewModel.state.collectAsStateWithLifecycle()
+    var accountsExpanded by rememberSaveable { mutableStateOf(false) }
+    DisposableEffect(accountViewModel) { onDispose { accountViewModel.cancelAuthorization() } }
+    BackHandler(enabled = accountsExpanded && authState.authSheet == null) { accountsExpanded = false }
     val modeText = stringResource(
         when (preference.mode) {
             ThemeMode.SYSTEM -> R.string.settings_theme_mode_system
@@ -91,6 +120,54 @@ fun SettingsScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
+            accounts.activeAccount?.let { active ->
+                item {
+                    SettingsSection(title = stringResource(R.string.settings_section_account)) {
+                        val expansionDescription = stringResource(if (accountsExpanded) R.string.accounts_expanded else R.string.accounts_collapsed)
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable(enabled = !authState.isLoading, role = Role.Button) { accountsExpanded = !accountsExpanded }
+                                .semantics { stateDescription = expansionDescription }
+                                .heightIn(min = 96.dp).padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                AccountIdentity(active.name, active.login, active.avatarUrl, Modifier.fillMaxWidth())
+                                Text(
+                                    stringResource(R.string.accounts_switch_hint, accounts.accounts.size),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 64.dp),
+                                )
+                            }
+                            Icon(if (accountsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                        }
+                        if (accountsExpanded) {
+                            HorizontalDivider()
+                            Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                accounts.accounts.forEach { account ->
+                                    AccountOption(account, account.key == active.key, authState.switchingKey == account.key, !authState.isLoading) {
+                                        if (account.key == active.key) accountsExpanded = false
+                                        else accountViewModel.switchAccount(account.key)
+                                    }
+                                }
+                                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                                AccountAuthActions(!authState.isLoading, accountViewModel::openPat, accountViewModel::openDeviceFlow)
+                                if (authState.inlineErrorRes != null && authState.authSheet == null) {
+                                    Text(stringResource(authState.inlineErrorRes!!), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp))
+                                }
+                            }
+                        }
+                        HorizontalDivider(Modifier.padding(start = 72.dp))
+                        SettingsNavigationRow(
+                            icon = Icons.Default.Edit,
+                            title = stringResource(R.string.profile_edit_title),
+                            summary = stringResource(R.string.profile_edit_summary),
+                            onClick = { if (!authState.isLoading) onEditProfileClick() },
+                        )
+                    }
+                }
+            }
             item {
                 SettingsSection(title = stringResource(R.string.settings_section_preferences)) {
                     SettingsNavigationRow(
@@ -147,11 +224,11 @@ fun SettingsScreen(
             }
 
             item {
-                SettingsSection(title = stringResource(R.string.settings_section_account)) {
+                SettingsSection(title = stringResource(R.string.accounts_logout_section)) {
                     SettingsNavigationRow(
                         icon = Icons.AutoMirrored.Filled.Logout,
                         title = stringResource(R.string.settings_logout),
-                        summary = stringResource(R.string.settings_logout_summary),
+                        summary = stringResource(R.string.accounts_logout_description),
                         onClick = { viewModel.logout(onLogout) },
                         contentColor = MaterialTheme.colorScheme.error,
                         trailingIcon = null,
@@ -160,6 +237,7 @@ fun SettingsScreen(
             }
         }
     }
+    AccountAuthSheet(accountViewModel)
 }
 
 /** 语言选项的显示名：语言名用其母语写法固定不译（translatable=false），"跟随系统"随界面语言。 */

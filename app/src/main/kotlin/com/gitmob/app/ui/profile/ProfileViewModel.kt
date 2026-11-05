@@ -1,12 +1,15 @@
 package com.gitmob.app.ui.profile
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.data.model.ProfileOwner
+import com.gitmob.app.data.model.EditableProfile
+import com.gitmob.app.data.model.withEditableProfile
 import com.gitmob.app.data.model.SimpleOrg
 import com.gitmob.app.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,19 +39,30 @@ data class ProfileUiState(
 class ProfileViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val errorEventBus: ErrorEventBus,
-    private val repoUpdateEventBus: RepoUpdateEventBus = RepoUpdateEventBus(),
-) : ViewModel() {
+    private val repoUpdateEventBus: RepoUpdateEventBus,
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(ProfileUiState())
     val state: StateFlow<ProfileUiState> = _state.asStateFlow()
+    private var latestSavedProfile: EditableProfile? = null
 
     init {
         observeRepositoryCreated()
+        viewModelScope.launch {
+            userRepository.profileUpdatesFor(accountEpoch).collect { profile ->
+                latestSavedProfile = profile
+                _state.update { state ->
+                    val person = state.owner as? ProfileOwner.Person ?: return@update state
+                    state.copy(owner = person.withEditableProfile(profile))
+                }
+            }
+        }
     }
 
     private fun observeRepositoryCreated() {
         viewModelScope.launch {
-            repoUpdateEventBus.events.collect { event ->
+            repoUpdateEventBus.eventsFor(accountEpoch).collect { event ->
                 if (event is RepoUpdateEvent.RepositoryCreated && event.owner == _state.value.owner?.login) {
                     _state.update { state ->
                         state.owner?.let { owner ->
@@ -80,10 +94,13 @@ class ProfileViewModel @Inject constructor(
      */
     private fun load(login: String) {
         viewModelScope.launch {
+            val savedAtStart = latestSavedProfile
             _state.update { it.copy(isLoading = true, loadFailed = false) }
             when (val result = userRepository.getProfileOwner(login)) {
                 is ApiResult.Success -> _state.update {
-                    it.copy(owner = result.data, isLoading = false, loadFailed = false)
+                    val saved = latestSavedProfile?.takeIf { profile -> profile !== savedAtStart }
+                    val owner = result.data
+                    it.copy(owner = if (owner is ProfileOwner.Person && saved != null) owner.withEditableProfile(saved) else owner, isLoading = false, loadFailed = false)
                 }
                 is ApiResult.Failure -> {
                     errorEventBus.emit(result.error)

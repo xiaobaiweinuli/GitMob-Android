@@ -1,9 +1,9 @@
 package com.gitmob.app.core.error
 
 import androidx.annotation.StringRes
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import com.gitmob.app.core.auth.AccountContext
+import com.gitmob.app.core.auth.AccountEpoch
+import com.gitmob.app.core.event.AccountEventBus
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,14 +19,14 @@ sealed interface BannerEvent {
  */
 @Singleton
 class ErrorEventBus @Inject constructor() {
-    private val _events = MutableSharedFlow<BannerEvent>(extraBufferCapacity = 4)
-    val events: SharedFlow<BannerEvent> = _events.asSharedFlow()
+    private val events = AccountEventBus<BannerEvent>(capacity = 4)
+    fun eventsFor(epoch: AccountEpoch) = events.eventsFor(epoch)
 
-    suspend fun emit(error: ApiError) {
-        _events.emit(BannerEvent.Error(error))
+    suspend fun emit(error: ApiError, epoch: AccountEpoch = AccountContext.ensureCurrent()) {
+        events.emit(BannerEvent.Error(error), epoch)
     }
 
     suspend fun emitNotice(@StringRes messageRes: Int) {
-        _events.emit(BannerEvent.Notice(messageRes))
+        events.emit(BannerEvent.Notice(messageRes))
     }
 }

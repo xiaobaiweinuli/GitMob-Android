@@ -5,11 +5,14 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.permission.RepoPermission
+import com.gitmob.app.testutil.AccountSessionRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.Rule
 
 class RepositoryRouteUpdateTest {
+    @get:Rule val accounts = AccountSessionRule()
     @Test
     fun `address replacement updates repository routes and clears cached permission`() {
         val route = RepoCodeRoute("old", "repo", "main", "docs", RepoPermission.ADMIN)
@@ -98,5 +101,6 @@ class RepositoryRouteUpdateTest {
                 StarsRoute to starsStack,
             ),
         ),
+        accounts.session.epoch,
     )
 }

@@ -52,6 +52,7 @@ import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.data.model.RepositoryListOwnerContext
 import com.gitmob.app.data.repository.RepoRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -76,9 +77,10 @@ import java.time.Instant
 class ReposScreenTest {
     private val mainDispatcherRule = MainDispatcherRule()
     private val composeRule = createComposeRule()
+    private val accounts = AccountSessionRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(mainDispatcherRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(mainDispatcherRule).around(accounts).around(composeRule)
 
     private val repository = mockk<RepoRepository>(relaxUnitFun = true).also {
         coEvery { it.getRepos(any(), any(), any(), any()) } returns ApiResult.Success(page())
@@ -480,7 +482,7 @@ class ReposScreenTest {
         ApplicationProvider.getApplicationContext<Context>().getString(resource, *args)
 
     private fun viewModel(handle: SavedStateHandle = SavedStateHandle()) =
-        ReposViewModel(repository, RepoUpdateEventBus(), ErrorEventBus(), handle).also { models += it }
+        ReposViewModel(repository, RepoUpdateEventBus(), ErrorEventBus(), handle, accounts.session).also { models += it }
 
     private fun setContent(viewModel: ReposViewModel, login: String? = null, onBack: (() -> Unit)? = null, fontScale: Float = 1f) {
         composeRule.setContent {

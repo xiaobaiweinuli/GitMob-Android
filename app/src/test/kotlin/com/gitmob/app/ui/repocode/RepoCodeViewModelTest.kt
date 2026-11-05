@@ -18,6 +18,7 @@ import com.gitmob.app.data.model.RepoForkSyncStatus
 import com.gitmob.app.data.repository.RepoGitRepository
 import com.gitmob.app.data.repository.RepoPullRequestRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -38,6 +39,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RepoCodeViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -52,7 +54,7 @@ class RepoCodeViewModelTest {
             progress(2, 2)
             ApiResult.Success(expected)
         }
-        val viewModel = RepoCodeViewModel(repository, mockk<RepoPullRequestRepository>(), ErrorEventBus(), mockk<ExternalDownloadLauncher>(), RepoUpdateEventBus())
+        val viewModel = RepoCodeViewModel(repository, mockk<RepoPullRequestRepository>(), ErrorEventBus(), mockk<ExternalDownloadLauncher>(), RepoUpdateEventBus(), accounts.session)
         viewModel.init("o", "r", "main", "docs", RepoPermission.READ)
         advanceUntilIdle()
 
@@ -75,7 +77,7 @@ class RepoCodeViewModelTest {
         coEvery { repository.createFolderZip("o", "r", "main", "docs", any()) } coAnswers {
             suspendCancellableCoroutine { }
         }
-        val viewModel = RepoCodeViewModel(repository, mockk<RepoPullRequestRepository>(), ErrorEventBus(), mockk<ExternalDownloadLauncher>(), RepoUpdateEventBus())
+        val viewModel = RepoCodeViewModel(repository, mockk<RepoPullRequestRepository>(), ErrorEventBus(), mockk<ExternalDownloadLauncher>(), RepoUpdateEventBus(), accounts.session)
         viewModel.init("o", "r", "main", "docs", RepoPermission.READ)
         advanceUntilIdle()
 
@@ -101,7 +103,7 @@ class RepoCodeViewModelTest {
         val launcher = mockk<ExternalDownloadLauncher>(relaxed = true)
         coEvery { repository.getCodeTree("o", "r", "main", "") } returns ApiResult.Success(tree().copy(path = ""))
         coEvery { repository.resolveArchiveDownloadUrl("o", "r", "main") } returns ApiResult.Success("https://example.test/archive.zip")
-        val viewModel = RepoCodeViewModel(repository, mockk<RepoPullRequestRepository>(), ErrorEventBus(), launcher, RepoUpdateEventBus())
+        val viewModel = RepoCodeViewModel(repository, mockk<RepoPullRequestRepository>(), ErrorEventBus(), launcher, RepoUpdateEventBus(), accounts.session)
         viewModel.init("o", "r", "main", "", RepoPermission.READ)
         advanceUntilIdle()
 
@@ -122,7 +124,7 @@ class RepoCodeViewModelTest {
         coEvery { repository.getForkSync("viewer", "fork", "main") } returnsMany listOf(
             ApiResult.Success(sync), ApiResult.Failure(ApiError.NetworkError),
         )
-        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus())
+        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
         vm.init("viewer", "fork", "main", "", RepoPermission.WRITE)
         vm.openSync()
         advanceUntilIdle()
@@ -151,7 +153,7 @@ class RepoCodeViewModelTest {
         )
         coEvery { repository.forceAlignFork("viewer", "fork", sync) } returns
             ApiResult.Failure(ApiError.UserVisible(R.string.repo_sync_head_changed))
-        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus())
+        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
         vm.init("viewer", "fork", "main", "", RepoPermission.WRITE)
         vm.openSync()
         advanceUntilIdle()
@@ -192,7 +194,7 @@ class RepoCodeViewModelTest {
         coEvery {
             pullRequests.findOpenPullRequest("viewer", "fork", "main", "upstream", "main")
         } returns ApiResult.Success(ExistingRepoPullRequest(12, "Sync", "https://example.test/pr/12"))
-        val viewModel = RepoCodeViewModel(repository, pullRequests, ErrorEventBus(), mockk<ExternalDownloadLauncher>(), RepoUpdateEventBus())
+        val viewModel = RepoCodeViewModel(repository, pullRequests, ErrorEventBus(), mockk<ExternalDownloadLauncher>(), RepoUpdateEventBus(), accounts.session)
         viewModel.init("viewer", "fork", "main", "", RepoPermission.WRITE)
         advanceUntilIdle()
         viewModel.openSync()
@@ -285,7 +287,7 @@ class RepoCodeViewModelTest {
         val updated = syncInfo().copy(currentOid = "merged-head", behindBy = 0)
         coEvery { repository.getForkSync("viewer", "fork", "main") } returns ApiResult.Success(updated)
 
-        events.events.test {
+        events.eventsFor(accounts.session.epoch).test {
             vm.mergeUpstream()
             assertTrue(vm.state.value.isSyncing)
             vm.mergeUpstream()
@@ -472,7 +474,7 @@ class RepoCodeViewModelTest {
             tree().copy(isFork = true, path = "", permission = permission, isArchived = archived, capabilities = permission.toCapabilities(archived)),
         )
         coEvery { repository.getForkSync("viewer", "fork", "main") } returns ApiResult.Success(comparison)
-        return RepoCodeViewModel(repository, pullRequests, ErrorEventBus(), mockk(), events).apply {
+        return RepoCodeViewModel(repository, pullRequests, ErrorEventBus(), mockk(), events, accounts.session).apply {
             init("viewer", "fork", "main", "", permission)
             openSync()
         }

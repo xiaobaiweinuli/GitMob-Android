@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repocode
 
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -38,7 +39,8 @@ class RepoFileEditorViewModel @Inject constructor(
     private val repository: RepoGitRepository,
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoFileEditorUiState())
     val state: StateFlow<RepoFileEditorUiState> = _state.asStateFlow()
     private var initialized = false

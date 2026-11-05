@@ -1,7 +1,8 @@
 package com.gitmob.app.ui.settings
 
 import android.util.Log
-import androidx.lifecycle.ViewModel
+import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.compose.ui.graphics.Color
 import com.gitmob.app.core.error.ApiError
@@ -22,7 +23,8 @@ class SettingsViewModel @Inject constructor(
     private val themePreferenceStore: ThemePreferenceStore,
     private val authRepository: AuthRepository,
     private val errorEventBus: ErrorEventBus,
-) : ViewModel() {
+    session: AccountSession,
+) : AccountViewModel(session) {
 
     fun setThemeMode(mode: ThemeMode) {
         savePreference { themePreferenceStore.setMode(mode) }

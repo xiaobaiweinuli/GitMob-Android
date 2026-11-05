@@ -18,6 +18,7 @@ import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.data.model.RepositoryListOwnerContext
 import com.gitmob.app.data.repository.RepoRepository
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -43,6 +44,7 @@ import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReposViewModelTest {
+    @get:Rule val accounts = AccountSessionRule()
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -58,7 +60,7 @@ class ReposViewModelTest {
     fun tearDown() = models.forEach { it.viewModelScope.cancel() }
 
     private fun viewModel(handle: SavedStateHandle = SavedStateHandle()) =
-        ReposViewModel(repository, bus, errors, handle).also { models += it }
+        ReposViewModel(repository, bus, errors, handle, accounts.session).also { models += it }
 
     @Test
     fun `初始化填充主体且同主体重复init不请求`() = runTest {
@@ -76,7 +78,7 @@ class ReposViewModelTest {
     @Test
     fun `首次失败发顶部错误且重试仍使用原查询`() = runTest {
         val events = mutableListOf<BannerEvent>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { errors.events.collect { events += it } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { errors.eventsFor(accounts.session.epoch).collect { events += it } }
         coEvery { repository.getRepos(null, null, RepoFilters(), false) } returns
             ApiResult.Failure(ApiError.NetworkError) andThen ApiResult.Success(page(repo("retried")))
         val vm = viewModel()
@@ -200,7 +202,7 @@ class ReposViewModelTest {
     @Test
     fun `迟到成功与迟到失败均不能覆盖新查询或发错误`() = runTest {
         val events = mutableListOf<BannerEvent>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { errors.events.collect { events += it } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { errors.eventsFor(accounts.session.epoch).collect { events += it } }
         for (late in listOf(ApiResult.Success(page(repo("stale"))), ApiResult.Failure(ApiError.NetworkError))) {
             lateinit var completion: Continuation<ApiResult<RepoList>>
             coEvery { repository.getRepos(null, null, RepoFilters(query = "old"), false) } coAnswers {
@@ -367,7 +369,7 @@ class ReposViewModelTest {
     }
 
     @Test
-    fun `星标与议题事件只同步相应字段且议题数量不改变功能开关`() = runTest {
+    fun `星标与议题事件只同步相应字段且议题数量不改变功能开关`() = runTest(accounts.context) {
         coEvery { repository.getRepos(null, null, RepoFilters(), false) } returns ApiResult.Success(page(repo("one")))
         val vm = viewModel()
         vm.init(null)
@@ -382,7 +384,7 @@ class ReposViewModelTest {
     }
 
     @Test
-    fun `星标排序下先重排卡片再刷新第一批`() = runTest {
+    fun `星标排序下先重排卡片再刷新第一批`() = runTest(accounts.context) {
         val filters = RepoFilters(sort = RepoSort.STARS_ASC)
         val updated = CompletableDeferred<ApiResult<RepoList>>()
         coEvery { repository.getRepos(null, null, filters, false) } returns ApiResult.Success(page(repo("a").copy(stargazerCount = 1), repo("b").copy(stargazerCount = 2)))
@@ -400,7 +402,7 @@ class ReposViewModelTest {
     }
 
     @Test
-    fun `在途分页收到星标事件时刷新以阻止旧计数覆盖`() = runTest {
+    fun `在途分页收到星标事件时刷新以阻止旧计数覆盖`() = runTest(accounts.context) {
         lateinit var completion: Continuation<ApiResult<RepoList>>
         coEvery { repository.getRepos(null, null, RepoFilters(), false) } returns ApiResult.Success(page(repo("one"), next = "c1"))
         coEvery { repository.getRepos(null, "c1", RepoFilters(), false) } coAnswers { suspendCoroutine { completion = it } }
@@ -417,7 +419,7 @@ class ReposViewModelTest {
     }
 
     @Test
-    fun `相关仓库变更事件按当前条件刷新不相关事件忽略`() = runTest {
+    fun `相关仓库变更事件按当前条件刷新不相关事件忽略`() = runTest(accounts.context) {
         val filters = RepoFilters(query = "needle", isArchived = false)
         val vm = viewModel(SavedStateHandle(mapOf("repos.query" to "needle", "repos.archived" to false)))
         vm.init("me")

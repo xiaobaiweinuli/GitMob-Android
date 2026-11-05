@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.BuildConfig
 import com.gitmob.app.R
+import com.gitmob.app.core.auth.GITHUB_CLIENT_ID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -143,7 +144,7 @@ fun AboutScreen(onBack: () -> Unit) {
                         icon = Icons.Default.Security,
                         label = stringResource(R.string.about_auth_label),
                         sub = stringResource(R.string.about_auth_sub),
-                        url = "https://github.com/settings/connections/applications/Ov23liP9mC2HXALHsFpk",
+                        url = "https://github.com/settings/connections/applications/$GITHUB_CLIENT_ID",
                     )
                 }
             }
