@@ -771,4 +771,5 @@
     <string name="repo_create_owner_picker">选择所有者</string>
     <string name="repo_create_gitignore_picker">选择 .gitignore</string>
     <string name="repo_create_license_picker">选择许可证</string>
+    <string name="deep_link_browser_unavailable">无法打开浏览器，请安装或启用浏览器后重试</string>
 </resources>

@@ -18,6 +18,42 @@ import org.robolectric.annotation.Config
 class DeepLinkRouterTest {
 
     @Test
+    fun `Gist链接按域名解析并兼容旧版短ID`() {
+        val id = "c38cacab22bf0fffb94b247e09a4d948"
+        listOf(
+            "https://gist.github.com/std-microblock/$id",
+            "http://gist.github.com/$id",
+            "https://gist.github.com/std-microblock/$id/?ref=share#file-main-kt",
+            "HTTPS://GIST.GITHUB.COM/$id",
+        ).forEach { url ->
+            assertEquals(url, DeepLinkDestination.GistDetail(id), DeepLinkRouter.parse(Uri.parse(url)))
+        }
+        assertEquals(DeepLinkDestination.GistDetail("AbC123"), DeepLinkRouter.parse(Uri.parse("https://gist.github.com/AbC123")))
+    }
+
+    @Test
+    fun `Gist非详情路径和无效ID交给浏览器`() {
+        listOf("", "std-microblock", "discover", "std-microblock/not-a-gist", "owner/abc/revision",
+            "owner/abc/raw", "owner/abc/archive.zip", "owner/abc/download", "owner/abc/def123",
+        ).forEach { path ->
+            val url = "https://gist.github.com/$path"
+            assertEquals(url, DeepLinkDestination.Unsupported, DeepLinkRouter.parse(Uri.parse(url)))
+        }
+    }
+
+    @Test
+    fun `只接受HTTP协议和精确GitHub域名`() {
+        listOf("https://example.com/owner/repo", "https://github.com.example.com/owner/repo",
+            "https://gist.github.com.example.com/owner/abc", "https://gist.githubusercontent.com/owner/abc/raw/file",
+            "ftp://github.com/owner/repo", "intent://gist.github.com/owner/abc", "/owner/repo",
+        ).forEach { url ->
+            assertEquals(url, DeepLinkDestination.Unsupported, DeepLinkRouter.parse(Uri.parse(url)))
+        }
+        assertEquals(DeepLinkDestination.RepoOverview("owner", "repo"), DeepLinkRouter.parse(Uri.parse("http://github.com/owner/repo")))
+    }
+
+
+    @Test
     fun `解析仓库blob路径为文件查看目的地`() {
         val uri = Uri.parse("https://github.com/owner/repo/blob/main/src/App.kt")
         assertEquals(

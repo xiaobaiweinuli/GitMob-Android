@@ -6,6 +6,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
@@ -18,6 +20,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
@@ -37,6 +40,9 @@ import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.preferences.ThemePreferenceStore
 import com.gitmob.app.data.model.FollowState
 import com.gitmob.app.data.model.GHUser
+import com.gitmob.app.data.model.GistCommentPage
+import com.gitmob.app.data.model.GistDetail
+import com.gitmob.app.data.model.GistUser
 import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistListItem
 import com.gitmob.app.data.model.GistPage
@@ -60,6 +66,7 @@ import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.AccountSessionRule
 import com.gitmob.app.testutil.MainDispatcherRule
 import com.gitmob.app.ui.common.AccountViewModel
+import com.gitmob.app.ui.gist.GistDetailViewModel
 import com.gitmob.app.ui.gist.GistCreateViewModel
 import com.gitmob.app.ui.gist.GistViewModel
 import com.gitmob.app.ui.home.HomeViewModel
@@ -279,8 +286,52 @@ class AccountNavigationTest {
         assertTrue(models.all { it.cleared })
     }
 
-    private fun launch() {
-        accounts.session.replace(listOf(fixture.alpha, fixture.beta), fixture.alpha.key)
+    @Test
+    fun `冷启动Gist深链进入已有详情页并消费一次`() {
+        launch(DeepLinkDestination.GistDetail("abc123"))
+        composeRule.onAllNodesWithText("Deep link abc123")[0].assertIsDisplayed()
+        coVerify(exactly = 1) { fixture.gists.getGist("abc123") }
+        assertEquals(null, fixture.deepLinkDestination)
+        assertEquals(1, fixture.consumedDeepLinks)
+    }
+
+    @Test
+    fun `未登录的Gist深链在登录后继续打开`() {
+        launch(DeepLinkDestination.GistDetail("abc123"), loggedIn = false)
+        coVerify(exactly = 0) { fixture.gists.getGist(any()) }
+        assertEquals(0, fixture.consumedDeepLinks)
+        switchTo(fixture.alpha)
+        composeRule.onAllNodesWithText("Deep link abc123")[0].assertIsDisplayed()
+        coVerify(exactly = 1) { fixture.gists.getGist("abc123") }
+        assertEquals(1, fixture.consumedDeepLinks)
+    }
+
+    @Test
+    fun `运行中收到Gist深链会打开对应详情`() {
+        launch()
+        composeRule.runOnIdle { fixture.deepLinkDestination = DeepLinkDestination.GistDetail("def456") }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Deep link def456")[0].assertIsDisplayed()
+        coVerify(exactly = 1) { fixture.gists.getGist("def456") }
+        assertEquals(1, fixture.consumedDeepLinks)
+    }
+
+    @Test
+    fun `浏览器不可用时未登录也能显示全局错误`() {
+        composeRule.mainClock.autoAdvance = false
+        launch(DeepLinkDestination.BrowserUnavailable, loggedIn = false)
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        assertEquals(null, fixture.deepLinkDestination)
+        assertEquals(1, fixture.consumedDeepLinks)
+        composeRule.onNodeWithText(text(R.string.deep_link_browser_unavailable)).assertIsDisplayed()
+        composeRule.mainClock.autoAdvance = true
+    }
+
+    private fun launch(destination: DeepLinkDestination? = null, loggedIn: Boolean = true) {
+        fixture.deepLinkDestination = destination
+        if (loggedIn) accounts.session.replace(listOf(fixture.alpha, fixture.beta), fixture.alpha.key)
+        else accounts.session.replace(emptyList(), null)
         HostActivity.fixture = fixture
         composeRule.runOnUiThread { controller = Robolectric.buildActivity(HostActivity::class.java).setup() }
         composeRule.waitForIdle()
@@ -316,7 +367,11 @@ class AccountNavigationTest {
             setContent {
                 MaterialTheme {
                     val state by data.session.state.collectAsStateWithLifecycle()
-                    GitMobNavGraph(state, data.session, data.errors, data.repoEvents, ThemePreference(), false)
+                    GitMobNavGraph(
+                        state, data.session, data.errors, data.repoEvents, ThemePreference(), false,
+                        deepLinkDestination = data.deepLinkDestination,
+                        onDeepLinkConsumed = { data.deepLinkDestination = null; data.consumedDeepLinks++ },
+                    )
                 }
             }
         }
@@ -330,6 +385,8 @@ internal class NavigationFixture(val session: AccountSession) {
     val users = mockk<UserRepository>()
     private val repos = mockk<RepoRepository>(relaxUnitFun = true)
     val gists = mockk<GistRepository>()
+    var deepLinkDestination by mutableStateOf<DeepLinkDestination?>(null)
+    var consumedDeepLinks = 0
     private val stars = mockk<StarRepository>()
     val auth = mockk<AuthRepository>()
     private val preferences = mockk<ThemePreferenceStore>()
@@ -340,6 +397,19 @@ internal class NavigationFixture(val session: AccountSession) {
     data class Creation(val model: AccountViewModel, val handle: SavedStateHandle, var cleared: Boolean = false)
 
     init {
+        coEvery { gists.getGist(any()) } coAnswers {
+            val id = firstArg<String>()
+            ApiResult.Success(GistDetail(
+                id = id, nodeId = "node_$id", url = "https://gist.github.com/owner/$id",
+                description = "Deep link $id", isPublic = true, owner = GistUser("owner", null, null),
+                files = emptyList(), commentCount = 0, commentsEnabled = false,
+                createdAt = "2026-01-01T00:00:00Z", updatedAt = "2026-01-01T00:00:00Z",
+                forkOf = null, latestVersion = "sha", viewerLogin = "alpha", isStarred = false,
+                stargazerCount = 0, forkCount = 0,
+            ))
+        }
+        coEvery { gists.getComments(any(), any()) } returns ApiResult.Success(GistCommentPage(emptyList(), null))
+        coEvery { gists.getOldestVersion(any()) } returns ApiResult.Success(null)
         every { users.profileUpdatesFor(any()) } returns emptyFlow()
         every { auth.accountState } returns session.state
         coEvery { auth.switchAccount(any()) } coAnswers {
@@ -384,6 +454,9 @@ internal class NavigationFixture(val session: AccountSession) {
         GistViewModel::class.java to { GistViewModel(gists, errors, it, gistEvents, session) },
         SettingsViewModel::class.java to { SettingsViewModel(preferences, auth, errors, session) },
         LoginViewModel::class.java to { LoginViewModel(auth, errors, session) },
+        GistDetailViewModel::class.java to {
+            GistDetailViewModel(gists, mockk(), mockk(), errors, mockk(), mockk(), gistEvents, session)
+        },
         GistCreateViewModel::class.java to { GistCreateViewModel(gists, errors, gistEvents, session) },
     )
 

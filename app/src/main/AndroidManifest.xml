@@ -28,7 +28,7 @@
             </intent-filter>
         </activity>
 
-        <!-- 外部 GitHub 链接跳转打开：不加 autoVerify，让系统弹"选择打开方式"，
+        <!-- 外部 GitHub / Gist 链接入口：不加 autoVerify，实际打开方式由系统链接设置决定，
              详见技能 references/deep-linking.md -->
         <activity
             android:name=".navigation.DeepLinkActivity"
@@ -40,6 +40,8 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="github.com" />
                 <data android:scheme="http" android:host="github.com" />
+                <data android:scheme="https" android:host="gist.github.com" />
+                <data android:scheme="http" android:host="gist.github.com" />
             </intent-filter>
         </activity>
 

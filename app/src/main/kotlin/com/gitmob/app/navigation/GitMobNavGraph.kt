@@ -34,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
@@ -50,6 +51,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.auth.AccountEpoch
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.core.error.ErrorBannerHost
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
@@ -192,7 +194,7 @@ fun GitMobNavGraph(
                 onLogout = {},
                 themePreference = themePreference,
                 enablePredictiveBack = enablePredictiveBack,
-                deepLinkDestination = deepLinkDestination,
+                deepLinkDestination = deepLinkDestination.takeUnless { it == DeepLinkDestination.BrowserUnavailable },
                 onDeepLinkConsumed = onDeepLinkConsumed,
                 repoUpdateEventBus = repoUpdateEventBus,
                 epoch = epoch,
@@ -209,6 +211,14 @@ fun GitMobNavGraph(
                 .padding(top = 8.dp)
                 .windowInsetsPadding(WindowInsets.statusBars),
         )
+        LaunchedEffect(deepLinkDestination, epoch) {
+            if (deepLinkDestination == DeepLinkDestination.BrowserUnavailable && epoch.isCurrent) {
+                // 等待提示宿主完成首帧订阅，避免无重放的事件在冷启动时丢失。
+                withFrameNanos { }
+                errorEventBus.emit(ApiError.UserVisible(R.string.deep_link_browser_unavailable), epoch)
+                onDeepLinkConsumed()
+            }
+        }
     }
     }
     }
@@ -266,6 +276,7 @@ private fun LoggedInApp(
         if (!epoch.isCurrent) return@LaunchedEffect
         val destination = deepLinkDestination ?: return@LaunchedEffect
         when (destination) {
+            is DeepLinkDestination.GistDetail -> navigator.navigate(GistDetailRoute(destination.id))
             is DeepLinkDestination.Profile -> navigator.navigate(ProfileRoute(destination.login))
             is DeepLinkDestination.RepoOverview -> navigator.navigate(RepoDetailRoute(destination.owner, destination.repo))
             is DeepLinkDestination.IssueList -> navigator.navigate(RepoIssuesRoute(destination.owner, destination.repo))
@@ -283,7 +294,7 @@ private fun LoggedInApp(
             is DeepLinkDestination.ReleaseList -> navigator.navigate(RepoReleasesRoute(destination.owner, destination.repo))
             is DeepLinkDestination.ReleaseDetail -> navigator.navigate(RepoReleaseDetailRoute(destination.owner, destination.repo, destination.tag))
             is DeepLinkDestination.Contributors -> navigator.navigate(RepoContributorsRoute(destination.owner, destination.repo))
-            DeepLinkDestination.Unsupported -> Unit
+            DeepLinkDestination.BrowserUnavailable, DeepLinkDestination.Unsupported -> Unit
         }
         onDeepLinkConsumed()
     }

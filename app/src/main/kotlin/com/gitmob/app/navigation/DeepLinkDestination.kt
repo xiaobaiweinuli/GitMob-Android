@@ -4,10 +4,12 @@ import android.net.Uri
 import java.io.Serializable
 
 /**
- * 外部 github.com 链接解析出的内部导航目的地。
+ * 外部 GitHub / Gist 链接解析出的内部导航目的地。
  * 详见技能 references/deep-linking.md。
  */
 sealed class DeepLinkDestination : Serializable {
+    data class GistDetail(val id: String) : DeepLinkDestination()
+    data object BrowserUnavailable : DeepLinkDestination()
     data class Profile(val login: String) : DeepLinkDestination()
     data class RepoOverview(val owner: String, val repo: String) : DeepLinkDestination()
     data class FileView(val owner: String, val repo: String, val ref: String, val path: String) : DeepLinkDestination()
@@ -30,7 +32,26 @@ sealed class DeepLinkDestination : Serializable {
 
 object DeepLinkRouter {
     fun parse(uri: Uri): DeepLinkDestination {
+        if (!uri.scheme.equals("https", ignoreCase = true) &&
+            !uri.scheme.equals("http", ignoreCase = true)
+        ) return DeepLinkDestination.Unsupported
+
         val segments = uri.pathSegments
+        when {
+            uri.host.equals("gist.github.com", ignoreCase = true) -> {
+                val id = when (segments.size) {
+                    1 -> segments[0]
+                    2 -> segments[1]
+                    else -> return DeepLinkDestination.Unsupported
+                }
+                return if (id.matches(Regex("[0-9a-fA-F]+"))) {
+                    DeepLinkDestination.GistDetail(id)
+                } else {
+                    DeepLinkDestination.Unsupported
+                }
+            }
+            !uri.host.equals("github.com", ignoreCase = true) -> return DeepLinkDestination.Unsupported
+        }
         if (segments.isEmpty()) return DeepLinkDestination.Unsupported
 
         // https://github.com/orgs/{org} 特殊前缀，等价于组织主页

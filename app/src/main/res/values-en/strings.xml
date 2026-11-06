@@ -767,4 +767,5 @@
     <string name="repo_create_owner_picker">Choose owner</string>
     <string name="repo_create_gitignore_picker">Choose .gitignore</string>
     <string name="repo_create_license_picker">Choose license</string>
+    <string name="deep_link_browser_unavailable">Unable to open a browser. Install or enable a browser and try again.</string>
 </resources>

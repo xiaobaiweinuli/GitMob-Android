@@ -766,4 +766,5 @@
     <string name="repo_create_owner_picker">選擇擁有者</string>
     <string name="repo_create_gitignore_picker">選擇 .gitignore</string>
     <string name="repo_create_license_picker">選擇授權條款</string>
+    <string name="deep_link_browser_unavailable">無法開啟瀏覽器，請安裝或啟用瀏覽器後重試</string>
 </resources>
