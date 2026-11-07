@@ -69,9 +69,10 @@ fun RepoFileDetailScreen(
     onDocumentLink: (RepoDocumentContext) -> Unit = {},
     onDocumentExternalLink: (String) -> Unit = {},
     initialPreview: Boolean = false,
+    isCommitSnapshot: Boolean = false,
     viewModel: RepoFileDetailViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(owner, name, ref, path) { viewModel.init(owner, name, ref, path, initialPreview) }
+    LaunchedEffect(owner, name, ref, path) { viewModel.init(owner, name, ref, path, initialPreview, isCommitSnapshot) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.isDirectory) { if (state.isDirectory) onDirectoryFound() }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -100,10 +101,10 @@ fun RepoFileDetailScreen(
                         DropdownMenu(menuOpen, { menuOpen = false }) {
                             TranslationFileMenuItem(fileTarget,
                                 onDismiss = { menuOpen = false }, onOpen = { if (state.previewHtml != null) viewModel.setPreviewMode(true) })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.repo_commits)) }, leadingIcon = { Icon(Icons.Default.History, null) }, onClick = { menuOpen = false; onHistory() })
+                            if (!isCommitSnapshot) DropdownMenuItem(text = { Text(stringResource(R.string.repo_commits)) }, leadingIcon = { Icon(Icons.Default.History, null) }, onClick = { menuOpen = false; onHistory() })
                             DropdownMenuItem(text = { Text(stringResource(R.string.common_download)) }, leadingIcon = { Icon(Icons.Default.Download, null) }, enabled = !state.isDownloading, onClick = { menuOpen = false; viewModel.downloadFile() })
-                            if (state.file?.isBinary == false && state.file?.capabilities?.canPush == true && state.file?.capabilities?.canPushToProtectedBranch == true && state.file?.isArchived == false) DropdownMenuItem(text = { Text(stringResource(R.string.common_edit)) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menuOpen = false; onEdit() })
-                            if (state.file?.capabilities?.canPush == true && state.file?.capabilities?.canPushToProtectedBranch == true && state.file?.isArchived == false) DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, enabled = !state.isDeleting, onClick = { menuOpen = false; confirmDelete = true })
+                            if (!isCommitSnapshot && state.file?.isBinary == false && state.file?.capabilities?.canPush == true && state.file?.capabilities?.canPushToProtectedBranch == true && state.file?.isArchived == false) DropdownMenuItem(text = { Text(stringResource(R.string.common_edit)) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menuOpen = false; onEdit() })
+                            if (!isCommitSnapshot && state.file?.capabilities?.canPush == true && state.file?.capabilities?.canPushToProtectedBranch == true && state.file?.isArchived == false) DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, enabled = !state.isDeleting, onClick = { menuOpen = false; confirmDelete = true })
                         }
                     }
                 },

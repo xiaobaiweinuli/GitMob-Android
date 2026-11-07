@@ -76,6 +76,22 @@ class RepoGitContentTest {
         assertTrue(repository.getPathContent("owner", "repo", "main", "docs") is ApiResult.Failure)
     }
 
+    @Test fun commitSnapshotDoesNotRequireBranchLookupAndRemainsReadOnly() = runTest(accounts.context) {
+        val commit = "a".repeat(40)
+        server.enqueue(MockResponse().setBody("""
+            {"data":{"repository":{"id":"R_repo","viewerPermission":"WRITE","isArchived":false,
+            "commit":{"__typename":"Commit","oid":"$commit"},"object":$blob}}}
+        """.trimIndent()))
+        val file = (repository.getFileSnapshot("owner", "repo", commit, "README.md") as ApiResult.Success).data as RepoFileContent
+        assertEquals(commit, file.ref)
+        assertEquals(commit, file.headOid)
+        assertEquals("blob", file.oid)
+        assertTrue(file.isCommitSnapshot)
+        val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        assertEquals("$commit:README.md", variables.getValue("expression").jsonPrimitive.content)
+        assertFalse(variables.containsKey("qualifiedRef"))
+    }
+
     private val blob = """{"__typename":"Blob","oid":"blob","byteSize":7,"isBinary":false,"isTruncated":false,"text":"# Guide"}"""
 
     private fun response(target: String) = """

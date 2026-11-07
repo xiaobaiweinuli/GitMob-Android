@@ -62,12 +62,14 @@ class RepoFileDetailViewModel @Inject constructor(
     private var name = ""
     private var ref = ""
     private var path = ""
+    private var isCommitSnapshot = false
 
-    fun init(owner: String, name: String, ref: String, path: String, initialPreview: Boolean = false) {
+    fun init(owner: String, name: String, ref: String, path: String, initialPreview: Boolean = false, isCommitSnapshot: Boolean = false) {
         if (initialized) return
         initialized = true; this.owner = owner; this.name = name; this.ref = ref; this.path = path
         _state.update { it.copy(previewMode = initialPreview) }
-        observeCodeChanges()
+        this.isCommitSnapshot = isCommitSnapshot
+        if (!isCommitSnapshot) observeCodeChanges()
         load(refreshResources = false)
     }
 
@@ -88,7 +90,8 @@ class RepoFileDetailViewModel @Inject constructor(
         viewModelScope.launch {
             if (refreshResources) documentRepository.invalidate(RepoDocumentContext(owner, name, ref, path))
             _state.update { it.copy(isLoading = true, loadFailed = false, isDirectory = false, previewRevision = it.previewRevision + 1) }
-            when (val result = repository.getPathContent(owner, name, ref, path)) {
+            when (val result = if (isCommitSnapshot) repository.getFileSnapshot(owner, name, ref, path)
+                else repository.getPathContent(owner, name, ref, path)) {
                 is ApiResult.Success -> {
                     val file = when (val content = result.data) {
                         RepoPathContent.Directory -> {
@@ -127,7 +130,7 @@ class RepoFileDetailViewModel @Inject constructor(
 
     fun deleteFile(message: String, onDeleted: () -> Unit) {
         val file = _state.value.file ?: return
-        if (_state.value.isDeleting || file.isArchived || !file.capabilities.canPush || !file.capabilities.canPushToProtectedBranch || message.isBlank()) return
+        if (file.isCommitSnapshot || _state.value.isDeleting || file.isArchived || !file.capabilities.canPush || !file.capabilities.canPushToProtectedBranch || message.isBlank()) return
         viewModelScope.launch {
             _state.update { it.copy(isDeleting = true) }
             when (val result = repository.createCommit(owner, name, ref, message, emptyList(), listOf(RepoPendingFileChange.Deletion(path)), file.headOid)) {

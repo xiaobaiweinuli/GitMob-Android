@@ -899,4 +899,34 @@
     <string name="translation_error_quota">服務額度已用盡</string>
     <string name="translation_error_mapping">譯文對應關係異常</string>
     <string name="translation_error_display">譯文顯示失敗</string>
+
+    <!-- Global search -->
+    <string name="search_title">搜尋</string>
+    <string name="search_hint">搜尋 GitHub</string>
+    <string name="search_code">程式碼</string>
+    <string name="search_repositories">儲存庫</string>
+    <string name="search_issues">議題</string>
+    <string name="search_pull_requests">提取要求</string>
+    <string name="search_users">人員</string>
+    <string name="search_organizations">組織</string>
+    <string name="search_for_query">搜尋「%1$s」</string>
+    <string name="search_recent">最近搜尋</string>
+    <string name="search_no_history">尚無搜尋記錄</string>
+    <string name="search_clear_history">清除搜尋記錄？</string>
+    <string name="search_clear_history_body">清除目前帳號的所有搜尋記錄。</string>
+    <string name="search_clear">清除</string>
+    <string name="search_empty">找不到結果</string>
+    <string name="search_more">查看另外 %1$d 項</string>
+    <string name="search_more_unknown">查看更多程式碼結果</string>
+    <string name="search_incomplete">結果可能不完整</string>
+    <string name="search_limit">最多可查看前 %1$d 項，請增加條件</string>
+    <string name="search_end">已顯示全部結果</string>
+    <string name="search_scope_conflict">搜尋條件與此分類衝突，請返回調整條件</string>
+    <string name="search_invalid_query">搜尋條件無效，請返回檢查語法</string>
+    <string name="search_open_file">開啟檔案 %1$s</string>
+    <string name="search_open_repo">開啟儲存庫 %1$s</string>
+    <string name="search_syntax_description">插入 %1$s，適用於 %2$s</string>
+    <string name="search_list_separator">、</string>
+    <string name="search_updated">%1$s更新</string>
+    <string name="search_loading">正在搜尋</string>
 </resources>

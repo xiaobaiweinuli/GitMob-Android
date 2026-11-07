@@ -5,6 +5,7 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.markdown.CommonMarkRenderer
 import com.gitmob.app.core.permission.RepoCapabilities
+import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.model.RepoFileContent
@@ -38,6 +39,21 @@ class RepoFileDetailViewModelTest {
     private fun viewModel() = RepoFileDetailViewModel(
         repository, CommonMarkRenderer(), ErrorEventBus(), mockk(), updates, accounts.session, documentRepository,
     )
+
+    @Test fun commitSnapshotCannotBeDeletedEvenForOwnerWithWritePermission() = runTest {
+        val commit = "a".repeat(40)
+        val content = file("Main.kt", "fun main() = Unit").copy(
+            isCommitSnapshot = true, ref = commit,
+            capabilities = com.gitmob.app.core.permission.RepoPermission.ADMIN.toCapabilities(),
+        )
+        coEvery { repository.getFileSnapshot("owner", "repo", commit, "Main.kt") } returns ApiResult.Success(content)
+        val vm = viewModel()
+        vm.init("owner", "repo", commit, "Main.kt", isCommitSnapshot = true)
+        assertTrue(vm.state.value.file!!.isCommitSnapshot)
+        vm.deleteFile("delete") { fail("Snapshot deletion must not run") }
+        coVerify(exactly = 0) { repository.getPathContent(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repository.createCommit(any(), any(), any(), any(), any(), any(), any()) }
+    }
 
     private fun file(path: String, text: String) = RepoFileContent(
         repositoryId = "R_repo", permission = RepoPermission.READ, capabilities = RepoCapabilities.NONE,

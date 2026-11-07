@@ -20,6 +20,9 @@ object OcticonPainterProvider {
         OcticonName.BADGE_CAMPUS_EXPERT -> R.drawable.oct_mortar_board_16
         OcticonName.BADGE_GITHUB_STAR -> R.drawable.oct_star_fill_16
 
+        OcticonName.CODE -> R.drawable.oct_code_16
+        OcticonName.PERSON -> R.drawable.oct_person_16
+        OcticonName.SEARCH -> R.drawable.oct_search_16
         OcticonName.REPO -> R.drawable.oct_repo_16
         OcticonName.STAR -> R.drawable.oct_star_16
         OcticonName.ORGANIZATION -> R.drawable.oct_organization_16

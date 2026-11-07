@@ -70,6 +70,7 @@ data class RepoFileContent(
     val isBinary: Boolean,
     val isTruncated: Boolean,
     val text: String?,
+    val isCommitSnapshot: Boolean = false,
 ) : RepoPathContent
 
 enum class RepoChangedFileStatus { ADDED, MODIFIED, DELETED, RENAMED, COPIED, UNKNOWN }

@@ -52,6 +52,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
+import com.gitmob.app.ui.search.SearchScreen
+import com.gitmob.app.ui.search.SearchCategoryScreen
+import com.gitmob.app.ui.search.SearchResultActions
 import com.gitmob.app.R
 import com.gitmob.app.core.auth.AccountEpoch
 import com.gitmob.app.core.auth.AccountSession
@@ -314,7 +317,7 @@ private fun LoggedInApp(
             if (document.filePath.isEmpty() || document.filePath.endsWith('/')) {
                 navigator.navigate(RepoCodeRoute(document.owner, document.name, document.ref, document.filePath.trimEnd('/')))
             } else {
-                navigator.navigate(RepoFileDetailRoute(document.owner, document.name, document.ref, document.filePath, initialPreview = true))
+                navigator.navigate(RepoFileDetailRoute(document.owner, document.name, document.ref, document.filePath, initialPreview = true, isCommitSnapshot = document.ref.matches(Regex("[0-9a-fA-F]{40}"))))
             }
         }
     }
@@ -330,7 +333,31 @@ private fun LoggedInApp(
         onDeepLinkConsumed()
     }
 
+    val searchActions = SearchResultActions(
+        repository = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+        work = { item ->
+            navigator.navigate(if (item.isPullRequest) RepoPullRequestDetailRoute(item.repoOwner, item.repoName, item.number)
+                else RepoIssueDetailRoute(item.repoOwner, item.repoName, item.number))
+        },
+        account = { navigator.navigate(ProfileRoute(it)) },
+        file = { item ->
+            val target = item.target
+            if (target == null) openExternalUrl(item.htmlUrl)
+            else navigator.navigate(RepoFileDetailRoute(item.owner, item.repository, target.ref, item.path, isCommitSnapshot = target.isCommitSnapshot))
+        },
+        homepage = openExternalUrl,
+    )
     val entryProvider = entryProvider<NavKey> {
+        entry<SearchRoute> {
+            SearchScreen(
+                onBack = { navigator.goBack() },
+                onCategory = { query, category -> navigator.navigate(SearchCategoryRoute(query, category)) },
+                actions = searchActions,
+            )
+        }
+        entry<SearchCategoryRoute> { route ->
+            SearchCategoryScreen(route.query, route.category, onBack = { navigator.goBack() }, actions = searchActions)
+        }
         // ──────────────────────────────────────────────────────────────
         // Tab 根路由（5 个）：各自独立 Screen，不再包 MainTabHost / HorizontalPager
         // ──────────────────────────────────────────────────────────────
@@ -349,6 +376,7 @@ private fun LoggedInApp(
                 onInboxClick = { navigator.navigate(InboxRoute) },
                 onFavoritesClick = { navigator.navigate(FavoritesRoute()) },
                 onHistoryClick = { navigator.navigate(HistoryRoute()) },
+                onSearchClick = { navigator.navigate(SearchRoute()) },
                 onPinnedRepoClick = { owner, name ->
                     navigator.navigate(RepoDetailRoute(owner, name))
                 },
@@ -935,6 +963,7 @@ private fun LoggedInApp(
                         }
                     },
                     initialPreview = route.initialPreview,
+                    isCommitSnapshot = route.isCommitSnapshot,
                     onDocumentLink = openDocument,
                     onDocumentExternalLink = openDocumentExternal,
                     owner = route.owner,

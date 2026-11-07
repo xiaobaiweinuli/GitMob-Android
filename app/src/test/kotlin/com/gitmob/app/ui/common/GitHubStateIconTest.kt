@@ -11,6 +11,11 @@ import org.junit.Test
 
 class GitHubStateIconTest {
 
+    @Test fun closedIssueWithoutReasonDoesNotImplyCompleted() {
+        assertEquals(com.gitmob.app.R.string.common_state_closed, issueStateVisual(IssueState.CLOSED, null).labelRes)
+        assertEquals(com.gitmob.app.R.string.state_completed, issueStateVisual(IssueState.CLOSED, IssueStateReason.COMPLETED).labelRes)
+    }
+
     @Test
     fun `Issue开放和重新开放使用不同图标`() {
         val opened = issueStateVisual(IssueState.OPEN, null)

@@ -1,0 +1,18 @@
+query SearchRepositories($query: String!, $after: String, $first: Int!, $topicsFirst: Int!) {
+  search(query: $query, type: REPOSITORY, first: $first, after: $after) {
+    repositoryCount
+    nodes { ... on Repository { ...RepoListFields } }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+query SearchAccounts($query: String!, $after: String, $first: Int!) {
+  search(query: $query, type: USER, first: $first, after: $after) {
+    userCount
+    nodes {
+      ... on User { id login name avatarUrl bio location }
+      ... on Organization { id login name avatarUrl description location }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}

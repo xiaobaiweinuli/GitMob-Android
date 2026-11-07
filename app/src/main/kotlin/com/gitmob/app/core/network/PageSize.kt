@@ -9,6 +9,15 @@ package com.gitmob.app.core.network
  */
 object PageSize {
 
+    /** Global search: overview preview and independently paginated category pages. */
+    const val SEARCH_PREVIEW = 5
+    const val SEARCH_RESULTS = 20
+    /** GitHub search only exposes the first 1,000 matches, regardless of totalCount. */
+    const val SEARCH_ACCESSIBLE_LIMIT = 1000
+    /** Local submitted search queries per account. */
+    const val SEARCH_HISTORY = 20
+    const val SEARCH_RECENT_PREVIEW = 3
+
     // ──────────────── 请求容量（分页列表及固定预取）────────────────
 
     /** 仓库列表（viewer.repositories / repositoryOwner.repositories） */

@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.ui.icons.Octicon
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.data.model.RepositoryCreateOwnerType
@@ -85,6 +86,7 @@ fun HomeScreen(
     onInboxClick: () -> Unit = {},
     onFavoritesClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
+    onSearchClick: () -> Unit = {},
     onPinnedRepoClick: (owner: String, name: String) -> Unit = { _, _ -> },
     onCreateRepository: (RepositoryCreateOwner) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
@@ -103,6 +105,9 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.nav_tab_home)) },
                 actions = {
+                    IconButton(onClick = onSearchClick) {
+                        Octicon(OcticonName.SEARCH, contentDescription = stringResource(R.string.search_title))
+                    }
                     if (state.profile != null) {
                         IconButton(onClick = {
                             val profile = state.profile ?: return@IconButton

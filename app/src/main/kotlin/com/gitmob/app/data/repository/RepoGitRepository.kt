@@ -17,6 +17,7 @@ import com.gitmob.app.graphql.ForceAlignForkMutation
 import com.gitmob.app.graphql.RepoCodeTreeQuery
 import com.gitmob.app.graphql.RepoCommitDetailQuery
 import com.gitmob.app.graphql.RepoCommitHistoryQuery
+import com.gitmob.app.graphql.RepoFileSnapshotQuery
 import com.gitmob.app.graphql.RepoFileContentQuery
 import com.gitmob.app.graphql.RepoForkSyncQuery
 import com.gitmob.app.graphql.fragment.CommitFields
@@ -278,6 +279,34 @@ class RepoGitRepository @Inject constructor(
                     isBinary = blob.isBinary == true,
                     isTruncated = blob.isTruncated,
                     text = blob.text,
+                )
+            }
+        }
+    }
+
+    suspend fun getFileSnapshot(owner: String, name: String, commit: String, path: String): ApiResult<RepoPathContent> {
+        return when (val result = apolloClient.query(
+            RepoFileSnapshotQuery(owner, name, commit, "$commit:$path"),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repository = result.data.repository ?: error("Repository not found")
+                val blob = repository.`object`?.onBlob ?: error("File not found")
+                val permission = permission(repository.viewerPermission?.rawValue)
+                RepoFileContent(
+                    repositoryId = repository.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    isArchived = repository.isArchived,
+                    ref = commit,
+                    headOid = repository.commit?.onCommit?.oid ?: error("Commit not found"),
+                    path = path,
+                    oid = blob.oid,
+                    byteSize = blob.byteSize.toLong(),
+                    isBinary = blob.isBinary == true,
+                    isTruncated = blob.isTruncated,
+                    text = blob.text,
+                    isCommitSnapshot = true,
                 )
             }
         }

@@ -66,7 +66,7 @@ fun issueStateVisual(
         else -> GitHubStateVisual(
             OcticonName.ISSUE_CLOSED,
             GitHubStateColor.DONE,
-            R.string.state_completed,
+            if (stateReason == IssueStateReason.COMPLETED) R.string.state_completed else R.string.common_state_closed,
         )
     }
     return visual.withBadgeIf(GitHubStateBadge.LOCKED, locked)

@@ -15,6 +15,9 @@ enum class OcticonName {
     BADGE_GITHUB_STAR,
 
     // 已稳定使用的资料统计图标
+    CODE,
+    PERSON,
+    SEARCH,
     REPO,
     STAR,
     ORGANIZATION,

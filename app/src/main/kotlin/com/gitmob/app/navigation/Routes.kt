@@ -2,6 +2,7 @@ package com.gitmob.app.navigation
 
 import androidx.navigation3.runtime.NavKey
 import com.gitmob.app.core.permission.RepoPermission
+import com.gitmob.app.data.model.SearchCategory
 import kotlinx.serialization.Serializable
 
 /**
@@ -15,6 +16,9 @@ sealed interface Route : NavKey
 @Serializable data object StarsRoute : Route
 @Serializable data object GistRoute : Route
 @Serializable data object SettingsRoute : Route
+
+@Serializable data class SearchRoute(val page: String = "search") : Route
+@Serializable data class SearchCategoryRoute(val query: String, val category: SearchCategory) : Route
 
 /** 关注者 / 关注列表，参数化路由（不是底部 Tab，从 HomeScreen 点击跳转进来） */
 @Serializable data class FollowersRoute(val login: String) : Route
@@ -159,6 +163,7 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
     val path: String,
     val permission: RepoPermission? = null,
     val initialPreview: Boolean = false,
+    val isCommitSnapshot: Boolean = false,
 ) : Route
 @Serializable data class RepoFileEditorRoute(
     val owner: String,

@@ -900,4 +900,34 @@
     <string name="translation_error_quota">Service quota exhausted</string>
     <string name="translation_error_mapping">Translation mapping failed</string>
     <string name="translation_error_display">Could not display translation</string>
+
+    <!-- Global search -->
+    <string name="search_title">Search</string>
+    <string name="search_hint">Search GitHub</string>
+    <string name="search_code">Code</string>
+    <string name="search_repositories">Repositories</string>
+    <string name="search_issues">Issues</string>
+    <string name="search_pull_requests">Pull requests</string>
+    <string name="search_users">People</string>
+    <string name="search_organizations">Organizations</string>
+    <string name="search_for_query">Search “%1$s”</string>
+    <string name="search_recent">Recent searches</string>
+    <string name="search_no_history">No recent searches</string>
+    <string name="search_clear_history">Clear search history?</string>
+    <string name="search_clear_history_body">Clear all recent searches for this account.</string>
+    <string name="search_clear">Clear</string>
+    <string name="search_empty">No results found</string>
+    <string name="search_more">View %1$d more results</string>
+    <string name="search_more_unknown">View more code results</string>
+    <string name="search_incomplete">Results may be incomplete</string>
+    <string name="search_limit">Only the first %1$d results are accessible. Refine your query.</string>
+    <string name="search_end">All results shown</string>
+    <string name="search_scope_conflict">The query conflicts with this category. Go back to edit it.</string>
+    <string name="search_invalid_query">Invalid query. Go back to check the syntax.</string>
+    <string name="search_open_file">Open file %1$s</string>
+    <string name="search_open_repo">Open repository %1$s</string>
+    <string name="search_syntax_description">Insert %1$s, for %2$s</string>
+    <string name="search_list_separator">", "</string>
+    <string name="search_updated">Updated %1$s</string>
+    <string name="search_loading">Searching</string>
 </resources>
