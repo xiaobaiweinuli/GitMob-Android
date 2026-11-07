@@ -59,7 +59,7 @@ class RepoFileDetailViewModelTest {
         val commit = "a".repeat(40)
         coEvery { repository.getPathContent("owner", "repo", commit, "docs") } returns ApiResult.Success(RepoPathContent.Directory)
         val vm = viewModel()
-        vm.init("owner", "repo", commit, "docs", initialPreview = true)
+        vm.init("owner", "repo", commit, "docs")
         assertTrue(vm.state.value.isDirectory)
         assertFalse(vm.state.value.loadFailed)
         assertNull(vm.state.value.file)
@@ -71,7 +71,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", commit, path) } returns
             ApiResult.Success(file(path, "[Docs](docs)").copy(ref = commit, headOid = commit, isCommitSnapshot = true))
         val vm = viewModel()
-        vm.init("owner", "repo", commit, path, initialPreview = true)
+        vm.init("owner", "repo", commit, path)
         assertEquals(RepoDocumentContext("owner", "repo", commit, path), vm.state.value.previewContext)
         withContext(accounts.context) { updates.emit(RepoUpdateEvent.CodeChanged("owner", "repo", "main", "new-head", listOf(path))) }
         coVerify(exactly = 1) { repository.getPathContent("owner", "repo", commit, path) }
@@ -87,7 +87,7 @@ class RepoFileDetailViewModelTest {
         val path = "docs/翻译本页.md"
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "[Next](../next.md)\n\n![Picture](images/图.png)"))
         val vm = viewModel()
-        vm.init("owner", "repo", ref, path, initialPreview = true)
+        vm.init("owner", "repo", ref, path)
         val state = vm.state.value
         assertFalse(state.isLoading)
         assertTrue(state.previewMode)
@@ -100,7 +100,7 @@ class RepoFileDetailViewModelTest {
     @Test fun directoryWithoutTrailingSlashRequestsDirectoryNavigation() = runTest {
         coEvery { repository.getPathContent("owner", "repo", ref, "docs") } returns ApiResult.Success(RepoPathContent.Directory)
         val vm = viewModel()
-        vm.init("owner", "repo", ref, "docs", initialPreview = true)
+        vm.init("owner", "repo", ref, "docs")
         assertTrue(vm.state.value.isDirectory)
         assertFalse(vm.state.value.isLoading)
         assertFalse(vm.state.value.loadFailed)
@@ -113,7 +113,7 @@ class RepoFileDetailViewModelTest {
             ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(RepoPathContent.Directory),
         )
         val vm = viewModel()
-        vm.init("owner", "repo", ref, "docs", initialPreview = true)
+        vm.init("owner", "repo", ref, "docs")
         assertTrue(vm.state.value.loadFailed)
         assertFalse(vm.state.value.isDirectory)
         vm.retry()
@@ -125,19 +125,19 @@ class RepoFileDetailViewModelTest {
         val response = CompletableDeferred<ApiResult<RepoPathContent>>()
         coEvery { repository.getPathContent("owner", "repo", ref, "docs") } coAnswers { response.await() }
         val vm = viewModel()
-        vm.init("owner", "repo", ref, "docs", initialPreview = true)
+        vm.init("owner", "repo", ref, "docs")
         assertTrue(vm.state.value.isLoading)
         accounts.session.replace(emptyList(), null)
         response.complete(ApiResult.Success(RepoPathContent.Directory))
         assertFalse(vm.state.value.isDirectory)
     }
 
-    @Test fun `normal code browsing keeps the source tab as its default`() = runTest {
+    @Test fun `normal code browsing defaults to document preview`() = runTest {
         val path = "docs/guide.md"
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "# Guide"))
         val vm = viewModel()
         vm.init("owner", "repo", ref, path)
-        assertFalse(vm.state.value.previewMode)
+        assertTrue(vm.state.value.previewMode)
         assertTrue(vm.state.value.previewSupported)
     }
 
@@ -146,7 +146,7 @@ class RepoFileDetailViewModelTest {
         val html = "<a href=\"../next.md\">Next</a><img src=\"images/a.png\">"
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, html))
         val vm = viewModel()
-        vm.init("owner", "repo", ref, path, initialPreview = true)
+        vm.init("owner", "repo", ref, path)
         assertEquals(html, vm.state.value.previewHtml)
         assertEquals(RepoDocumentContext("owner", "repo", ref, path), vm.state.value.previewContext)
     }
@@ -155,7 +155,7 @@ class RepoFileDetailViewModelTest {
         val path = "src/main.kt"
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "fun main() {}"))
         val vm = viewModel()
-        vm.init("owner", "repo", ref, path, initialPreview = true)
+        vm.init("owner", "repo", ref, path)
         assertFalse(vm.state.value.previewSupported)
         assertNull(vm.state.value.previewHtml)
         assertNull(vm.state.value.previewContext)
@@ -174,7 +174,7 @@ class RepoFileDetailViewModelTest {
         assertEquals(RepoDocumentContext("owner", "repo", ref, path), vm.state.value.previewContext)
     }
 
-    @Test fun svgDefaultsToPreviewAndRetainsSourceWhenSwitchingTabs() = runTest {
+    @Test fun svgDefaultsToPreviewAndRetainsSourceWhenSwitchingModes() = runTest {
         val path = "docs/logo.svg"
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "<svg/>"))
         val vm = viewModel()
@@ -203,7 +203,7 @@ class RepoFileDetailViewModelTest {
         val path = "docs/guide.md"
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "![Image](a.png)"))
         val vm = viewModel()
-        vm.init("owner", "repo", ref, path, initialPreview = true)
+        vm.init("owner", "repo", ref, path)
         val previous = vm.state.value
         verify(exactly = 0) { documentRepository.invalidate(any(), any()) }
         vm.load()
@@ -216,11 +216,89 @@ class RepoFileDetailViewModelTest {
         val path = "docs/guide.md"
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "![Image](images/a.png)"))
         val vm = viewModel()
-        vm.init("owner", "repo", ref, path, initialPreview = true)
+        vm.init("owner", "repo", ref, path)
         val previous = vm.state.value.previewRevision
         withContext(accounts.context) { updates.emit(RepoUpdateEvent.CodeChanged("owner", "repo", ref, "commit", listOf("docs/images/a.png"))) }
         coVerify(exactly = 2) { repository.getPathContent("owner", "repo", ref, path) }
         assertTrue(vm.state.value.previewRevision > previous)
     }
 
+
+    @Test fun allDocumentExtensionsDefaultToPreview() = runTest {
+        for (extension in listOf("md", "MARKDOWN", "html", "HTM")) {
+            val path = "docs/guide.$extension"
+            coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "Document"))
+            val vm = viewModel()
+            vm.init("owner", "repo", ref, path)
+            assertTrue(extension, vm.state.value.previewMode)
+            assertTrue(vm.state.value.canSwitchDisplayMode)
+            assertFalse(vm.state.value.wrapLines)
+        }
+    }
+
+    @Test fun modeAndWrapChangesDoNotReloadAndSurviveRefreshAndFailure() = runTest {
+        val path = "README.md"
+        val content = file(path, "# Guide")
+        coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(content)
+        val vm = viewModel()
+        vm.init("owner", "repo", ref, path)
+        vm.setPreviewMode(false)
+        vm.setWrapLines(true)
+        vm.setPreviewMode(true)
+        vm.setPreviewMode(false)
+        coVerify(exactly = 1) { repository.getPathContent("owner", "repo", ref, path) }
+        withContext(accounts.context) { updates.emit(RepoUpdateEvent.CodeChanged("owner", "repo", ref, "next", listOf(path))) }
+        assertFalse(vm.state.value.previewMode)
+        assertTrue(vm.state.value.wrapLines)
+        coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Failure(ApiError.NetworkError)
+        vm.retry()
+        assertTrue(vm.state.value.loadFailed)
+        assertFalse(vm.state.value.previewMode)
+        assertTrue(vm.state.value.wrapLines)
+        coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(content)
+        vm.retry()
+        assertFalse(vm.state.value.previewMode)
+        assertTrue(vm.state.value.wrapLines)
+    }
+
+    @Test fun missingTextIsNotAnEmptyPreviewWhileEmptyAndTruncatedTextRemainAvailable() = runTest {
+        for (extension in listOf("md", "html", "kt")) {
+            val path = "file.$extension"
+            coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "").copy(text = null))
+            val missing = viewModel().apply { init("owner", "repo", ref, path) }.state.value
+            assertFalse(missing.sourceAvailable)
+            assertFalse(missing.previewSupported)
+            assertNull(missing.previewHtml)
+            for (content in listOf(file(path, ""), file(path, "partial").copy(isTruncated = true))) {
+                coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(content)
+                val state = viewModel().apply { init("owner", "repo", ref, path) }.state.value
+                assertTrue(state.sourceAvailable)
+                assertEquals(extension != "kt", state.previewMode)
+                assertEquals(content, state.file)
+            }
+        }
+    }
+
+    @Test fun firstAvailableDocumentDefaultsToPreviewAfterMissingText() = runTest {
+        val path = "README.md"
+        coEvery { repository.getPathContent("owner", "repo", ref, path) } returnsMany listOf(
+            ApiResult.Success(file(path, "").copy(text = null)),
+            ApiResult.Success(file(path, "# Guide")),
+        )
+        val vm = viewModel()
+        vm.init("owner", "repo", ref, path)
+        assertFalse(vm.state.value.previewSupported)
+        vm.retry()
+        assertTrue(vm.state.value.previewMode)
+    }
+
+    @Test fun binaryImagesCannotSwitchToUnavailableSource() = runTest {
+        val path = "image.png"
+        coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "").copy(isBinary = true, text = null))
+        val vm = viewModel()
+        vm.init("owner", "repo", ref, path)
+        vm.setPreviewMode(false)
+        assertFalse(vm.state.value.canSwitchDisplayMode)
+        assertTrue(vm.state.value.previewMode)
+    }
 }

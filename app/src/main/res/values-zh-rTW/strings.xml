@@ -929,4 +929,9 @@
     <string name="search_list_separator">、</string>
     <string name="search_updated">%1$s更新</string>
     <string name="search_loading">正在搜尋</string>
+    <string name="repo_file_source">原始碼</string>
+    <string name="repo_file_wrap_lines">自動換行</string>
+    <string name="repo_file_empty">空檔案</string>
+    <string name="repo_file_text_unavailable">無法顯示此檔案的文字</string>
+    <string name="repo_file_truncated">僅顯示部分內容，請下載查看完整檔案</string>
 </resources>

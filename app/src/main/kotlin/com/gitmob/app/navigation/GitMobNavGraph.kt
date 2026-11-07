@@ -288,7 +288,7 @@ private fun LoggedInApp(
         repoUpdateEventBus.eventsFor(epoch).collect(navigator::onRepositoryUpdate)
     }
 
-    fun navigateDeepLink(destination: DeepLinkDestination, preview: Boolean = false) {
+    fun navigateDeepLink(destination: DeepLinkDestination) {
         if (!epoch.isCurrent) return
         when (destination) {
             is DeepLinkDestination.GistDetail -> navigator.navigate(GistDetailRoute(destination.id))
@@ -296,7 +296,7 @@ private fun LoggedInApp(
             is DeepLinkDestination.RepoOverview -> navigator.navigate(RepoDetailRoute(destination.owner, destination.repo))
             is DeepLinkDestination.IssueList -> navigator.navigate(RepoIssuesRoute(destination.owner, destination.repo))
             is DeepLinkDestination.IssueDetail -> navigator.navigate(RepoIssueDetailRoute(destination.owner, destination.repo, destination.number))
-            is DeepLinkDestination.FileView -> navigator.navigate(RepoFileDetailRoute(destination.owner, destination.repo, destination.ref, destination.path, initialPreview = preview))
+            is DeepLinkDestination.FileView -> navigator.navigate(RepoFileDetailRoute(destination.owner, destination.repo, destination.ref, destination.path))
             is DeepLinkDestination.DirView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref, destination.path))
             is DeepLinkDestination.CommitDetail -> navigator.navigate(RepoCommitDetailRoute(destination.owner, destination.repo, destination.sha))
             is DeepLinkDestination.CommitList -> navigator.navigate(RepoCommitsRoute(destination.owner, destination.repo, destination.ref, destination.path))
@@ -317,14 +317,14 @@ private fun LoggedInApp(
             if (document.filePath.isEmpty() || document.filePath.endsWith('/')) {
                 navigator.navigate(RepoCodeRoute(document.owner, document.name, document.ref, document.filePath.trimEnd('/')))
             } else {
-                navigator.navigate(RepoFileDetailRoute(document.owner, document.name, document.ref, document.filePath, initialPreview = true))
+                navigator.navigate(RepoFileDetailRoute(document.owner, document.name, document.ref, document.filePath))
             }
         }
     }
     val openDocumentExternal: (String) -> Unit = { url ->
         val destination = DeepLinkRouter.parse(Uri.parse(url))
         if (destination == DeepLinkDestination.Unsupported) openExternalUrl(url)
-        else navigateDeepLink(destination, preview = true)
+        else navigateDeepLink(destination)
     }
     LaunchedEffect(deepLinkDestination) {
         if (!epoch.isCurrent) return@LaunchedEffect
@@ -962,7 +962,6 @@ private fun LoggedInApp(
                             navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, route.path, route.permission))
                         }
                     },
-                    initialPreview = route.initialPreview,
                     onDocumentLink = openDocument,
                     onDocumentExternalLink = openDocumentExternal,
                     owner = route.owner,

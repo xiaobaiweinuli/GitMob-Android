@@ -36,11 +36,15 @@ data class RepoFileDetailUiState(
     val previewSupported: Boolean = false,
     val imagePreview: Boolean = false,
     val previewMode: Boolean = false,
+    val wrapLines: Boolean = false,
     val isDeleting: Boolean = false,
     val isDownloading: Boolean = false,
     val isLoading: Boolean = false,
     val loadFailed: Boolean = false,
-)
+) {
+    val sourceAvailable: Boolean get() = file?.let { !it.isBinary && it.text != null } == true
+    val canSwitchDisplayMode: Boolean get() = previewSupported && sourceAvailable
+}
 
 @HiltViewModel
 class RepoFileDetailViewModel @Inject constructor(
@@ -63,10 +67,9 @@ class RepoFileDetailViewModel @Inject constructor(
     private var ref = ""
     private var path = ""
 
-    fun init(owner: String, name: String, ref: String, path: String, initialPreview: Boolean = false) {
+    fun init(owner: String, name: String, ref: String, path: String) {
         if (initialized) return
         initialized = true; this.owner = owner; this.name = name; this.ref = ref; this.path = path
-        _state.update { it.copy(previewMode = initialPreview) }
         observeCodeChanges()
         load(refreshResources = false)
     }
@@ -100,11 +103,11 @@ class RepoFileDetailViewModel @Inject constructor(
                     }
                     val extension = path.substringAfterLast('.', "").lowercase()
                     val imagePreview = isPreviewableImage(file.path)
-                    val supported = !file.isBinary && extension in setOf("md", "markdown", "html", "htm")
+                    val supported = !file.isBinary && file.text != null && extension in setOf("md", "markdown", "html", "htm")
                     val html = when {
                         !supported -> null
                         extension == "html" || extension == "htm" -> file.text
-                        else -> file.text?.let(markdownRenderer::renderToHtml)
+                        else -> markdownRenderer.renderToHtml(file.text)
                     }
                     _state.update {
                         it.copy(
@@ -113,7 +116,11 @@ class RepoFileDetailViewModel @Inject constructor(
                             previewContext = RepoDocumentContext(owner, name, ref, file.path).takeIf { html != null || imagePreview },
                             previewSupported = supported || imagePreview,
                             imagePreview = imagePreview,
-                            previewMode = if (imagePreview && it.file == null) true else it.previewMode,
+                            previewMode = when {
+                                !supported && !imagePreview -> false
+                                !it.previewSupported || file.isBinary || file.text == null -> true
+                                else -> it.previewMode
+                            },
                             isLoading = false,
                         )
                     }
@@ -124,7 +131,10 @@ class RepoFileDetailViewModel @Inject constructor(
     }
 
     fun retry() = load()
-    fun setPreviewMode(value: Boolean) = _state.update { it.copy(previewMode = value) }
+    fun setPreviewMode(value: Boolean) = _state.update {
+        if (it.canSwitchDisplayMode) it.copy(previewMode = value) else it
+    }
+    fun setWrapLines(value: Boolean) = _state.update { it.copy(wrapLines = value) }
 
     fun deleteFile(message: String, onDeleted: () -> Unit) {
         val file = _state.value.file ?: return

@@ -162,7 +162,6 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
     val ref: String,
     val path: String,
     val permission: RepoPermission? = null,
-    val initialPreview: Boolean = false,
 ) : Route
 @Serializable data class RepoFileEditorRoute(
     val owner: String,

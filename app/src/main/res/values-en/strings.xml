@@ -930,4 +930,9 @@
     <string name="search_list_separator">", "</string>
     <string name="search_updated">Updated %1$s</string>
     <string name="search_loading">Searching</string>
+    <string name="repo_file_source">Source</string>
+    <string name="repo_file_wrap_lines">Word wrap</string>
+    <string name="repo_file_empty">Empty file</string>
+    <string name="repo_file_text_unavailable">Text is unavailable for this file</string>
+    <string name="repo_file_truncated">Showing partial content. Download to view the full file.</string>
 </resources>
