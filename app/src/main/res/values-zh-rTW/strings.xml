@@ -820,4 +820,18 @@
     <string name="favorites_summary">%1$d 個收藏 · %2$d 個分組</string>
     <string name="favorites_default_count">%1$d 個儲存庫 · 未分類的收藏</string>
     <string name="favorites_local_hint">收藏不會變更儲存庫的 GitHub 星號。</string>
+    <string name="image_source_tab">程式碼</string>
+    <string name="image_viewer_title">檢視圖片</string>
+    <string name="image_viewer_close">關閉圖片檢視器</string>
+    <string name="image_actions">圖片操作</string>
+    <string name="image_open_original_link">開啟原始連結</string>
+    <string name="image_fit_screen">符合螢幕</string>
+    <string name="image_zoom_reset">%1$d%% · 重設</string>
+    <string name="image_zoom_percent">縮放 %1$d%%</string>
+    <string name="image_zoom_in">放大圖片</string>
+    <string name="image_zoom_out">縮小圖片</string>
+    <string name="image_gesture_hint">雙指縮放 · 點兩下放大 · 放大後拖曳</string>
+    <string name="image_preview_failed">圖片載入失敗，請重試</string>
+    <string name="image_file_size">%1$d 位元組</string>
+    <string name="image_preview_too_large">圖片超過 8 MiB 預覽限制，可下載後檢視</string>
 </resources>

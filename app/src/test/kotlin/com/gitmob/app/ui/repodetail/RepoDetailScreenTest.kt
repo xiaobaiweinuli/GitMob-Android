@@ -406,7 +406,7 @@ class RepoDetailScreenTest {
                 listOf(target), false, null,
             ),
         )
-        viewModel = RepoDetailViewModel(repository, owners, stars, mockk(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub())
+        viewModel = RepoDetailViewModel(repository, owners, stars, mockk(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
         libraryViewModel = com.gitmob.app.ui.library.LibraryViewModel(libraryRepositoryStub(), ErrorEventBus(), accounts.session)
         val accountLibrary = com.gitmob.app.ui.library.AccountLibraryViewModel(libraryRepositoryStub(), ErrorEventBus(), accounts.session)
         composeRule.setContent {

@@ -1,6 +1,22 @@
 package com.gitmob.app.ui.common
 
+import android.net.Uri
+import android.webkit.WebResourceRequest
+import android.view.View
 import android.view.ViewGroup
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.test.junit4.v2.createComposeRule
+import com.gitmob.app.data.model.RepoDocumentContext
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.Rule
+import org.robolectric.Shadows.shadowOf
 import android.webkit.WebView
 import android.widget.FrameLayout
 import org.junit.Assert.assertEquals
@@ -18,6 +34,70 @@ import org.robolectric.util.ReflectionHelpers
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class MarkdownWebViewTest {
+    @get:Rule val composeRule = createComposeRule()
+
+    @Test fun genericMarkdownDelegatesLinksExternallyAfterRepositoryContent() {
+        val resources = mockk<RepoDocumentResources>(relaxed = true) {
+            every { document } returns RepoDocumentContext("owner", "repo", "main", "README.md")
+        }
+        val externalLinks = mutableListOf<String>()
+        val currentResources = mutableStateOf<RepoDocumentResources?>(null)
+        lateinit var root: View
+        composeRule.setContent {
+            val view = LocalView.current
+            SideEffect { root = view.rootView }
+            CompositionLocalProvider(LocalUriHandler provides object : UriHandler {
+                override fun openUri(uri: String) { externalLinks.add(uri) }
+            }) {
+                MaterialTheme {
+                    MarkdownWebView(
+                        "<a href='https://example.com'>External</a>",
+                        documentResources = currentResources.value,
+                    )
+                }
+            }
+        }
+        fun findWebView(view: View): WebView? {
+            if (view is WebView) return view
+            if (view is ViewGroup) for (index in 0 until view.childCount) {
+                findWebView(view.getChildAt(index))?.let { return it }
+            }
+            return null
+        }
+        composeRule.runOnIdle {
+            assertTrue(shadowOf(requireNotNull(findWebView(root))).webViewClient is ExternalLinkWebViewClient)
+            currentResources.value = resources
+        }
+        composeRule.runOnIdle {
+            assertTrue(shadowOf(requireNotNull(findWebView(root))).webViewClient is RepoDocumentWebViewClient)
+            currentResources.value = null
+        }
+        composeRule.runOnIdle {
+            val webView = requireNotNull(findWebView(root))
+            val request = mockk<WebResourceRequest> {
+                every { url } returns Uri.parse("https://example.com")
+                every { isForMainFrame } returns true
+            }
+            assertTrue(requireNotNull(shadowOf(webView).webViewClient).shouldOverrideUrlLoading(webView, request))
+            assertEquals(listOf("https://example.com"), externalLinks)
+            assertTrue(shadowOf(webView).lastLoadDataWithBaseURL.data.contains("External"))
+        }
+    }
+
+
+    @Test fun genericMarkdownKeepsPageAnchorsInsideTheDocument() {
+        val webView = mockk<WebView> {
+            every { url } returns "file:///android_asset/"
+        }
+        val links = mutableListOf<String>()
+        val client = ExternalLinkWebViewClient { links.add(it) }
+        val request = mockk<WebResourceRequest> {
+            every { url } returns Uri.parse("file:///android_asset/#section")
+            every { isForMainFrame } returns true
+        }
+        assertFalse(client.shouldOverrideUrlLoading(webView, request))
+        assertTrue(links.isEmpty())
+    }
 
     @Test
     fun `WebView由单子节点FrameLayout托管`() {
@@ -51,7 +131,7 @@ class MarkdownWebViewTest {
     fun `生成的Markdown文档使用Material主题覆盖GitHub固定背景`() {
         val document = buildMarkdownDocument(
             bodyHtml = "<h1>Hello</h1>",
-            cssFileName = "github-markdown-light.css",
+            stylesheet = ".markdown-body { color: black; }",
             backgroundCss = "#123456",
         )
 
@@ -68,12 +148,12 @@ class MarkdownWebViewTest {
     fun `生成的Markdown文档使用调用方传入的容器背景`() {
         val document = buildMarkdownDocument(
             bodyHtml = "<p>Comment</p>",
-            cssFileName = "github-markdown-dark.css",
+            stylesheet = ".markdown-body { color: white; }",
             backgroundCss = "#202124",
         )
 
         assertTrue(document.contains("background-color: #202124 !important;"))
-        assertTrue(document.contains("github-markdown-dark.css"))
+        assertTrue(document.contains(".markdown-body { color: white; }"))
     }
 
     @Test

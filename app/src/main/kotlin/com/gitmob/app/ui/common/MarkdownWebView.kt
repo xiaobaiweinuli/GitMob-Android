@@ -5,11 +5,25 @@ import android.content.Context
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebSettings
+import android.webkit.WebResourceRequest
+import android.webkit.WebViewClient
 import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.net.toUri
+import androidx.compose.runtime.getValue
+import com.gitmob.app.data.model.DocumentImage
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import com.gitmob.app.core.markdown.baseUrl
+import com.gitmob.app.data.model.RepoDocumentContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -38,6 +52,9 @@ fun MarkdownWebView(
     bodyHtml: String,
     modifier: Modifier = Modifier,
     backgroundColor: Color = MaterialTheme.colorScheme.background,
+    documentResources: RepoDocumentResources? = null,
+    onDocumentLink: (RepoDocumentContext) -> Unit = {},
+    onExternalLink: ((String) -> Unit)? = null,
 ) {
     val cssFileName = if (backgroundColor.luminance() < 0.5f) {
         "github-markdown-dark.css"
@@ -45,6 +62,25 @@ fun MarkdownWebView(
         "github-markdown-light.css"
     }
     val backgroundCss = backgroundColor.toCssHex()
+    val context = LocalContext.current
+    val stylesheet = remember(context, cssFileName) {
+        context.assets.open(cssFileName).bufferedReader().use { it.readText() }
+    }
+    var selectedImage by remember(bodyHtml, documentResources) { mutableStateOf<DocumentImage?>(null) }
+    val currentDocumentLink by rememberUpdatedState(onDocumentLink)
+    val uriHandler = LocalUriHandler.current
+    val currentExternalLink by rememberUpdatedState<(String) -> Unit> { url ->
+        if (onExternalLink != null) onExternalLink(url)
+        else runCatching { uriHandler.openUri(url) }
+    }
+    val client = remember(documentResources) {
+        documentResources?.let { resources ->
+            RepoDocumentWebViewClient(resources, { currentDocumentLink(it) }, { currentExternalLink(it) })
+        } ?: ExternalLinkWebViewClient { currentExternalLink(it) }
+    }
+    DisposableEffect(documentResources) {
+        onDispose { documentResources?.close() }
+    }
 
     // Markdown 正文可能很大，只有正文或主题实际变化时才重新拼装完整文档。
     val fullHtml = remember(
@@ -54,12 +90,12 @@ fun MarkdownWebView(
     ) {
         buildMarkdownDocument(
             bodyHtml = bodyHtml,
-            cssFileName = cssFileName,
+            stylesheet = stylesheet,
             backgroundCss = backgroundCss,
         )
     }
     // AndroidView 的 update 会因无关重组反复执行，用稳定 key 防止 WebView 整页重载。
-    val pageKey = remember(fullHtml) { Any() }
+    val pageKey = remember(fullHtml, documentResources) { Any() }
     // onGloballyPositioned 回调里需要拿到 factory 创建的 WebView 实例。
     val webViewHolder = remember { WebViewHolder() }
 
@@ -77,6 +113,7 @@ fun MarkdownWebView(
             },
         factory = { context ->
             val webView = NoVerticalScrollWebView(context).apply {
+                onImageClick = { selectedImage = it }
                 settings.javaScriptEnabled = false // 渲染 Markdown 不需要执行 JS，默认关闭更安全
                 // Chromium 默认不为"已 attach 但不在屏幕上"的 WebView 光栅化，从屏幕外
                 // 滚入时会先露出空白。官方 GitHub App 的 README WebView 也靠这个开关
@@ -118,10 +155,15 @@ fun MarkdownWebView(
         },
         update = { host ->
             val webView = host.getChildAt(0) as? WebView ?: return@AndroidView
+            (webView as? NoVerticalScrollWebView)?.onImageClick = { selectedImage = it }
             if (webView.tag !== pageKey) {
                 webView.tag = pageKey
+                webView.setWebViewClient(client)
+                webView.settings.allowFileAccess = false
+                webView.settings.allowContentAccess = documentResources == null
+                webView.settings.cacheMode = if (documentResources == null) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_NO_CACHE
                 webView.loadDataWithBaseURL(
-                    "file:///android_asset/",
+                    documentResources?.document?.baseUrl()?.toString() ?: "file:///android_asset/",
                     fullHtml,
                     "text/html",
                     "UTF-8",
@@ -130,10 +172,43 @@ fun MarkdownWebView(
             }
         },
         onRelease = { host ->
+            documentResources?.close()
+            (webViewHolder.webView as? NoVerticalScrollWebView)?.onImageClick = null
             webViewHolder.webView = null
             releaseMarkdownWebViewHost(host)
         },
     )
+    selectedImage?.let { image ->
+        DocumentImageViewer(image, documentResources?.document, { selectedImage = null }, { link ->
+            if (client is RepoDocumentWebViewClient) {
+                if (!client.openLink(link)) {
+                    documentResources?.document?.baseUrl()?.resolve(link)?.let {
+                        webViewHolder.webView?.loadUrl(it.toString())
+                    }
+                }
+            } else {
+                val uri = link.toUri()
+                if (uri.scheme in setOf("https", "http") && uri.userInfo.isNullOrEmpty()) {
+                    currentExternalLink(link)
+                }
+            }
+        })
+    }
+}
+
+/** Generic Markdown delegates links to the system instead of replacing its embedded document. */
+internal class ExternalLinkWebViewClient(private val onExternalLink: (String) -> Unit) : WebViewClient() {
+    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+        if (request.isForMainFrame) openLink(view, request.url.toString()) else true
+
+    @Deprecated("Used by older WebView implementations")
+    override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean = openLink(view, url)
+
+    private fun openLink(view: WebView, url: String): Boolean {
+        if ('#' in url && url.substringBefore('#') == view.url?.substringBefore('#')) return false
+        onExternalLink(url)
+        return true
+    }
 }
 
 /** 供 onGloballyPositioned 回调访问 factory 里创建的 WebView，不参与重组。 */
@@ -153,6 +228,20 @@ private class WebViewHolder {
  * 代码块/表格的横向滑动是页面内元素级滚动，不产生 View 级垂直偏移，不受影响。
  */
 internal class NoVerticalScrollWebView(context: Context) : WebView(context) {
+    var onImageClick: ((DocumentImage) -> Unit)? = null
+    private val images = MarkdownImageTapHandler(this) { onImageClick?.invoke(it) }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (onImageClick != null && images.onTouch(event) && event.actionMasked == MotionEvent.ACTION_UP) {
+            val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+            super.onTouchEvent(cancel)
+            cancel.recycle()
+            return true
+        }
+        return super.onTouchEvent(event)
+    }
+
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
         if (t != 0) scrollTo(l, 0)
@@ -181,7 +270,7 @@ internal fun releaseMarkdownWebViewHost(host: FrameLayout) {
 
 internal fun buildMarkdownDocument(
     bodyHtml: String,
-    cssFileName: String,
+    stylesheet: String,
     backgroundCss: String,
 ): String =
     """
@@ -189,7 +278,7 @@ internal fun buildMarkdownDocument(
         <html lang="zh">
         <head>
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <link rel="stylesheet" href="file:///android_asset/$cssFileName">
+            <style>$stylesheet</style>
             <style>
                 html, body, .markdown-body {
                     background-color: $backgroundCss !important;

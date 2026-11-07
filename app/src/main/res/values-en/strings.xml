@@ -821,4 +821,18 @@
     <string name="favorites_summary">Favorites: %1$d · Groups: %2$d</string>
     <string name="favorites_default_count">%1$d repositories · Ungrouped favorites</string>
     <string name="favorites_local_hint">Favorites do not change GitHub stars.</string>
+    <string name="image_source_tab">Code</string>
+    <string name="image_viewer_title">View image</string>
+    <string name="image_viewer_close">Close image viewer</string>
+    <string name="image_actions">Image actions</string>
+    <string name="image_open_original_link">Open original link</string>
+    <string name="image_fit_screen">Fit to screen</string>
+    <string name="image_zoom_reset">%1$d%% · Reset</string>
+    <string name="image_zoom_percent">Zoom %1$d%%</string>
+    <string name="image_zoom_in">Zoom in</string>
+    <string name="image_zoom_out">Zoom out</string>
+    <string name="image_gesture_hint">Pinch to zoom · Double-tap to enlarge · Drag when zoomed</string>
+    <string name="image_preview_failed">Image could not be loaded. Try again.</string>
+    <string name="image_file_size">%1$d bytes</string>
+    <string name="image_preview_too_large">Image exceeds the 8 MiB preview limit. Download it to view.</string>
 </resources>

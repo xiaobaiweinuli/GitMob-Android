@@ -53,6 +53,10 @@ data class RepoCodeTree(
     val entries: List<RepoTreeEntry>,
 )
 
+sealed interface RepoPathContent {
+    data object Directory : RepoPathContent
+}
+
 data class RepoFileContent(
     val repositoryId: String,
     val permission: RepoPermission,
@@ -66,7 +70,7 @@ data class RepoFileContent(
     val isBinary: Boolean,
     val isTruncated: Boolean,
     val text: String?,
-)
+) : RepoPathContent
 
 enum class RepoChangedFileStatus { ADDED, MODIFIED, DELETED, RENAMED, COPIED, UNKNOWN }
 

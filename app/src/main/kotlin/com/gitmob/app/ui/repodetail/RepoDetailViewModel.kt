@@ -1,5 +1,8 @@
 package com.gitmob.app.ui.repodetail
 
+import com.gitmob.app.data.model.RepoDocumentContext
+import com.gitmob.app.data.repository.RepoDocumentRepository
+import com.gitmob.app.ui.common.RepoDocumentResources
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
@@ -44,6 +47,8 @@ import javax.inject.Inject
 data class RepoDetailUiState(
     val detail: RepoDetail? = null,
     val readmeHtml: String? = null,
+    val readmeRevision: Long = 0,
+    val readmeContext: RepoDocumentContext? = null,
     val readmeTruncated: Boolean = false,
     val isLoadingReadme: Boolean = false,
     val currentRef: String? = null, // null 表示还没加载出 defaultBranchRef
@@ -104,12 +109,16 @@ class RepoDetailViewModel @Inject constructor(
     private val transferPendingStore: RepoTransferPendingStore,
     session: AccountSession,
     private val library: LibraryRepository,
+    private val documentRepository: RepoDocumentRepository,
 ) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(RepoDetailUiState())
     val state: StateFlow<RepoDetailUiState> = _state.asStateFlow()
 
     private var visitRecorded = false
+    fun createDocumentResources(document: RepoDocumentContext) =
+        RepoDocumentResources(document, accountEpoch, documentRepository)
+
     private var initialized = false
     private lateinit var owner: String
     private lateinit var name: String
@@ -126,11 +135,13 @@ class RepoDetailViewModel @Inject constructor(
         this.owner = owner
         this.name = name
         observePendingTransfer()
-        load()
+        load(refreshResources = false)
         observeRepoUpdates()
     }
 
-    fun load() {
+    fun load() = load(refreshResources = true)
+
+    private fun load(refreshResources: Boolean) {
         val state = _state.value
         if (state.deleted || state.isManaging || state.isStarring || state.showStarListSelector ||
             state.showCreateListDialog || state.isSavingStarLists || state.isCreatingList
@@ -165,7 +176,7 @@ class RepoDetailViewModel @Inject constructor(
                             }
                         }
                     }
-                    loadReadme()
+                    loadReadme(refreshResources)
                     loadStarLists(refresh = true)
                 }
                 is ApiResult.Failure -> {
@@ -193,7 +204,8 @@ class RepoDetailViewModel @Inject constructor(
                         it.copy(detail = it.detail?.copy(viewerSubscription = event.viewerSubscription, watcherCount = event.watcherCount))
                     }
                     is RepoUpdateEvent.RepositoryChanged -> _state.update { it.copy(detail = event.detail) }
-                    is RepoUpdateEvent.BranchSynced -> if (event.ref == _state.value.currentRef) loadReadme()
+                    is RepoUpdateEvent.BranchSynced -> if (event.ref == _state.value.currentRef) loadReadme(refreshResources = true)
+                    is RepoUpdateEvent.CodeChanged -> if (event.ref == _state.value.currentRef) loadReadme(refreshResources = true)
                     else -> Unit
                 }
             }
@@ -271,11 +283,13 @@ class RepoDetailViewModel @Inject constructor(
         }
     }
 
-    private fun loadReadme() {
+    private fun loadReadme(refreshResources: Boolean = false) {
         val ref = _state.value.currentRef ?: return
+        val document = RepoDocumentContext(owner, name, ref, "README.md")
         readmeJob?.cancel()
         readmeJob = viewModelScope.launch {
-            _state.update { it.copy(isLoadingReadme = true) }
+            if (refreshResources) documentRepository.invalidate(document)
+            _state.update { it.copy(isLoadingReadme = true, readmeHtml = null, readmeContext = null, readmeRevision = it.readmeRevision + 1) }
             when (val result = repoDetailRepository.getReadme(owner, name, ref)) {
                 is ApiResult.Success -> {
                     val markdown = result.data.markdown
@@ -286,12 +300,12 @@ class RepoDetailViewModel @Inject constructor(
                         }
                     }
                     _state.update {
-                        it.copy(readmeHtml = html, readmeTruncated = result.data.isTruncated, isLoadingReadme = false)
+                        it.copy(readmeHtml = html, readmeContext = document.takeIf { html != null }, readmeTruncated = result.data.isTruncated, isLoadingReadme = false)
                     }
                 }
                 is ApiResult.Failure -> {
                     // README 拿不到不算整页失败（很多仓库确实没有 README），静默处理即可
-                    _state.update { it.copy(readmeHtml = null, isLoadingReadme = false) }
+                    _state.update { it.copy(readmeHtml = null, readmeContext = null, isLoadingReadme = false) }
                 }
             }
         }

@@ -1,5 +1,7 @@
 package com.gitmob.app.navigation
 
+import android.net.Uri
+import com.gitmob.app.data.model.RepoDocumentContext
 import androidx.activity.compose.LocalActivity
 import androidx.annotation.StringRes
 import androidx.compose.animation.ContentTransform
@@ -280,16 +282,15 @@ private fun LoggedInApp(
         repoUpdateEventBus.eventsFor(epoch).collect(navigator::onRepositoryUpdate)
     }
 
-    LaunchedEffect(deepLinkDestination) {
-        if (!epoch.isCurrent) return@LaunchedEffect
-        val destination = deepLinkDestination ?: return@LaunchedEffect
+    fun navigateDeepLink(destination: DeepLinkDestination, preview: Boolean = false) {
+        if (!epoch.isCurrent) return
         when (destination) {
             is DeepLinkDestination.GistDetail -> navigator.navigate(GistDetailRoute(destination.id))
             is DeepLinkDestination.Profile -> navigator.navigate(ProfileRoute(destination.login))
             is DeepLinkDestination.RepoOverview -> navigator.navigate(RepoDetailRoute(destination.owner, destination.repo))
             is DeepLinkDestination.IssueList -> navigator.navigate(RepoIssuesRoute(destination.owner, destination.repo))
             is DeepLinkDestination.IssueDetail -> navigator.navigate(RepoIssueDetailRoute(destination.owner, destination.repo, destination.number))
-            is DeepLinkDestination.FileView -> navigator.navigate(RepoFileDetailRoute(destination.owner, destination.repo, destination.ref, destination.path))
+            is DeepLinkDestination.FileView -> navigator.navigate(RepoFileDetailRoute(destination.owner, destination.repo, destination.ref, destination.path, initialPreview = preview))
             is DeepLinkDestination.DirView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref, destination.path))
             is DeepLinkDestination.CommitDetail -> navigator.navigate(RepoCommitDetailRoute(destination.owner, destination.repo, destination.sha))
             is DeepLinkDestination.CommitList -> navigator.navigate(RepoCommitsRoute(destination.owner, destination.repo, destination.ref, destination.path))
@@ -304,6 +305,25 @@ private fun LoggedInApp(
             is DeepLinkDestination.Contributors -> navigator.navigate(RepoContributorsRoute(destination.owner, destination.repo))
             DeepLinkDestination.BrowserUnavailable, DeepLinkDestination.Unsupported -> Unit
         }
+    }
+    val openDocument: (RepoDocumentContext) -> Unit = { document ->
+        if (epoch.isCurrent) {
+            if (document.filePath.isEmpty() || document.filePath.endsWith('/')) {
+                navigator.navigate(RepoCodeRoute(document.owner, document.name, document.ref, document.filePath.trimEnd('/')))
+            } else {
+                navigator.navigate(RepoFileDetailRoute(document.owner, document.name, document.ref, document.filePath, initialPreview = true))
+            }
+        }
+    }
+    val openDocumentExternal: (String) -> Unit = { url ->
+        val destination = DeepLinkRouter.parse(Uri.parse(url))
+        if (destination == DeepLinkDestination.Unsupported) openExternalUrl(url)
+        else navigateDeepLink(destination, preview = true)
+    }
+    LaunchedEffect(deepLinkDestination) {
+        if (!epoch.isCurrent) return@LaunchedEffect
+        val destination = deepLinkDestination ?: return@LaunchedEffect
+        navigateDeepLink(destination)
         onDeepLinkConsumed()
     }
 
@@ -476,6 +496,8 @@ private fun LoggedInApp(
         entry<RepoDetailRoute> { route ->
             RepoDetailScreen(
                 accountLibrary = accountLibrary,
+                onDocumentLink = openDocument,
+                onDocumentExternalLink = openDocumentExternal,
                 owner = route.owner,
                 name = route.name,
                 onBack = { navigator.goBack() },
@@ -889,6 +911,15 @@ private fun LoggedInApp(
         }
         entry<RepoFileDetailRoute> { route ->
             RepoFileDetailScreen(
+                onDirectoryFound = {
+                    if (epoch.isCurrent && navState.backStacks[navState.topLevelRoute]?.lastOrNull() == route) {
+                        navigator.goBack()
+                        navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, route.path, route.permission))
+                    }
+                },
+                initialPreview = route.initialPreview,
+                onDocumentLink = openDocument,
+                onDocumentExternalLink = openDocumentExternal,
                 owner = route.owner,
                 name = route.name,
                 ref = route.ref,

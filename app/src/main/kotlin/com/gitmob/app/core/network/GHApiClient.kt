@@ -7,6 +7,7 @@ import com.gitmob.app.core.error.UnauthorizedException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -87,8 +88,15 @@ class GHApiClient @Inject constructor(
     suspend fun getRaw(path: String, accept: String): String = executeRestRaw("GET", path, accept)
 
     /** 二进制文件和目录 ZIP 组装使用；不得先转 String，避免破坏任意字节内容。 */
-    suspend fun getRawBytes(path: String, accept: String): ByteArray =
-        readRest("GET", path, body = null, accept = accept)
+    suspend fun getRawBytes(path: String, accept: String, maxBytes: Int? = null): ByteArray =
+        readRest("GET", path, body = null, accept = accept, maxBytes = maxBytes)
+
+    /** Public image fetches never receive API credentials or GitHub-specific headers. */
+    internal suspend fun getPublicImageBytes(url: String, maxBytes: Int): ByteArray {
+        val parsed = url.toHttpUrl()
+        require(parsed.username.isEmpty() && parsed.password.isEmpty())
+        return readUpload(Request.Builder().url(parsed).header("Accept", "image/*").get().build(), maxBytes)
+    }
 
     /**
      * Resolve a GitHub REST download endpoint without following its redirect.
@@ -161,7 +169,7 @@ class GHApiClient @Inject constructor(
     // 但它自己内部访问 restBaseUrl 这些私有成员没问题——它本身不是 inline，字节码不会被
     // 复制到别处，"泄漏"规则只约束 inline 函数体直接引用到的符号，不会顺着调用链传递。
     @PublishedApi
-    internal suspend fun readRest(method: String, path: String, body: String?, accept: String): ByteArray {
+    internal suspend fun readRest(method: String, path: String, body: String?, accept: String, maxBytes: Int? = null): ByteArray {
         val epoch = AccountContext.ensureCurrent()
         val token = tokenProvider.getToken() ?: throw UnauthorizedException()
         epoch.ensureCurrent()
@@ -191,14 +199,24 @@ class GHApiClient @Inject constructor(
             else -> throw IllegalArgumentException("不支持的方法: $method")
         }.build()
 
-        return readUpload(request)
+        return readUpload(request, maxBytes)
     }
 
     @PublishedApi
-    internal suspend fun readUpload(request: Request): ByteArray {
+    internal suspend fun readUpload(request: Request, maxBytes: Int? = null): ByteArray {
         val epoch = AccountContext.ensureCurrent()
         return okHttpClient.newCall(request).readCancellable { response ->
-            val bytes = response.body.bytes()
+            if (maxBytes != null && !response.isSuccessful) throw HttpStatusException(response.code, "Image request failed")
+            val bytes = if (maxBytes == null) response.body.bytes() else {
+                require(maxBytes > 0)
+                if (response.body.contentLength() > maxBytes) throw ResourceSizeLimitException()
+                val buffer = okio.Buffer()
+                val source = response.body.source()
+                while (source.read(buffer, minOf(8192L, maxBytes.toLong() + 1 - buffer.size)) != -1L) {
+                    if (buffer.size > maxBytes) throw ResourceSizeLimitException()
+                }
+                buffer.readByteArray()
+            }
             if (!response.isSuccessful) throw HttpStatusException(response.code, bytes.decodeToString())
             bytes
         }.also { epoch.ensureCurrent() }

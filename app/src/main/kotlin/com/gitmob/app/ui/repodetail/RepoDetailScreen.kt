@@ -78,6 +78,7 @@ import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.FavoriteItem
 import com.gitmob.app.data.model.RepoDetail
+import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.common.GitHubEmojiText
 import com.gitmob.app.ui.common.RepoMetadataLinkRow
@@ -116,6 +117,8 @@ fun RepoDetailScreen(
     onNavigatePlaceholder: (label: String) -> Unit,
     onRepositoryAddressChanged: (String, String) -> Unit,
     onRepositoryDeleted: () -> Unit,
+    onDocumentLink: (RepoDocumentContext) -> Unit = {},
+    onDocumentExternalLink: (String) -> Unit = {},
     viewModel: RepoDetailViewModel = hiltViewModel(),
     libraryViewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -251,7 +254,15 @@ fun RepoDetailScreen(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                                 )
                             }
-                            MarkdownWebView(bodyHtml = readmeHtml)
+                            val documentResources = remember(readmeHtml, state.readmeContext, state.readmeRevision, viewModel) {
+                                state.readmeContext?.let(viewModel::createDocumentResources)
+                            }
+                            MarkdownWebView(
+                                bodyHtml = readmeHtml,
+                                documentResources = documentResources,
+                                onDocumentLink = onDocumentLink,
+                                onExternalLink = onDocumentExternalLink,
+                            )
                         } else if (state.isLoadingReadme) {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(24.dp),

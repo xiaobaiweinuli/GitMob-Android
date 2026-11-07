@@ -243,7 +243,14 @@ class RepoGitRepository @Inject constructor(
         }
     }
 
-    suspend fun getFileContent(owner: String, name: String, ref: String, path: String): ApiResult<RepoFileContent> {
+    suspend fun getFileContent(owner: String, name: String, ref: String, path: String): ApiResult<RepoFileContent> =
+        when (val result = getPathContent(owner, name, ref, path)) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall { result.data as? RepoFileContent ?: error("File not found") }
+        }
+
+    /** The existing object query identifies both files and directories without a second lookup. */
+    suspend fun getPathContent(owner: String, name: String, ref: String, path: String): ApiResult<RepoPathContent> {
         require(path.isNotBlank()) { "File path is empty" }
         val expression = "$ref:$path"
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
@@ -253,7 +260,9 @@ class RepoGitRepository @Inject constructor(
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 val repository = result.data.repository ?: error("Repository not found")
-                val blob = repository.`object`?.onBlob ?: error("File not found")
+                val target = repository.`object` ?: error("File not found")
+                if (target.__typename == "Tree") return@safeCall RepoPathContent.Directory
+                val blob = target.onBlob ?: error("File not found")
                 val repositoryRef = repository.ref ?: error("Branch not found")
                 val permission = permission(repository.viewerPermission?.rawValue)
                 RepoFileContent(

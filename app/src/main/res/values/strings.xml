@@ -825,4 +825,18 @@
     <string name="favorites_summary">%1$d 个收藏 · %2$d 个分组</string>
     <string name="favorites_default_count">%1$d 个仓库 · 未分类的收藏</string>
     <string name="favorites_local_hint">收藏不改变仓库的 GitHub 星标。</string>
+    <string name="image_source_tab">代码</string>
+    <string name="image_viewer_title">查看图片</string>
+    <string name="image_viewer_close">关闭图片查看器</string>
+    <string name="image_actions">图片操作</string>
+    <string name="image_open_original_link">打开原链接</string>
+    <string name="image_fit_screen">适合屏幕</string>
+    <string name="image_zoom_reset">%1$d%% · 还原</string>
+    <string name="image_zoom_percent">缩放 %1$d%%</string>
+    <string name="image_zoom_in">放大图片</string>
+    <string name="image_zoom_out">缩小图片</string>
+    <string name="image_gesture_hint">双指缩放 · 双击放大 · 放大后拖动</string>
+    <string name="image_preview_failed">图片加载失败，请重试</string>
+    <string name="image_file_size">%1$d 字节</string>
+    <string name="image_preview_too_large">图片超过 8 MiB 预览限制，可下载后查看</string>
 </resources>
