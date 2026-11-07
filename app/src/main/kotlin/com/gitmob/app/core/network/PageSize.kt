@@ -26,8 +26,8 @@ object PageSize {
     /** 星标仓库列表（viewer.starredRepositories / user.starredRepositories） */
     const val STARRED_REPOS = 20
 
-    /** 列表（Chip 横排）：viewer.lists */
-    const val STAR_LISTS = 20
+    /** GitHub 星标分组最多 32 个；分组摘要与归属查询均一次读取全部分组。 */
+    const val STAR_LISTS = 32
 
     /** 列表内仓库（list.items） */
     const val LIST_ITEMS = 20
@@ -130,15 +130,7 @@ object PageSize {
     const val PINNED_ITEMS = 6
 
     /**
-     * 归属列表扫描上限（getListsContaining：查某仓库属于哪些列表）。
-     * 语义上是"扫描当前用户所有列表以检测成员关系"，不是 UI 分页尺寸。
-     * 上限 20 = 与 STAR_LISTS 保持一致，超过时存在漏判风险（极罕见）。
-     */
-    const val STAR_LISTS_SCAN_LIMIT = 20
-
-    /**
-     * 归属列表扫描时每个列表的预取项数（getListsContaining 内部）。
-     * 每个列表前 100 个仓库 id 用于判断当前仓库是否在其中；超过 100 项的列表存在漏判。
+     * 归属查询每页读取的仓库 ID 数量；按游标继续，直到找到目标或读完该分组。
      */
     const val LIST_ITEMS_SCAN_LIMIT = 100
 

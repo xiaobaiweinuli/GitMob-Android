@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.error.BannerEvent
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
@@ -18,12 +19,14 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -132,6 +135,135 @@ class StarsViewModelTest {
         // 切换到同样的 filter 时（重复选 ByList）不会再发请求（因为 selectFilter 有 early return 判等）
         vm.selectFilter(StarFilter.ByList(fakeLists().first()))
         assertEquals(listPage.items.size, vm.state.value.repos.size)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `同一仓库在全部分组再回到全部时保持完整预勾选`() = runTest {
+        val starRepo = mockk<StarRepository>()
+        val page = fakeStarred("same", 1)
+        val membership = setOf("L1", "L2")
+        coEvery { starRepo.getLists() } returns ApiResult.Success(fakeLists())
+        coEvery { starRepo.getViewerStarred(null) } returns ApiResult.Success(page)
+        coEvery { starRepo.getListItems("L1", null) } returns ApiResult.Success(page.copy(items = page.items.map { it.copy() }))
+        coEvery { starRepo.getListsContaining("same-1") } returns ApiResult.Success(membership)
+        coEvery { starRepo.updateListsForItem("same-1", membership) } returns ApiResult.Success(Unit)
+
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
+        vm.loadIfNeeded()
+        for (filter in listOf(StarFilter.All, StarFilter.ByList(fakeLists().first()), StarFilter.All)) {
+            vm.selectFilter(filter)
+            vm.openAddToList(vm.state.value.repos.single())
+            assertEquals(membership, vm.state.value.addToListSelection)
+            assertFalse(vm.state.value.isLoadingAddToListSelection)
+            vm.dismissAddToList()
+        }
+        vm.openAddToList(vm.state.value.repos.single())
+        vm.confirmAddToList()
+        coVerify(exactly = 4) { starRepo.getListsContaining("same-1") }
+        coVerify(exactly = 1) { starRepo.updateListsForItem("same-1", membership) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `归属读取期间不能提交且读取失败关闭弹窗并提示错误`() = runTest {
+        val starRepo = mockk<StarRepository>()
+        val pending = CompletableDeferred<ApiResult<Set<String>>>()
+        coEvery { starRepo.getListsContaining("repo-1") } coAnswers { pending.await() }
+        val errors = ErrorEventBus()
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), errors, accounts.session)
+
+        errors.eventsFor(accounts.session.epoch).test {
+            vm.openAddToList(fakeStarred("repo", 1).items.single())
+            assertTrue(vm.state.value.isLoadingAddToListSelection)
+            vm.toggleListSelection("L1")
+            vm.confirmAddToList()
+            assertTrue(vm.state.value.addToListSelection.isEmpty())
+            coVerify(exactly = 0) { starRepo.updateListsForItem(any(), any()) }
+
+            pending.complete(ApiResult.Failure(ApiError.NetworkError))
+            assertEquals(BannerEvent.Error(ApiError.NetworkError), awaitItem())
+            assertNull(vm.state.value.addToListTarget)
+            assertFalse(vm.state.value.isLoadingAddToListSelection)
+            vm.confirmAddToList()
+            coVerify(exactly = 0) { starRepo.updateListsForItem(any(), any()) }
+            cancelAndIgnoreRemainingEvents()
+        }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `打开另一个仓库时取消旧归属请求且不覆盖新勾选`() = runTest {
+        val starRepo = mockk<StarRepository>()
+        val pending = CompletableDeferred<ApiResult<Set<String>>>()
+        var cancelled = false
+        coEvery { starRepo.getListsContaining("old-1") } coAnswers {
+            try {
+                pending.await()
+            } catch (e: CancellationException) {
+                cancelled = true
+                throw e
+            }
+        }
+        coEvery { starRepo.getListsContaining("new-1") } returns ApiResult.Success(setOf("L2"))
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
+
+        vm.openAddToList(fakeStarred("old", 1).items.single())
+        vm.openAddToList(fakeStarred("new", 1).items.single())
+        assertTrue(cancelled)
+        pending.complete(ApiResult.Success(setOf("L1")))
+        assertEquals("new-1", vm.state.value.addToListTarget?.id)
+        assertEquals(setOf("L2"), vm.state.value.addToListSelection)
+        assertFalse(vm.state.value.isLoadingAddToListSelection)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `关闭弹窗取消归属请求并清理加载状态`() = runTest {
+        val starRepo = mockk<StarRepository>()
+        val pending = CompletableDeferred<ApiResult<Set<String>>>()
+        var cancelled = false
+        coEvery { starRepo.getListsContaining(any()) } coAnswers {
+            try {
+                pending.await()
+            } catch (e: CancellationException) {
+                cancelled = true
+                throw e
+            }
+        }
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
+        vm.openAddToList(fakeStarred("repo", 1).items.single())
+        vm.dismissAddToList()
+        assertTrue(cancelled)
+        assertNull(vm.state.value.addToListTarget)
+        assertFalse(vm.state.value.isLoadingAddToListSelection)
+        pending.complete(ApiResult.Success(setOf("L1")))
+        assertTrue(vm.state.value.addToListSelection.isEmpty())
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `保存过程中不重复提交或切换目标仓库`() = runTest {
+        val starRepo = mockk<StarRepository>()
+        val pendingSave = CompletableDeferred<ApiResult<Unit>>()
+        coEvery { starRepo.getListsContaining("repo-1") } returns ApiResult.Success(setOf("L1"))
+        coEvery { starRepo.updateListsForItem("repo-1", setOf("L1")) } coAnswers { pendingSave.await() }
+        coEvery { starRepo.getLists() } returns ApiResult.Success(fakeLists())
+        val vm = StarsViewModel(starRepo, RepoUpdateEventBus(), ErrorEventBus(), accounts.session)
+
+        vm.openAddToList(fakeStarred("repo", 1).items.single())
+        vm.confirmAddToList()
+        vm.confirmAddToList()
+        vm.toggleListSelection("L2")
+        vm.dismissAddToList()
+        vm.openAddToList(fakeStarred("other", 1).items.single())
+        assertEquals("repo-1", vm.state.value.addToListTarget?.id)
+        assertEquals(setOf("L1"), vm.state.value.addToListSelection)
+        coVerify(exactly = 1) { starRepo.updateListsForItem(any(), any()) }
+        coVerify(exactly = 0) { starRepo.getListsContaining("other-1") }
+        pendingSave.complete(ApiResult.Success(Unit))
+        assertFalse(vm.state.value.isSavingAddToList)
+        assertNull(vm.state.value.addToListTarget)
         vm.viewModelScope.cancel()
     }
 

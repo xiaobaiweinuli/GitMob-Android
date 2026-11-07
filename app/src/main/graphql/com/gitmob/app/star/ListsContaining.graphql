@@ -1,19 +1,37 @@
-# "添加到列表"弹窗预勾选：公开 API 没有从仓库反查所属列表的字段，
-# 只能预取列表 + 每个列表的 items，客户端自己算交集。
-# 容量分别由 PageSize.STAR_LISTS_SCAN_LIMIT / LIST_ITEMS_SCAN_LIMIT 传入。
+# "添加到列表"弹窗预勾选：先取全部分组和各分组的第一页仓库 ID。
+# 分组容量为 PageSize.STAR_LISTS，仓库扫描页容量为 PageSize.LIST_ITEMS_SCAN_LIMIT。
 query ListsContainingRepo($listsFirst: Int!, $itemsFirst: Int!) {
     viewer {
         lists(first: $listsFirst) {
             nodes {
                 id
                 items(first: $itemsFirst) {
-                    nodes {
-                        ... on Repository {
-                            id
-                        }
-                    }
+                    ...StarListItemIds
                 }
             }
         }
+    }
+}
+
+# 仅为尚未找到目标的分组读取后续仓库 ID，不加载仓库卡片。
+query ListItemIds($listId: ID!, $after: String!, $first: Int!) {
+    node(id: $listId) {
+        ... on UserList {
+            items(first: $first, after: $after) {
+                ...StarListItemIds
+            }
+        }
+    }
+}
+
+fragment StarListItemIds on UserListItemsConnection {
+    nodes {
+        ... on Repository {
+            id
+        }
+    }
+    pageInfo {
+        hasNextPage
+        endCursor
     }
 }

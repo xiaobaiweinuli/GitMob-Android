@@ -13,6 +13,8 @@ import com.gitmob.app.data.model.StarredRepo
 import com.gitmob.app.data.model.UserListSummary
 import com.gitmob.app.data.repository.StarRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +58,7 @@ class StarsViewModel @Inject constructor(
 
     private var endCursor: String? = null
     private var loadedOnce = false
+    private var addToListJob: Job? = null
 
     init {
         observeRepoUpdates()
@@ -280,21 +283,28 @@ class StarsViewModel @Inject constructor(
     // ---- 添加到列表 ----
 
     fun openAddToList(repo: StarredRepo) {
+        if (_state.value.isSavingAddToList) return
+        addToListJob?.cancel()
         _state.update { it.copy(addToListTarget = repo, isLoadingAddToListSelection = true, addToListSelection = emptySet()) }
-        viewModelScope.launch {
-            when (val result = starRepository.getListsContaining(repo.id)) {
+        addToListJob = viewModelScope.launch {
+            val result = starRepository.getListsContaining(repo.id)
+            ensureActive()
+            when (result) {
                 is ApiResult.Success -> _state.update {
                     it.copy(addToListSelection = result.data, isLoadingAddToListSelection = false)
                 }
                 is ApiResult.Failure -> {
+                    // 与仓库详情页一致：读取失败时关闭选择器，避免把未知归属保存为空。
+                    _state.update { it.copy(addToListTarget = null, isLoadingAddToListSelection = false) }
                     errorEventBus.emit(result.error)
-                    _state.update { it.copy(isLoadingAddToListSelection = false) }
                 }
             }
         }
     }
 
     fun toggleListSelection(listId: String) {
+        val current = _state.value
+        if (current.addToListTarget == null || current.isLoadingAddToListSelection || current.isSavingAddToList) return
         _state.update { state ->
             val newSelection = if (listId in state.addToListSelection) {
                 state.addToListSelection - listId
@@ -305,13 +315,22 @@ class StarsViewModel @Inject constructor(
         }
     }
 
-    fun dismissAddToList() = _state.update { it.copy(addToListTarget = null) }
+    fun dismissAddToList() {
+        if (_state.value.isSavingAddToList) return
+        addToListJob?.cancel()
+        addToListJob = null
+        _state.update {
+            it.copy(addToListTarget = null, addToListSelection = emptySet(), isLoadingAddToListSelection = false)
+        }
+    }
 
     fun confirmAddToList() {
-        val target = _state.value.addToListTarget ?: return
-        val selection = _state.value.addToListSelection
+        val current = _state.value
+        val target = current.addToListTarget ?: return
+        if (current.isLoadingAddToListSelection || current.isSavingAddToList) return
+        val selection = current.addToListSelection
+        _state.update { it.copy(isSavingAddToList = true) }
         viewModelScope.launch {
-            _state.update { it.copy(isSavingAddToList = true) }
             when (val result = starRepository.updateListsForItem(target.id, selection)) {
                 is ApiResult.Success -> _state.update {
                     it.copy(isSavingAddToList = false, addToListTarget = null)

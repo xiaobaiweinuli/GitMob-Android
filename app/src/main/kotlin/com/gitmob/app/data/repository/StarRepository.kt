@@ -4,6 +4,7 @@ import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.api.Optional
 import com.gitmob.app.R
 import com.gitmob.app.core.cache.MemoryCache
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
@@ -15,6 +16,7 @@ import com.gitmob.app.data.model.UserListSummary
 import com.gitmob.app.graphql.AddStarMutation
 import com.gitmob.app.graphql.CreateListMutation
 import com.gitmob.app.graphql.DeleteListMutation
+import com.gitmob.app.graphql.ListItemIdsQuery
 import com.gitmob.app.graphql.ListItemsQuery
 import com.gitmob.app.graphql.ListsContainingRepoQuery
 import com.gitmob.app.graphql.RemoveStarMutation
@@ -172,22 +174,45 @@ class StarRepository @Inject constructor(
      * 公开 API 没有从仓库反查所属清单的字段（Repository.lists 不存在，已核实过），
      * 只能反过来：预取列表 + 每个列表的 items，客户端自己算交集。
      */
-    suspend fun getListsContaining(repoId: String): ApiResult<Set<String>> =
-        when (val result = apolloClient.query(ListsContainingRepoQuery(
-            listsFirst = PageSize.STAR_LISTS_SCAN_LIMIT,
+    suspend fun getListsContaining(repoId: String): ApiResult<Set<String>> {
+        val lists = when (val result = apolloClient.query(ListsContainingRepoQuery(
+            listsFirst = PageSize.STAR_LISTS,
             itemsFirst = PageSize.LIST_ITEMS_SCAN_LIMIT,
         )).executeAsApiResult()) {
-            is ApiResult.Failure -> result
-            is ApiResult.Success -> safeCall {
-                result.data.viewer.lists.nodes.orEmpty().filterNotNull()
-                    .filter { list ->
-                        list.items.nodes.orEmpty().filterNotNull()
-                            .any { it.onRepository?.id == repoId }
+            is ApiResult.Failure -> return result
+            is ApiResult.Success -> result.data.viewer.lists.nodes.orEmpty().filterNotNull()
+        }
+        val containingLists = mutableSetOf<String>()
+        for (list in lists) {
+            var items = list.items.starListItemIds
+            var previousCursor: String? = null
+            while (true) {
+                if (items.nodes.orEmpty().any { it?.onRepository?.id == repoId }) {
+                    containingLists += list.id
+                    break
+                }
+                if (!items.pageInfo.hasNextPage) break
+                val cursor = items.pageInfo.endCursor
+                if (cursor.isNullOrBlank() || cursor == previousCursor) {
+                    return ApiResult.Failure(ApiError.Unknown("Star list membership cursor did not advance"))
+                }
+                previousCursor = cursor
+                // 更新分组是全量覆盖；任何必要页失败都不能返回不完整的归属集合。
+                when (val result = apolloClient.query(ListItemIdsQuery(
+                    listId = list.id,
+                    after = cursor,
+                    first = PageSize.LIST_ITEMS_SCAN_LIMIT,
+                )).executeAsApiResult()) {
+                    is ApiResult.Failure -> return result
+                    is ApiResult.Success -> {
+                        items = result.data.node?.onUserList?.items?.starListItemIds
+                            ?: return ApiResult.Failure(ApiError.UserVisible(R.string.error_list_not_found))
                     }
-                    .map { it.id }
-                    .toSet()
+                }
             }
         }
+        return ApiResult.Success(containingLists)
+    }
 
     suspend fun createList(name: String, description: String?, isPrivate: Boolean): ApiResult<UserListSummary> {
         // 新建列表后，横排 Chip 列表数量变了，主动失效缓存

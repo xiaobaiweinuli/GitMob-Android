@@ -11,6 +11,10 @@ import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -93,8 +97,8 @@ class StarRepositoryTest {
                     {"id":"L1","items":{"nodes":[
                         {"__typename":"Repository","id":"R1"},
                         {"__typename":"Repository","id":"R2"}
-                    ]}},
-                    {"id":"L2","items":{"nodes":[{"__typename":"Repository","id":"R3"}]}}
+                    ],"pageInfo":{"hasNextPage":false,"endCursor":null}}},
+                    {"id":"L2","items":{"nodes":[{"__typename":"Repository","id":"R3"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}
                 ]}}}}
                 """.trimIndent(),
             ),
@@ -106,8 +110,98 @@ class StarRepositoryTest {
         val containingLists = (result as ApiResult.Success).data
         assertEquals(setOf("L1"), containingLists)
         val variables = takeVariables()
-        assertEquals(JsonPrimitive(PageSize.STAR_LISTS_SCAN_LIMIT), variables["listsFirst"])
+        assertEquals(JsonPrimitive(PageSize.STAR_LISTS), variables["listsFirst"])
         assertEquals(JsonPrimitive(PageSize.LIST_ITEMS_SCAN_LIMIT), variables["itemsFirst"])
+    }
+
+    @Test
+    fun `分组摘要和归属查询都覆盖第32个分组`() = runTest(accounts.context) {
+        val lists = (1..32).joinToString(",") { index ->
+            """{"id":"L$index","name":"List $index","slug":"list-$index","description":null,"isPrivate":false,"items":{"totalCount":1}}"""
+        }
+        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"lists":{"nodes":[$lists]}}}}"""))
+        val summaries = repository.getLists() as ApiResult.Success
+        assertEquals(32, summaries.data.size)
+        assertEquals("L32", summaries.data.last().id)
+        assertEquals(JsonPrimitive(32), takeVariables()["first"])
+
+        enqueueMembershipLists(*(1..32).map { index ->
+            "L$index" to membershipItems(if (index == 32) listOf("target") else emptyList())
+        }.toTypedArray())
+        assertEquals(ApiResult.Success(setOf("L32")), repository.getListsContaining("target"))
+        assertEquals(JsonPrimitive(32), takeVariables()["listsFirst"])
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `归属扫描跨过100项和空页并在找到目标后停止该分组`() = runTest(accounts.context) {
+        enqueueMembershipLists(
+            "L1" to membershipItems(List(PageSize.LIST_ITEMS_SCAN_LIMIT) { "R$it" }, true, "page-1"),
+            "L2" to membershipItems(listOf("target"), true, "unused"),
+            "L3" to membershipItems(emptyList()),
+        )
+        enqueueMembershipPage(membershipItems(emptyList(), true, "page-2"))
+        enqueueMembershipPage(membershipItems(listOf("target"), true, "unused"))
+
+        assertEquals(ApiResult.Success(setOf("L1", "L2")), repository.getListsContaining("target"))
+        val first = takeVariables()
+        assertEquals(JsonPrimitive(PageSize.STAR_LISTS), first["listsFirst"])
+        assertEquals(JsonPrimitive(PageSize.LIST_ITEMS_SCAN_LIMIT), first["itemsFirst"])
+        for (cursor in listOf("page-1", "page-2")) {
+            val next = takeVariables()
+            assertEquals(JsonPrimitive("L1"), next["listId"])
+            assertEquals(JsonPrimitive(cursor), next["after"])
+            assertEquals(JsonPrimitive(PageSize.LIST_ITEMS_SCAN_LIMIT), next["first"])
+        }
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test
+    fun `完整扫描未找到目标才返回未归属`() = runTest(accounts.context) {
+        enqueueMembershipLists("L1" to membershipItems(listOf("other"), true, "next"))
+        enqueueMembershipPage(membershipItems(listOf("another")))
+
+        assertEquals(ApiResult.Success(emptySet<String>()), repository.getListsContaining("target"))
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `续页失败不返回部分归属并允许重新完整查询`() = runTest(accounts.context) {
+        val lists = arrayOf(
+            "L1" to membershipItems(listOf("target")),
+            "L2" to membershipItems(emptyList(), true, "next"),
+        )
+        enqueueMembershipLists(*lists)
+        server.enqueue(MockResponse().setResponseCode(403))
+        assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getListsContaining("target"))
+
+        enqueueMembershipLists(*lists)
+        enqueueMembershipPage(membershipItems(listOf("target")))
+        assertEquals(ApiResult.Success(setOf("L1", "L2")), repository.getListsContaining("target"))
+        assertEquals(4, server.requestCount)
+    }
+
+    @Test
+    fun `续页分组消失不伪造成未归属`() = runTest(accounts.context) {
+        enqueueMembershipLists("L1" to membershipItems(emptyList(), true, "next"))
+        server.enqueue(MockResponse().setBody("""{"data":{"node":null}}"""))
+
+        assertEquals(
+            ApiResult.Failure(ApiError.UserVisible(com.gitmob.app.R.string.error_list_not_found)),
+            repository.getListsContaining("target"),
+        )
+    }
+
+    @Test
+    fun `缺失或未推进的归属游标终止查询且不返回部分结果`() = runTest(accounts.context) {
+        enqueueMembershipLists("L1" to membershipItems(emptyList(), true))
+        assertTrue(repository.getListsContaining("target") is ApiResult.Failure)
+        assertEquals(1, server.requestCount)
+
+        enqueueMembershipLists("L1" to membershipItems(emptyList(), true, "same"))
+        enqueueMembershipPage(membershipItems(emptyList(), true, "same"))
+        assertTrue(repository.getListsContaining("target") is ApiResult.Failure)
+        assertEquals(3, server.requestCount)
     }
 
     @Test
@@ -234,6 +328,37 @@ class StarRepositoryTest {
         val result = repository.unstarRepo("R1")
 
         assertTrue(result is ApiResult.Success)
+    }
+
+    private fun membershipItems(
+        repoIds: List<String>,
+        hasNextPage: Boolean = false,
+        endCursor: String? = null,
+    ) = buildJsonObject {
+        put("nodes", JsonArray(repoIds.map { id ->
+            buildJsonObject {
+                put("__typename", "Repository")
+                put("id", id)
+            }
+        }))
+        put("pageInfo", buildJsonObject {
+            put("hasNextPage", hasNextPage)
+            put("endCursor", endCursor)
+        })
+    }
+
+    private fun enqueueMembershipLists(vararg lists: Pair<String, JsonObject>) {
+        val nodes = JsonArray(lists.map { (id, items) ->
+            buildJsonObject {
+                put("id", id)
+                put("items", items)
+            }
+        })
+        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"lists":{"nodes":$nodes}}}}"""))
+    }
+
+    private fun enqueueMembershipPage(items: JsonObject) {
+        server.enqueue(MockResponse().setBody("""{"data":{"node":{"__typename":"UserList","items":$items}}}"""))
     }
 
     private fun takeVariables() =
