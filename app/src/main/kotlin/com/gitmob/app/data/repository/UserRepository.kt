@@ -10,6 +10,7 @@ import com.gitmob.app.core.auth.TokenStorage
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.event.AccountEventBus
 import com.gitmob.app.core.error.UserVisibleException
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
@@ -43,6 +44,9 @@ import com.gitmob.app.graphql.FollowUserMutation
 import com.gitmob.app.graphql.FollowersQuery
 import com.gitmob.app.graphql.FollowingQuery
 import com.gitmob.app.graphql.OrgMembersQuery
+import com.gitmob.app.data.model.RepoReadme
+import com.gitmob.app.data.model.RepoDocumentContext
+import com.gitmob.app.graphql.OrgProfileReadmeQuery
 import com.gitmob.app.graphql.ProfileOwnerQuery
 import com.gitmob.app.graphql.UnfollowOrganizationMutation
 import com.gitmob.app.graphql.UnfollowUserMutation
@@ -69,7 +73,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 主页/公开资料仍走 GraphQL 单一查询；独立八字段编辑使用 REST /user，
+ * 主页/公开资料元数据走 GraphQL；可选组织 README 单独加载，八字段编辑使用 REST /user，
  * 一次往返拿全部数据（基础资料 + pronouns/status/socialAccounts/置顶仓库/关注状态 + 统计数字）。
  *
  * B1 起切换 Apollo：查询语句与模型由 .graphql 文件 + 官方 schema 生成，
@@ -324,6 +328,36 @@ class UserRepository @Inject constructor(
             )
         }
     }
+
+    /** Public organization profile content is optional and does not belong to the profile metadata query. */
+    suspend fun getOrgProfileReadme(login: String): ApiResult<RepoReadme?> =
+        when (val result = apolloClient.query(OrgProfileReadmeQuery(login)).executeAsApiResult()) {
+            is ApiResult.Failure -> {
+                val errors = (result.error as? ApiError.GraphQLError)?.errors
+                // A missing optional .github repository must not fail the organization's profile.
+                if (!errors.isNullOrEmpty() && errors.all { it.type == "NOT_FOUND" }) ApiResult.Success(null)
+                else result
+            }
+            is ApiResult.Success -> safeCall {
+                val repo = result.data.repository ?: return@safeCall null
+                if (repo.visibility.rawValue != "PUBLIC") return@safeCall null
+                val commit = repo.defaultBranchRef?.target?.onCommit ?: return@safeCall null
+                val file = commit.file ?: return@safeCall null
+                val blob = file.`object`?.onBlob
+                    ?: throw UserVisibleException(R.string.repo_readme_unsupported)
+                if (blob.isBinary == true) throw UserVisibleException(R.string.repo_readme_unsupported)
+                val markdown = blob.text ?: throw UserVisibleException(R.string.repo_readme_invalid)
+                if (markdown.isBlank()) return@safeCall null
+                if (commit.oid.isBlank() || file.path != "profile/README.md") {
+                    throw UserVisibleException(R.string.repo_readme_invalid)
+                }
+                RepoReadme(
+                    markdown = markdown,
+                    context = RepoDocumentContext(login, ".github", commit.oid, file.path),
+                    isTruncated = blob.isTruncated,
+                )
+            }
+        }
 
     /**
      * 用户/组织统一资料查询——只有一个 login 时无法预先判断类型，

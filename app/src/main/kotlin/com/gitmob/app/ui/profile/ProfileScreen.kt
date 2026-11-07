@@ -1,5 +1,22 @@
 package com.gitmob.app.ui.profile
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import com.gitmob.app.core.error.displayMessageRes
+import com.gitmob.app.data.model.RepoDocumentContext
+import com.gitmob.app.data.translation.TranslationTarget
+import com.gitmob.app.ui.translation.LocalTranslationController
+import com.gitmob.app.ui.translation.TranslationHtml
+import com.gitmob.app.ui.translation.TranslationPhase
+import com.gitmob.app.ui.translation.translationProgressText
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,12 +88,42 @@ fun ProfileScreen(
     onOrgClick: (login: String) -> Unit = {},
     onPinnedRepoClick: (owner: String, name: String) -> Unit = { _, _ -> },
     onCreateRepository: (RepositoryCreateOwner) -> Unit = {},
+    onDocumentLink: (RepoDocumentContext) -> Unit = {},
+    onDocumentExternalLink: (String) -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(login) { viewModel.init(login) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val translation = LocalTranslationController.current
+    var readmeVisible by remember(state.readmeContext, state.readmeRevision) { mutableStateOf(false) }
+    var viewport by remember { mutableStateOf(Rect.Zero) }
+    val readmeTarget = remember(login, state.readmeContext, state.readmeHtml) {
+        val document = state.readmeContext
+        TranslationTarget("org:$login:${document?.ref}:${document?.filePath}", state.readmeHtml.orEmpty(), true)
+    }
 
     Scaffold(
+        floatingActionButton = {
+            if (translation?.enabled == true && readmeVisible && state.readmeHtml != null && !state.isLoading && !state.loadFailed) {
+                val entry = translation.state.entries[readmeTarget.identity]
+                val running = entry?.running == true
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        when {
+                            state.readmeTruncated -> translation.hint(R.string.translation_unavailable)
+                            running -> translation.viewModel.cancel(readmeTarget)
+                            else -> translation.open(readmeTarget)
+                        }
+                    },
+                    icon = { if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Translate, null) },
+                    text = { Text(if (running) translationProgressText(requireNotNull(entry)) else stringResource(when {
+                        entry == null || entry.showOriginal -> R.string.translation_start
+                        entry.problem != null || entry.displayProblem || entry.phase == TranslationPhase.CANCELLED || entry.completed < entry.total -> R.string.translation_partial
+                        else -> R.string.translation_options
+                    })) },
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text("@$login") },
@@ -113,7 +160,8 @@ fun ProfileScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .onGloballyPositioned { viewport = it.boundsInWindow() },
         ) {
             when {
                 state.isLoading && state.owner == null -> {
@@ -156,6 +204,43 @@ fun ProfileScreen(
                         onReposClick = { onReposClick(owner.login) },
                         onMembersClick = { onMembersClick(owner.login) },
                         onPinnedRepoClick = onPinnedRepoClick,
+                        translationEnabled = translation?.enabled == true,
+                        readme = {
+                            val html = state.readmeHtml
+                            if (html != null) {
+                                if (state.readmeTruncated) {
+                                    Text(stringResource(R.string.repo_readme_truncated),
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                }
+                                val resources = remember(state.readmeContext, state.readmeRevision, viewModel) {
+                                    state.readmeContext?.let(viewModel::createDocumentResources)
+                                }
+                                TranslationHtml(
+                                    translationKey = readmeTarget.key,
+                                    bodyHtml = html,
+                                    documentResources = resources,
+                                    onDocumentLink = onDocumentLink,
+                                    onExternalLink = onDocumentExternalLink,
+                                    modifier = Modifier.padding(top = 16.dp).onGloballyPositioned {
+                                        val bounds = it.boundsInWindow()
+                                        readmeVisible = bounds.height > 0 && bounds.bottom > viewport.top && bounds.top < viewport.bottom
+                                    },
+                                )
+                            } else if (state.readmeError != null) {
+                                Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        stringResource(R.string.repo_readme_load_failed, stringResource(state.readmeError!!.displayMessageRes())),
+                                        modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                    TextButton(onClick = viewModel::retryReadme) { Text(stringResource(R.string.common_retry)) }
+                                }
+                            } else if (state.isLoadingReadme) {
+                                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(Modifier.size(20.dp))
+                                }
+                            }
+                        },
                     )
                 }
             }
@@ -266,6 +351,8 @@ private fun OrgProfileContent(
     onReposClick: () -> Unit,
     onMembersClick: () -> Unit,
     onPinnedRepoClick: (owner: String, name: String) -> Unit,
+    translationEnabled: Boolean,
+    readme: @Composable () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -332,6 +419,8 @@ private fun OrgProfileContent(
             modifier = Modifier.padding(top = 12.dp),
         )
 
+        readme()
+
         PinnedReposSection(
             repos = owner.pinnedRepos,
             onRepoClick = onPinnedRepoClick,
@@ -341,6 +430,7 @@ private fun OrgProfileContent(
         // Push route 底部：navigationBars + captionBar 高度补偿
         Spacer(
             Modifier.height(
+                (if (translationEnabled) 88.dp else 0.dp) +
                 WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
                     WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
             ),

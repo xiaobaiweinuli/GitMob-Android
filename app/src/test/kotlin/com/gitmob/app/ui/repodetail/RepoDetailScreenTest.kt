@@ -34,6 +34,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.R
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoTransferPendingStore
@@ -41,7 +42,6 @@ import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.RepoDetail
-import com.gitmob.app.data.model.RepoReadme
 import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.data.model.RepositoryCreateOwnerPage
 import com.gitmob.app.data.model.RepositoryCreateOwnerType
@@ -399,7 +399,7 @@ class RepoDetailScreenTest {
 
     private fun render(detail: RepoDetail = detail()) {
         coEvery { repository.getRepoDetail("octo", "repo") } returns ApiResult.Success(detail)
-        coEvery { repository.getReadme("octo", "repo", "main") } returns ApiResult.Success(RepoReadme(null, false))
+        coEvery { repository.getReadme("octo", "repo", "main") } returns ApiResult.Success(null)
         coEvery { owners.getRepositoryCreateOwners(null) } returns ApiResult.Success(
             RepositoryCreateOwnerPage(
                 RepositoryCreateOwner("U1", "octo", null, null, RepositoryCreateOwnerType.USER, true),
@@ -437,4 +437,18 @@ class RepoDetailScreenTest {
         capabilities = RepoPermission.ADMIN.toCapabilities(), permission = RepoPermission.ADMIN,
         hasIssuesEnabled = true, hasDiscussionsEnabled = true, viewerCanSubscribe = true, forkingAllowed = true,
     )
+    @Test fun readmeFailureHasAnInlineRetryWithoutReplacingRepositoryContent() {
+        render()
+        coEvery { repository.getReadme("octo", "repo", "main") } returns ApiResult.Failure(ApiError.NetworkError)
+        composeRule.runOnIdle { viewModel.retryReadme() }
+        val message = context.getString(R.string.repo_readme_load_failed, context.getString(R.string.error_network))
+        composeRule.onNodeWithText(message).performScrollTo().assertIsDisplayed()
+        coEvery { repository.getReadme("octo", "repo", "main") } returns ApiResult.Success(null)
+        node(R.string.common_retry).performClick()
+        composeRule.onNodeWithText(message).assertDoesNotExist()
+        assertFalse(viewModel.state.value.loadFailed)
+        coVerify(exactly = 1) { repository.getRepoDetail("octo", "repo") }
+        coVerify(exactly = 3) { repository.getReadme("octo", "repo", "main") }
+    }
+
 }

@@ -481,21 +481,25 @@ private fun LoggedInApp(
             )
         }
         entry<ProfileRoute> { route ->
-            ProfileScreen(
-                login = route.login,
-                onBack = { navigator.goBack() },
-                onFollowersClick = { login -> navigator.navigate(FollowersRoute(login)) },
-                onFollowingClick = { login -> navigator.navigate(FollowingRoute(login)) },
-                onReposClick = { login -> navigator.navigate(UserRepoListRoute(login)) },
-                onStarredClick = { login -> navigator.navigate(UserStarredReposRoute(login)) },
-                onGistClick = { login -> navigator.navigate(GistListRoute(login)) },
-                onMembersClick = { login -> navigator.navigate(OrgMembersRoute(login)) },
-                onOrgClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onPinnedRepoClick = { owner, name ->
-                    navigator.navigate(RepoDetailRoute(owner, name))
-                },
-                onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
-            )
+            TranslationHost {
+                ProfileScreen(
+                    onDocumentLink = openDocument,
+                    onDocumentExternalLink = openDocumentExternal,
+                    login = route.login,
+                    onBack = { navigator.goBack() },
+                    onFollowersClick = { login -> navigator.navigate(FollowersRoute(login)) },
+                    onFollowingClick = { login -> navigator.navigate(FollowingRoute(login)) },
+                    onReposClick = { login -> navigator.navigate(UserRepoListRoute(login)) },
+                    onStarredClick = { login -> navigator.navigate(UserStarredReposRoute(login)) },
+                    onGistClick = { login -> navigator.navigate(GistListRoute(login)) },
+                    onMembersClick = { login -> navigator.navigate(OrgMembersRoute(login)) },
+                    onOrgClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onPinnedRepoClick = { owner, name ->
+                        navigator.navigate(RepoDetailRoute(owner, name))
+                    },
+                    onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
+                )
+            }
         }
         entry<RepoDetailRoute> { route ->
             TranslationHost {

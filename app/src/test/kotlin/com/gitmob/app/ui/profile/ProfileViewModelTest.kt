@@ -12,6 +12,12 @@ import com.gitmob.app.data.model.FollowState
 import com.gitmob.app.data.model.ProfileDraft
 import com.gitmob.app.data.model.ProfileOwner
 import com.gitmob.app.data.model.withEditableProfile
+import com.gitmob.app.core.markdown.MarkdownRenderer
+import com.gitmob.app.data.model.RepoReadme
+import com.gitmob.app.data.model.RepoDocumentContext
+import com.gitmob.app.data.repository.RepoDocumentRepository
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.MainDispatcherRule
 import com.gitmob.app.testutil.AccountSessionRule
@@ -59,6 +65,14 @@ class ProfileViewModelTest {
 
     private fun repository() = mockk<UserRepository> {
         every { profileUpdatesFor(any()) } returns emptyFlow()
+        coEvery { getOrgProfileReadme(any()) } returns ApiResult.Success(null)
+    }
+
+    private fun createViewModel(userRepo: UserRepository, documents: RepoDocumentRepository = mockk(relaxUnitFun = true)): ProfileViewModel {
+        val renderer = mockk<MarkdownRenderer> {
+            every { renderToHtml(any()) } answers { "<p>" + firstArg<String>() + "</p>" }
+        }
+        return ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, renderer, documents)
     }
 
     private fun fakePerson(following: Boolean = false, followers: Int = 14) = ProfileOwner.Person(
@@ -83,7 +97,7 @@ class ProfileViewModelTest {
         val expected = fakePerson()
         coEvery { userRepo.getProfileOwner("octocat") } returns ApiResult.Success(expected)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         vm.init("octocat")
 
         assertTrue(vm.state.value.owner is ProfileOwner.Person)
@@ -99,7 +113,7 @@ class ProfileViewModelTest {
         val expected = fakeOrg()
         coEvery { userRepo.getProfileOwner("github") } returns ApiResult.Success(expected)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         vm.init("github")
 
         val owner = vm.state.value.owner
@@ -116,7 +130,7 @@ class ProfileViewModelTest {
                 ApiResult.Failure(ApiError.NetworkError) andThen
                 ApiResult.Success(fakePerson())
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         vm.init("foo")
 
         // 第一次失败
@@ -139,7 +153,7 @@ class ProfileViewModelTest {
                 ApiResult.Success(fakePerson(following = false, followers = 14))
         coEvery { userRepo.followUser(any()) } returns ApiResult.Success(Unit)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         vm.init("octocat")
         val before = vm.state.value.owner as ProfileOwner.Person
         assertFalse(before.followState.viewerIsFollowing)
@@ -159,7 +173,7 @@ class ProfileViewModelTest {
                 ApiResult.Success(fakePerson(following = true, followers = 0))
         coEvery { userRepo.unfollowUser(any()) } returns ApiResult.Success(Unit)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         vm.init("octocat")
         vm.toggleFollow()
         val after = vm.state.value.owner as ProfileOwner.Person
@@ -175,7 +189,7 @@ class ProfileViewModelTest {
                 ApiResult.Success(fakeOrg(following = false))
         coEvery { userRepo.followOrganization(any()) } returns ApiResult.Success(Unit)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         vm.init("github")
         val before = vm.state.value.owner as ProfileOwner.Org
         assertFalse(before.viewerIsFollowing)
@@ -196,7 +210,7 @@ class ProfileViewModelTest {
                 ApiResult.Success(fakePerson(following = false, followers = 9))
         coEvery { userRepo.followUser(any()) } returns ApiResult.Failure(ApiError.Forbidden)
 
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         vm.init("octo")
         val before = vm.state.value.owner as ProfileOwner.Person
 
@@ -215,7 +229,7 @@ class ProfileViewModelTest {
         every { userRepo.profileUpdatesFor(any()) } answers { events.eventsFor(firstArg()) }
         val before = fakePerson()
         coEvery { userRepo.getProfileOwner("octocat") } returns ApiResult.Success(before)
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         try {
             vm.init("octocat")
             val saved = savedProfile()
@@ -239,7 +253,7 @@ class ProfileViewModelTest {
         every { userRepo.profileUpdatesFor(any()) } answers { events.eventsFor(firstArg()) }
         val loading = CompletableDeferred<ApiResult<ProfileOwner>>()
         coEvery { userRepo.getProfileOwner("octocat") } coAnswers { loading.await() }
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         try {
             vm.init("octocat")
             assertTrue(vm.state.value.isLoading)
@@ -267,7 +281,7 @@ class ProfileViewModelTest {
         every { userRepo.profileUpdatesFor(any()) } answers { events.eventsFor(firstArg()) }
         val loading = CompletableDeferred<ApiResult<ProfileOwner>>()
         coEvery { userRepo.getProfileOwner("github") } coAnswers { loading.await() }
-        val vm = ProfileViewModel(userRepo, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = createViewModel(userRepo)
         try {
             vm.init("github")
             events.emit(savedProfile())
@@ -287,4 +301,73 @@ class ProfileViewModelTest {
         AuthenticatedUser(1, "U_person", "renamed", "Saved name", "https://example.test/avatar.png"),
         ProfileDraft("Saved name", "Saved bio", "Saved company", "Saved location", "https://example.test", "saved@example.test", "saved_twitter", true),
     )
+    @Test fun personalProfileDoesNotRequestOrganizationReadme() = runTest {
+        val userRepo = repository()
+        coEvery { userRepo.getProfileOwner("octocat") } returns ApiResult.Success(fakePerson())
+        val vm = createViewModel(userRepo)
+        vm.init("octocat")
+        coVerify(exactly = 0) { userRepo.getOrgProfileReadme(any()) }
+        assertNull(vm.state.value.readmeHtml)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun organizationMetadataIsVisibleWhileReadmeLoadsWithItsOwnContext() = runTest {
+        val userRepo = repository()
+        val pending = CompletableDeferred<ApiResult<RepoReadme?>>()
+        val context = RepoDocumentContext("github", ".github", "commit123", "profile/README.md")
+        coEvery { userRepo.getProfileOwner("github") } returns ApiResult.Success(fakeOrg())
+        coEvery { userRepo.getOrgProfileReadme("github") } coAnswers { pending.await() }
+        val vm = createViewModel(userRepo)
+        vm.init("github")
+        assertEquals(fakeOrg(), vm.state.value.owner)
+        assertFalse(vm.state.value.isLoading)
+        assertTrue(vm.state.value.isLoadingReadme)
+        pending.complete(ApiResult.Success(RepoReadme("hello", context, true)))
+        val loaded = withTimeout(5_000) { vm.state.first { it.readmeHtml != null } }
+        assertEquals("<p>hello</p>", loaded.readmeHtml)
+        assertEquals(context, loaded.readmeContext)
+        assertTrue(loaded.readmeTruncated)
+        assertFalse(loaded.isLoadingReadme)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun readmeFailureAndRetryDoNotReloadOrganizationMetadata() = runTest {
+        val userRepo = repository()
+        coEvery { userRepo.getProfileOwner("github") } returns ApiResult.Success(fakeOrg())
+        coEvery { userRepo.getOrgProfileReadme("github") } returnsMany listOf(
+            ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(null),
+        )
+        val vm = createViewModel(userRepo)
+        vm.init("github")
+        assertEquals(fakeOrg(), vm.state.value.owner)
+        assertFalse(vm.state.value.loadFailed)
+        assertEquals(ApiError.NetworkError, vm.state.value.readmeError)
+        vm.retryReadme()
+        assertNull(vm.state.value.readmeError)
+        assertNull(vm.state.value.readmeHtml)
+        assertFalse(vm.state.value.isLoadingReadme)
+        coVerify(exactly = 1) { userRepo.getProfileOwner("github") }
+        coVerify(exactly = 2) { userRepo.getOrgProfileReadme("github") }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun aCancelledReadmeRequestCannotOverwriteTheRetry() = runTest {
+        val userRepo = repository()
+        val oldRequest = CompletableDeferred<ApiResult<RepoReadme?>>()
+        coEvery { userRepo.getProfileOwner("github") } returns ApiResult.Success(fakeOrg())
+        coEvery { userRepo.getOrgProfileReadme("github") } coAnswers {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { oldRequest.await() }
+        }
+        val vm = createViewModel(userRepo)
+        vm.init("github")
+        coEvery { userRepo.getOrgProfileReadme("github") } returns ApiResult.Success(null)
+        vm.retryReadme()
+        oldRequest.complete(ApiResult.Failure(ApiError.NetworkError))
+        runCurrent()
+        assertNull(vm.state.value.readmeError)
+        assertFalse(vm.state.value.isLoadingReadme)
+        assertFalse(vm.state.value.loadFailed)
+        vm.viewModelScope.cancel()
+    }
+
 }

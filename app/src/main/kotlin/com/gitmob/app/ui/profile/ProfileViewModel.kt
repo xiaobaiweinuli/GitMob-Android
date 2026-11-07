@@ -3,6 +3,15 @@ package com.gitmob.app.ui.profile
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
+import com.gitmob.app.core.error.ApiError
+import com.gitmob.app.core.markdown.MarkdownRenderer
+import com.gitmob.app.data.model.RepoDocumentContext
+import com.gitmob.app.data.repository.RepoDocumentRepository
+import com.gitmob.app.ui.common.RepoDocumentResources
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
@@ -24,6 +33,12 @@ data class ProfileUiState(
     val owner: ProfileOwner? = null,
     val isLoading: Boolean = false,
     val loadFailed: Boolean = false,
+    val readmeHtml: String? = null,
+    val readmeContext: RepoDocumentContext? = null,
+    val readmeRevision: Long = 0,
+    val readmeTruncated: Boolean = false,
+    val isLoadingReadme: Boolean = false,
+    val readmeError: ApiError? = null,
     // ---- OrganizationsBottomSheet 状态：用户/组织资料页点击"组织"统计项，弹出和 HomeScreen 同款弹窗 ----
     val showOrgSheet: Boolean = false,
     val organizations: List<SimpleOrg> = emptyList(),
@@ -41,11 +56,17 @@ class ProfileViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     session: AccountSession,
+    private val markdownRenderer: MarkdownRenderer,
+    private val documentRepository: RepoDocumentRepository,
 ) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(ProfileUiState())
     val state: StateFlow<ProfileUiState> = _state.asStateFlow()
     private var latestSavedProfile: EditableProfile? = null
+    private var readmeJob: Job? = null
+
+    fun createDocumentResources(document: RepoDocumentContext) =
+        RepoDocumentResources(document, accountEpoch, documentRepository)
 
     init {
         observeRepositoryCreated()
@@ -97,14 +118,49 @@ class ProfileViewModel @Inject constructor(
             val savedAtStart = latestSavedProfile
             _state.update { it.copy(isLoading = true, loadFailed = false) }
             when (val result = userRepository.getProfileOwner(login)) {
-                is ApiResult.Success -> _state.update {
-                    val saved = latestSavedProfile?.takeIf { profile -> profile !== savedAtStart }
-                    val owner = result.data
-                    it.copy(owner = if (owner is ProfileOwner.Person && saved != null) owner.withEditableProfile(saved) else owner, isLoading = false, loadFailed = false)
+                is ApiResult.Success -> {
+                    _state.update {
+                        val saved = latestSavedProfile?.takeIf { profile -> profile !== savedAtStart }
+                        val owner = result.data
+                        it.copy(owner = if (owner is ProfileOwner.Person && saved != null) owner.withEditableProfile(saved) else owner, isLoading = false, loadFailed = false)
+                    }
+                    if (result.data is ProfileOwner.Org) loadReadme()
                 }
                 is ApiResult.Failure -> {
                     errorEventBus.emit(result.error)
                     _state.update { it.copy(isLoading = false, loadFailed = true) }
+                }
+            }
+        }
+    }
+
+    fun retryReadme() = loadReadme(refreshResources = true)
+
+    private fun loadReadme(refreshResources: Boolean = false) {
+        val org = _state.value.owner as? ProfileOwner.Org ?: return
+        readmeJob?.cancel()
+        readmeJob = viewModelScope.launch {
+            if (refreshResources) _state.value.readmeContext?.let { documentRepository.invalidate(it) }
+            _state.update {
+                it.copy(isLoadingReadme = true, readmeHtml = null, readmeContext = null,
+                    readmeTruncated = false, readmeError = null, readmeRevision = it.readmeRevision + 1)
+            }
+            val result = userRepository.getOrgProfileReadme(org.login)
+            coroutineContext.ensureActive()
+            accountEpoch.ensureCurrent()
+            when (result) {
+                is ApiResult.Success -> {
+                    val readme = result.data
+                    val html = readme?.let {
+                        withContext(Dispatchers.Default) { markdownRenderer.renderToHtml(it.markdown) }
+                    }
+                    _state.update {
+                        it.copy(readmeHtml = html, readmeContext = readme?.context,
+                            readmeTruncated = readme?.isTruncated ?: false, isLoadingReadme = false)
+                    }
+                }
+                is ApiResult.Failure -> _state.update {
+                    it.copy(readmeError = result.error, isLoadingReadme = false)
                 }
             }
         }

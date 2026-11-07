@@ -2,6 +2,13 @@ package com.gitmob.app.data.repository
 
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
+import com.gitmob.app.R
+import com.gitmob.app.data.model.RepoDocumentContext
+import java.util.Base64
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -371,4 +378,84 @@ class RepoDetailRepositoryTest {
 
         assertTrue(result is ApiResult.Failure)
     }
+    private fun readmeBody(markdown: String, path: String = "docs/README.md"): JsonObject = buildJsonObject {
+        put("type", "file")
+        put("path", path)
+        put("encoding", "base64")
+        put("size", markdown.toByteArray().size)
+        put("sha", "blob-sha-must-not-be-used-as-ref")
+        put("content", Base64.getMimeEncoder(24, byteArrayOf(13, 10)).encodeToString(markdown.toByteArray()))
+    }
+
+    @Test fun preferredReadmeUsesRestPathAndDecodesMultilineBase64WithoutChangingMarkdown() = runTest(accounts.context) {
+        val markdown = "# 中文 README\n\n    indented code\n![图](images/a.png)\n[中文](README_CN.md)\n"
+        server.enqueue(MockResponse().setBody(readmeBody(markdown).toString()))
+        val ref = "feature/docs +中文"
+        val result = repository.getReadme("tiann", "KernelSU", ref) as ApiResult.Success
+        val readme = requireNotNull(result.data)
+        assertEquals(markdown, readme.markdown)
+        assertEquals(RepoDocumentContext("tiann", "KernelSU", ref, "docs/README.md"), readme.context)
+        assertFalse(readme.isTruncated)
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/repos/tiann/KernelSU/readme", request.requestUrl!!.encodedPath)
+        assertEquals(ref, request.requestUrl!!.queryParameter("ref"))
+        assertEquals("application/vnd.github+json", request.getHeader("Accept"))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun preferredReadmeRetainsGithubSelectedDirectoryAndMarkdownExtension() = runTest(accounts.context) {
+        for (path in listOf("README.md", ".github/README.md", "docs/ReadMe.MARKDOWN", "README")) {
+            server.enqueue(MockResponse().setBody(readmeBody("# Hello", path).toString()))
+            val result = repository.getReadme("o", "r", "tag/v1") as ApiResult.Success
+            assertEquals(path, result.data!!.context.filePath)
+            server.takeRequest()
+        }
+    }
+
+    @Test fun missingOrEmptyReadmeIsAbsentButRequestErrorsAreNot() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("{}"))
+        assertEquals(ApiResult.Success(null), repository.getReadme("o", "r", "main"))
+        for (text in listOf("", " \n\t")) {
+            server.enqueue(MockResponse().setBody(readmeBody(text).toString()))
+            assertEquals(ApiResult.Success(null), repository.getReadme("o", "r", "main"))
+        }
+        for (code in listOf(401, 403, 429, 500)) {
+            server.enqueue(MockResponse().setResponseCode(code).setBody("{}"))
+            assertTrue(repository.getReadme("o", "r", "main") is ApiResult.Failure)
+        }
+    }
+
+    @Test fun incompleteOrInvalidReadmeCannotBeMistakenForAbsentOrCompleteContent() = runTest(accounts.context) {
+        val valid = readmeBody("# Hello")
+        val invalid = listOf(
+            JsonObject(valid - "content"),
+            JsonObject(valid - "size"),
+            JsonObject(valid + ("size" to JsonPrimitive(9000))),
+            JsonObject(valid + ("encoding" to JsonPrimitive("none"))),
+            JsonObject(valid + ("content" to JsonPrimitive("%%%%"))),
+            JsonObject(valid + mapOf("content" to JsonPrimitive("/w=="), "size" to JsonPrimitive(1))),
+            JsonObject(valid + ("path" to JsonPrimitive("../README.md"))),
+        )
+        for (response in invalid) {
+            server.enqueue(MockResponse().setBody(response.toString()))
+            assertEquals(response.toString(), ApiResult.Failure(ApiError.UserVisible(R.string.repo_readme_invalid)),
+                repository.getReadme("o", "r", "main"))
+        }
+    }
+
+    @Test fun otherMarkupFormatsDoNotRenderAsMarkdown() = runTest(accounts.context) {
+        for (path in listOf("README.rst", "README.adoc", "README.org", "README.html")) {
+            server.enqueue(MockResponse().setBody(readmeBody("content", path).toString()))
+            assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.repo_readme_unsupported)),
+                repository.getReadme("o", "r", "main"))
+        }
+    }
+
+    @Test fun binaryReadmeIsNotPassedToTheMarkdownRenderer() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(readmeBody("hello\u0000binary").toString()))
+        assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.repo_readme_unsupported)),
+            repository.getReadme("o", "r", "main"))
+    }
+
 }

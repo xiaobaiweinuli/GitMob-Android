@@ -51,6 +51,7 @@ data class RepoDetailUiState(
     val readmeContext: RepoDocumentContext? = null,
     val readmeTruncated: Boolean = false,
     val isLoadingReadme: Boolean = false,
+    val readmeError: ApiError? = null,
     val currentRef: String? = null, // null 表示还没加载出 defaultBranchRef
     val isLoading: Boolean = false,
     val loadFailed: Boolean = false,
@@ -283,29 +284,36 @@ class RepoDetailViewModel @Inject constructor(
         }
     }
 
+    fun retryReadme() = loadReadme(refreshResources = true)
+
     private fun loadReadme(refreshResources: Boolean = false) {
         val ref = _state.value.currentRef ?: return
-        val document = RepoDocumentContext(owner, name, ref, "README.md")
         readmeJob?.cancel()
         readmeJob = viewModelScope.launch {
-            if (refreshResources) documentRepository.invalidate(document)
-            _state.update { it.copy(isLoadingReadme = true, readmeHtml = null, readmeContext = null, readmeRevision = it.readmeRevision + 1) }
-            when (val result = repoDetailRepository.getReadme(owner, name, ref)) {
+            if (refreshResources) {
+                // Invalidate the ref's resources before the API resolves the preferred file path.
+                documentRepository.invalidate(RepoDocumentContext(owner, name, ref, ""))
+            }
+            _state.update {
+                it.copy(isLoadingReadme = true, readmeHtml = null, readmeContext = null,
+                    readmeTruncated = false, readmeError = null, readmeRevision = it.readmeRevision + 1)
+            }
+            val result = repoDetailRepository.getReadme(owner, name, ref)
+            coroutineContext.ensureActive()
+            accountEpoch.ensureCurrent()
+            when (result) {
                 is ApiResult.Success -> {
-                    val markdown = result.data.markdown
-                    val html = markdown?.let { source ->
-                        // 大型 README 的 CommonMark 解析和 HTML 生成不应占用主线程。
-                        withContext(Dispatchers.Default) {
-                            markdownRenderer.renderToHtml(source)
-                        }
+                    val readme = result.data
+                    val html = readme?.let {
+                        withContext(Dispatchers.Default) { markdownRenderer.renderToHtml(it.markdown) }
                     }
                     _state.update {
-                        it.copy(readmeHtml = html, readmeContext = document.takeIf { html != null }, readmeTruncated = result.data.isTruncated, isLoadingReadme = false)
+                        it.copy(readmeHtml = html, readmeContext = readme?.context,
+                            readmeTruncated = readme?.isTruncated ?: false, isLoadingReadme = false)
                     }
                 }
-                is ApiResult.Failure -> {
-                    // README 拿不到不算整页失败（很多仓库确实没有 README），静默处理即可
-                    _state.update { it.copy(readmeHtml = null, readmeContext = null, isLoadingReadme = false) }
+                is ApiResult.Failure -> _state.update {
+                    it.copy(readmeError = result.error, isLoadingReadme = false)
                 }
             }
         }

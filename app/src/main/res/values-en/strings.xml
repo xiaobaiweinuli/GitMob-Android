@@ -262,6 +262,9 @@
     <string name="repo_commits">Commits</string>
     <string name="repo_current_ref">Current: %1$s</string>
     <string name="repo_readme_truncated">README is too long, showing partial content</string>
+    <string name="repo_readme_load_failed">Could not load README: %1$s</string>
+    <string name="repo_readme_unsupported">Preview is not supported for this README format</string>
+    <string name="repo_readme_invalid">README content is incomplete or uses an unsupported encoding</string>
 
     <!-- Repository management and upstream sync -->
     <string name="repo_manage_more">Repository management</string>

@@ -57,7 +57,8 @@ enum class IssueCreationPolicy { ALL, COLLABORATORS_ONLY, UNKNOWN }
 enum class PullRequestCreationPolicy { ALL, COLLABORATORS_ONLY, UNKNOWN }
 
 data class RepoReadme(
-    val markdown: String?,
+    val markdown: String,
+    val context: RepoDocumentContext,
     val isTruncated: Boolean,
 )
 

@@ -1,0 +1,21 @@
+# Optional public organization profile content, isolated from the profile query.
+query OrgProfileReadme($login: String!) {
+  repository(owner: $login, name: ".github") {
+    visibility
+    defaultBranchRef {
+      target {
+        __typename
+        ... on Commit {
+          oid
+          file(path: "profile/README.md") {
+            path
+            object {
+              __typename
+              ... on Blob { text isTruncated isBinary }
+            }
+          }
+        }
+      }
+    }
+  }
+}

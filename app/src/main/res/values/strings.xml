@@ -267,6 +267,9 @@
     <string name="repo_commits">提交</string>
     <string name="repo_current_ref">当前：%1$s</string>
     <string name="repo_readme_truncated">README 内容过长，仅显示部分</string>
+    <string name="repo_readme_load_failed">README 加载失败：%1$s</string>
+    <string name="repo_readme_unsupported">此 README 格式暂不支持预览</string>
+    <string name="repo_readme_invalid">README 内容不完整或编码不受支持</string>
 
     <!-- 仓库管理与上游同步 -->
     <string name="repo_manage_more">仓库管理</string>

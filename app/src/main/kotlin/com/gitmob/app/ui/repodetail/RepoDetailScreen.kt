@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.gitmob.app.core.error.displayMessageRes
 import com.gitmob.app.R
 import com.gitmob.app.data.model.FavoriteItem
 import com.gitmob.app.data.model.RepoDetail
@@ -133,10 +134,11 @@ fun RepoDetailScreen(
     LaunchedEffect(owner, name) { viewModel.init(owner, name) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val translation = LocalTranslationController.current
-    var readmeVisible by remember { mutableStateOf(false) }
+    var readmeVisible by remember(state.readmeContext, state.readmeRevision) { mutableStateOf(false) }
     var viewport by remember { mutableStateOf(Rect.Zero) }
-    val readmeTarget = remember(owner, name, state.currentRef, state.readmeHtml) {
-        TranslationTarget("repo:$owner/$name:" + state.currentRef + ":readme", state.readmeHtml.orEmpty(), true)
+    val readmeTarget = remember(owner, name, state.readmeContext, state.readmeHtml) {
+        val document = state.readmeContext
+        TranslationTarget("repo:$owner/$name:${document?.ref}:${document?.filePath}", state.readmeHtml.orEmpty(), true)
     }
     LaunchedEffect(state.detail?.id) {
         state.detail?.id?.let { libraryViewModel.show(com.gitmob.app.data.model.LibraryContent.Repository(it)) }
@@ -304,6 +306,19 @@ fun RepoDetailScreen(
                                 onDocumentLink = onDocumentLink,
                                 onExternalLink = onDocumentExternalLink,
                             )
+                        } else if (state.readmeError != null) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    stringResource(R.string.repo_readme_load_failed, stringResource(state.readmeError!!.displayMessageRes())),
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                TextButton(onClick = viewModel::retryReadme) { Text(stringResource(R.string.common_retry)) }
+                            }
                         } else if (state.isLoadingReadme) {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(24.dp),

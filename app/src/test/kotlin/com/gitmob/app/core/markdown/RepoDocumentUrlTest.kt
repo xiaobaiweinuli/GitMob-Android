@@ -100,4 +100,15 @@ class RepoDocumentUrlTest {
         assertEquals(RepoDocumentLink.External(url), document.resolveLink(url))
     }
 
+    @Test fun preferredReadmeAndOrganizationProfileResolveRelativeLinksFromActualDirectories() {
+        val readme = RepoDocumentContext("tiann", "KernelSU", "main", "docs/README.md")
+        assertEquals(readme.copy(filePath = "docs/README_CN.md"),
+            (readme.resolveLink("README_CN.md") as RepoDocumentLink.File).document)
+        assertEquals("docs/images/logo.png", readme.resourcePath("images/logo.png"))
+        val profile = RepoDocumentContext("org", ".github", "commit123", "profile/README.md")
+        assertEquals("profile/images/logo.png", profile.resourcePath("images/logo.png"))
+        assertEquals(profile.copy(filePath = "CONTRIBUTING.md"),
+            (profile.resolveLink("../CONTRIBUTING.md") as RepoDocumentLink.File).document)
+    }
+
 }

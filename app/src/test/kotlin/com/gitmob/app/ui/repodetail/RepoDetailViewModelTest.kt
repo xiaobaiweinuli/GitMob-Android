@@ -111,7 +111,7 @@ class RepoDetailViewModelTest {
         coEvery { details.getRepoDetail(any(), any()) } returnsMany listOf(
             ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(fakeDetail()), ApiResult.Success(refreshedDetail),
         )
-        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(RepoReadme(null, false))
+        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
         val library = libraryRepositoryStub()
         val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, library, mockk(relaxUnitFun = true))
         vm.init("octo", "greetings")
@@ -133,7 +133,7 @@ class RepoDetailViewModelTest {
         val details = mockk<RepoDetailRepository>()
         val detail = fakeDetail()
         coEvery { details.getRepoDetail(any(), any()) } returns ApiResult.Success(detail)
-        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(RepoReadme(null, false))
+        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
         val library = libraryRepositoryStub()
         val pendingRefresh = CompletableDeferred<ApiResult<Unit>>()
         coEvery { library.refreshFavorite(any(), any(), any()) } coAnswers { pendingRefresh.await() }
@@ -167,7 +167,7 @@ class RepoDetailViewModelTest {
         val detailRepo = mockk<RepoDetailRepository>()
         coEvery { detailRepo.getRepoDetail("octo", "greetings") } returns ApiResult.Success(fakeDetail())
         coEvery { detailRepo.getReadme("octo", "greetings", "main") } returns
-                ApiResult.Success(RepoReadme(fakeMd, false))
+                ApiResult.Success(RepoReadme(fakeMd, com.gitmob.app.data.model.RepoDocumentContext("octo", "greetings", "main", "docs/README.md"), false))
         val md = mockk<MarkdownRenderer>()
         every { md.renderToHtml(fakeMd) } returns fakeHtml
 
@@ -179,7 +179,7 @@ class RepoDetailViewModelTest {
         assertNotNull(loadedState.detail)
         assertEquals("main", loadedState.currentRef)
         assertEquals(fakeHtml, loadedState.readmeHtml)
-        assertEquals(com.gitmob.app.data.model.RepoDocumentContext("octo", "greetings", "main", "README.md"), loadedState.readmeContext)
+        assertEquals(com.gitmob.app.data.model.RepoDocumentContext("octo", "greetings", "main", "docs/README.md"), loadedState.readmeContext)
         assertFalse(loadedState.isLoading)
         assertFalse(loadedState.isLoadingReadme)
         vm.viewModelScope.cancel()
@@ -190,7 +190,7 @@ class RepoDetailViewModelTest {
         val detailRepo = mockk<RepoDetailRepository>()
         coEvery { detailRepo.getRepoDetail("a", "b") } returns ApiResult.Success(fakeDetail())
         coEvery { detailRepo.getReadme("a", "b", "main") } returns
-                ApiResult.Failure(ApiError.Unknown("404"))
+                ApiResult.Success(null)
 
         val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
         vm.init("a", "b")
@@ -277,9 +277,9 @@ class RepoDetailViewModelTest {
         val detailRepo = mockk<RepoDetailRepository>()
         coEvery { detailRepo.getRepoDetail("a", "b") } returns ApiResult.Success(fakeDetail(branch = "main"))
         coEvery { detailRepo.getReadme("a", "b", "main") } returns
-                ApiResult.Success(RepoReadme("# main", false))
+                ApiResult.Success(RepoReadme("# main", com.gitmob.app.data.model.RepoDocumentContext("a", "b", "main", ".github/README.md"), false))
         coEvery { detailRepo.getReadme("a", "b", "dev") } returns
-                ApiResult.Success(RepoReadme("# dev", false))
+                ApiResult.Success(RepoReadme("# dev", com.gitmob.app.data.model.RepoDocumentContext("a", "b", "dev", "README.md"), false))
 
         val md = mockk<MarkdownRenderer>()
         every { md.renderToHtml("# main") } returns "<h1>main</h1>"
@@ -398,7 +398,7 @@ class RepoDetailViewModelTest {
         coEvery { repository.getRepoDetail("octo", "greetings") } returns ApiResult.Success(
             fakeDetail(capabilities = RepoPermission.ADMIN.toCapabilities()),
         )
-        coEvery { repository.getReadme(any(), any(), any()) } returns ApiResult.Success(RepoReadme(null, false))
+        coEvery { repository.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
         val owners = mockk<RepoRepository>(relaxed = true)
         coEvery { owners.getRepositoryCreateOwners(null) } returns ApiResult.Success(
             RepositoryCreateOwnerPage(
@@ -892,7 +892,7 @@ class RepoDetailViewModelTest {
         errors: ErrorEventBus = ErrorEventBus(),
     ): RepoDetailViewModel {
         coEvery { details.getRepoDetail("octo", "greetings") } returns ApiResult.Success(detail)
-        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(RepoReadme(null, false))
+        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
         return RepoDetailViewModel(
             details, mockk(relaxed = true), stars, makeFakeRenderer(), RepoUpdateEventBus(), errors, mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true),
         ).apply { init("octo", "greetings") }
@@ -903,7 +903,7 @@ class RepoDetailViewModelTest {
         val images = mockk<com.gitmob.app.data.repository.RepoDocumentRepository>(relaxUnitFun = true)
         val updates = RepoUpdateEventBus()
         coEvery { detailRepo.getRepoDetail("octo", "greetings") } returns ApiResult.Success(fakeDetail())
-        coEvery { detailRepo.getReadme("octo", "greetings", "main") } returns ApiResult.Success(RepoReadme(fakeMd, false))
+        coEvery { detailRepo.getReadme("octo", "greetings", "main") } returns ApiResult.Success(RepoReadme(fakeMd, com.gitmob.app.data.model.RepoDocumentContext("octo", "greetings", "main", "docs/README.md"), false))
         val renderer = mockk<MarkdownRenderer>()
         every { renderer.renderToHtml(fakeMd) } returns fakeHtml
         val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), renderer, updates, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), images)
@@ -915,8 +915,55 @@ class RepoDetailViewModelTest {
         }
         val refreshed = withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml && it.readmeRevision > initial.readmeRevision } }
         assertEquals(initial.readmeContext, refreshed.readmeContext)
-        io.mockk.verify(exactly = 1) { images.invalidate(com.gitmob.app.data.model.RepoDocumentContext("octo", "greetings", "main", "README.md"), null) }
+        io.mockk.verify(exactly = 1) { images.invalidate(com.gitmob.app.data.model.RepoDocumentContext("octo", "greetings", "main", ""), null) }
         coVerify(exactly = 2) { detailRepo.getReadme("octo", "greetings", "main") }
+    }
+
+    @Test fun readmeRetryKeepsRepositoryDetailAndClearsOnlyItsOwnFailure() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.getRepoDetail("o", "r") } returns ApiResult.Success(fakeDetail())
+        coEvery { details.getReadme("o", "r", "main") } returnsMany listOf(
+            ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(null),
+        )
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(),
+            RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        vm.init("o", "r")
+        assertEquals(ApiError.NetworkError, vm.state.value.readmeError)
+        assertNotNull(vm.state.value.detail)
+        assertFalse(vm.state.value.loadFailed)
+        vm.retryReadme()
+        assertNull(vm.state.value.readmeError)
+        assertNull(vm.state.value.readmeContext)
+        assertFalse(vm.state.value.readmeTruncated)
+        assertFalse(vm.state.value.isLoadingReadme)
+        coVerify(exactly = 1) { details.getRepoDetail("o", "r") }
+        coVerify(exactly = 2) { details.getReadme("o", "r", "main") }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun oldBranchReadmeFailureCannotOverwriteNewBranch() = runTest(accounts.context) {
+        val details = mockk<RepoDetailRepository>()
+        val pending = CompletableDeferred<ApiResult<RepoReadme?>>()
+        coEvery { details.getRepoDetail("o", "r") } returns ApiResult.Success(fakeDetail())
+        coEvery { details.getReadme("o", "r", "main") } coAnswers {
+            withContext(NonCancellable) { pending.await() }
+        }
+        coEvery { details.getReadme("o", "r", "dev") } returns ApiResult.Success(null)
+        val updates = RepoUpdateEventBus()
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(),
+            updates, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        vm.init("o", "r")
+        assertTrue(vm.state.value.isLoadingReadme)
+        updates.emit(RepoUpdateEvent.BranchSwitched("o", "r", "dev"))
+        pending.complete(ApiResult.Failure(ApiError.NetworkError))
+        advanceUntilIdle()
+        assertEquals("dev", vm.state.value.currentRef)
+        assertNull(vm.state.value.readmeError)
+        assertNull(vm.state.value.readmeContext)
+        assertFalse(vm.state.value.isLoadingReadme)
+        vm.viewModelScope.cancel()
     }
 
 }

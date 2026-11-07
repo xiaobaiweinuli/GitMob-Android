@@ -2,6 +2,8 @@ package com.gitmob.app.data.repository
 
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
+import com.gitmob.app.R
+import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.auth.AccountSession
@@ -709,4 +711,66 @@ class UserRepositoryProfileOwnerTest {
 
     private fun takeVariables() =
         Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+    private fun orgReadmeBody(
+        text: String? = "# Organization\n![Logo](images/logo.png)",
+        visibility: String = "PUBLIC",
+        binary: Boolean = false,
+        truncated: Boolean = false,
+    ): String = """
+        {"data":{"repository":{"visibility":"$visibility","defaultBranchRef":{
+          "target":{"__typename":"Commit","oid":"commit-123","file":{
+            "path":"profile/README.md","object":{"__typename":"Blob",
+              "text":${if (text == null) "null" else JsonPrimitive(text)},"isBinary":$binary,"isTruncated":$truncated}
+          }}
+        }}}}
+    """.trimIndent()
+
+    @Test fun organizationReadmeUsesDefaultBranchCommitAndProfilePath() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(orgReadmeBody()))
+        val result = repository.getOrgProfileReadme("github") as ApiResult.Success
+        val readme = requireNotNull(result.data)
+        assertEquals("# Organization\n![Logo](images/logo.png)", readme.markdown)
+        assertEquals(RepoDocumentContext("github", ".github", "commit-123", "profile/README.md"), readme.context)
+        assertFalse(readme.isTruncated)
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body.contains("OrgProfileReadme"))
+        assertTrue(body.contains("profile/README.md"))
+        assertFalse(body.contains("main:README.md"))
+    }
+
+    @Test fun optionalOrganizationReadmeMissingPrivateInternalOrBlankStaysAbsent() = runTest(accounts.context) {
+        val responses = listOf(
+            """{"data":{"repository":null}}""",
+            """{"data":{"repository":{"visibility":"PUBLIC","defaultBranchRef":null}}}""",
+            """{"data":{"repository":{"visibility":"PUBLIC","defaultBranchRef":{"target":{"__typename":"Commit","oid":"abc","file":null}}}}}""",
+            orgReadmeBody(visibility = "PRIVATE"),
+            orgReadmeBody(visibility = "INTERNAL"),
+            orgReadmeBody(text = " \n"),
+            """{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","message":"missing .github","path":["repository"]}]}""",
+        )
+        for (response in responses) {
+            server.enqueue(MockResponse().setBody(response))
+            assertEquals(response, ApiResult.Success(null), repository.getOrgProfileReadme("github"))
+        }
+    }
+
+    @Test fun organizationReadmeKeepsTruncationAndReportsInvalidContent() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(orgReadmeBody(truncated = true)))
+        val partial = repository.getOrgProfileReadme("github") as ApiResult.Success
+        assertTrue(partial.data!!.isTruncated)
+        server.enqueue(MockResponse().setBody(orgReadmeBody(binary = true)))
+        assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.repo_readme_unsupported)), repository.getOrgProfileReadme("github"))
+        server.enqueue(MockResponse().setBody(orgReadmeBody(text = null)))
+        assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.repo_readme_invalid)), repository.getOrgProfileReadme("github"))
+    }
+
+    @Test fun optionalOrganizationReadmeDoesNotHidePermissionOrTransportErrors() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody("""{"data":{"repository":null},"errors":[{"type":"FORBIDDEN","message":"denied","path":["repository"]}]}"""))
+        assertTrue(repository.getOrgProfileReadme("github") is ApiResult.Failure)
+        server.enqueue(MockResponse().setBody("""{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","message":"missing"},{"type":"FORBIDDEN","message":"denied"}]}"""))
+        assertTrue(repository.getOrgProfileReadme("github") is ApiResult.Failure)
+        server.enqueue(MockResponse().setResponseCode(500).setBody("{}"))
+        assertTrue(repository.getOrgProfileReadme("github") is ApiResult.Failure)
+    }
+
 }

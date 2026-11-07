@@ -6,6 +6,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.UserVisibleException
+import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
@@ -21,6 +22,7 @@ import com.gitmob.app.data.model.RepoList
 import com.gitmob.app.data.model.RepoBranch
 import com.gitmob.app.data.model.BranchCreationSpec
 import com.gitmob.app.data.model.RepoDetail
+import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.model.RepoReadme
 import com.gitmob.app.data.model.SimpleUser
 import com.gitmob.app.data.model.CreatedRepository
@@ -46,12 +48,15 @@ import com.gitmob.app.graphql.type.SubscriptionState
 import com.gitmob.app.graphql.DeleteBranchMutation
 import com.gitmob.app.graphql.RepoBranchesQuery
 import com.gitmob.app.graphql.RepoDetailQuery
-import com.gitmob.app.graphql.RepoReadmeQuery
 import com.gitmob.app.graphql.RepoWatchersQuery
 import com.gitmob.app.graphql.RepoStargazersQuery
 import com.gitmob.app.graphql.RepoForksQuery
+import java.util.Base64
+import java.nio.ByteBuffer
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -137,17 +142,44 @@ class RepoDetailRepository @Inject constructor(
             }
         }
 
-    /** README 用 object(expression:) 取原始 Markdown，Repository.readme 不存在于公开 Schema */
-    suspend fun getReadme(owner: String, name: String, ref: String): ApiResult<RepoReadme> =
-        when (val result = apolloClient.query(
-            RepoReadmeQuery(owner, name, "$ref:README.md"),
-        ).executeAsApiResult()) {
-            is ApiResult.Failure -> result
-            is ApiResult.Success -> safeCall {
-                val blob = result.data.repository?.`object`?.onBlob
-                RepoReadme(markdown = blob?.text, isTruncated = blob?.isTruncated ?: false)
-            }
+    /** GitHub selects the preferred README and returns its actual path with the content. */
+    suspend fun getReadme(owner: String, name: String, ref: String): ApiResult<RepoReadme?> = safeCall {
+        val response = try {
+            api.get<ReadmeResponse>(
+                "/repos/${encodePathSegment(owner)}/${encodePathSegment(name)}/readme?ref=${encodePathSegment(ref)}",
+                accept = "application/vnd.github+json",
+            )
+        } catch (error: HttpStatusException) {
+            if (error.code == 404) return@safeCall null
+            throw error
         }
+        if (response.type != "file" || response.path.isNullOrBlank() || response.encoding != "base64" ||
+            response.content == null || response.size == null || response.size < 0
+        ) throw UserVisibleException(R.string.repo_readme_invalid)
+        val path = response.path
+        if (path.startsWith('/') || path.split('/').any { it.isBlank() || it == "." || it == ".." }) {
+            throw UserVisibleException(R.string.repo_readme_invalid)
+        }
+        val fileName = path.substringAfterLast('/').lowercase()
+        if (fileName != "readme" && fileName.substringAfterLast('.', "") !in
+            setOf("md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mkdown")
+        ) throw UserVisibleException(R.string.repo_readme_unsupported)
+        val markdown = withContext(Dispatchers.Default) {
+            val text = try {
+                val bytes = Base64.getDecoder().decode(response.content.filterNot { it in " \t\r\n" })
+                if (bytes.size.toLong() != response.size) throw IllegalArgumentException("Incomplete README")
+                StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
+            } catch (_: IllegalArgumentException) {
+                throw UserVisibleException(R.string.repo_readme_invalid)
+            } catch (_: java.nio.charset.CharacterCodingException) {
+                throw UserVisibleException(R.string.repo_readme_invalid)
+            }
+            if ('\u0000' in text) throw UserVisibleException(R.string.repo_readme_unsupported)
+            text
+        }
+        if (markdown.isBlank()) return@safeCall null
+        RepoReadme(markdown, RepoDocumentContext(owner, name, ref, path), isTruncated = false)
+    }
 
     /**
      * 仓库分支列表。
@@ -604,4 +636,13 @@ private data class RestGitObject(
 @kotlinx.serialization.Serializable
 private data class RestBranchResponse(
     val name: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+private data class ReadmeResponse(
+    val type: String? = null,
+    val path: String? = null,
+    val encoding: String? = null,
+    val content: String? = null,
+    val size: Long? = null,
 )
