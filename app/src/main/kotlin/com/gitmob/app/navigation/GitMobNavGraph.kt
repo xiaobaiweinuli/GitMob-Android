@@ -1,5 +1,8 @@
 package com.gitmob.app.navigation
 
+import com.gitmob.app.ui.translation.TranslationHost
+import com.gitmob.app.ui.translation.TranslationSettingsScreen
+
 import android.net.Uri
 import com.gitmob.app.data.model.RepoDocumentContext
 import androidx.activity.compose.LocalActivity
@@ -391,7 +394,8 @@ private fun LoggedInApp(
         // Push 路由：与 Tab 解耦，push 路由进当前激活 Tab 的独立栈
         // 返回键统一走 navigator.goBack()，在 Tab 根上会切回 Home，二级页正常出栈
         // ──────────────────────────────────────────────────────────────
-        entry<AdvancedSettingsRoute> { AdvancedSettingsScreen(onBack = { navigator.goBack() }, viewModel = accountLibrary) }
+        entry<AdvancedSettingsRoute> { AdvancedSettingsScreen(onBack = { navigator.goBack() }, viewModel = accountLibrary, onTranslation = { navigator.navigate(TranslationSettingsRoute) }) }
+        entry<TranslationSettingsRoute> { TranslationSettingsScreen(onBack = { navigator.goBack() }) }
         entry<FavoritesRoute> { FavoritesScreen(accountLibrary = accountLibrary, onBack = { navigator.goBack() }, onGroup = { navigator.navigate(FavoriteGroupRoute(it.id, it.name)) }) }
         entry<FavoriteGroupRoute> { route -> FavoriteGroupScreen(accountLibrary, route.groupId, initialName = route.name, onGist = { navigator.navigate(GistDetailRoute(it)) }, onBack = { navigator.goBack() }, onRepo = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) }, onHomepage = openExternalUrl) }
         entry<HistoryRoute> { HistoryScreen(accountLibrary = accountLibrary, onGist = { navigator.navigate(GistDetailRoute(it)) }, onBack = { navigator.goBack() }, onRepo = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) }, onHomepage = openExternalUrl) }
@@ -494,45 +498,47 @@ private fun LoggedInApp(
             )
         }
         entry<RepoDetailRoute> { route ->
-            RepoDetailScreen(
-                accountLibrary = accountLibrary,
-                onDocumentLink = openDocument,
-                onDocumentExternalLink = openDocumentExternal,
-                owner = route.owner,
-                name = route.name,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onForkSourceClick = { forkOwner, forkName ->
-                    navigator.navigate(RepoDetailRoute(forkOwner, forkName))
-                },
-                onHomepageClick = openExternalUrl,
-                onNavigateBranches = { currentRef, canPush, canManageBranchProtection ->
-                    navigator.navigate(
-                        RepoBranchesRoute(route.owner, route.name, currentRef, canPush, canManageBranchProtection)
-                    )
-                },
-                onNavigateCode = { ref -> navigator.navigate(RepoCodeRoute(route.owner, route.name, ref)) },
-                onNavigateCommits = { ref -> navigator.navigate(RepoCommitsRoute(route.owner, route.name, ref)) },
-                onNavigateWatchers = { navigator.navigate(RepoWatchersRoute(route.owner, route.name)) },
-                onNavigateStargazers = { navigator.navigate(RepoStargazersRoute(route.owner, route.name)) },
-                onNavigateForks = { navigator.navigate(RepoForksRoute(route.owner, route.name)) },
-                onNavigateIssues = { permission, viewerCanCreateIssues ->
-                    navigator.navigate(RepoIssuesRoute(route.owner, route.name, permission, viewerCanCreateIssues))
-                },
-                onNavigatePullRequests = { permission -> navigator.navigate(RepoPullRequestsRoute(route.owner, route.name, permission)) },
-                onNavigateDiscussions = { permission -> navigator.navigate(RepoDiscussionsRoute(route.owner, route.name, permission)) },
-                onNavigateActions = { permission, defaultRef -> navigator.navigate(RepoActionsRoute(route.owner, route.name, permission, defaultRef)) },
-                onNavigateReleases = { permission -> navigator.navigate(RepoReleasesRoute(route.owner, route.name, permission)) },
-                onNavigateContributors = { navigator.navigate(RepoContributorsRoute(route.owner, route.name)) },
-                onNavigateLicense = { ref -> navigator.navigate(RepoLicenseRoute(route.owner, route.name, ref)) },
-                onNavigatePlaceholder = { label -> navigator.navigate(RepoPlaceholderRoute(label)) },
-                onRepositoryAddressChanged = { owner, name ->
-                    navigator.onRepositoryUpdate(RepoUpdateEvent.RepositoryAddressChanged(route.owner, route.name, owner, name))
-                },
-                onRepositoryDeleted = {
-                    navigator.onRepositoryUpdate(RepoUpdateEvent.RepositoryDeleted(route.owner, route.name))
-                },
-            )
+            TranslationHost {
+                RepoDetailScreen(
+                    accountLibrary = accountLibrary,
+                    onDocumentLink = openDocument,
+                    onDocumentExternalLink = openDocumentExternal,
+                    owner = route.owner,
+                    name = route.name,
+                    onBack = { navigator.goBack() },
+                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onForkSourceClick = { forkOwner, forkName ->
+                        navigator.navigate(RepoDetailRoute(forkOwner, forkName))
+                    },
+                    onHomepageClick = openExternalUrl,
+                    onNavigateBranches = { currentRef, canPush, canManageBranchProtection ->
+                        navigator.navigate(
+                            RepoBranchesRoute(route.owner, route.name, currentRef, canPush, canManageBranchProtection)
+                        )
+                    },
+                    onNavigateCode = { ref -> navigator.navigate(RepoCodeRoute(route.owner, route.name, ref)) },
+                    onNavigateCommits = { ref -> navigator.navigate(RepoCommitsRoute(route.owner, route.name, ref)) },
+                    onNavigateWatchers = { navigator.navigate(RepoWatchersRoute(route.owner, route.name)) },
+                    onNavigateStargazers = { navigator.navigate(RepoStargazersRoute(route.owner, route.name)) },
+                    onNavigateForks = { navigator.navigate(RepoForksRoute(route.owner, route.name)) },
+                    onNavigateIssues = { permission, viewerCanCreateIssues ->
+                        navigator.navigate(RepoIssuesRoute(route.owner, route.name, permission, viewerCanCreateIssues))
+                    },
+                    onNavigatePullRequests = { permission -> navigator.navigate(RepoPullRequestsRoute(route.owner, route.name, permission)) },
+                    onNavigateDiscussions = { permission -> navigator.navigate(RepoDiscussionsRoute(route.owner, route.name, permission)) },
+                    onNavigateActions = { permission, defaultRef -> navigator.navigate(RepoActionsRoute(route.owner, route.name, permission, defaultRef)) },
+                    onNavigateReleases = { permission -> navigator.navigate(RepoReleasesRoute(route.owner, route.name, permission)) },
+                    onNavigateContributors = { navigator.navigate(RepoContributorsRoute(route.owner, route.name)) },
+                    onNavigateLicense = { ref -> navigator.navigate(RepoLicenseRoute(route.owner, route.name, ref)) },
+                    onNavigatePlaceholder = { label -> navigator.navigate(RepoPlaceholderRoute(label)) },
+                    onRepositoryAddressChanged = { owner, name ->
+                        navigator.onRepositoryUpdate(RepoUpdateEvent.RepositoryAddressChanged(route.owner, route.name, owner, name))
+                    },
+                    onRepositoryDeleted = {
+                        navigator.onRepositoryUpdate(RepoUpdateEvent.RepositoryDeleted(route.owner, route.name))
+                    },
+                )
+            }
         }
         entry<RepoIssuesRoute> { route ->
             RepoIssueListScreen(
@@ -548,32 +554,34 @@ private fun LoggedInApp(
             )
         }
         entry<RepoIssueDetailRoute> { route ->
-            RepoIssueDetailScreen(
-                owner = route.owner,
-                name = route.name,
-                number = route.number,
-                permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onEdit = { navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, route.number, route.permission)) },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onCompose = { request ->
-                    navigator.navigate(
-                        ConversationComposerRoute(
-                            owner = route.owner,
-                            name = route.name,
-                            number = route.number,
-                            target = request.target,
-                            subjectId = request.subjectId,
-                            initialText = request.initialText,
-                            commentId = request.commentId,
-                            replyToId = request.replyToId,
-                            reviewEvent = request.reviewEvent,
-                        ),
-                    )
-                },
-            )
+            TranslationHost {
+                RepoIssueDetailScreen(
+                    owner = route.owner,
+                    name = route.name,
+                    number = route.number,
+                    permission = route.permission,
+                    onBack = { navigator.goBack() },
+                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                    onEdit = { navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                    onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onCompose = { request ->
+                        navigator.navigate(
+                            ConversationComposerRoute(
+                                owner = route.owner,
+                                name = route.name,
+                                number = route.number,
+                                target = request.target,
+                                subjectId = request.subjectId,
+                                initialText = request.initialText,
+                                commentId = request.commentId,
+                                replyToId = request.replyToId,
+                                reviewEvent = request.reviewEvent,
+                            ),
+                        )
+                    },
+                )
+            }
         }
         entry<RepoIssueEditorRoute> { route ->
             RepoIssueEditorScreen(
@@ -620,33 +628,35 @@ private fun LoggedInApp(
             )
         }
         entry<RepoPullRequestDetailRoute> { route ->
-            RepoPullRequestDetailScreen(
-                owner = route.owner,
-                name = route.name,
-                number = route.number,
-                permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onEdit = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, route.number, route.permission)) },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onCommitClick = { sha, ref -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, ref, route.permission)) },
-                onCompose = { request ->
-                    navigator.navigate(
-                        ConversationComposerRoute(
-                            owner = route.owner,
-                            name = route.name,
-                            number = route.number,
-                            target = request.target,
-                            subjectId = request.subjectId,
-                            initialText = request.initialText,
-                            commentId = request.commentId,
-                            replyToId = request.replyToId,
-                            reviewEvent = request.reviewEvent,
-                        ),
-                    )
-                },
-            )
+            TranslationHost {
+                RepoPullRequestDetailScreen(
+                    owner = route.owner,
+                    name = route.name,
+                    number = route.number,
+                    permission = route.permission,
+                    onBack = { navigator.goBack() },
+                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                    onEdit = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                    onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onCommitClick = { sha, ref -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, ref, route.permission)) },
+                    onCompose = { request ->
+                        navigator.navigate(
+                            ConversationComposerRoute(
+                                owner = route.owner,
+                                name = route.name,
+                                number = route.number,
+                                target = request.target,
+                                subjectId = request.subjectId,
+                                initialText = request.initialText,
+                                commentId = request.commentId,
+                                replyToId = request.replyToId,
+                                reviewEvent = request.reviewEvent,
+                            ),
+                        )
+                    },
+                )
+            }
         }
         entry<RepoPullRequestEditorRoute> { route ->
             RepoPullRequestEditorScreen(
@@ -679,32 +689,34 @@ private fun LoggedInApp(
             )
         }
         entry<RepoDiscussionDetailRoute> { route ->
-            RepoDiscussionDetailScreen(
-                owner = route.owner,
-                name = route.name,
-                number = route.number,
-                permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onEdit = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, route.number, route.permission)) },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onCompose = { request ->
-                    navigator.navigate(
-                        ConversationComposerRoute(
-                            owner = route.owner,
-                            name = route.name,
-                            number = route.number,
-                            target = request.target,
-                            subjectId = request.subjectId,
-                            initialText = request.initialText,
-                            commentId = request.commentId,
-                            replyToId = request.replyToId,
-                            reviewEvent = request.reviewEvent,
-                        ),
-                    )
-                },
-            )
+            TranslationHost {
+                RepoDiscussionDetailScreen(
+                    owner = route.owner,
+                    name = route.name,
+                    number = route.number,
+                    permission = route.permission,
+                    onBack = { navigator.goBack() },
+                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                    onEdit = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                    onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onCompose = { request ->
+                        navigator.navigate(
+                            ConversationComposerRoute(
+                                owner = route.owner,
+                                name = route.name,
+                                number = route.number,
+                                target = request.target,
+                                subjectId = request.subjectId,
+                                initialText = request.initialText,
+                                commentId = request.commentId,
+                                replyToId = request.replyToId,
+                                reviewEvent = request.reviewEvent,
+                            ),
+                        )
+                    },
+                )
+            }
         }
         entry<RepoDiscussionEditorRoute> { route ->
             RepoDiscussionEditorScreen(
@@ -910,26 +922,28 @@ private fun LoggedInApp(
             )
         }
         entry<RepoFileDetailRoute> { route ->
-            RepoFileDetailScreen(
-                onDirectoryFound = {
-                    if (epoch.isCurrent && navState.backStacks[navState.topLevelRoute]?.lastOrNull() == route) {
-                        navigator.goBack()
-                        navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, route.path, route.permission))
-                    }
-                },
-                initialPreview = route.initialPreview,
-                onDocumentLink = openDocument,
-                onDocumentExternalLink = openDocumentExternal,
-                owner = route.owner,
-                name = route.name,
-                ref = route.ref,
-                path = route.path,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onEdit = { navigator.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
-                onHistory = { navigator.navigate(RepoCommitsRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
-            )
+            TranslationHost {
+                RepoFileDetailScreen(
+                    onDirectoryFound = {
+                        if (epoch.isCurrent && navState.backStacks[navState.topLevelRoute]?.lastOrNull() == route) {
+                            navigator.goBack()
+                            navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, route.path, route.permission))
+                        }
+                    },
+                    initialPreview = route.initialPreview,
+                    onDocumentLink = openDocument,
+                    onDocumentExternalLink = openDocumentExternal,
+                    owner = route.owner,
+                    name = route.name,
+                    ref = route.ref,
+                    path = route.path,
+                    onBack = { navigator.goBack() },
+                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                    onEdit = { navigator.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
+                    onHistory = { navigator.navigate(RepoCommitsRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
+                )
+            }
         }
         entry<RepoFileEditorRoute> { route ->
             RepoFileEditorScreen(
@@ -994,35 +1008,37 @@ private fun LoggedInApp(
         }
 
         entry<GistDetailRoute> { route ->
-            GistDetailScreen(
-                accountLibrary = accountLibrary,
-                gistId = route.id,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { navigator.navigate(ProfileRoute(it)) },
-                onForkSourceClick = { navigator.navigate(GistDetailRoute(it)) },
-                onRevisions = { navigator.navigate(GistRevisionsRoute(route.id)) },
-                onForks = { navigator.navigate(GistForksRoute(route.id)) },
-                onStargazers = { nodeId -> navigator.navigate(GistStargazersRoute(nodeId)) },
-                onAddFile = { navigator.navigate(GistFileEditorRoute(route.id)) },
-                onEditFile = { file -> navigator.navigate(GistFileEditorRoute(route.id, file.filename)) },
-                onCompose = { request ->
-                    navigator.navigate(
-                        ConversationComposerRoute(
-                            owner = "",
-                            name = "",
-                            number = 0,
-                            target = request.target,
-                            subjectId = request.subjectId,
-                            initialText = request.initialText,
-                            commentId = request.commentId,
-                            replyToId = request.replyToId,
-                            reviewEvent = request.reviewEvent,
-                        ),
-                    )
-                },
-                onForked = { fork -> navigator.navigate(GistDetailRoute(fork.id)) },
-                onDeleted = { navigator.goBack() },
-            )
+            TranslationHost {
+                GistDetailScreen(
+                    accountLibrary = accountLibrary,
+                    gistId = route.id,
+                    onBack = { navigator.goBack() },
+                    onOwnerClick = { navigator.navigate(ProfileRoute(it)) },
+                    onForkSourceClick = { navigator.navigate(GistDetailRoute(it)) },
+                    onRevisions = { navigator.navigate(GistRevisionsRoute(route.id)) },
+                    onForks = { navigator.navigate(GistForksRoute(route.id)) },
+                    onStargazers = { nodeId -> navigator.navigate(GistStargazersRoute(nodeId)) },
+                    onAddFile = { navigator.navigate(GistFileEditorRoute(route.id)) },
+                    onEditFile = { file -> navigator.navigate(GistFileEditorRoute(route.id, file.filename)) },
+                    onCompose = { request ->
+                        navigator.navigate(
+                            ConversationComposerRoute(
+                                owner = "",
+                                name = "",
+                                number = 0,
+                                target = request.target,
+                                subjectId = request.subjectId,
+                                initialText = request.initialText,
+                                commentId = request.commentId,
+                                replyToId = request.replyToId,
+                                reviewEvent = request.reviewEvent,
+                            ),
+                        )
+                    },
+                    onForked = { fork -> navigator.navigate(GistDetailRoute(fork.id)) },
+                    onDeleted = { navigator.goBack() },
+                )
+            }
         }
 
         entry<GistRevisionsRoute> { route ->

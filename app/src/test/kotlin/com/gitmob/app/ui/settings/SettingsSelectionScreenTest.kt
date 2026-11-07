@@ -24,12 +24,16 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.gitmob.app.data.model.AccountState
+import com.gitmob.app.ui.login.LoginUiState
+import com.gitmob.app.ui.login.LoginViewModel
 import com.gitmob.app.R
 import com.gitmob.app.ui.theme.ThemePreference
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.MutableStateFlow
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import io.mockk.verify
@@ -205,11 +209,15 @@ class SettingsSelectionScreenTest {
         owner: LifecycleOwner = TestLifecycleOwner(),
     ) {
         val viewModel = mockk<SettingsViewModel>(relaxed = true)
+        val accountViewModel = mockk<LoginViewModel>(relaxUnitFun = true) {
+            every { accountState } returns MutableStateFlow(AccountState())
+            every { state } returns MutableStateFlow(LoginUiState())
+        }
         composeRule.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
                 MaterialTheme {
                     if (visible?.value != false) {
-                        SettingsScreen(preference = ThemePreference(), viewModel = viewModel)
+                        SettingsScreen(preference = ThemePreference(), viewModel = viewModel, accountViewModel = accountViewModel)
                     }
                 }
             }

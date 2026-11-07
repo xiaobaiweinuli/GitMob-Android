@@ -1,5 +1,13 @@
 package com.gitmob.app.ui.repodetail
 
+import com.gitmob.app.ui.translation.*
+import com.gitmob.app.data.translation.TranslationTarget
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material3.ExtendedFloatingActionButton
+
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -124,6 +132,12 @@ fun RepoDetailScreen(
 ) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val translation = LocalTranslationController.current
+    var readmeVisible by remember { mutableStateOf(false) }
+    var viewport by remember { mutableStateOf(Rect.Zero) }
+    val readmeTarget = remember(owner, name, state.currentRef, state.readmeHtml) {
+        TranslationTarget("repo:$owner/$name:" + state.currentRef + ":readme", state.readmeHtml.orEmpty(), true)
+    }
     LaunchedEffect(state.detail?.id) {
         state.detail?.id?.let { libraryViewModel.show(com.gitmob.app.data.model.LibraryContent.Repository(it)) }
     }
@@ -139,6 +153,27 @@ fun RepoDetailScreen(
     }
 
     Scaffold(
+        floatingActionButton = {
+            if (translation?.enabled == true && readmeVisible && state.readmeHtml != null && !state.isLoading && !state.loadFailed) {
+                val entry = translation.state.entries[readmeTarget.identity]
+                val running = entry?.running == true
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        when {
+                            state.readmeTruncated -> translation.hint(R.string.translation_unavailable)
+                            running -> translation.viewModel.cancel(readmeTarget)
+                            else -> translation.open(readmeTarget)
+                        }
+                    },
+                    icon = { if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Translate, null) },
+                    text = { Text(if (running) translationProgressText(requireNotNull(entry)) else stringResource(when {
+                        entry == null || entry.showOriginal -> R.string.translation_start
+                        entry.problem != null || entry.displayProblem || entry.phase == TranslationPhase.CANCELLED || entry.completed < entry.total -> R.string.translation_partial
+                        else -> R.string.translation_options
+                    })) },
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text(name) },
@@ -171,7 +206,8 @@ fun RepoDetailScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .onGloballyPositioned { viewport = it.boundsInWindow() },
         ) {
             when {
                 state.isLoading && state.detail == null -> {
@@ -257,8 +293,13 @@ fun RepoDetailScreen(
                             val documentResources = remember(readmeHtml, state.readmeContext, state.readmeRevision, viewModel) {
                                 state.readmeContext?.let(viewModel::createDocumentResources)
                             }
-                            MarkdownWebView(
+                            TranslationHtml(
+                                translationKey = readmeTarget.key,
                                 bodyHtml = readmeHtml,
+                                modifier = Modifier.onGloballyPositioned {
+                                    val bounds = it.boundsInWindow()
+                                    readmeVisible = bounds.height > 0 && bounds.bottom > viewport.top && bounds.top < viewport.bottom
+                                },
                                 documentResources = documentResources,
                                 onDocumentLink = onDocumentLink,
                                 onExternalLink = onDocumentExternalLink,
@@ -274,6 +315,7 @@ fun RepoDetailScreen(
                         // Push route 底部：navigationBars + captionBar 高度
                         Spacer(
                             Modifier.height(
+                                (if (translation?.enabled == true) 88.dp else 0.dp) +
                                 WindowInsets.navigationBars.asPaddingValues()
                                     .calculateBottomPadding() +
                                     WindowInsets.captionBar.asPaddingValues()

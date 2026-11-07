@@ -15,6 +15,8 @@ material3 = "1.4.0"
 materialKolor = "4.0.0"
 commonmark = "0.29.0"
 emojiJava = "5.1.1"
+jsoup = "1.24.1"
+desugarNio = "2.1.5"
 
 # 架构与导航
 lifecycle = "2.11.0"
@@ -43,6 +45,8 @@ mockwebserver = "5.0.0"
 robolectric = "4.14"
 
 [libraries]
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+desugar-nio = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "desugarNio" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.17.0" }
 # i18n：AppCompatDelegate.setApplicationLocales 应用内语言切换（官方路线，见 文档/i18n 计划）
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version = "1.7.0" }

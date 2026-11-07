@@ -94,6 +94,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -123,6 +124,8 @@ ksp {
 }
 
 dependencies {
+    implementation(libs.jsoup)
+    coreLibraryDesugaring(libs.desugar.nio)
     implementation(libs.apollo.runtime)
     implementation(libs.apollo.api)
     implementation(libs.androidx.core.ktx)

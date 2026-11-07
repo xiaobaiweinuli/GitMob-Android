@@ -124,4 +124,18 @@ class RepoDocumentWebViewClientTest {
         coVerify(exactly = 1) { repository.load(document, "images/a.png") }
     }
 
+
+    @Test fun pageReadinessAndOnlyMainFrameFailuresReachDisplayController() {
+        var ready = 0
+        var failed = 0
+        val observing = RepoDocumentWebViewClient(resources, {}, {}, { ready++ }, { failed++ })
+        observing.onPageFinished(view, document.baseUrl().toString())
+        assertEquals(1, ready)
+        observing.onReceivedError(view, request("https://example.com/image.png"), mockk(relaxed = true))
+        observing.onReceivedHttpError(view, request("https://example.com/image.png"), mockk(relaxed = true))
+        assertEquals(0, failed)
+        observing.onReceivedError(view, request(document.baseUrl().toString(), true), mockk(relaxed = true))
+        observing.onReceivedHttpError(view, request(document.baseUrl().toString(), true), mockk(relaxed = true))
+        assertEquals(2, failed)
+    }
 }

@@ -1,5 +1,10 @@
 package com.gitmob.app.ui.gist
 
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.text.selection.SelectionContainer
+import com.gitmob.app.ui.translation.*
+import com.gitmob.app.data.translation.TranslationTarget
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -69,7 +74,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -146,6 +150,7 @@ fun GistDetailScreen(
                             Icon(Icons.Default.MoreVert, stringResource(R.string.common_more))
                         }
                         DropdownMenu(expanded = topMenuOpen, onDismissRequest = { topMenuOpen = false }) {
+                            if (detail != null) TranslationMenuItem(TranslationTarget("gist:" + detail.id + ":description", detail.description.orEmpty()), { topMenuOpen = false }, R.string.translation_description)
                             if (library.loaded && librarySettings.value?.favoritesEnabled == true && detail != null) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(if (favorite == null) R.string.favorites_add else R.string.favorites_manage)) },
@@ -346,7 +351,8 @@ internal fun GistDetailContent(
                             )
                         }
                     }
-                    Text(detail.description ?: stringResource(R.string.gist_no_description), style = MaterialTheme.typography.titleMedium)
+                    if (detail.description.isNullOrBlank()) Text(stringResource(R.string.gist_no_description), style = MaterialTheme.typography.titleMedium)
+                    else TranslationText(TranslationTarget("gist:" + detail.id + ":description", detail.description), style = MaterialTheme.typography.titleMedium, showStatus = true)
                     Text(
                         stringResource(
                             R.string.gist_detail_metadata,
@@ -506,12 +512,12 @@ internal fun GistFileCard(
             }
             if (expanded) {
                 HorizontalDivider()
-                if (file.isText) Text(
+                if (file.isText) SelectionContainer { Text(
                     file.content.orEmpty(),
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(16.dp),
-                    fontFamily = FontFamily.Monospace,
+                    Modifier.fillMaxWidth().padding(16.dp).horizontalScroll(rememberScrollState()),
                     style = MaterialTheme.typography.bodySmall,
-                ) else Text(
+                    fontFamily = FontFamily.Monospace,
+                ) } else Text(
                     stringResource(if (file.isTruncated) R.string.gist_file_truncated else R.string.gist_file_binary),
                     Modifier.padding(16.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

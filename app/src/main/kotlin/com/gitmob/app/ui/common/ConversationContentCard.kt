@@ -1,5 +1,9 @@
 package com.gitmob.app.ui.common
 
+import com.gitmob.app.ui.translation.TranslationMenuItem
+import com.gitmob.app.ui.translation.TranslationHtml
+import com.gitmob.app.data.translation.TranslationTarget
+
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
@@ -128,6 +132,7 @@ fun ConversationContentCard(
                 Box {
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        TranslationMenuItem(TranslationTarget(url, bodyHtml.orEmpty(), true), { menuOpen = false })
                         if (url.isNotBlank()) DropdownMenuItem(
                             text = { Text(stringResource(R.string.conversation_share)) },
                             leadingIcon = { Icon(Icons.Default.Share, null) },
@@ -156,7 +161,8 @@ fun ConversationContentCard(
                 }
             }
             bodyHtml?.takeIf(String::isNotBlank)?.let {
-                MarkdownWebView(
+                TranslationHtml(
+                    translationKey = url,
                     bodyHtml = it,
                     modifier = Modifier.fillMaxWidth(),
                     backgroundColor = MaterialTheme.colorScheme.surfaceContainerLow,

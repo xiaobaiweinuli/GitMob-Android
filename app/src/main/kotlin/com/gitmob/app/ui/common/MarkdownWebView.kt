@@ -5,6 +5,8 @@ import android.content.Context
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebResourceError
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.key
 import androidx.core.net.toUri
 import androidx.compose.runtime.getValue
 import com.gitmob.app.data.model.DocumentImage
@@ -34,6 +37,9 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.viewinterop.AndroidView
 import java.util.Locale
+import java.util.UUID
+import org.json.JSONObject
+import com.gitmob.app.data.translation.TranslationPresentation
 import kotlin.math.abs
 
 /**
@@ -55,6 +61,9 @@ fun MarkdownWebView(
     documentResources: RepoDocumentResources? = null,
     onDocumentLink: (RepoDocumentContext) -> Unit = {},
     onExternalLink: ((String) -> Unit)? = null,
+    translation: TranslationPresentation? = null,
+    displayAttempt: Int = 0,
+    onTranslationDisplayError: () -> Unit = {},
 ) {
     val cssFileName = if (backgroundColor.luminance() < 0.5f) {
         "github-markdown-dark.css"
@@ -73,32 +82,33 @@ fun MarkdownWebView(
         if (onExternalLink != null) onExternalLink(url)
         else runCatching { uriHandler.openUri(url) }
     }
-    val client = remember(documentResources) {
+    val controlled = translation?.document?.safeHtml != null
+    val currentDisplayError by rememberUpdatedState(onTranslationDisplayError)
+    // Resources belong to the logical document, not to an individual WebView instance.
+    DisposableEffect(documentResources) { onDispose { documentResources?.close() } }
+    val retainedSize = remember(bodyHtml, documentResources) { intArrayOf(0) }
+    val webViewHolder = remember(bodyHtml, documentResources, controlled) { MarkdownTranslationController { currentDisplayError() } }
+    val client = remember(documentResources, webViewHolder) {
         documentResources?.let { resources ->
-            RepoDocumentWebViewClient(resources, { currentDocumentLink(it) }, { currentExternalLink(it) })
-        } ?: ExternalLinkWebViewClient { currentExternalLink(it) }
+            RepoDocumentWebViewClient(resources, { currentDocumentLink(it) }, { currentExternalLink(it) }, webViewHolder::pageReady, webViewHolder::pageError)
+        } ?: ExternalLinkWebViewClient(webViewHolder::pageReady, webViewHolder::pageError) { currentExternalLink(it) }
     }
-    DisposableEffect(documentResources) {
-        onDispose { documentResources?.close() }
+    val script = remember(context, controlled) {
+        if (controlled) context.assets.open("markdown-translation.js").bufferedReader().use { it.readText() } else null
     }
-
-    // Markdown 正文可能很大，只有正文或主题实际变化时才重新拼装完整文档。
-    val fullHtml = remember(
-        bodyHtml,
-        cssFileName,
-        backgroundCss,
-    ) {
-        buildMarkdownDocument(
-            bodyHtml = bodyHtml,
-            stylesheet = stylesheet,
-            backgroundCss = backgroundCss,
-        )
+    val sourceCss = MaterialTheme.colorScheme.onSurfaceVariant.toCssHex()
+    val borderCss = MaterialTheme.colorScheme.outlineVariant.toCssHex()
+    // Results and progress never participate in the HTML loading identity.
+    val documentId = remember(bodyHtml, translation?.document, cssFileName, backgroundCss, sourceCss, borderCss, displayAttempt) { UUID.randomUUID().toString() }
+    val nonce = remember(documentId) { UUID.randomUUID().toString() }
+    val fullHtml = remember(documentId) {
+        buildMarkdownDocument(translation?.document?.safeHtml ?: bodyHtml, stylesheet, backgroundCss,
+            script = script, nonce = nonce, documentId = documentId, sourceCss = sourceCss, borderCss = borderCss)
     }
-    // AndroidView 的 update 会因无关重组反复执行，用稳定 key 防止 WebView 整页重载。
     val pageKey = remember(fullHtml, documentResources) { Any() }
-    // onGloballyPositioned 回调里需要拿到 factory 创建的 WebView 实例。
-    val webViewHolder = remember { WebViewHolder() }
 
+    // A new controlled instance never enables scripts on previously loaded raw HTML.
+    key(bodyHtml, documentResources, controlled) {
     AndroidView(
         modifier = modifier
             .fillMaxWidth()
@@ -109,12 +119,17 @@ fun MarkdownWebView(
             // 从底部进入时有一条"死区"空白，静止也不恢复）。位置一变就强制重绘，
             // 把"滚动即重绘"的 View 世界契约还给 WebView。
             .onGloballyPositioned {
+                if (it.size.height > 0) retainedSize[0] = it.size.height
                 webViewHolder.webView?.postInvalidateOnAnimation()
             },
         factory = { context ->
             val webView = NoVerticalScrollWebView(context).apply {
                 onImageClick = { selectedImage = it }
-                settings.javaScriptEnabled = false // 渲染 Markdown 不需要执行 JS，默认关闭更安全
+                settings.javaScriptEnabled = controlled
+                settings.javaScriptCanOpenWindowsAutomatically = false
+                settings.setSupportMultipleWindows(false)
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                settings.domStorageEnabled = false
                 // Chromium 默认不为"已 attach 但不在屏幕上"的 WebView 光栅化，从屏幕外
                 // 滚入时会先露出空白。官方 GitHub App 的 README WebView 也靠这个开关
                 // 让像素在滚入前就准备好（反编译 InternalWebView 确认）。
@@ -151,33 +166,36 @@ fun MarkdownWebView(
                 })
             }
             webViewHolder.webView = webView
-            createMarkdownWebViewHost(webView)
+            createMarkdownWebViewHost(webView).apply { minimumHeight = retainedSize[0] }
         },
         update = { host ->
             val webView = host.getChildAt(0) as? WebView ?: return@AndroidView
             (webView as? NoVerticalScrollWebView)?.onImageClick = { selectedImage = it }
             if (webView.tag !== pageKey) {
                 webView.tag = pageKey
+                webViewHolder.begin(pageKey, if (controlled) documentId else null)
                 webView.setWebViewClient(client)
                 webView.settings.allowFileAccess = false
-                webView.settings.allowContentAccess = documentResources == null
+                webView.settings.allowContentAccess = !controlled && documentResources == null
                 webView.settings.cacheMode = if (documentResources == null) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_NO_CACHE
                 webView.loadDataWithBaseURL(
-                    documentResources?.document?.baseUrl()?.toString() ?: "file:///android_asset/",
+                    documentResources?.document?.baseUrl()?.toString() ?: if (controlled) "https://translation.invalid/" else "file:///android_asset/",
                     fullHtml,
                     "text/html",
                     "UTF-8",
                     null,
                 )
             }
+            webViewHolder.submit(translation)
         },
         onRelease = { host ->
-            documentResources?.close()
+            webViewHolder.release()
             (webViewHolder.webView as? NoVerticalScrollWebView)?.onImageClick = null
             webViewHolder.webView = null
             releaseMarkdownWebViewHost(host)
         },
     )
+    }
     selectedImage?.let { image ->
         DocumentImageViewer(image, documentResources?.document, { selectedImage = null }, { link ->
             if (client is RepoDocumentWebViewClient) {
@@ -197,7 +215,18 @@ fun MarkdownWebView(
 }
 
 /** Generic Markdown delegates links to the system instead of replacing its embedded document. */
-internal class ExternalLinkWebViewClient(private val onExternalLink: (String) -> Unit) : WebViewClient() {
+internal class ExternalLinkWebViewClient(
+    private val onPageReady: (WebView) -> Unit = {},
+    private val onPageError: (WebView) -> Unit = {},
+    private val onExternalLink: (String) -> Unit,
+) : WebViewClient() {
+    override fun onPageFinished(view: WebView, url: String?) { onPageReady(view) }
+    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+        if (request.isForMainFrame) onPageError(view)
+    }
+    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+        if (request.isForMainFrame) onPageError(view)
+    }
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
         if (request.isForMainFrame) openLink(view, request.url.toString()) else true
 
@@ -206,15 +235,86 @@ internal class ExternalLinkWebViewClient(private val onExternalLink: (String) ->
 
     private fun openLink(view: WebView, url: String): Boolean {
         if ('#' in url && url.substringBefore('#') == view.url?.substringBefore('#')) return false
-        onExternalLink(url)
+        val uri = url.toUri()
+        if (uri.scheme in setOf("https", "http", "mailto") && uri.userInfo.isNullOrEmpty()) onExternalLink(url)
         return true
     }
 }
 
-/** 供 onGloballyPositioned 回调访问 factory 里创建的 WebView，不参与重组。 */
-private class WebViewHolder {
+/** View-local display coordination; business results remain exclusively in the ViewModel. */
+internal class MarkdownTranslationController(private val onError: () -> Unit) {
     var webView: WebView? = null
+    private var pageKey: Any? = null
+    private var documentId: String? = null
+    private var ready = false
+    private var failed = false
+    private var applying = false
+    private var pending: TranslationPresentation? = null
+    private var confirmed: Pair<Long, Long>? = null
+    private val timeout = Runnable { fail() }
+
+    fun begin(key: Any, id: String?) {
+        webView?.removeCallbacks(timeout)
+        pageKey = key; documentId = id; ready = false; failed = false; applying = false; confirmed = null
+        if (id != null) webView?.postDelayed(timeout, 15000)
+    }
+    fun submit(value: TranslationPresentation?) { pending = value; flush() }
+    fun pageReady(view: WebView) {
+        if (view !== webView) return
+        if (documentId == null) { (view.parent as? View)?.minimumHeight = 0; view.requestLayout(); return }
+        if (ready || failed) return
+        val expected = pageKey
+        runCatching {
+            view.evaluateJavascript("window.gmTranslation && window.gmTranslation.ready()") { result ->
+                if (!current(view, expected)) return@evaluateJavascript
+                val ack = parse(result)
+                // A late page-finished callback can still observe the previous document.
+                // Keep waiting for the current document; the bounded handshake timeout reports a missing script.
+                if (ack?.optString("documentId") != documentId) return@evaluateJavascript
+                ready = true; view.removeCallbacks(timeout); remeasure(view); flush()
+            }
+        }.onFailure { fail() }
+    }
+    fun pageError(view: WebView) { if (view === webView && documentId != null) fail() }
+    private fun flush() {
+        val view = webView ?: return
+        val value = pending ?: return
+        val id = documentId ?: return
+        if (!ready || failed || applying || confirmed == (value.generation to value.version)) return
+        val expected = pageKey
+        applying = true
+        view.removeCallbacks(timeout); view.postDelayed(timeout, 15000)
+        runCatching {
+            view.evaluateJavascript("window.gmTranslation && window.gmTranslation.apply(" + translationPatch(id, value) + ")") { result ->
+                if (!current(view, expected)) return@evaluateJavascript
+                applying = false; view.removeCallbacks(timeout)
+                val ack = parse(result)
+                if (ack?.optString("documentId") != id || ack.optLong("generation", -1) != value.generation || ack.optLong("version", -1) != value.version) {
+                    fail(); return@evaluateJavascript
+                }
+                confirmed = value.generation to value.version
+                remeasure(view)
+                flush()
+            }
+        }.onFailure { fail() }
+    }
+    private fun current(view: WebView, key: Any?) = view === webView && pageKey === key && view.tag === key && !failed
+    private fun parse(value: String?): JSONObject? = runCatching { JSONObject(value.orEmpty()) }.getOrNull()
+    private fun remeasure(view: WebView) {
+        (view.parent as? View)?.let { it.minimumHeight = 0; it.requestLayout() }
+        view.requestLayout(); view.postInvalidateOnAnimation()
+    }
+    private fun fail() {
+        if (failed || documentId == null) return
+        failed = true; applying = false; webView?.removeCallbacks(timeout); onError()
+    }
+    fun release() { webView?.removeCallbacks(timeout); ready = false; failed = true; pending = null; pageKey = null }
 }
+
+internal fun translationPatch(documentId: String, value: TranslationPresentation): String = JSONObject().apply {
+    put("documentId", documentId); put("generation", value.generation); put("version", value.version); put("mode", value.mode)
+    put("values", JSONObject().apply { value.translations.forEach { (id, text) -> put(id.toString(), text) } })
+}.toString()
 
 /**
  * 本组件里 WebView 被撑到完整内容高度、由外层 Compose 容器滚动，按设计自身不应滚动；
@@ -272,25 +372,41 @@ internal fun buildMarkdownDocument(
     bodyHtml: String,
     stylesheet: String,
     backgroundCss: String,
-): String =
-    """
+    script: String? = null,
+    nonce: String = "",
+    documentId: String = "",
+    sourceCss: String = "#656d76",
+    borderCss: String = "#d0d7de",
+): String {
+    val policy = if (script == null) "" else """
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-$nonce'; style-src 'unsafe-inline'; img-src https: http: data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    """.trimIndent()
+    val translationStyle = if (script == null) "" else """
+        .markdown-body .gm-source { color: $sourceCss; }
+        .markdown-body [data-gm-output] { display: block; border-inline-start: 3px solid $borderCss; padding-inline-start: 12px; margin: 8px 0; font-weight: normal; white-space: pre-wrap; }
+        .markdown-body [data-gm-output][hidden] { display: none; }
+    """.trimIndent()
+    val articleAttributes = if (script == null) "" else " id=\"gm-root\" data-gm-document=\"$documentId\""
+    val updater = if (script == null) "" else "<script nonce=\"$nonce\">$script</script>"
+    return """
         <!doctype html>
         <html lang="zh">
         <head>
+            $policy
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>$stylesheet</style>
             <style>
-                html, body, .markdown-body {
-                    background-color: $backgroundCss !important;
-                }
+                html, body, .markdown-body { background-color: $backgroundCss !important; }
                 body { margin: 0; }
                 .markdown-body { padding: 0 16px 16px; box-sizing: border-box; }
                 .markdown-body img { max-width: 100%; }
+                $translationStyle
             </style>
         </head>
-        <body><article class="markdown-body">$bodyHtml</article></body>
+        <body><article class="markdown-body"$articleAttributes>$bodyHtml</article>$updater</body>
         </html>
     """.trimIndent()
+}
 
 private fun Color.toCssHex(): String =
     String.format(Locale.ROOT, "#%06X", toArgb() and 0x00FFFFFF)

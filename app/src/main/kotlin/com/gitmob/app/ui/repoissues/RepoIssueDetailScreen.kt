@@ -1,5 +1,9 @@
 package com.gitmob.app.ui.repoissues
 
+import com.gitmob.app.ui.translation.TranslationMenuItem
+import com.gitmob.app.ui.translation.TranslationText
+import com.gitmob.app.data.translation.TranslationTarget
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -70,6 +74,12 @@ fun RepoIssueDetailScreen(
                         Box {
                             IconButton(onClick = { pageMenuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                             DropdownMenu(pageMenuOpen, { pageMenuOpen = false }) {
+                                TranslationMenuItem(
+                                    target = TranslationTarget(issue.url + ":title", issue.title),
+                                    onDismiss = { pageMenuOpen = false },
+                                    label = R.string.translation_translate_title,
+                                )
+
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.conversation_share)) },
                                     leadingIcon = { Icon(Icons.Default.Share, null) },
@@ -206,7 +216,7 @@ private fun IssueConversation(
 @Composable
 private fun IssueHeader(issue: RepoIssue) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(issue.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        TranslationText(TranslationTarget(issue.url + ":title", issue.title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, showStatus = true)
         Row(verticalAlignment = Alignment.CenterVertically) {
             val visual = issueStateVisual(issue.state, issue.stateReason)
             AssistChip(

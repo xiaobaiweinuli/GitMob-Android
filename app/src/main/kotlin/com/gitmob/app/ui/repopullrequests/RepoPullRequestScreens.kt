@@ -1,5 +1,9 @@
 package com.gitmob.app.ui.repopullrequests
 
+import com.gitmob.app.ui.translation.TranslationMenuItem
+import com.gitmob.app.ui.translation.TranslationText
+import com.gitmob.app.data.translation.TranslationTarget
+
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -309,6 +313,12 @@ fun RepoPullRequestDetailScreen(
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                             DropdownMenu(menu, { menu = false }) {
+                                TranslationMenuItem(
+                                    target = TranslationTarget(pullRequest.url + ":title", pullRequest.title),
+                                    onDismiss = { menu = false },
+                                    label = R.string.translation_translate_title,
+                                )
+
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.conversation_share)) },
                                     leadingIcon = { Icon(Icons.Default.Share, null) },
@@ -548,7 +558,7 @@ fun RepoPullRequestDetailScreen(
 @Composable
 private fun PullRequestHeader(pullRequest: RepoPullRequest) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(pullRequest.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        TranslationText(TranslationTarget(pullRequest.url + ":title", pullRequest.title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, showStatus = true)
         Text(stringResource(R.string.pr_author_meta, pullRequest.author?.login ?: stringResource(R.string.common_deleted_user), pullRequest.createdAt.take(10)))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val visual = pullRequestStateVisual(

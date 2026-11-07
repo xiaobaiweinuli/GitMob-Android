@@ -231,3 +231,6 @@ internal fun Route.replaceRepositoryAddress(owner: String, name: String, newOwne
 @Serializable data class FavoritesRoute(val page: String = "favorites") : Route
 @Serializable data class FavoriteGroupRoute(val groupId: String, val name: String = "") : Route
 @Serializable data class HistoryRoute(val page: String = "history") : Route
+
+@kotlinx.serialization.Serializable
+data object TranslationSettingsRoute : Route

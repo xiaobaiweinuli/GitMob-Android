@@ -1,5 +1,9 @@
 package com.gitmob.app.ui.repodiscussions
 
+import com.gitmob.app.ui.translation.TranslationMenuItem
+import com.gitmob.app.ui.translation.TranslationText
+import com.gitmob.app.data.translation.TranslationTarget
+
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -74,7 +78,42 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(R.string.discussion_number, number), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { state.discussion?.let { d -> if (d.viewerCanSubscribe) IconButton(onClick = viewModel::toggleSubscription) { Icon(if (d.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe)) }; Box { IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }; DropdownMenu(menuOpen, { menuOpen = false }) { if (d.state == RepoDiscussionState.OPEN && d.viewerCanClose) DropdownMenuItem(text = { Text(stringResource(R.string.discussion_close)) }, onClick = { menuOpen = false; viewModel.close() }); if (d.state == RepoDiscussionState.CLOSED && d.viewerCanReopen) DropdownMenuItem(text = { Text(stringResource(R.string.discussion_reopen)) }, onClick = { menuOpen = false; viewModel.reopen() }); if (state.capabilities.canManageIssuesAndPRs && d.viewerCanDelete) DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; viewModel.confirmDeleteDiscussion(true) }) } } } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
+        topBar = {
+            TopAppBar(
+                title = { RepositoryContextTitle(owner, name, stringResource(R.string.discussion_number, number), onOwnerClick, onRepositoryClick) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                actions = {
+                    state.discussion?.let { discussion ->
+                        if (discussion.viewerCanSubscribe) IconButton(onClick = viewModel::toggleSubscription) {
+                            Icon(if (discussion.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe))
+                        }
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
+                            DropdownMenu(menuOpen, { menuOpen = false }) {
+                                TranslationMenuItem(
+                                    TranslationTarget(discussion.url + ":title", discussion.title),
+                                    { menuOpen = false },
+                                    R.string.translation_translate_title,
+                                )
+                                if (discussion.state == RepoDiscussionState.OPEN && discussion.viewerCanClose) DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.discussion_close)) },
+                                    onClick = { menuOpen = false; viewModel.close() },
+                                )
+                                if (discussion.state == RepoDiscussionState.CLOSED && discussion.viewerCanReopen) DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.discussion_reopen)) },
+                                    onClick = { menuOpen = false; viewModel.reopen() },
+                                )
+                                if (state.capabilities.canManageIssuesAndPRs && discussion.viewerCanDelete) DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) },
+                                    onClick = { menuOpen = false; viewModel.confirmDeleteDiscussion(true) },
+                                )
+                            }
+                        }
+                    }
+                },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+        },
         floatingActionButton = {
             state.discussion?.let { discussion ->
                 ExtendedFloatingActionButton(
@@ -192,7 +231,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
         isClosed = d.state == RepoDiscussionState.CLOSED,
     )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(d.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        TranslationText(TranslationTarget(d.url + ":title", d.title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, showStatus = true)
         GitHubEmojiLabel(d.category.emoji, d.category.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(

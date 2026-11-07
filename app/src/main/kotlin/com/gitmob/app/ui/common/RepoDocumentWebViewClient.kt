@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.common
 
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -16,7 +17,17 @@ internal class RepoDocumentWebViewClient(
     private val resources: RepoDocumentResources,
     private val onDocumentLink: (RepoDocumentContext) -> Unit,
     private val onExternalLink: (String) -> Unit,
+    private val onPageReady: (WebView) -> Unit = {},
+    private val onPageError: (WebView) -> Unit = {},
 ) : WebViewClient() {
+    override fun onPageFinished(view: WebView, url: String?) { onPageReady(view) }
+    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+        if (request.isForMainFrame) onPageError(view)
+    }
+    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+        if (request.isForMainFrame) onPageError(view)
+    }
+
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
         if (request.isForMainFrame) openLink(request.url.toString()) else true
 

@@ -65,6 +65,8 @@ import com.gitmob.app.data.repository.AuthRepository
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.data.repository.RepoRepository
 import com.gitmob.app.data.repository.StarRepository
+import com.gitmob.app.data.repository.TranslationRepository
+import com.gitmob.app.data.translation.*
 import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.AccountSessionRule
 import com.gitmob.app.testutil.MainDispatcherRule
@@ -84,10 +86,17 @@ import dagger.hilt.android.internal.builders.ViewModelComponentBuilder
 import dagger.hilt.android.internal.lifecycle.HiltViewModelFactory
 import dagger.hilt.internal.GeneratedComponent
 import dagger.hilt.internal.GeneratedComponentManager
+import com.gitmob.app.ui.translation.TranslationPhase
+import com.gitmob.app.ui.translation.TranslationViewModel
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -310,6 +319,58 @@ class AccountNavigationTest {
     }
 
     @Test
+    fun `translation survives configuration recreation and stops when its entry is removed`() {
+        val target = TranslationTarget("gist:abc123:description", "Deep link abc123")
+        var response = CompletableDeferred<String>()
+        every { fixture.translations.configuration } returns MutableStateFlow(
+            TranslationConfiguration(TranslationPreferences(enabled = true)),
+        )
+        coEvery { fixture.translations.document(any(), any()) } coAnswers {
+            val content = firstArg<TranslationTarget>()
+            Result.success(TranslationDocument(content, listOf(content.content),
+                listOf(TranslationSpan(0, content.content.length, listOf(0)))))
+        }
+        every { fixture.translations.translateDocument(any(), any(), any(), any()) } answers {
+            flow {
+                emit(TranslationUpdate.RequestStarted)
+                emit(TranslationUpdate.Batch(mapOf(0 to response.await())))
+            }
+        }
+        launch(DeepLinkDestination.GistDetail("abc123"))
+        val vm = fixture.model<TranslationViewModel>()
+        composeRule.runOnIdle { vm.open(target); vm.request() }
+        assertTrue(vm.state.value.entries.getValue(target.identity).running)
+        val activity = controller!!.get()
+
+        composeRule.runOnUiThread { controller!!.recreate() }
+        composeRule.waitForIdle()
+
+        assertNotSame(activity, controller!!.get())
+        assertSame(vm, fixture.model<TranslationViewModel>())
+        assertTrue(vm.state.value.entries.getValue(target.identity).running)
+        composeRule.runOnIdle { response.complete("Translated description") }
+        composeRule.onNodeWithText("Translated description").assertIsDisplayed()
+        assertEquals(TranslationPhase.COMPLETE, vm.state.value.entries.getValue(target.identity).phase)
+        coVerify(exactly = 1) { fixture.translations.document(target, TranslationProvider.EDGE) }
+        verify(exactly = 1) { fixture.translations.translateDocument(any(), any(), any(), any()) }
+
+        val updated = target.copy(content = "Updated description")
+        composeRule.runOnIdle {
+            response = CompletableDeferred()
+            vm.open(updated)
+            vm.request()
+        }
+        assertTrue(vm.state.value.entries.getValue(updated.identity).running)
+        composeRule.runOnUiThread { controller!!.get().onBackPressedDispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+
+        assertTrue(fixture.creation(vm).cleared)
+        assertFalse(vm.viewModelScope.isActive)
+        composeRule.runOnIdle { response.complete("Late result") }
+        assertTrue(vm.state.value.entries.getValue(updated.identity).translations.isEmpty())
+    }
+
+    @Test
     fun `冷启动Gist深链进入已有详情页并消费一次`() {
         launch(DeepLinkDestination.GistDetail("abc123"))
         composeRule.onAllNodesWithText("Deep link abc123")[0].assertIsDisplayed()
@@ -408,6 +469,7 @@ internal class NavigationFixture(val session: AccountSession) {
     val users = mockk<UserRepository>()
     private val repos = mockk<RepoRepository>(relaxUnitFun = true)
     val gists = mockk<GistRepository>()
+    val translations = mockk<TranslationRepository>()
     var deepLinkDestination by mutableStateOf<DeepLinkDestination?>(null)
     var consumedDeepLinks = 0
     private val stars = mockk<StarRepository>()
@@ -420,6 +482,7 @@ internal class NavigationFixture(val session: AccountSession) {
     data class Creation(val model: AccountViewModel, val handle: SavedStateHandle, var cleared: Boolean = false)
 
     init {
+        every { translations.configuration } returns MutableStateFlow(TranslationConfiguration())
         coEvery { gists.getGist(any()) } coAnswers {
             val id = firstArg<String>()
             ApiResult.Success(GistDetail(
@@ -479,6 +542,9 @@ internal class NavigationFixture(val session: AccountSession) {
         GistViewModel::class.java to { GistViewModel(gists, errors, it, gistEvents, session) },
         SettingsViewModel::class.java to { SettingsViewModel(preferences, auth, errors, session) },
         LoginViewModel::class.java to { LoginViewModel(auth, errors, session) },
+        TranslationViewModel::class.java to {
+            TranslationViewModel(translations, session)
+        },
         GistDetailViewModel::class.java to {
             GistDetailViewModel(gists, mockk(), mockk(), errors, mockk(), mockk(), gistEvents, session, libraryRepositoryStub())
         },
