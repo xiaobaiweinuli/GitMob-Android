@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
@@ -75,6 +76,12 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
+import com.gitmob.app.data.model.FavoriteItem
+import com.gitmob.app.data.model.LibraryContent
+import com.gitmob.app.data.model.cardData
+import com.gitmob.app.ui.library.AccountLibraryViewModel
+import com.gitmob.app.ui.library.LibraryViewModel
+import com.gitmob.app.ui.library.FavoriteSheet
 import com.gitmob.app.data.model.ConversationEditSummary
 import com.gitmob.app.data.model.GistComment
 import com.gitmob.app.data.model.GistDetail
@@ -90,6 +97,7 @@ import com.gitmob.app.ui.common.quoteMarkdown
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GistDetailScreen(
+    accountLibrary: AccountLibraryViewModel,
     gistId: String,
     onBack: () -> Unit,
     onOwnerClick: (String) -> Unit,
@@ -103,10 +111,17 @@ fun GistDetailScreen(
     onForked: (GistDetail) -> Unit,
     onDeleted: () -> Unit,
     viewModel: GistDetailViewModel = hiltViewModel(),
+    libraryViewModel: LibraryViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(gistId) { viewModel.init(gistId) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val detail = state.detail
+    LaunchedEffect(detail?.id) { detail?.id?.let { libraryViewModel.show(LibraryContent.Gist(it)) } }
+    val librarySettings by accountLibrary.settings.collectAsStateWithLifecycle()
+    val library by libraryViewModel.state.collectAsStateWithLifecycle()
+    val libraryBusy by libraryViewModel.busy.collectAsStateWithLifecycle()
+    val favorite = library.favorites.firstOrNull { it.id == detail?.id }
+    var showFavorite by remember(gistId) { mutableStateOf(false) }
     var topMenuOpen by remember { mutableStateOf(false) }
     var descriptionDialog by remember { mutableStateOf(false) }
     var deleteGistDialog by remember { mutableStateOf(false) }
@@ -131,6 +146,13 @@ fun GistDetailScreen(
                             Icon(Icons.Default.MoreVert, stringResource(R.string.common_more))
                         }
                         DropdownMenu(expanded = topMenuOpen, onDismissRequest = { topMenuOpen = false }) {
+                            if (library.loaded && librarySettings.value?.favoritesEnabled == true && detail != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(if (favorite == null) R.string.favorites_add else R.string.favorites_manage)) },
+                                    leadingIcon = { Icon(Icons.Default.BookmarkBorder, null) },
+                                    onClick = { topMenuOpen = false; showFavorite = true },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.gist_download_zip)) },
                                 leadingIcon = { Icon(Icons.Default.Download, null) },
@@ -218,6 +240,12 @@ fun GistDetailScreen(
         }
     }
 
+    if (showFavorite && librarySettings.value?.favoritesEnabled == true && detail != null) {
+        val groups by accountLibrary.groups.collectAsStateWithLifecycle()
+        FavoriteSheet(FavoriteItem.Gist(detail.cardData()), favorite, groups.value, libraryBusy,
+            { showFavorite = false }, libraryViewModel::createGroup, libraryViewModel::saveFavorite, libraryViewModel::removeFavorite,
+            groupsFailed = groups.failed, retryGroups = accountLibrary::retryGroups)
+    }
     if (descriptionDialog && detail != null) TextEditorDialog(
         title = stringResource(R.string.gist_edit_description),
         initialText = detail.description.orEmpty(),

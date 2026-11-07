@@ -63,7 +63,7 @@ import com.gitmob.app.data.model.parseRepositoryTopics
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun RepoManagementMenu(detail: RepoDetail?, enabled: Boolean, onShare: () -> Unit, onAction: (RepoManagementAction) -> Unit) {
+internal fun RepoManagementMenu(detail: RepoDetail?, enabled: Boolean, onShare: () -> Unit, onAction: (RepoManagementAction) -> Unit, favoritesEnabled: Boolean = false, isFavorite: Boolean = false, onFavorite: () -> Unit = {}) {
     var expanded by remember { mutableStateOf(false) }
     IconButton(onClick = onShare, enabled = detail != null) {
         Icon(Icons.Default.Share, stringResource(R.string.conversation_share))
@@ -71,7 +71,7 @@ internal fun RepoManagementMenu(detail: RepoDetail?, enabled: Boolean, onShare: 
     if (detail == null) return
     val capabilities = detail.capabilities
     val showVisibility = capabilities.canChangeVisibility && !detail.isFork
-    if (!(capabilities.canRenameRepo || capabilities.canManageSomeSettings || showVisibility ||
+    if (!(favoritesEnabled || capabilities.canRenameRepo || capabilities.canManageSomeSettings || showVisibility ||
             capabilities.canTransferRepo || capabilities.canArchiveRepo || capabilities.canToggleIssues ||
             capabilities.canToggleDiscussions || capabilities.canDeleteRepo)) return
     Box {
@@ -79,6 +79,7 @@ internal fun RepoManagementMenu(detail: RepoDetail?, enabled: Boolean, onShare: 
             Icon(Icons.Default.MoreVert, stringResource(R.string.repo_manage_more))
         }
         DropdownMenu(expanded, { expanded = false }) {
+                if (favoritesEnabled) ManagementMenuItem(if (isFavorite) R.string.favorites_manage else R.string.favorites_add, enabled) { expanded = false; onFavorite() }
                 if (capabilities.canRenameRepo) ManagementMenuItem(R.string.repo_manage_rename, enabled) { expanded = false; onAction(RepoManagementAction.RENAME) }
                 if (capabilities.canManageSomeSettings) ManagementMenuItem(R.string.repo_manage_information, enabled) { expanded = false; onAction(RepoManagementAction.INFORMATION) }
                 if (showVisibility) ManagementMenuItem(

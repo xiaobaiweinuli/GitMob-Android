@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.repodetail
 
+import com.gitmob.app.testutil.libraryRepositoryStub
+
 import android.content.Context
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.input.key.Key
@@ -85,6 +87,7 @@ class RepoDetailScreenTest {
     private val owners = mockk<RepoRepository>(relaxed = true)
     private val stars = mockk<StarRepository>()
     private lateinit var viewModel: RepoDetailViewModel
+    private lateinit var libraryViewModel: com.gitmob.app.ui.library.LibraryViewModel
     private var openedHomepage: String? = null
     private var addressChanges = 0
     private val target = RepositoryCreateOwner("O1", "target", "Target", null, RepositoryCreateOwnerType.ORGANIZATION, true)
@@ -131,11 +134,14 @@ class RepoDetailScreenTest {
     }
 
     @Test
-    fun `read only repository keeps share and hides the empty management menu`() {
+    fun `read only repository keeps share and offers local favorites without remote management`() {
         render(detail().copy(permission = RepoPermission.READ, capabilities = RepoPermission.READ.toCapabilities()))
 
         composeRule.onNodeWithContentDescription(context.getString(R.string.conversation_share)).assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_more)).assertDoesNotExist()
+        openMenu()
+        node(R.string.favorites_add).assertIsDisplayed()
+        node(R.string.repo_manage_information).assertDoesNotExist()
+        node(R.string.repo_manage_delete).assertDoesNotExist()
     }
 
     @Test
@@ -400,10 +406,13 @@ class RepoDetailScreenTest {
                 listOf(target), false, null,
             ),
         )
-        viewModel = RepoDetailViewModel(repository, owners, stars, mockk(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session)
+        viewModel = RepoDetailViewModel(repository, owners, stars, mockk(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub())
+        libraryViewModel = com.gitmob.app.ui.library.LibraryViewModel(libraryRepositoryStub(), ErrorEventBus(), accounts.session)
+        val accountLibrary = com.gitmob.app.ui.library.AccountLibraryViewModel(libraryRepositoryStub(), ErrorEventBus(), accounts.session)
         composeRule.setContent {
             MaterialTheme {
                 RepoDetailScreen(
+                    accountLibrary = accountLibrary,
                     owner = "octo", name = "repo", onBack = {}, onOwnerClick = {}, onForkSourceClick = { _, _ -> },
                     onHomepageClick = { openedHomepage = it }, onNavigateBranches = { _, _, _ -> }, onNavigateCode = {},
                     onNavigateCommits = {}, onNavigateWatchers = {}, onNavigateStargazers = {}, onNavigateForks = {},
@@ -411,6 +420,7 @@ class RepoDetailScreenTest {
                     onNavigateActions = { _, _ -> }, onNavigateReleases = {}, onNavigateContributors = {},
                     onNavigateLicense = {}, onNavigatePlaceholder = {}, onRepositoryAddressChanged = { _, _ -> addressChanges++ },
                     onRepositoryDeleted = {}, viewModel = viewModel,
+                    libraryViewModel = libraryViewModel,
                 )
             }
         }

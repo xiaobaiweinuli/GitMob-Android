@@ -48,7 +48,7 @@ class AuthDeviceFlowTest {
         coEvery { oauth.startDeviceFlow() } returns code()
         coEvery { identity.verify("device-access") } returns user
         coEvery { storage.snapshot() } returns StoredAccounts(listOf(savedAccount), savedAccount.key)
-        return AuthRepository(storage, identity, accounts.session, oauth, mockk(relaxed = true))
+        return AuthRepository(storage, identity, accounts.session, oauth, mockk(relaxed = true), mockk(relaxed = true))
     }
 
     @Test

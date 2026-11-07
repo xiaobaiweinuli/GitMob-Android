@@ -66,17 +66,18 @@ internal fun SettingsSection(
 @Composable
 internal fun SettingsNavigationRow(
     title: String,
-    summary: String,
+    summary: String? = null,
     onClick: () -> Unit,
     icon: ImageVector? = null,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     trailingIcon: ImageVector? = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+    enabled: Boolean = true,
 ) {
     val destructive = contentColor == MaterialTheme.colorScheme.error
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 76.dp)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -107,11 +108,9 @@ internal fun SettingsNavigationRow(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = contentColor)
-            Text(
-                summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (destructive) contentColor else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            summary?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = if (destructive) contentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         trailingIcon?.let {
             Icon(

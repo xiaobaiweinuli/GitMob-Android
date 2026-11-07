@@ -14,6 +14,7 @@ import com.gitmob.app.data.model.GistCommentPage
 import com.gitmob.app.data.model.GistDetail
 import com.gitmob.app.data.model.GistFile
 import com.gitmob.app.data.model.GistUser
+import com.gitmob.app.data.model.cardData
 import com.gitmob.app.data.repository.ConversationEditRepository
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.testutil.MainDispatcherRule
@@ -44,6 +45,7 @@ class GistDetailViewModelTest {
     private val editRepository = mockk<ConversationEditRepository>()
     private val renderer = mockk<MarkdownRenderer>()
     private val errorBus = ErrorEventBus()
+    private val library = com.gitmob.app.testutil.libraryRepositoryStub()
     private val shareLauncher = mockk<ShareLinkLauncher>(relaxed = true)
     private val downloadLauncher = mockk<ExternalDownloadLauncher>(relaxed = true)
 
@@ -138,6 +140,37 @@ class GistDetailViewModelTest {
         viewModel.viewModelScope.cancel()
     }
 
+    @Test fun reloadRefreshesFavoriteButRecordsHistoryOnlyOnceEvenWhenCommentsFail() = runTest {
+        val initial = detail()
+        val updated = initial.copy(files = listOf(initial.files.first().copy(content = "x".repeat(4096), size = 4096)))
+        coEvery { repository.getGist("abc") } returnsMany listOf(ApiResult.Success(initial), ApiResult.Success(updated))
+        coEvery { repository.getComments("abc", 1) } returns ApiResult.Failure(ApiError.NetworkError)
+        val vm = viewModel()
+        vm.init("abc")
+        advanceUntilIdle()
+        vm.load()
+        advanceUntilIdle()
+        coVerify(exactly = 1) { library.recordGistVisit(accounts.session.epoch, initial.cardData()) }
+        coVerify(exactly = 1) { library.refreshGistFavorite(accounts.session.epoch, initial.cardData()) }
+        coVerify(exactly = 1) {
+            library.refreshGistFavorite(accounts.session.epoch, match {
+                it.apiName == "abc" && it.previewFile?.text == "x".repeat(2048) && it.previewFile.isTruncated
+            })
+        }
+        assertFalse(vm.state.value.loadFailed)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun failedBodyDoesNotRecordVisit() = runTest {
+        coEvery { repository.getGist("abc") } returns ApiResult.Failure(ApiError.NetworkError)
+        val vm = viewModel()
+        vm.init("abc")
+        advanceUntilIdle()
+        coVerify(exactly = 0) { library.recordGistVisit(any(), any()) }
+        coVerify(exactly = 0) { library.refreshGistFavorite(any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
     private fun viewModel(
         oldestVersion: String? = "oldest",
         updateBus: GistUpdateEventBus = GistUpdateEventBus(),
@@ -150,6 +183,7 @@ class GistDetailViewModelTest {
         downloadLauncher = downloadLauncher,
         gistUpdateEventBus = updateBus,
         session = accounts.session,
+        library = library,
     ).also {
         coEvery { repository.getOldestVersion("abc") } returns ApiResult.Success(oldestVersion)
     }

@@ -1,5 +1,6 @@
 package com.gitmob.app.data.repository
 
+import com.gitmob.app.data.local.library.LibraryAccountMigration
 import com.gitmob.app.core.auth.TokenStorage
 import com.gitmob.app.core.auth.AccountCredentials
 import com.gitmob.app.core.auth.AccountSession
@@ -37,6 +38,7 @@ class AuthRepository @Inject constructor(
     private val session: AccountSession,
     private val oauth: GitHubOAuthClient,
     private val tokens: SessionTokenProvider,
+    private val libraryMigration: LibraryAccountMigration,
 ) {
     val accountState: StateFlow<AccountState> = session.state
 
@@ -187,6 +189,7 @@ class AuthRepository @Inject constructor(
         started.ensureCurrent()
         withContext(NonCancellable) {
             started.ensureCurrent()
+            libraryMigration.migrateLocked(previousKey, user.id.toString())
             tokenStorage.saveAccount(user, credentials, previousKey)
             publish(tokenStorage.snapshot())
         }

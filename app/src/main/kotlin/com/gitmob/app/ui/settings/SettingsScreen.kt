@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Edit
@@ -70,6 +71,7 @@ fun SettingsScreen(
     preference: ThemePreference,
     onAppearanceClick: () -> Unit = {},
     onAboutClick: () -> Unit = {},
+    onAdvancedClick: () -> Unit = {},
     onEditProfileClick: () -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -214,6 +216,7 @@ fun SettingsScreen(
 
             item {
                 SettingsSection(title = stringResource(R.string.settings_section_app)) {
+                    SettingsNavigationRow(icon = Icons.Default.Tune, title = stringResource(R.string.advanced_settings), summary = null, onClick = onAdvancedClick)
                     SettingsNavigationRow(
                         icon = Icons.Default.Info,
                         title = stringResource(R.string.settings_about),

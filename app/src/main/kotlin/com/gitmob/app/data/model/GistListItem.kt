@@ -26,6 +26,7 @@ enum class GistSort(
     OLDEST_UPDATED("UPDATED_AT", "ASC"),
 }
 
+@Serializable
 data class GistFilePreview(
     val name: String?,
     val text: String?,
@@ -36,6 +37,7 @@ data class GistFilePreview(
     val languageColor: String?,
 )
 
+@Serializable
 data class GistListItem(
     val id: String,
     val apiName: String,
@@ -79,3 +81,19 @@ data class GistForkSourceDto(
 data class GistOwnerDto(
     val login: String = "",
 )
+
+/** Bounded card preview for local favorites and history; full file contents are not retained. */
+fun GistDetail.cardData(): GistListItem {
+    val file = files.firstOrNull()
+    return GistListItem(
+        id = nodeId, apiName = id, ownerLogin = owner?.login, description = description, url = url,
+        isPublic = isPublic, isFork = forkOf != null, isOwnedByViewer = isOwnedByViewer,
+        createdAt = createdAt, updatedAt = updatedAt, stargazerCount = stargazerCount,
+        commentCount = commentCount, fileCount = files.size, isFileCountCapped = false,
+        previewFile = file?.let {
+            GistFilePreview(it.filename, it.content?.take(2048), it.size, it.isTruncated || (it.content?.length ?: 0) > 2048,
+                it.type?.startsWith("image/") == true, it.language, null)
+        },
+        sourceId = forkOf?.id, sourceOwnerLogin = forkOf?.owner?.login, sourceUrl = forkOf?.url,
+    )
+}

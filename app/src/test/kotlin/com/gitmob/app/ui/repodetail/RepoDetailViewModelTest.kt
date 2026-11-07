@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.repodetail
 
+import com.gitmob.app.testutil.libraryRepositoryStub
+
 import app.cash.turbine.test
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
@@ -15,6 +17,7 @@ import com.gitmob.app.core.permission.RepoCapabilities
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.RepoDetail
+import com.gitmob.app.data.model.cardData
 import com.gitmob.app.data.model.RepoReadme
 import com.gitmob.app.data.model.CreatedRepository
 import com.gitmob.app.data.model.RepositoryCreateOwner
@@ -101,6 +104,55 @@ class RepoDetailViewModelTest {
         forkingAllowed = forkingAllowed,
     )
 
+    @Test
+    fun `favoritesRefreshOnEachSuccessfulLoadWhileHistoryRecordsOnlyOnce`() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        val refreshedDetail = fakeDetail(stargazerCount = 84)
+        coEvery { details.getRepoDetail(any(), any()) } returnsMany listOf(
+            ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(fakeDetail()), ApiResult.Success(refreshedDetail),
+        )
+        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(RepoReadme(null, false))
+        val library = libraryRepositoryStub()
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, library)
+        vm.init("octo", "greetings")
+        advanceUntilIdle()
+        coVerify(exactly = 0) { library.recordVisit(any(), any(), any()) }
+        coVerify(exactly = 0) { library.refreshFavorite(any(), any(), any()) }
+        vm.retry()
+        advanceUntilIdle()
+        vm.load()
+        advanceUntilIdle()
+        coVerify(exactly = 1) { library.recordVisit(accounts.session.epoch, "R_123", any()) }
+        coVerify(exactly = 2) { library.refreshFavorite(accounts.session.epoch, "R_123", any()) }
+        coVerify(exactly = 1) { library.refreshFavorite(accounts.session.epoch, "R_123", refreshedDetail.cardData()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `pendingFavoriteRefreshDoesNotBlockHistoryOrContentAndFailureUsesErrorBus`() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        val detail = fakeDetail()
+        coEvery { details.getRepoDetail(any(), any()) } returns ApiResult.Success(detail)
+        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(RepoReadme(null, false))
+        val library = libraryRepositoryStub()
+        val pendingRefresh = CompletableDeferred<ApiResult<Unit>>()
+        coEvery { library.refreshFavorite(any(), any(), any()) } coAnswers { pendingRefresh.await() }
+        val errors = ErrorEventBus()
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), errors, mockk(), RepoTransferPendingStore(), accounts.session, library)
+        errors.eventsFor(accounts.session.epoch).test {
+            vm.init("octo", "greetings")
+            advanceUntilIdle()
+            assertEquals(detail, vm.state.value.detail)
+            assertFalse(vm.state.value.isLoading)
+            coVerify(exactly = 1) { library.recordVisit(accounts.session.epoch, detail.id, detail.cardData()) }
+            pendingRefresh.complete(ApiResult.Failure(ApiError.Unknown("Local write failed")))
+            assertEquals(BannerEvent.Error(ApiError.Unknown("Local write failed")), awaitItem())
+            assertEquals(detail, vm.state.value.detail)
+            assertFalse(vm.state.value.loadFailed)
+        }
+        vm.viewModelScope.cancel()
+    }
+
     private val fakeMd = "# Hello\nworld"
     private val fakeHtml = "<h1>Hello</h1>\n<p>world</p>"
 
@@ -119,7 +171,7 @@ class RepoDetailViewModelTest {
         val md = mockk<MarkdownRenderer>()
         every { md.renderToHtml(fakeMd) } returns fakeHtml
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), md, RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session)
+        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), md, RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub())
         vm.init("octo", "greetings")
         val loadedState = withTimeout(5_000) {
             vm.state.first { it.readmeHtml == fakeHtml }
@@ -139,7 +191,7 @@ class RepoDetailViewModelTest {
         coEvery { detailRepo.getReadme("a", "b", "main") } returns
                 ApiResult.Failure(ApiError.Unknown("404"))
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session)
+        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub())
         vm.init("a", "b")
         assertNotNull(vm.state.value.detail)
         assertNull(vm.state.value.readmeHtml)
@@ -156,7 +208,7 @@ class RepoDetailViewModelTest {
         coEvery { detailRepo.getReadme(any(), any(), any()) } returns
                 ApiResult.Failure(ApiError.Unknown("no"))
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session)
+        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub())
         vm.init("x", "y")
         assertTrue(vm.state.value.loadFailed)
         assertNull(vm.state.value.detail)
@@ -182,7 +234,7 @@ class RepoDetailViewModelTest {
         coEvery { starRepo.getListsContaining(any()) } returns ApiResult.Success(emptySet())
         val bus = RepoUpdateEventBus()
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session)
+        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub())
         vm.init("o", "n")
         assertFalse(vm.state.value.detail!!.viewerHasStarred)
         assertEquals(9, vm.state.value.detail!!.stargazerCount)
@@ -210,7 +262,7 @@ class RepoDetailViewModelTest {
         val starRepo = mockk<StarRepository>()
         coEvery { starRepo.starRepo(any()) } returns ApiResult.Failure(ApiError.Forbidden)
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session)
+        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub())
         vm.init("o", "n")
         vm.toggleStar()
         // 失败时 Success 分支的 update 不执行，保持原值
@@ -233,7 +285,7 @@ class RepoDetailViewModelTest {
         every { md.renderToHtml("# dev") } returns "<h1>dev</h1>"
 
         val bus = RepoUpdateEventBus()
-        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), md, bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session)
+        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), md, bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub())
         vm.init("a", "b")
         withTimeout(5_000) {
             vm.state.first { it.readmeHtml == "<h1>main</h1>" }
@@ -260,7 +312,7 @@ class RepoDetailViewModelTest {
         coEvery { starRepo.getLists() } returns ApiResult.Success(emptyList())
         coEvery { starRepo.getListsContaining(any()) } returns ApiResult.Success(emptySet())
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session)
+        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub())
         vm.init("c", "d")
         vm.toggleStar()
         vm.retry()
@@ -353,7 +405,7 @@ class RepoDetailViewModelTest {
             ),
         )
         return RepoDetailViewModel(
-            repository, owners, mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            repository, owners, mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(),
         ).apply {
             init("octo", "greetings")
             openManagement(RepoManagementAction.TRANSFER)
@@ -372,12 +424,12 @@ class RepoDetailViewModelTest {
             mark(PendingRepositoryTransfer("R_123", "octo", "greetings", "new-owner", "greetings"))
         }
 
-        val first = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session)
+        val first = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session, libraryRepositoryStub())
         first.init("octo", "greetings")
         assertTrue(first.state.value.transferPending)
         first.viewModelScope.cancel()
 
-        val reopened = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session)
+        val reopened = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session, libraryRepositoryStub())
         reopened.init("octo", "greetings")
         assertTrue(reopened.state.value.transferPending)
         reopened.toggleStar()
@@ -414,6 +466,7 @@ class RepoDetailViewModelTest {
             mockk(),
             RepoTransferPendingStore(),
             accounts.session,
+            library = libraryRepositoryStub(),
         )
         viewModel.init("octo", "greetings")
         advanceUntilIdle()
@@ -444,7 +497,7 @@ class RepoDetailViewModelTest {
         coEvery { starRepo.getLists() } returns ApiResult.Success(listOf(list))
         coEvery { starRepo.getListsContaining("R_123") } returns ApiResult.Success(setOf("L1"))
         val viewModel = RepoDetailViewModel(
-            detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(),
         )
         viewModel.init("octo", "greetings")
         advanceUntilIdle()
@@ -786,7 +839,7 @@ class RepoDetailViewModelTest {
         coEvery { detailRepo.getReadme(any(), any(), any()) } returns ApiResult.Failure(ApiError.Unknown("no"))
         coEvery { detailRepo.createFork("octo", "greetings") } returns ApiResult.Success(Unit)
         val viewModel = RepoDetailViewModel(
-            detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(),
         )
         viewModel.init("octo", "greetings")
         advanceUntilIdle()
@@ -808,7 +861,7 @@ class RepoDetailViewModelTest {
         )
         coEvery { detailRepo.getReadme(any(), any(), any()) } returns ApiResult.Failure(ApiError.Unknown("no"))
         val viewModel = RepoDetailViewModel(
-            detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(),
         )
         viewModel.init("octo", "greetings")
         advanceUntilIdle()
@@ -838,7 +891,7 @@ class RepoDetailViewModelTest {
         coEvery { details.getRepoDetail("octo", "greetings") } returns ApiResult.Success(detail)
         coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(RepoReadme(null, false))
         return RepoDetailViewModel(
-            details, mockk(relaxed = true), stars, makeFakeRenderer(), RepoUpdateEventBus(), errors, mockk(), RepoTransferPendingStore(), accounts.session,
+            details, mockk(relaxed = true), stars, makeFakeRenderer(), RepoUpdateEventBus(), errors, mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(),
         ).apply { init("octo", "greetings") }
     }
 }

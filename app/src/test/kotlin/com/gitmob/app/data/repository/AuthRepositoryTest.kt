@@ -41,7 +41,7 @@ class AuthRepositoryTest {
     @get:Rule val accounts = AccountSessionRule(null)
 
     private fun repository(storage: TokenStorage, api: GitHubIdentityClient) = AuthRepository(
-        storage, api, accounts.session, mockk(relaxed = true), mockk(relaxed = true),
+        storage, api, accounts.session, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true),
     )
 
     private fun client(server: MockWebServer) = GitHubIdentityClient(
@@ -228,7 +228,7 @@ class AuthRepositoryTest {
                     coEvery { storage.saveAccount(any(), any(), any(), any()) } throws java.io.IOException("Storage unavailable")
                 }
             }
-            val auth = AuthRepository(storage, identity, session, mockk(relaxed = true), mockk(relaxed = true))
+            val auth = AuthRepository(storage, identity, session, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true))
             try {
                 assertEquals(ApiResult.Success(Unit), auth.initialize(session.epoch))
                 assertEquals(null, auth.accountState.value.activeAccount)
@@ -275,7 +275,7 @@ class AuthRepositoryTest {
         coEvery { tokens.credentialsFor(selected.key, epoch) } returns AccountCredentials("selected-token")
         val identity = mockk<GitHubIdentityClient>()
         coEvery { identity.verify("selected-token") } returns AuthenticatedUser(3, "U_3", selected.login, null, null)
-        val auth = AuthRepository(storage, identity, accounts.session, mockk(relaxed = true), tokens)
+        val auth = AuthRepository(storage, identity, accounts.session, mockk(relaxed = true), tokens, mockk(relaxed = true))
 
         assertTrue(withContext(AccountContext(epoch)) { auth.switchAccount(selected.key) } is ApiResult.Failure)
 

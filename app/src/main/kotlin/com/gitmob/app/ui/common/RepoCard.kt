@@ -28,7 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoListItem
-import com.gitmob.app.data.model.RepoVisibility
+import com.gitmob.app.data.model.RepoCardData
+import com.gitmob.app.data.model.cardData
 
 /**
  * 仓库卡片（"仓库"Tab、用户仓库列表通用）。
@@ -59,17 +60,35 @@ fun RepoCard(
     modifier: Modifier = Modifier,
     showOwner: Boolean = false,
 ) {
+    RepoCard(repo.cardData(), onClick, onForkSourceClick, onHomepageClick, modifier, showOwner)
+}
+
+@Composable
+fun RepoCard(
+    repo: RepoCardData,
+    onClick: () -> Unit,
+    onForkSourceClick: (owner: String, name: String) -> Unit,
+    onHomepageClick: (url: String) -> Unit,
+    modifier: Modifier = Modifier,
+    showOwner: Boolean = false,
+    titleAction: (@Composable () -> Unit)? = null,
+) {
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             // ---- 1. 仓库名 ----
-            Text(
-                if (showOwner) "${repo.ownerLogin}/${repo.name}" else repo.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (showOwner) "${repo.ownerLogin}/${repo.name}" else repo.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = if (titleAction != null) 1 else Int.MAX_VALUE,
+                    modifier = if (titleAction != null) Modifier.weight(1f).horizontalScroll(rememberScrollState()) else Modifier,
+                )
+                titleAction?.invoke()
+            }
 
             // ---- 2. Fork 来源（复刻自）----
             val forkOwner = repo.forkedFromOwner
@@ -154,9 +173,9 @@ fun RepoCard(
 
                 // 右侧：私有 / 归档 / 分支胶囊 → 固定不滚动
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (repo.visibility != RepoVisibility.PUBLIC) {
+                    if (repo.visibility != "PUBLIC") {
                         StatusChip(
-                            stringResource(if (repo.visibility == RepoVisibility.INTERNAL) R.string.work_visibility_internal else R.string.common_private),
+                            stringResource(if (repo.visibility == "INTERNAL") R.string.work_visibility_internal else R.string.common_private),
                             MaterialTheme.colorScheme.errorContainer,
                             MaterialTheme.colorScheme.onErrorContainer,
                         )

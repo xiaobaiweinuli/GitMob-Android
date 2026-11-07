@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Scaffold
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -34,6 +36,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.gitmob.app.ui.library.AccountLibraryViewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +72,7 @@ import com.gitmob.app.ui.icons.OcticonName
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    accountLibrary: AccountLibraryViewModel,
     onFollowersClick: (login: String) -> Unit = {},
     onFollowingClick: (login: String) -> Unit = {},
     onReposClick: (login: String) -> Unit = {},
@@ -75,11 +83,20 @@ fun HomeScreen(
     onWorkPullRequestsClick: () -> Unit = {},
     onWorkDiscussionsClick: () -> Unit = {},
     onInboxClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {},
+    onHistoryClick: () -> Unit = {},
     onPinnedRepoClick: (owner: String, name: String) -> Unit = { _, _ -> },
     onCreateRepository: (RepositoryCreateOwner) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val library by accountLibrary.settings.collectAsStateWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(accountLibrary, lifecycle, library.value?.favoritesEnabled) {
+        if (library.value?.favoritesEnabled == true) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            accountLibrary.groups.collect { }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -140,6 +157,10 @@ fun HomeScreen(
                             onWorkPullRequestsClick = onWorkPullRequestsClick,
                             onWorkDiscussionsClick = onWorkDiscussionsClick,
                             onInboxClick = onInboxClick,
+                            onFavoritesClick = onFavoritesClick,
+                            onHistoryClick = onHistoryClick,
+                            showFavorites = library.value?.favoritesEnabled == true,
+                            showHistory = library.value?.historyEnabled == true,
                             onPinnedRepoClick = onPinnedRepoClick,
                         )
                     }
@@ -213,6 +234,10 @@ private fun ProfileContent(
     onWorkPullRequestsClick: () -> Unit,
     onWorkDiscussionsClick: () -> Unit,
     onInboxClick: () -> Unit,
+    onFavoritesClick: () -> Unit,
+    onHistoryClick: () -> Unit,
+    showFavorites: Boolean,
+    showHistory: Boolean,
     onPinnedRepoClick: (owner: String, name: String) -> Unit,
 ) {
     Column(
@@ -268,10 +293,12 @@ private fun ProfileContent(
         // ---- 事务入口：议题/PR/讨论带数字（involves:@me 聚合，只对当前登录用户有意义），
         // 收件箱纯入口不带数字（REST 通知接口没有现成的 count 端点，不强求精确数字） ----
         HorizontalDivider(modifier = Modifier.padding(top = 20.dp, bottom = 4.dp))
+        if (showFavorites) WorkEntryRow(Icons.Default.Bookmarks, stringResource(R.string.favorites_title), null, onFavoritesClick)
         WorkEntryRow(Icons.Default.Adjust, stringResource(R.string.common_issues), profile.involvedIssueCount, onWorkIssuesClick)
         WorkEntryRow(Icons.AutoMirrored.Filled.CallSplit, stringResource(R.string.common_pull_requests), profile.involvedPrCount, onWorkPullRequestsClick)
         WorkEntryRow(Icons.Default.ChatBubble, stringResource(R.string.common_discussions), profile.involvedDiscussionCount, onWorkDiscussionsClick)
         WorkEntryRow(Icons.Default.Inbox, stringResource(R.string.inbox_title), count = null, onInboxClick)
+        if (showHistory) WorkEntryRow(Icons.Default.History, stringResource(R.string.history_title), null, onHistoryClick)
     }
 }
 

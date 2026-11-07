@@ -42,6 +42,7 @@ fun GistCard(
     onClick: () -> Unit,
     onForkSourceClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    titleAction: (@Composable () -> Unit)? = null,
 ) {
     val preview = gist.previewFile
     val displayFileName = preview?.name?.takeIf { it.isNotBlank() } ?: gist.apiName
@@ -68,7 +69,7 @@ fun GistCard(
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).then(if (titleAction != null) Modifier.horizontalScroll(rememberScrollState()) else Modifier),
                 )
                 if (!gist.isPublic) {
                     StatusChip(
@@ -77,6 +78,7 @@ fun GistCard(
                         fg = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }
+                titleAction?.invoke()
             }
 
             val sourceId = gist.sourceId

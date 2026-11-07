@@ -58,6 +58,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +76,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
+import com.gitmob.app.data.model.FavoriteItem
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.common.GitHubEmojiText
@@ -80,11 +84,16 @@ import com.gitmob.app.ui.common.RepoMetadataLinkRow
 import com.gitmob.app.ui.common.RepositoryTopicsRow
 import com.gitmob.app.ui.common.StatusChip
 import com.gitmob.app.ui.stars.AddToListBottomSheet
+import com.gitmob.app.ui.library.AccountLibraryViewModel
+import com.gitmob.app.ui.library.LibraryViewModel
+import com.gitmob.app.ui.library.FavoriteSheet
+import com.gitmob.app.data.model.cardData
 import com.gitmob.app.ui.stars.CreateListDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RepoDetailScreen(
+    accountLibrary: AccountLibraryViewModel,
     owner: String,
     name: String,
     onBack: () -> Unit,
@@ -108,9 +117,17 @@ fun RepoDetailScreen(
     onRepositoryAddressChanged: (String, String) -> Unit,
     onRepositoryDeleted: () -> Unit,
     viewModel: RepoDetailViewModel = hiltViewModel(),
+    libraryViewModel: LibraryViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(state.detail?.id) {
+        state.detail?.id?.let { libraryViewModel.show(com.gitmob.app.data.model.LibraryContent.Repository(it)) }
+    }
+    val librarySettings by accountLibrary.settings.collectAsStateWithLifecycle()
+    val library by libraryViewModel.state.collectAsStateWithLifecycle()
+    val libraryBusy by libraryViewModel.busy.collectAsStateWithLifecycle()
+    var showFavorite by remember { mutableStateOf(false) }
     LaunchedEffect(state.detail?.ownerLogin, state.detail?.name, state.isManaging, state.deleted) {
         if (state.deleted) onRepositoryDeleted()
         else if (!state.isManaging) state.detail?.let { detail ->
@@ -136,6 +153,9 @@ fun RepoDetailScreen(
                         enabled = state.actionsEnabled,
                         onShare = viewModel::share,
                         onAction = viewModel::openManagement,
+                        favoritesEnabled = library.loaded && librarySettings.value?.favoritesEnabled == true,
+                        isFavorite = library.favorites.any { it.id == state.detail?.id },
+                        onFavorite = { showFavorite = true },
                     )
                 },
                 windowInsets = WindowInsets.safeDrawing
@@ -253,6 +273,12 @@ fun RepoDetailScreen(
                 }
             }
         }
+    }
+    if (showFavorite && librarySettings.value?.favoritesEnabled == true) state.detail?.let { detail ->
+        val groups by accountLibrary.groups.collectAsStateWithLifecycle()
+        FavoriteSheet(FavoriteItem.Repository(detail.id, detail.cardData()), library.favorites.firstOrNull { it.id == detail.id }, groups.value,
+            libraryBusy, { showFavorite = false }, libraryViewModel::createGroup, libraryViewModel::saveFavorite, libraryViewModel::removeFavorite,
+            groupsFailed = groups.failed, retryGroups = accountLibrary::retryGroups)
     }
     RepoManagementDialogs(state, viewModel)
     if (state.showStarListSelector) {

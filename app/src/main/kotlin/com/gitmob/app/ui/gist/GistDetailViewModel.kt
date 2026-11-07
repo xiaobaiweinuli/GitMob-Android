@@ -3,6 +3,8 @@ package com.gitmob.app.ui.gist
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
+import com.gitmob.app.data.local.library.LibraryRepository
+import com.gitmob.app.data.model.cardData
 import com.gitmob.app.R
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.error.ApiError
@@ -51,6 +53,7 @@ class GistDetailViewModel @Inject constructor(
     private val downloadLauncher: ExternalDownloadLauncher,
     private val gistUpdateEventBus: GistUpdateEventBus,
     session: AccountSession,
+    private val library: LibraryRepository,
 ) : AccountViewModel(session) {
     private val _state = MutableStateFlow(GistDetailUiState())
     val state: StateFlow<GistDetailUiState> = _state.asStateFlow()
@@ -58,10 +61,12 @@ class GistDetailViewModel @Inject constructor(
     private var viewerLogin = ""
     private var initializedId: String? = null
     private var editJob: Job? = null
+    private var visitRecorded = false
 
     fun init(id: String) {
         if (initializedId == id) return
         initializedId = id
+        visitRecorded = false
         gistId = id
         viewModelScope.launch {
             gistUpdateEventBus.eventsFor(accountEpoch).filter { it == id }.collect { load() }
@@ -80,6 +85,22 @@ class GistDetailViewModel @Inject constructor(
                 }
                 is ApiResult.Success -> {
                     viewerLogin = detail.data.viewerLogin
+                    accountEpoch.ensureCurrent()
+                    val card = detail.data.cardData()
+                    val recordVisit = !visitRecorded
+                    visitRecorded = true
+                    viewModelScope.launch {
+                        when (val favorite = library.refreshGistFavorite(accountEpoch, card)) {
+                            is ApiResult.Failure -> { accountEpoch.ensureCurrent(); errorEventBus.emit(favorite.error) }
+                            is ApiResult.Success -> Unit
+                        }
+                        if (recordVisit) {
+                            when (val visit = library.recordGistVisit(accountEpoch, card)) {
+                                is ApiResult.Failure -> { accountEpoch.ensureCurrent(); errorEventBus.emit(visit.error) }
+                                is ApiResult.Success -> Unit
+                            }
+                        }
+                    }
                     when (val comments = repository.getComments(gistId)) {
                     is ApiResult.Failure -> {
                         errorEventBus.emit(comments.error)

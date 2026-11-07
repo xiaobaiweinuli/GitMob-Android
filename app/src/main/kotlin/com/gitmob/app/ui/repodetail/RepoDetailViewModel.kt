@@ -23,6 +23,8 @@ import com.gitmob.app.data.model.areValidRepositoryTopics
 import com.gitmob.app.data.model.isValidRepositoryName
 import com.gitmob.app.data.model.isValidRepositoryWebsite
 import com.gitmob.app.data.model.parseRepositoryTopics
+import com.gitmob.app.data.local.library.LibraryRepository
+import com.gitmob.app.data.model.cardData
 import com.gitmob.app.data.repository.RepoDetailRepository
 import com.gitmob.app.data.repository.RepoRepository
 import com.gitmob.app.data.repository.StarRepository
@@ -101,11 +103,13 @@ class RepoDetailViewModel @Inject constructor(
     private val shareLinkLauncher: ShareLinkLauncher,
     private val transferPendingStore: RepoTransferPendingStore,
     session: AccountSession,
+    private val library: LibraryRepository,
 ) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(RepoDetailUiState())
     val state: StateFlow<RepoDetailUiState> = _state.asStateFlow()
 
+    private var visitRecorded = false
     private var initialized = false
     private lateinit var owner: String
     private lateinit var name: String
@@ -143,6 +147,23 @@ class RepoDetailViewModel @Inject constructor(
                             currentRef = it.currentRef ?: result.data.defaultBranchName,
                             transferPending = transferPendingStore.find(result.data.id, owner, name) != null,
                         )
+                    }
+                    val card = result.data.cardData()
+                    viewModelScope.launch {
+                        when (val refresh = library.refreshFavorite(accountEpoch, result.data.id, card)) {
+                            is ApiResult.Failure -> { accountEpoch.ensureCurrent(); errorEventBus.emit(refresh.error) }
+                            is ApiResult.Success -> Unit
+                        }
+                    }
+                    if (!visitRecorded) {
+                        accountEpoch.ensureCurrent()
+                        visitRecorded = true
+                        viewModelScope.launch {
+                            when (val visit = library.recordVisit(accountEpoch, result.data.id, card)) {
+                                is ApiResult.Failure -> { accountEpoch.ensureCurrent(); errorEventBus.emit(visit.error) }
+                                is ApiResult.Success -> Unit
+                            }
+                        }
                     }
                     loadReadme()
                     loadStarLists(refresh = true)

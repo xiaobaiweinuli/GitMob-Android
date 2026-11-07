@@ -1,5 +1,7 @@
 package com.gitmob.app.navigation
 
+import com.gitmob.app.testutil.libraryRepositoryStub
+
 import android.app.Application
 import android.content.Context
 import android.os.Bundle
@@ -23,6 +25,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.SavedStateHandle
@@ -177,6 +180,26 @@ class AccountNavigationTest {
         assertEquals(RepoFilters(), pushedRepos.state.value.filters)
         assertEquals(2, fixture.creations.count { it.model is ReposViewModel })
         assertTrue(fixture.creations.all { it.model.accountEpoch === epoch })
+    }
+
+    @Test
+    fun `favorites and advanced settings reuse the account model across entry owners`() {
+        launch()
+        val shared = fixture.model<com.gitmob.app.ui.library.AccountLibraryViewModel>()
+        composeRule.onNodeWithText(text(R.string.favorites_title)).performScrollTo().performClick()
+        composeRule.onNodeWithText(text(R.string.favorites_default_group)).performClick()
+        composeRule.onNodeWithText(text(R.string.library_no_favorites)).assertExists()
+        assertSame(shared, fixture.model<com.gitmob.app.ui.library.AccountLibraryViewModel>())
+        composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+        tab(R.string.nav_tab_settings)
+        composeRule.onNodeWithText(text(R.string.advanced_settings)).performScrollTo().performClick()
+        composeRule.onNodeWithText(text(R.string.favorites_enable)).assertExists()
+        assertSame(shared, fixture.model<com.gitmob.app.ui.library.AccountLibraryViewModel>())
+        assertEquals(1, fixture.creations.count { it.model is com.gitmob.app.ui.library.AccountLibraryViewModel })
+        switchTo(fixture.beta)
+        assertNotSame(shared, fixture.model<com.gitmob.app.ui.library.AccountLibraryViewModel>())
+        assertTrue(fixture.creation(shared).cleared)
     }
 
     @Test
@@ -448,6 +471,8 @@ internal class NavigationFixture(val session: AccountSession) {
     inline fun <reified T : AccountViewModel> model(): T = creations.last { it.model is T }.model as T
 
     private val factories: Map<Class<*>, (SavedStateHandle) -> AccountViewModel> = mapOf(
+        com.gitmob.app.ui.library.AccountLibraryViewModel::class.java to { com.gitmob.app.ui.library.AccountLibraryViewModel(libraryRepositoryStub(), errors, session) },
+        com.gitmob.app.ui.library.LibraryViewModel::class.java to { com.gitmob.app.ui.library.LibraryViewModel(libraryRepositoryStub(), errors, session) },
         HomeViewModel::class.java to { HomeViewModel(users, errors, repoEvents, session) },
         ReposViewModel::class.java to { ReposViewModel(repos, repoEvents, errors, it, session) },
         StarsViewModel::class.java to { StarsViewModel(stars, repoEvents, errors, session) },
@@ -455,7 +480,7 @@ internal class NavigationFixture(val session: AccountSession) {
         SettingsViewModel::class.java to { SettingsViewModel(preferences, auth, errors, session) },
         LoginViewModel::class.java to { LoginViewModel(auth, errors, session) },
         GistDetailViewModel::class.java to {
-            GistDetailViewModel(gists, mockk(), mockk(), errors, mockk(), mockk(), gistEvents, session)
+            GistDetailViewModel(gists, mockk(), mockk(), errors, mockk(), mockk(), gistEvents, session, libraryRepositoryStub())
         },
         GistCreateViewModel::class.java to { GistCreateViewModel(gists, errors, gistEvents, session) },
     )

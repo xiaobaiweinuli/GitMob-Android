@@ -81,6 +81,12 @@ import com.gitmob.app.ui.gist.GistForksScreen
 import com.gitmob.app.ui.gist.GistRevisionDetailScreen
 import com.gitmob.app.ui.gist.GistRevisionsScreen
 import com.gitmob.app.ui.gist.GistScreen
+import com.gitmob.app.ui.library.FavoritesScreen
+import com.gitmob.app.ui.library.FavoriteGroupScreen
+import com.gitmob.app.ui.library.HistoryScreen
+import com.gitmob.app.ui.settings.AdvancedSettingsScreen
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.gitmob.app.ui.library.AccountLibraryViewModel
 import com.gitmob.app.ui.home.HomeScreen
 import com.gitmob.app.ui.inbox.InboxScreen
 import com.gitmob.app.ui.login.LoginScreen
@@ -248,6 +254,8 @@ private fun LoggedInApp(
     repoUpdateEventBus: RepoUpdateEventBus,
     epoch: AccountEpoch,
 ) {
+    // Resolve before entryProvider installs each navigation entry's own store.
+    val accountLibrary: AccountLibraryViewModel = hiltViewModel()
     val navState = rememberGitMobNavState(startRoute = HomeRoute)
     val navigator = remember(navState, epoch) { GitMobNavigator(navState, epoch) }
     val activity = LocalActivity.current
@@ -305,6 +313,7 @@ private fun LoggedInApp(
         // ──────────────────────────────────────────────────────────────
         entry<HomeRoute> {
             HomeScreen(
+                accountLibrary = accountLibrary,
                 onFollowersClick = { login -> navigator.navigate(FollowersRoute(login)) },
                 onFollowingClick = { login -> navigator.navigate(FollowingRoute(login)) },
                 onReposClick = { login -> navigator.navigate(UserRepoListRoute(login)) },
@@ -315,6 +324,8 @@ private fun LoggedInApp(
                 onWorkPullRequestsClick = { navigator.navigate(WorkPullRequestsRoute) },
                 onWorkDiscussionsClick = { navigator.navigate(WorkDiscussionsRoute) },
                 onInboxClick = { navigator.navigate(InboxRoute) },
+                onFavoritesClick = { navigator.navigate(FavoritesRoute()) },
+                onHistoryClick = { navigator.navigate(HistoryRoute()) },
                 onPinnedRepoClick = { owner, name ->
                     navigator.navigate(RepoDetailRoute(owner, name))
                 },
@@ -349,6 +360,7 @@ private fun LoggedInApp(
             SettingsScreen(
                 preference = themePreference,
                 onAppearanceClick = { navigator.navigate(AppearanceRoute) },
+                onAdvancedClick = { navigator.navigate(AdvancedSettingsRoute()) },
                 onAboutClick = { navigator.navigate(AboutRoute) },
                 onEditProfileClick = { navigator.navigate(ProfileEditorRoute) },
                 onLogout = onLogout,
@@ -359,6 +371,10 @@ private fun LoggedInApp(
         // Push 路由：与 Tab 解耦，push 路由进当前激活 Tab 的独立栈
         // 返回键统一走 navigator.goBack()，在 Tab 根上会切回 Home，二级页正常出栈
         // ──────────────────────────────────────────────────────────────
+        entry<AdvancedSettingsRoute> { AdvancedSettingsScreen(onBack = { navigator.goBack() }, viewModel = accountLibrary) }
+        entry<FavoritesRoute> { FavoritesScreen(accountLibrary = accountLibrary, onBack = { navigator.goBack() }, onGroup = { navigator.navigate(FavoriteGroupRoute(it.id, it.name)) }) }
+        entry<FavoriteGroupRoute> { route -> FavoriteGroupScreen(accountLibrary, route.groupId, initialName = route.name, onGist = { navigator.navigate(GistDetailRoute(it)) }, onBack = { navigator.goBack() }, onRepo = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) }, onHomepage = openExternalUrl) }
+        entry<HistoryRoute> { HistoryScreen(accountLibrary = accountLibrary, onGist = { navigator.navigate(GistDetailRoute(it)) }, onBack = { navigator.goBack() }, onRepo = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) }, onHomepage = openExternalUrl) }
         entry<InboxRoute> {
             InboxScreen(
                 onBack = { navigator.goBack() },
@@ -459,6 +475,7 @@ private fun LoggedInApp(
         }
         entry<RepoDetailRoute> { route ->
             RepoDetailScreen(
+                accountLibrary = accountLibrary,
                 owner = route.owner,
                 name = route.name,
                 onBack = { navigator.goBack() },
@@ -947,6 +964,7 @@ private fun LoggedInApp(
 
         entry<GistDetailRoute> { route ->
             GistDetailScreen(
+                accountLibrary = accountLibrary,
                 gistId = route.id,
                 onBack = { navigator.goBack() },
                 onOwnerClick = { navigator.navigate(ProfileRoute(it)) },
