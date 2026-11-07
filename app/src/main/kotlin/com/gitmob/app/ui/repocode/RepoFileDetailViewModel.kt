@@ -62,14 +62,12 @@ class RepoFileDetailViewModel @Inject constructor(
     private var name = ""
     private var ref = ""
     private var path = ""
-    private var isCommitSnapshot = false
 
-    fun init(owner: String, name: String, ref: String, path: String, initialPreview: Boolean = false, isCommitSnapshot: Boolean = false) {
+    fun init(owner: String, name: String, ref: String, path: String, initialPreview: Boolean = false) {
         if (initialized) return
         initialized = true; this.owner = owner; this.name = name; this.ref = ref; this.path = path
         _state.update { it.copy(previewMode = initialPreview) }
-        this.isCommitSnapshot = isCommitSnapshot
-        if (!isCommitSnapshot) observeCodeChanges()
+        observeCodeChanges()
         load(refreshResources = false)
     }
 
@@ -78,7 +76,8 @@ class RepoFileDetailViewModel @Inject constructor(
             repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.CodeChanged>()
                 .collect { event ->
-                    if (event.owner == owner && event.name == name && event.ref == ref &&
+                    if (_state.value.file?.isCommitSnapshot != true &&
+                        event.owner == owner && event.name == name && event.ref == ref &&
                         (path in event.changedPaths || _state.value.previewHtml != null)) load()
                 }
         }
@@ -90,8 +89,7 @@ class RepoFileDetailViewModel @Inject constructor(
         viewModelScope.launch {
             if (refreshResources) documentRepository.invalidate(RepoDocumentContext(owner, name, ref, path))
             _state.update { it.copy(isLoading = true, loadFailed = false, isDirectory = false, previewRevision = it.previewRevision + 1) }
-            when (val result = if (isCommitSnapshot) repository.getFileSnapshot(owner, name, ref, path)
-                else repository.getPathContent(owner, name, ref, path)) {
+            when (val result = repository.getPathContent(owner, name, ref, path)) {
                 is ApiResult.Success -> {
                     val file = when (val content = result.data) {
                         RepoPathContent.Directory -> {

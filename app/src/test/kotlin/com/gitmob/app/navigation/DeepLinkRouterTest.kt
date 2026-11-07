@@ -71,6 +71,23 @@ class DeepLinkRouterTest {
     }
 
     @Test
+    fun `提交版本的文件和目录深链接保留SHA和路径`() {
+        val commit = "a".repeat(40)
+        assertEquals(
+            DeepLinkDestination.FileView("owner", "repo", commit, "docs/guide.md"),
+            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/blob/$commit/docs/guide.md")),
+        )
+        assertEquals(
+            DeepLinkDestination.DirView("owner", "repo", commit, "docs/api"),
+            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/tree/$commit/docs/api")),
+        )
+        assertEquals(
+            DeepLinkDestination.DirView("owner", "repo", commit, ""),
+            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/tree/$commit")),
+        )
+    }
+
+    @Test
     fun `解析提交和提交历史路径`() {
         assertEquals(
             DeepLinkDestination.CommitDetail("owner", "repo", "abcdef1"),

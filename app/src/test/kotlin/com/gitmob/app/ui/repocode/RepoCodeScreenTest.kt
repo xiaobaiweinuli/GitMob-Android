@@ -21,6 +21,8 @@ import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.ExistingRepoPullRequest
+import com.gitmob.app.data.model.RepoEntryType
+import com.gitmob.app.data.model.RepoTreeEntry
 import com.gitmob.app.data.model.RepoCodeTree
 import com.gitmob.app.data.model.RepoForkSyncInfo
 import com.gitmob.app.data.model.RepoForkSyncStatus
@@ -193,17 +195,56 @@ class RepoCodeScreenTest {
         coVerify(exactly = 2) { repository.getForkSync("viewer", "fork", "main") }
     }
 
+    @Test
+    fun `commit directory allows browsing but hides write and sync actions`() {
+        var openedDirectory: String? = null
+        var openedFile: String? = null
+        render(
+            ref = "a".repeat(40), snapshot = true, permission = RepoPermission.ADMIN,
+            entries = listOf(
+                RepoTreeEntry("docs", "docs", RepoEntryType.DIRECTORY, "tree", null, null, null),
+                RepoTreeEntry("README.md", "README.md", RepoEntryType.FILE, "blob", 12, ".md", null),
+            ),
+            onDirectoryClick = { openedDirectory = it }, onFileClick = { openedFile = it },
+        )
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.repo_sync_title)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.repo_add_file)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.repo_download_archive)).assertIsDisplayed()
+        composeRule.onNodeWithText("docs").performClick()
+        composeRule.onNodeWithText("README.md").performClick()
+        assertEquals("docs", openedDirectory)
+        assertEquals("README.md", openedFile)
+    }
+
+    @Test
+    fun `writable branch keeps add and upload actions`() {
+        render(permission = RepoPermission.ADMIN)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.repo_add_file)).performClick()
+        node(R.string.repo_add_file).assertIsDisplayed()
+        node(R.string.repo_upload_files).assertIsDisplayed()
+        node(R.string.repo_upload_folder).assertIsDisplayed()
+    }
+
     private fun node(resource: Int) = composeRule.onNodeWithText(context.getString(resource))
 
     private fun openSync() {
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_sync_title)).performClick()
     }
 
-    private fun render(archived: Boolean = false) {
-        coEvery { repository.getCodeTree("viewer", "fork", "main", "") } returns ApiResult.Success(
+    private fun render(
+        archived: Boolean = false,
+        ref: String = "main",
+        snapshot: Boolean = false,
+        permission: RepoPermission = RepoPermission.WRITE,
+        entries: List<RepoTreeEntry> = emptyList(),
+        onDirectoryClick: (String) -> Unit = {},
+        onFileClick: (String) -> Unit = {},
+    ) {
+        coEvery { repository.getCodeTree("viewer", "fork", ref, "") } returns ApiResult.Success(
             RepoCodeTree(
-                repositoryId = "fork-id", permission = RepoPermission.WRITE, capabilities = RepoPermission.WRITE.toCapabilities(archived),
-                isArchived = archived, ref = "main", headOid = "forksha", path = "", entries = emptyList(), isFork = true,
+                repositoryId = "fork-id", permission = permission, capabilities = permission.toCapabilities(archived),
+                isArchived = archived, ref = ref, headOid = "forksha", path = "", entries = entries, isFork = true, isCommitSnapshot = snapshot,
             ),
         )
         coEvery { repository.getForkSync("viewer", "fork", "main") } returns ApiResult.Success(comparison)
@@ -211,8 +252,8 @@ class RepoCodeScreenTest {
         composeRule.setContent {
             MaterialTheme {
                 RepoCodeScreen(
-                    owner = "viewer", name = "fork", ref = "main", path = "", permission = RepoPermission.WRITE,
-                    onBack = {}, onOwnerClick = {}, onRepositoryClick = { _, _ -> }, onAdd = {}, onDirectoryClick = {}, onFileClick = {},
+                    owner = "viewer", name = "fork", ref = ref, path = "", permission = permission,
+                    onBack = {}, onOwnerClick = {}, onRepositoryClick = { _, _ -> }, onAdd = {}, onDirectoryClick = onDirectoryClick, onFileClick = onFileClick,
                     onCreateSyncPullRequest = { createdPr = it }, onExistingSyncPullRequest = { existingPr = it }, viewModel = viewModel,
                 )
             }

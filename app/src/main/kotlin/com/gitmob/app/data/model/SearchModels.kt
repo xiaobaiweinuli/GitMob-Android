@@ -33,4 +33,4 @@ sealed interface SearchItem {
 
 data class SearchSnippet(val text: String, val matches: List<SearchMatch>)
 data class SearchMatch(val start: Int, val end: Int)
-data class SearchFileTarget(val ref: String, val isCommitSnapshot: Boolean)
+data class SearchFileTarget(val ref: String)

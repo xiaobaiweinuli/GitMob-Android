@@ -52,5 +52,5 @@ internal fun searchFileTarget(htmlUrl: String, owner: String, repository: String
     if (!urlPath.startsWith(prefix) || !urlPath.endsWith(suffix)) return null
     val ref = urlPath.removePrefix(prefix).removeSuffix(suffix)
     if (ref.isBlank()) return null
-    return SearchFileTarget(ref, ref.matches(Regex("[0-9a-fA-F]{40}")))
+    return SearchFileTarget(ref)
 }

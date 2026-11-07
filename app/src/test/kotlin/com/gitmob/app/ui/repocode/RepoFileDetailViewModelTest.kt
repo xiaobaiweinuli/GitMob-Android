@@ -46,13 +46,35 @@ class RepoFileDetailViewModelTest {
             isCommitSnapshot = true, ref = commit,
             capabilities = com.gitmob.app.core.permission.RepoPermission.ADMIN.toCapabilities(),
         )
-        coEvery { repository.getFileSnapshot("owner", "repo", commit, "Main.kt") } returns ApiResult.Success(content)
+        coEvery { repository.getPathContent("owner", "repo", commit, "Main.kt") } returns ApiResult.Success(content)
         val vm = viewModel()
-        vm.init("owner", "repo", commit, "Main.kt", isCommitSnapshot = true)
+        vm.init("owner", "repo", commit, "Main.kt")
         assertTrue(vm.state.value.file!!.isCommitSnapshot)
         vm.deleteFile("delete") { fail("Snapshot deletion must not run") }
-        coVerify(exactly = 0) { repository.getPathContent(any(), any(), any(), any()) }
+        coVerify(exactly = 1) { repository.getPathContent("owner", "repo", commit, "Main.kt") }
         coVerify(exactly = 0) { repository.createCommit(any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test fun commitDirectoryUsesTheSameReaderAndRequestsDirectoryNavigation() = runTest {
+        val commit = "a".repeat(40)
+        coEvery { repository.getPathContent("owner", "repo", commit, "docs") } returns ApiResult.Success(RepoPathContent.Directory)
+        val vm = viewModel()
+        vm.init("owner", "repo", commit, "docs", initialPreview = true)
+        assertTrue(vm.state.value.isDirectory)
+        assertFalse(vm.state.value.loadFailed)
+        assertNull(vm.state.value.file)
+    }
+
+    @Test fun commitDocumentPreservesVersionAndIgnoresBranchEdits() = runTest {
+        val commit = "a".repeat(40)
+        val path = "README.md"
+        coEvery { repository.getPathContent("owner", "repo", commit, path) } returns
+            ApiResult.Success(file(path, "[Docs](docs)").copy(ref = commit, headOid = commit, isCommitSnapshot = true))
+        val vm = viewModel()
+        vm.init("owner", "repo", commit, path, initialPreview = true)
+        assertEquals(RepoDocumentContext("owner", "repo", commit, path), vm.state.value.previewContext)
+        withContext(accounts.context) { updates.emit(RepoUpdateEvent.CodeChanged("owner", "repo", "main", "new-head", listOf(path))) }
+        coVerify(exactly = 1) { repository.getPathContent("owner", "repo", commit, path) }
     }
 
     private fun file(path: String, text: String) = RepoFileContent(

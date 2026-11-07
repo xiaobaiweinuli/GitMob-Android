@@ -317,7 +317,7 @@ private fun LoggedInApp(
             if (document.filePath.isEmpty() || document.filePath.endsWith('/')) {
                 navigator.navigate(RepoCodeRoute(document.owner, document.name, document.ref, document.filePath.trimEnd('/')))
             } else {
-                navigator.navigate(RepoFileDetailRoute(document.owner, document.name, document.ref, document.filePath, initialPreview = true, isCommitSnapshot = document.ref.matches(Regex("[0-9a-fA-F]{40}"))))
+                navigator.navigate(RepoFileDetailRoute(document.owner, document.name, document.ref, document.filePath, initialPreview = true))
             }
         }
     }
@@ -343,7 +343,7 @@ private fun LoggedInApp(
         file = { item ->
             val target = item.target
             if (target == null) openExternalUrl(item.htmlUrl)
-            else navigator.navigate(RepoFileDetailRoute(item.owner, item.repository, target.ref, item.path, isCommitSnapshot = target.isCommitSnapshot))
+            else navigator.navigate(RepoFileDetailRoute(item.owner, item.repository, target.ref, item.path))
         },
         homepage = openExternalUrl,
     )
@@ -963,7 +963,6 @@ private fun LoggedInApp(
                         }
                     },
                     initialPreview = route.initialPreview,
-                    isCommitSnapshot = route.isCommitSnapshot,
                     onDocumentLink = openDocument,
                     onDocumentExternalLink = openDocumentExternal,
                     owner = route.owner,

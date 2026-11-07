@@ -17,7 +17,6 @@ import com.gitmob.app.graphql.ForceAlignForkMutation
 import com.gitmob.app.graphql.RepoCodeTreeQuery
 import com.gitmob.app.graphql.RepoCommitDetailQuery
 import com.gitmob.app.graphql.RepoCommitHistoryQuery
-import com.gitmob.app.graphql.RepoFileSnapshotQuery
 import com.gitmob.app.graphql.RepoFileContentQuery
 import com.gitmob.app.graphql.RepoForkSyncQuery
 import com.gitmob.app.graphql.fragment.CommitFields
@@ -220,14 +219,18 @@ class RepoGitRepository @Inject constructor(
         val expression = if (path.isBlank()) "$ref:" else "$ref:$path"
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
         return when (val result = apolloClient.query(
-            RepoCodeTreeQuery(owner, name, qualifiedRef, expression),
+            RepoCodeTreeQuery(owner, name, qualifiedRef, ref, expression),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 val repository = result.data.repository ?: error("Repository not found")
                 val tree = repository.`object`?.onTree ?: error("Tree not found")
-                val repositoryRef = repository.ref ?: error("Branch not found")
-                val head = repositoryRef.target?.oid ?: error("Branch head not found")
+                val repositoryRef = repository.ref
+                val head = if (repositoryRef != null) {
+                    repositoryRef.target?.oid ?: error("Branch head not found")
+                } else {
+                    repository.commit?.onCommit?.oid ?: error("Commit not found")
+                }
                 val permission = permission(repository.viewerPermission?.rawValue)
                 RepoCodeTree(
                     repositoryId = repository.id,
@@ -235,10 +238,11 @@ class RepoGitRepository @Inject constructor(
                     capabilities = permission.toCapabilities(repository.isArchived),
                     isArchived = repository.isArchived,
                     isFork = repository.isFork,
-                    ref = repositoryRef.name,
+                    ref = repositoryRef?.name ?: ref,
                     headOid = head,
                     path = path,
                     entries = tree.entries.orEmpty().filterNotNull().map(::toTreeEntry),
+                    isCommitSnapshot = repositoryRef == null,
                 )
             }
         }
@@ -256,7 +260,7 @@ class RepoGitRepository @Inject constructor(
         val expression = "$ref:$path"
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
         return when (val result = apolloClient.query(
-            RepoFileContentQuery(owner, name, qualifiedRef, expression),
+            RepoFileContentQuery(owner, name, qualifiedRef, ref, expression),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
@@ -264,49 +268,27 @@ class RepoGitRepository @Inject constructor(
                 val target = repository.`object` ?: error("File not found")
                 if (target.__typename == "Tree") return@safeCall RepoPathContent.Directory
                 val blob = target.onBlob ?: error("File not found")
-                val repositoryRef = repository.ref ?: error("Branch not found")
+                val repositoryRef = repository.ref
+                val head = if (repositoryRef != null) {
+                    repositoryRef.target?.oid ?: error("Branch head not found")
+                } else {
+                    repository.commit?.onCommit?.oid ?: error("Commit not found")
+                }
                 val permission = permission(repository.viewerPermission?.rawValue)
                 RepoFileContent(
                     repositoryId = repository.id,
                     permission = permission,
                     capabilities = permission.toCapabilities(),
                     isArchived = repository.isArchived,
-                    ref = repositoryRef.name,
-                    headOid = repositoryRef.target?.oid ?: error("Branch head not found"),
+                    ref = repositoryRef?.name ?: ref,
+                    headOid = head,
                     path = path,
                     oid = blob.oid,
                     byteSize = blob.byteSize.toLong(),
                     isBinary = blob.isBinary == true,
                     isTruncated = blob.isTruncated,
                     text = blob.text,
-                )
-            }
-        }
-    }
-
-    suspend fun getFileSnapshot(owner: String, name: String, commit: String, path: String): ApiResult<RepoPathContent> {
-        return when (val result = apolloClient.query(
-            RepoFileSnapshotQuery(owner, name, commit, "$commit:$path"),
-        ).executeAsApiResult()) {
-            is ApiResult.Failure -> result
-            is ApiResult.Success -> safeCall {
-                val repository = result.data.repository ?: error("Repository not found")
-                val blob = repository.`object`?.onBlob ?: error("File not found")
-                val permission = permission(repository.viewerPermission?.rawValue)
-                RepoFileContent(
-                    repositoryId = repository.id,
-                    permission = permission,
-                    capabilities = permission.toCapabilities(),
-                    isArchived = repository.isArchived,
-                    ref = commit,
-                    headOid = repository.commit?.onCommit?.oid ?: error("Commit not found"),
-                    path = path,
-                    oid = blob.oid,
-                    byteSize = blob.byteSize.toLong(),
-                    isBinary = blob.isBinary == true,
-                    isTruncated = blob.isTruncated,
-                    text = blob.text,
-                    isCommitSnapshot = true,
+                    isCommitSnapshot = repositoryRef == null,
                 )
             }
         }

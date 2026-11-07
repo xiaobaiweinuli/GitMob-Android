@@ -51,6 +51,7 @@ data class RepoCodeTree(
     val headOid: String,
     val path: String,
     val entries: List<RepoTreeEntry>,
+    val isCommitSnapshot: Boolean = false,
 )
 
 sealed interface RepoPathContent {

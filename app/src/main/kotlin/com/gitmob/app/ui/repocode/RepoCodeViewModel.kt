@@ -85,7 +85,8 @@ class RepoCodeViewModel @Inject constructor(
             repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.CodeChanged>()
                 .collect { event ->
-                    if (event.owner == owner && event.name == name && event.ref == ref &&
+                    if (_state.value.tree?.isCommitSnapshot != true &&
+                        event.owner == owner && event.name == name && event.ref == ref &&
                         (path.isBlank() || event.changedPaths.any { changed -> changed == path || changed.startsWith("$path/") })) {
                         load()
                     }
@@ -108,7 +109,7 @@ class RepoCodeViewModel @Inject constructor(
 
     fun uploadFiles(files: List<SafFile>, message: String, onDone: () -> Unit = {}) {
         val tree = _state.value.tree ?: return
-        if (_state.value.isUploading || tree.isArchived || !tree.capabilities.canPush || !tree.capabilities.canPushToProtectedBranch || tree.headOid.isBlank() || message.isBlank()) return
+        if (tree.isCommitSnapshot || _state.value.isUploading || tree.isArchived || !tree.capabilities.canPush || !tree.capabilities.canPushToProtectedBranch || tree.headOid.isBlank() || message.isBlank()) return
         viewModelScope.launch {
             _state.update { it.copy(isUploading = true) }
             val prefix = tree.path.trim('/').takeIf { it.isNotBlank() }?.plus('/') ?: ""
@@ -204,7 +205,7 @@ class RepoCodeViewModel @Inject constructor(
     }
 
     fun openSync() {
-        if (_state.value.isSyncBusy) return
+        if (_state.value.tree?.isCommitSnapshot != false || _state.value.isSyncBusy) return
         _state.update { it.copy(isSyncDialogOpen = true) }
         refreshSync()
     }

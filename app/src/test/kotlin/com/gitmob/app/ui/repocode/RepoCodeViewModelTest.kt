@@ -9,8 +9,10 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
+import com.gitmob.app.core.storage.SafFile
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
+import com.gitmob.app.data.model.RepoPendingFileChange
 import com.gitmob.app.data.model.RepoCodeTree
 import com.gitmob.app.data.model.ExistingRepoPullRequest
 import com.gitmob.app.data.model.RepoForkSyncInfo
@@ -459,6 +461,72 @@ class RepoCodeViewModelTest {
         assertFalse(vm.state.value.syncHasConflict)
         assertFalse(vm.state.value.isSyncBusy)
         assertEquals(syncInfo(), vm.state.value.syncInfo)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `commit directory blocks uploads and sync even with admin permission`() = runTest {
+        val repository = mockk<RepoGitRepository>()
+        val commit = "a".repeat(40)
+        coEvery { repository.getCodeTree("o", "r", commit, "docs") } returns ApiResult.Success(
+            tree().copy(ref = commit, headOid = commit, isCommitSnapshot = true, isFork = true,
+                permission = RepoPermission.ADMIN, capabilities = RepoPermission.ADMIN.toCapabilities()),
+        )
+        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r", commit, "docs", RepoPermission.ADMIN)
+        advanceUntilIdle()
+        var uploaded = false
+        vm.uploadFiles(listOf(SafFile("guide.md", byteArrayOf(1))), "Upload") { uploaded = true }
+        vm.openSync()
+        advanceUntilIdle()
+
+        assertFalse(uploaded)
+        assertFalse(vm.state.value.isUploading)
+        assertFalse(vm.state.value.isSyncDialogOpen)
+        coVerify(exactly = 0) { repository.createCommit(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repository.getForkSync(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `branch upload keeps branch head and folder path`() = runTest {
+        val repository = mockk<RepoGitRepository>()
+        coEvery { repository.getCodeTree("o", "r", "feature/docs", "docs") } returns ApiResult.Success(
+            tree().copy(ref = "feature/docs", permission = RepoPermission.ADMIN, capabilities = RepoPermission.ADMIN.toCapabilities()),
+        )
+        val additions = listOf(RepoPendingFileChange.Addition("docs/guide.md", "AQ=="))
+        coEvery { repository.createCommit("o", "r", "feature/docs", "Upload", additions, emptyList(), "head") } returns ApiResult.Success(mockk())
+        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r", "feature/docs", "docs", RepoPermission.ADMIN)
+        advanceUntilIdle()
+        var uploaded = false
+        vm.uploadFiles(listOf(SafFile("guide.md", byteArrayOf(1))), "Upload") { uploaded = true }
+        advanceUntilIdle()
+
+        assertTrue(uploaded)
+        assertFalse(vm.state.value.isUploading)
+        coVerify(exactly = 1) { repository.createCommit("o", "r", "feature/docs", "Upload", additions, emptyList(), "head") }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `commit directory export keeps the requested revision`() = runTest {
+        val repository = mockk<RepoGitRepository>()
+        val commit = "a".repeat(40)
+        coEvery { repository.getCodeTree("o", "r", commit, "docs") } returns ApiResult.Success(
+            tree().copy(ref = commit, headOid = commit, isCommitSnapshot = true),
+        )
+        val expected = byteArrayOf(1, 2, 3)
+        coEvery { repository.createFolderZip("o", "r", commit, "docs", any()) } returns ApiResult.Success(expected)
+        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r", commit, "docs", RepoPermission.READ)
+        advanceUntilIdle()
+        var saved: ByteArray? = null
+        vm.exportCurrentFolder { saved = it }
+        advanceUntilIdle()
+
+        assertArrayEquals(expected, saved)
+        coVerify(exactly = 1) { repository.createFolderZip("o", "r", commit, "docs", any()) }
         vm.viewModelScope.cancel()
     }
 

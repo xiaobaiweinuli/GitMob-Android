@@ -109,7 +109,7 @@ class SearchScreenTest {
         var openedRepo: String? = null
         var openedFile: String? = null
         val file = SearchItem.Code("owner", "repo", "Main.kt", "src/Main.kt", "",
-            listOf(SearchSnippet("fun main() = Unit", listOf(SearchMatch(4, 8)))), SearchFileTarget("main", false))
+            listOf(SearchSnippet("fun main() = Unit", listOf(SearchMatch(4, 8)))), SearchFileTarget("main"))
         compose.setContent { GitMobTheme { contentView = LocalView.current; Surface { SearchResult(file, actions(
             repo = { owner, name -> openedRepo = "$owner/$name" }, file = { openedFile = it.path })) } } }
         compose.onNodeWithText("src/Main.kt", useUnmergedTree = true).assertExists()
@@ -128,7 +128,7 @@ class SearchScreenTest {
         val second = SearchSnippet("```py\n# 查看前五个测试 Y 值\nlist(y_test)[0:5]", listOf(SearchMatch(13, 15)))
         var openedFile: String? = null
         val file = SearchItem.Code("apachecn", "ds-ai-tech-notes", "11.md", "11.md", "",
-            listOf(first, second), SearchFileTarget("main", false))
+            listOf(first, second), SearchFileTarget("main"))
         compose.setContent { GitMobTheme { contentView = LocalView.current; Surface {
             SearchResult(file, actions(file = { openedFile = it.path }))
         } } }
@@ -150,7 +150,7 @@ class SearchScreenTest {
     @Test fun codePreviewDoesNotTruncateLaterMatchesWithinAFragment() {
         val text = (1..7).joinToString("\n") { "context line $it" } + "\n测试"
         val file = SearchItem.Code("owner", "repo", "11.md", "11.md", "",
-            listOf(SearchSnippet(text, listOf(SearchMatch(text.length - 2, text.length)))), SearchFileTarget("main", false))
+            listOf(SearchSnippet(text, listOf(SearchMatch(text.length - 2, text.length)))), SearchFileTarget("main"))
         compose.setContent { GitMobTheme { Surface { SearchResult(file, actions()) } } }
         val layouts = mutableListOf<TextLayoutResult>()
         compose.onNodeWithText(text, useUnmergedTree = true)

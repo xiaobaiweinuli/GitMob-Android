@@ -68,7 +68,6 @@ class SearchRepositoryTest {
         val files = page.items.map { it as SearchItem.Code }
         assertEquals(listOf(SearchMatch(4, 8)), files[1].snippets.single().matches)
         assertEquals("feature/search", files[1].target!!.ref)
-        assertFalse(files[1].target!!.isCommitSnapshot)
         assertTrue(files[0].snippets.isEmpty())
     }
 

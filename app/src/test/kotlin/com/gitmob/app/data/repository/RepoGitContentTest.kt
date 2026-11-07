@@ -5,6 +5,9 @@ import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.markdown.RepoDocumentLink
+import com.gitmob.app.core.markdown.resolveLink
+import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.model.RepoFileContent
 import com.gitmob.app.data.model.RepoPathContent
 import com.gitmob.app.testutil.AccountSessionRule
@@ -57,6 +60,7 @@ class RepoGitContentTest {
         assertEquals("feature/docs", preview.ref)
         assertEquals("head", preview.headOid)
         assertFalse(preview.isBinary)
+        assertFalse(preview.isCommitSnapshot)
     }
 
     @Test fun missingAndUnsupportedObjectsRemainFailures() = runTest(accounts.context) {
@@ -76,29 +80,100 @@ class RepoGitContentTest {
         assertTrue(repository.getPathContent("owner", "repo", "main", "docs") is ApiResult.Failure)
     }
 
-    @Test fun commitSnapshotDoesNotRequireBranchLookupAndRemainsReadOnly() = runTest(accounts.context) {
+    @Test fun commitFileUsesSharedReadersWithoutAnExistingBranch() = runTest(accounts.context) {
         val commit = "a".repeat(40)
-        server.enqueue(MockResponse().setBody("""
-            {"data":{"repository":{"id":"R_repo","viewerPermission":"WRITE","isArchived":false,
-            "commit":{"__typename":"Commit","oid":"$commit"},"object":$blob}}}
-        """.trimIndent()))
-        val file = (repository.getFileSnapshot("owner", "repo", commit, "README.md") as ApiResult.Success).data as RepoFileContent
+        repeat(2) { server.enqueue(MockResponse().setBody(response(blob, branch = null, commit = commit, permission = "WRITE"))) }
+        val file = (repository.getPathContent("owner", "repo", commit, "README.md") as ApiResult.Success).data as RepoFileContent
+        val direct = (repository.getFileContent("owner", "repo", commit, "README.md") as ApiResult.Success).data
+        assertEquals(file, direct)
         assertEquals(commit, file.ref)
         assertEquals(commit, file.headOid)
         assertEquals("blob", file.oid)
         assertTrue(file.isCommitSnapshot)
-        val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
-        assertEquals("$commit:README.md", variables.getValue("expression").jsonPrimitive.content)
-        assertFalse(variables.containsKey("qualifiedRef"))
+        assertTrue(file.capabilities.canPush)
+        assertEquals(2, server.requestCount)
+        repeat(2) {
+            val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+            assertEquals("$commit:README.md", variables.getValue("expression").jsonPrimitive.content)
+            assertEquals(commit, variables.getValue("revision").jsonPrimitive.content)
+        }
+    }
+
+    @Test fun commitDocumentLinksReachDirectoryAndChildFileAtTheSameVersion() = runTest(accounts.context) {
+        val commit = "a".repeat(40)
+        val document = RepoDocumentContext("owner", "repo", commit, "README.md")
+        for (href in listOf("docs", "docs/")) {
+            val link = (document.resolveLink(href) as RepoDocumentLink.File).document
+            assertEquals(commit, link.ref)
+            val path = link.filePath.trimEnd('/')
+            if (!link.filePath.endsWith('/')) {
+                server.enqueue(MockResponse().setBody(response("""{"__typename":"Tree"}""", branch = null, commit = commit)))
+                assertEquals(RepoPathContent.Directory,
+                    (repository.getPathContent(link.owner, link.name, link.ref, path) as ApiResult.Success).data)
+                val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+                assertEquals("$commit:docs", variables.getValue("expression").jsonPrimitive.content)
+            }
+            val target = """{"__typename":"Tree","entries":[
+                {"name":"guide.md","path":"docs/guide.md","type":"blob","oid":"blob","size":7,"extension":".md","language":null}
+            ]}"""
+            server.enqueue(MockResponse().setBody(response(target, branch = null, commit = commit, permission = "ADMIN")))
+            val tree = (repository.getCodeTree(link.owner, link.name, link.ref, path) as ApiResult.Success).data
+            assertEquals(commit, tree.ref)
+            assertEquals(commit, tree.headOid)
+            assertTrue(tree.isCommitSnapshot)
+            assertTrue(tree.capabilities.canPush)
+            val treeVariables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+            assertEquals("$commit:docs", treeVariables.getValue("expression").jsonPrimitive.content)
+
+            server.enqueue(MockResponse().setBody(response(blob, branch = null, commit = commit)))
+            val file = (repository.getFileContent(link.owner, link.name, tree.ref, tree.entries.single().path) as ApiResult.Success).data
+            assertEquals(commit, file.ref)
+            assertTrue(file.isCommitSnapshot)
+            val fileVariables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+            assertEquals("$commit:docs/guide.md", fileVariables.getValue("expression").jsonPrimitive.content)
+        }
+        assertEquals(5, server.requestCount)
+    }
+
+    @Test fun commitRootAndNestedDirectoriesKeepTheSameCommit() = runTest(accounts.context) {
+        val commit = "b".repeat(40)
+        for (path in listOf("", "docs", "docs/nested")) {
+            server.enqueue(MockResponse().setBody(response("""{"__typename":"Tree","entries":[]}""", branch = null, commit = commit)))
+            val tree = (repository.getCodeTree("owner", "repo", commit, path) as ApiResult.Success).data
+            assertEquals(commit, tree.ref)
+            assertEquals(path, tree.path)
+            assertTrue(tree.isCommitSnapshot)
+            val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+            assertEquals("$commit:$path", variables.getValue("expression").jsonPrimitive.content)
+        }
+    }
+
+    @Test fun branchTreeKeepsWritableBranchAndHeadMetadata() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(response("""{"__typename":"Tree","entries":[]}""", permission = "WRITE")))
+        val tree = (repository.getCodeTree("owner", "repo", "feature/docs", "docs") as ApiResult.Success).data
+        assertEquals("feature/docs", tree.ref)
+        assertEquals("head", tree.headOid)
+        assertFalse(tree.isCommitSnapshot)
+        assertTrue(tree.capabilities.canPush)
+    }
+
+    @Test fun absentCommitAndBranchRemainFailuresEvenWithAPathObject() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(response(blob, branch = null)))
+        assertTrue(repository.getPathContent("owner", "repo", "missing", "README.md") is ApiResult.Failure)
+        server.enqueue(MockResponse().setBody(response("""{"__typename":"Tree","entries":[]}""", branch = null)))
+        assertTrue(repository.getCodeTree("owner", "repo", "missing", "docs") is ApiResult.Failure)
     }
 
     private val blob = """{"__typename":"Blob","oid":"blob","byteSize":7,"isBinary":false,"isTruncated":false,"text":"# Guide"}"""
 
-    private fun response(target: String) = """
-        {"data":{"repository":{
-          "id":"R_repo","viewerPermission":"READ","isArchived":false,
-          "ref":{"name":"feature/docs","target":{"__typename":"Commit","oid":"head"}},
-          "object":$target
-        }}}
-    """.trimIndent()
+    private fun response(target: String, branch: String? = "feature/docs", commit: String? = null, permission: String = "READ"): String {
+        val refJson = branch?.let { """{"name":"$it","target":{"__typename":"Commit","oid":"head"}}""" } ?: "null"
+        val commitJson = commit?.let { """{"__typename":"Commit","oid":"$it"}""" } ?: "null"
+        return """
+            {"data":{"repository":{
+              "id":"R_repo","viewerPermission":"$permission","isArchived":false,"isFork":false,
+              "ref":$refJson,"commit":$commitJson,"object":$target
+            }}}
+        """.trimIndent()
+    }
 }

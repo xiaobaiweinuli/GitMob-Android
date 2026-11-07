@@ -131,7 +131,7 @@ fun RepoCodeScreen(
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    if (state.tree?.isFork == true) {
+                    if (state.tree?.isFork == true && state.tree?.isCommitSnapshot == false) {
                         IconButton(onClick = viewModel::openSync, enabled = !state.isSyncBusy) {
                             Icon(Icons.Default.Sync, stringResource(R.string.repo_sync_title))
                         }
@@ -147,7 +147,7 @@ fun RepoCodeScreen(
                             Icon(Icons.Default.Download, stringResource(R.string.repo_download_folder))
                         }
                     }
-                    if (state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && state.tree?.isArchived == false) {
+                    if (state.tree?.isCommitSnapshot == false && state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && state.tree?.isArchived == false) {
                         androidx.compose.foundation.layout.Box {
                             IconButton(onClick = { addMenuExpanded = true }, enabled = !state.isUploading) {
                                 if (state.isUploading) CircularProgressIndicator() else Icon(Icons.Default.Add, stringResource(R.string.repo_add_file))

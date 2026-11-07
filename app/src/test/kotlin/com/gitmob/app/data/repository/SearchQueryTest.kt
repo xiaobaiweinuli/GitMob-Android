@@ -19,9 +19,8 @@ class SearchQueryTest {
     @Test fun permalinkUsesKnownPathSuffixAndPreservesSlashRefs() {
         val target = searchFileTarget("https://github.com/owner/repo/blob/feature/search/src/Main.kt", "owner", "repo", "src/Main.kt")!!
         assertEquals("feature/search", target.ref)
-        assertFalse(target.isCommitSnapshot)
         val sha = "a".repeat(40)
-        assertTrue(searchFileTarget("https://github.com/owner/repo/blob/$sha/src/Main.kt", "owner", "repo", "src/Main.kt")!!.isCommitSnapshot)
+        assertEquals(sha, searchFileTarget("https://github.com/owner/repo/blob/$sha/src/Main.kt", "owner", "repo", "src/Main.kt")!!.ref)
         assertEquals("feature/docs", searchFileTarget("https://github.com/owner/repo/blob/feature/docs/My%20File.kt", "owner", "repo", "My File.kt")!!.ref)
         assertNull(searchFileTarget("https://example.com/owner/repo/blob/main/a.kt", "owner", "repo", "a.kt"))
         assertNull(searchFileTarget("https://github.com/owner/repo/blob/main/a.kt", "owner", "repo", "b.kt"))
