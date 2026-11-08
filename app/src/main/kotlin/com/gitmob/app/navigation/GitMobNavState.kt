@@ -1,6 +1,7 @@
 package com.gitmob.app.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,7 +102,7 @@ class GitMobNavState(
     fun toDecoratedEntries(
         entryProvider: (NavKey) -> NavEntry<NavKey>,
     ): List<NavEntry<NavKey>> {
-        val decoratedEntries = backStacks.mapValues { (_, stack) ->
+        val decoratedEntries = backStacks.mapValues { (tab, stack) ->
             // 每个栈独立的 decorators：SaveableState + ViewModelStore，
             // 保证切 Tab 后 ViewModel 不共享、滚动位置不串台。
             val decorators = listOf(
@@ -111,7 +112,14 @@ class GitMobNavState(
             rememberDecoratedNavEntries(
                 backStack = stack,
                 entryDecorators = decorators,
-                entryProvider = entryProvider,
+                entryProvider = { key ->
+                    val entry = entryProvider(key)
+                    NavEntry(navEntry = entry) {
+                        CompositionLocalProvider(LocalNavigationTab provides tab) {
+                            entry.Content()
+                        }
+                    }
+                },
             )
         }
 
@@ -156,7 +164,9 @@ class GitMobNavigator(
         if (route in topLevelRoutes) {
             state.topLevelRoute = route
         } else {
-            state.backStacks[state.topLevelRoute]?.add(route)
+            val stack = state.backStacks[state.topLevelRoute] ?: return
+            // Compare the complete route: distinct arguments and revisits deeper in history remain valid.
+            if (stack.lastOrNull() != route) stack.add(route)
         }
     }
 

@@ -1,6 +1,7 @@
-﻿package com.gitmob.app.ui.reporeleases
+package com.gitmob.app.ui.reporeleases
 
-import android.provider.OpenableColumns
+import android.text.format.Formatter
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -43,8 +44,11 @@ fun RepoReleaseListScreen(owner: String, name: String, permission: RepoPermissio
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RepoReleaseDetailScreen(owner: String, name: String, tag: String?, releaseId: Long?, permission: RepoPermission?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onEdit: (Long) -> Unit, viewModel: RepoReleaseDetailViewModel = hiltViewModel()) {
-    LaunchedEffect(owner, name, tag, releaseId) { viewModel.init(owner, name, tag, releaseId, permission) }; val state by viewModel.state.collectAsStateWithLifecycle(); val context = LocalContext.current; var menu by remember { mutableStateOf(false) }; var editorAsset by remember { mutableStateOf<RepoReleaseAsset?>(null) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri ?: return@rememberLauncherForActivityResult; val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult; val fileName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else "asset.bin" } ?: "asset.bin"; viewModel.uploadAsset(fileName, null, context.contentResolver.getType(uri) ?: "application/octet-stream", bytes) }
+    val context = LocalContext.current
+    LaunchedEffect(owner, name, tag, releaseId) { viewModel.init(owner, name, tag, releaseId, permission) }; val state by viewModel.state.collectAsStateWithLifecycle(); var menu by remember { mutableStateOf(false) }; var editorAsset by remember { mutableStateOf<RepoReleaseAsset?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(viewModel::uploadAsset)
+    }
     Scaffold(topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, state.release?.name ?: state.release?.tagName ?: stringResource(R.string.repo_releases), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = {
         state.release?.let { release ->
             Box {
@@ -61,18 +65,113 @@ fun RepoReleaseDetailScreen(owner: String, name: String, tag: String?, releaseId
             }
         }
     }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) }, contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) { padding ->
-        when { state.isLoading && state.release == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; state.loadFailed -> ReleaseRetry(viewModel::retry); state.release != null -> LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) { item { val release = state.release!!; Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(release.name ?: release.tagName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text("${release.tagName} · ${release.targetCommitish}"); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { AssistChip(onClick = {}, label = { Text(stringResource(if (release.draft) R.string.release_draft else if (release.prerelease) R.string.release_prerelease else R.string.release_published)) }); Text(release.publishedAt?.take(10) ?: release.createdAt.take(10)) } }; if (release.bodyHtml?.isNotBlank() == true) MarkdownWebView(release.bodyHtml, Modifier.fillMaxWidth()) else Text(release.body, modifier = Modifier.padding(horizontal = 16.dp)) }; item { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.release_assets), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); if (state.capabilities.canPush) IconButton(onClick = { picker.launch(arrayOf("*/*")) }) { Icon(Icons.Default.UploadFile, stringResource(R.string.release_upload_asset)) } } }; items(state.release!!.assets, key = { it.id }) { asset -> val opening = asset.id in state.openingAssetIds; ListItem(headlineContent = { Text(asset.name) }, supportingContent = { Text(stringResource(R.string.release_asset_meta, asset.downloadCount, asset.size)) }, trailingContent = { Row { if (state.capabilities.canPush) IconButton(onClick = { editorAsset = asset }) { Icon(Icons.Default.Edit, stringResource(R.string.common_edit)) }; IconButton(onClick = { viewModel.downloadAsset(asset) }, enabled = !opening) { if (opening) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Download, stringResource(R.string.common_download)) }; if (state.capabilities.canPush) IconButton(onClick = { viewModel.confirmDeleteAsset(asset) }) { Icon(Icons.Default.Delete, stringResource(R.string.common_delete)) } } }) } } }
+        when { state.isLoading && state.release == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; state.loadFailed -> ReleaseRetry(viewModel::retry); state.release != null -> LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) { item { val release = state.release!!; Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(release.name ?: release.tagName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text("${release.tagName} · ${release.targetCommitish}"); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { AssistChip(onClick = {}, label = { Text(stringResource(if (release.draft) R.string.release_draft else if (release.prerelease) R.string.release_prerelease else R.string.release_published)) }); Text(release.publishedAt?.take(10) ?: release.createdAt.take(10)) } }; if (release.bodyHtml?.isNotBlank() == true) MarkdownWebView(release.bodyHtml, Modifier.fillMaxWidth()) else Text(release.body, modifier = Modifier.padding(horizontal = 16.dp)) }; item { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.release_assets), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); if (state.capabilities.canPush) IconButton(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !state.upload.isActive && !state.isLoading) { Icon(Icons.Default.UploadFile, stringResource(R.string.release_upload_asset)) } } }; item { ReleaseAssetUploadStatus(state.upload, state.isLoading, viewModel::cancelUpload, viewModel::load) }; items(state.release!!.assets, key = { it.id }) { asset -> val opening = asset.id in state.openingAssetIds; ListItem(headlineContent = { Text(asset.name) }, supportingContent = { Text(stringResource(R.string.release_asset_meta, asset.downloadCount, Formatter.formatShortFileSize(context, asset.size))) }, trailingContent = { Row { if (state.capabilities.canPush) IconButton(onClick = { editorAsset = asset }) { Icon(Icons.Default.Edit, stringResource(R.string.common_edit)) }; IconButton(onClick = { viewModel.downloadAsset(asset) }, enabled = !opening) { if (opening) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Download, stringResource(R.string.common_download)) }; if (state.capabilities.canPush) IconButton(onClick = { viewModel.confirmDeleteAsset(asset) }) { Icon(Icons.Default.Delete, stringResource(R.string.common_delete)) } } }) } } }
     }
     if (state.pendingDelete) AlertDialog(onDismissRequest = { viewModel.confirmDelete(false) }, title = { Text(stringResource(R.string.release_delete_title)) }, text = { Text(stringResource(R.string.release_delete_message)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDelete(false) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = { viewModel.delete(onBack) }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } })
     state.pendingDeleteAsset?.let { asset -> AlertDialog(onDismissRequest = { viewModel.confirmDeleteAsset(null) }, title = { Text(stringResource(R.string.release_delete_asset_title)) }, text = { Text(asset.name) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteAsset(null) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = viewModel::deleteAsset) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } }) }
     editorAsset?.let { asset -> ReleaseAssetEditDialog(asset, { editorAsset = null }) { fileName, label -> viewModel.updateAsset(asset, fileName, label) { editorAsset = null } } }
 }
 
+@Composable
+private fun ReleaseAssetUploadStatus(
+    upload: ReleaseAssetUploadState,
+    isRefreshing: Boolean,
+    cancel: () -> Unit,
+    refresh: () -> Unit,
+) {
+    if (upload.phase == ReleaseAssetUploadPhase.IDLE) return
+    val context = LocalContext.current
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val message = when {
+            upload.isCancelling -> R.string.release_asset_cancelling
+            upload.phase == ReleaseAssetUploadPhase.PREPARING -> R.string.release_asset_preparing
+            upload.phase == ReleaseAssetUploadPhase.UPLOADING -> R.string.release_asset_uploading
+            upload.phase == ReleaseAssetUploadPhase.SUCCESS -> R.string.release_asset_upload_success
+            upload.phase == ReleaseAssetUploadPhase.FAILURE -> R.string.release_asset_upload_failed
+            else -> R.string.release_asset_upload_cancelled
+        }
+        Text(stringResource(message), style = MaterialTheme.typography.bodySmall)
+        if (upload.phase == ReleaseAssetUploadPhase.UPLOADING && upload.total > 0) {
+            LinearProgressIndicator(progress = { (upload.sent.toDouble() / upload.total).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+            Text(stringResource(R.string.release_asset_progress, Formatter.formatShortFileSize(context, upload.sent), Formatter.formatShortFileSize(context, upload.total)), style = MaterialTheme.typography.bodySmall)
+        } else if (upload.isActive) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (upload.isActive) TextButton(onClick = cancel, enabled = !upload.isCancelling) { Text(stringResource(R.string.common_cancel)) }
+        if (upload.phase == ReleaseAssetUploadPhase.CANCELLED) {
+            TextButton(onClick = refresh, enabled = !isRefreshing) { Text(stringResource(R.string.common_refresh)) }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RepoReleaseEditorScreen(owner: String, name: String, releaseId: Long?, permission: RepoPermission?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onSaved: (String) -> Unit, viewModel: RepoReleaseEditorViewModel = hiltViewModel()) {
-    LaunchedEffect(owner, name, releaseId, permission) { viewModel.init(owner, name, releaseId, permission) }; val state by viewModel.state.collectAsStateWithLifecycle(); val existing = state.existing; var tag by remember(existing) { mutableStateOf(existing?.tagName.orEmpty()) }; var target by remember(existing) { mutableStateOf(existing?.targetCommitish.orEmpty()) }; var title by remember(existing) { mutableStateOf(existing?.name.orEmpty()) }; var body by remember(existing) { mutableStateOf(existing?.body.orEmpty()) }; var draft by remember(existing) { mutableStateOf(existing?.draft ?: true) }; var prerelease by remember(existing) { mutableStateOf(existing?.prerelease ?: false) }
-    Scaffold(topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(if (releaseId == null) R.string.release_new else R.string.release_edit), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) }, contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) { padding -> LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { OutlinedTextField(tag, { tag = it }, label = { Text(stringResource(R.string.release_tag)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }; item { OutlinedTextField(target, { target = it }, label = { Text(stringResource(R.string.release_target)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }; item { OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.release_title)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }; item { TextButton(onClick = { viewModel.generateNotes(tag, target) { notes -> body = notes.body; if (title.isBlank()) title = notes.name.orEmpty() } }, enabled = tag.isNotBlank()) { Icon(Icons.Default.AutoAwesome, null); Text(stringResource(R.string.release_generate_notes)) } }; item { OutlinedTextField(body, { body = it }, label = { Text(stringResource(R.string.release_notes)) }, minLines = 10, modifier = Modifier.fillMaxWidth()) }; item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft, { draft = it }); Text(stringResource(R.string.release_draft)) } }; item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(prerelease, { prerelease = it }); Text(stringResource(R.string.release_prerelease)) } }; item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = onBack) { Text(stringResource(R.string.common_cancel)) }; Button(onClick = { viewModel.save(SaveRepoReleaseInput(tag, target, title.ifBlank { null }, body, draft, prerelease)) { onSaved(it.tagName) } }, enabled = state.capabilities.canPush && tag.isNotBlank() && !state.isSaving) { Text(stringResource(R.string.common_save)) } } } } }
+    LaunchedEffect(owner, name, releaseId, permission) { viewModel.init(owner, name, releaseId, permission) }
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val draft = state.draft
+    var showDiscardConfirmation by remember { mutableStateOf(false) }
+    fun requestExit() {
+        if (state.isSaving) return
+        if (state.isDirty) showDiscardConfirmation = true else onBack()
+    }
+    // BackHandler is invoked only for a completed back action; cancelling a gesture leaves the draft intact.
+    BackHandler { requestExit() }
+    LaunchedEffect(state.savedRelease) { state.savedRelease?.let { onSaved(it.tagName) } }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    RepositoryContextTitle(
+                        owner, name, stringResource(if (releaseId == null) R.string.release_new else R.string.release_edit),
+                        { login -> if (!state.isSaving) onOwnerClick(login) },
+                        { repoOwner, repoName -> if (!state.isSaving) onRepositoryClick(repoOwner, repoName) },
+                    )
+                },
+                navigationIcon = { IconButton(onClick = { requestExit() }, enabled = !state.isSaving) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+    ) { padding ->
+        when (state.phase) {
+            ReleaseEditorPhase.LOADING -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            ReleaseEditorPhase.LOAD_FAILED -> Box(Modifier.fillMaxSize().padding(padding)) { ReleaseRetry(viewModel::retry) }
+            ReleaseEditorPhase.EDITABLE, ReleaseEditorPhase.SAVING -> {
+                val enabled = !state.isSaving && state.savedRelease == null
+                LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item { OutlinedTextField(draft.tag, viewModel::editTag, enabled = enabled, label = { Text(stringResource(R.string.release_tag)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(draft.target, viewModel::editTarget, enabled = enabled, label = { Text(stringResource(R.string.release_target)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                    item { OutlinedTextField(draft.title, viewModel::editTitle, enabled = enabled, label = { Text(stringResource(R.string.release_title)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+                    item {
+                        TextButton(onClick = viewModel::generateNotes, enabled = enabled && state.capabilities.canPush && draft.tag.isNotBlank() && !state.isGenerating) {
+                            if (state.isGenerating) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.AutoAwesome, null)
+                            Text(stringResource(R.string.release_generate_notes))
+                        }
+                    }
+                    item { OutlinedTextField(draft.body, viewModel::editBody, enabled = enabled, label = { Text(stringResource(R.string.release_notes)) }, minLines = 10, modifier = Modifier.fillMaxWidth()) }
+                    item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.draft, viewModel::editDraft, enabled = enabled); Text(stringResource(R.string.release_draft)) } }
+                    item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.prerelease, viewModel::editPrerelease, enabled = enabled); Text(stringResource(R.string.release_prerelease)) } }
+                    item {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { requestExit() }, enabled = enabled) { Text(stringResource(R.string.common_cancel)) }
+                            Button(onClick = viewModel::save, enabled = enabled && state.capabilities.canPush && draft.tag.isNotBlank()) {
+                                if (state.isSaving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Text(stringResource(R.string.common_save))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmation = false },
+            title = { Text(stringResource(R.string.conversation_discard_title)) },
+            text = { Text(stringResource(R.string.conversation_discard_message)) },
+            dismissButton = { TextButton(onClick = { showDiscardConfirmation = false }) { Text(stringResource(R.string.common_cancel)) } },
+            confirmButton = { TextButton(onClick = { showDiscardConfirmation = false; onBack() }) { Text(stringResource(R.string.conversation_discard), color = MaterialTheme.colorScheme.error) } },
+        )
+    }
 }
 
 @Composable private fun ReleaseAssetEditDialog(asset: RepoReleaseAsset, dismiss: () -> Unit, save: (String, String?) -> Unit) { var name by remember(asset) { mutableStateOf(asset.name) }; var label by remember(asset) { mutableStateOf(asset.label.orEmpty()) }; AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.release_edit_asset)) }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.release_asset_name)) }); OutlinedTextField(label, { label = it }, label = { Text(stringResource(R.string.release_asset_label)) }) } }, dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { Button(onClick = { save(name, label.ifBlank { null }) }, enabled = name.isNotBlank()) { Text(stringResource(R.string.common_save)) } }) }

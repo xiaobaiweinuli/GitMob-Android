@@ -17,7 +17,7 @@ class TranslationRepositoryTest {
     private fun TestScope.repository(): TranslationRepository {
         every { store.configuration } returns MutableStateFlow(TranslationConfiguration(preferences))
         every { client.requestBytes(any(), any(), any()) } answers { firstArg<List<String>>().sumOf { it.toByteArray().size.toLong() } + 100 }
-        return TranslationRepository(store, client) { testScheduler.currentTime }
+        return TranslationRepository(store, client, StandardTestDispatcher(testScheduler)) { testScheduler.currentTime }
     }
     private fun document(parts: List<String>) = TranslationDocument(TranslationTarget("body", parts.joinToString("")), parts)
 
@@ -124,5 +124,82 @@ class TranslationRepositoryTest {
         assertEquals(listOf(10, 10, 10, 10, 5), planTranslationBatches(units, TranslationProvider.EDGE) { it.size * 2000L }.map { it.size })
         val long = List(3) { TranslationUnit("😀".repeat(1500), mapOf(it to "original")) }
         assertEquals(listOf(2, 1), planTranslationBatches(long, TranslationProvider.EDGE) { 100 }.map { it.size })
+    }
+
+    @Test fun batchPlanningRunsOnCpuDispatcherWhileNetworkKeepsCallerContext() = runTest {
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor { task -> Thread(task, "translation-cpu-test") }
+        executor.asCoroutineDispatcher().use { cpu ->
+            every { store.configuration } returns MutableStateFlow(TranslationConfiguration(preferences))
+            val planningThreads = java.util.concurrent.CopyOnWriteArrayList<Thread>()
+            every { client.requestBytes(any(), any(), any()) } answers {
+                planningThreads += Thread.currentThread()
+                100L
+            }
+            var networkThread: Thread? = null
+            coEvery { client.translateBatch(any(), any(), any()) } coAnswers {
+                networkThread = Thread.currentThread()
+                firstArg<List<String>>().map { "translated-$it" }
+            }
+            val callerThread = Thread.currentThread()
+            val repository = TranslationRepository(store, client, cpu) { testScheduler.currentTime }
+            val events = repository.translateDocument(document(listOf("one", "two", "one")), emptyMap(), preferences, credentials).toList()
+            assertTrue(planningThreads.isNotEmpty())
+            assertTrue(planningThreads.all { it.name.startsWith("translation-cpu-test") })
+            assertSame(callerThread, networkThread)
+            assertEquals(3, events.filterIsInstance<TranslationUpdate.Batch>().sumOf { it.values.size })
+        }
+    }
+
+    @Test fun cancellationDuringGroupingStopsScanningAndNeverStartsNetwork() = runTest {
+        val repository = repository()
+        val cancelled = Job(coroutineContext[Job])
+        var visited = 0
+        val parts = object : AbstractList<String>() {
+            override val size = 100_000
+            override fun get(index: Int): String {
+                visited++
+                if (visited == 128) cancelled.cancel()
+                return "paragraph-$index"
+            }
+        }
+        val document = TranslationDocument(TranslationTarget("large", ""), parts)
+        val error = runCatching {
+            withContext(cancelled) { repository.translateDocument(document, emptyMap(), preferences, credentials).toList() }
+        }.exceptionOrNull()
+        assertTrue(error is CancellationException)
+        assertTrue(visited < 200)
+        coVerify(exactly = 0) { client.translateBatch(any(), any(), any()) }
+    }
+
+    @Test fun cancellationDuringBatchSizingStopsBeforeNetwork() = runTest {
+        val repository = repository()
+        val cancelled = Job(coroutineContext[Job])
+        var sized = 0
+        every { client.requestBytes(any(), any(), any()) } answers {
+            sized++
+            if (sized == 3) cancelled.cancel()
+            100L
+        }
+        val error = runCatching {
+            withContext(cancelled) { repository.translateDocument(document(List(1000) { "paragraph-$it" }), emptyMap(), preferences, credentials).toList() }
+        }.exceptionOrNull()
+        assertTrue(error is CancellationException)
+        assertTrue(sized < 10)
+        coVerify(exactly = 0) { client.translateBatch(any(), any(), any()) }
+    }
+
+    @Test fun tooLongUnitSplitsWithoutChangingOriginalIdsOrWhitespace() = runTest {
+        val repository = repository()
+        var attempts = 0
+        val original = "abcdefghij".repeat(10)
+        coEvery { client.translateBatch(any(), any(), any()) } coAnswers {
+            if (attempts++ == 0) throw TranslationException(TranslationProblem.TOO_LONG)
+            firstArg<List<String>>().map { it.uppercase() }
+        }
+        val events = repository.translateDocument(document(listOf(" $original", "$original ")), emptyMap(), preferences, credentials).toList()
+        val batches = events.filterIsInstance<TranslationUpdate.Batch>()
+        assertEquals(1, batches.size)
+        assertEquals(mapOf(0 to " "+original.uppercase(), 1 to original.uppercase()+" "), batches.single().values)
+        assertEquals(3, attempts)
     }
 }

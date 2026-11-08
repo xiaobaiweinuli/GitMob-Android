@@ -3,7 +3,6 @@ package com.gitmob.app.ui.settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -39,15 +38,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.gitmob.app.BuildConfig
 import com.gitmob.app.R
 import com.gitmob.app.core.auth.GITHUB_CLIENT_ID
@@ -55,6 +57,13 @@ import com.gitmob.app.core.auth.GITHUB_CLIENT_ID
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val logoRequest = remember(context) {
+        ImageRequest.Builder(context)
+            .data(R.drawable.ic_about_logo)
+            .crossfade(false)
+            .build()
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -94,8 +103,8 @@ fun AboutScreen(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(80.dp),
                     ) {
-                        Image(
-                            painter = painterResource(R.drawable.ic_app_logo),
+                        AsyncImage(
+                            model = logoRequest,
                             contentDescription = stringResource(R.string.about_logo_desc),
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize(),

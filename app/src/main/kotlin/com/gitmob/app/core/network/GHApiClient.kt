@@ -11,6 +11,12 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import java.net.URI
 import javax.inject.Inject
 import javax.inject.Named
@@ -160,20 +166,34 @@ class GHApiClient @Inject constructor(
         }.also { epoch.ensureCurrent() }
     }
 
-    /** Release asset 使用 uploads.github.com 的绝对 URL，仍复用统一鉴权和错误映射。 */
-    suspend inline fun <reified T> uploadBytes(url: String, contentType: String, bytes: ByteArray): T {
+    /** Release assets retain the same authentication, REST headers, and cancellable transport. */
+    suspend inline fun <reified T> uploadFile(url: String, contentType: String, file: File, length: Long, noinline progress: (Long, Long) -> Unit): T =
+        json.decodeFromString(readFileUpload(url, contentType, file, length, progress).decodeToString())
+
+    @PublishedApi
+    internal suspend fun readFileUpload(url: String, contentType: String, file: File, length: Long, progress: (Long, Long) -> Unit): ByteArray {
         val epoch = AccountContext.ensureCurrent()
+        val context = currentCoroutineContext()
         val token = tokenProvider.getToken() ?: throw UnauthorizedException()
         epoch.ensureCurrent()
+        val body = FileUploadRequestBody(file, contentType.toMediaType(), length, {
+            if (!context.isActive || !epoch.isCurrent) throw java.io.InterruptedIOException("Upload cancelled")
+        }, progress)
         val request = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $token")
             .header("Accept", DEFAULT_ACCEPT)
             .header("X-GitHub-Api-Version", REST_API_VERSION)
             .header("User-Agent", USER_AGENT)
-            .post(bytes.toRequestBody(contentType.toMediaType()))
+            .post(body)
             .build()
-        return json.decodeFromString(readUpload(request).decodeToString())
+        try {
+            return readUpload(request)
+        } finally {
+            // Cancellation resumes the caller before OkHttp finishes unwinding its writer.
+            // Wait off Main before the repository removes the private file (also required on Windows).
+            withContext(NonCancellable + Dispatchers.IO) { body.awaitIdle() }
+        }
     }
 
     suspend inline fun <reified T> executeRest(method: String, path: String, body: String?, accept: String): T {

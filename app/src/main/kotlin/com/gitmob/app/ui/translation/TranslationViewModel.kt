@@ -53,7 +53,7 @@ class TranslationViewModel @Inject constructor(
     private val repository: TranslationRepository,
     session: AccountSession,
 ) : AccountViewModel(session) {
-    private val _state = MutableStateFlow(TranslationUiState())
+    private val _state = MutableStateFlow(TranslationUiState(configuration = repository.configuration.value))
     val state = _state.asStateFlow()
     private val jobs = mutableMapOf<String, Job>()
     private val generations = mutableMapOf<String, Long>()
@@ -62,14 +62,17 @@ class TranslationViewModel @Inject constructor(
     private var testJob: Job? = null
 
     init {
+        if (_state.value.configuration?.storageFailed == true) repository.retryConfiguration()
         viewModelScope.launch {
             repository.configuration.collect { config ->
                 if (_state.value.configuration != config) clearTest()
-                if (!config.preferences.enabled || config.storageFailed) { cancelAll(); _state.update { it.copy(entries = emptyMap(), optionsOpen = false) } }
+                if (config != null && (!config.preferences.enabled || config.storageFailed)) { cancelAll(); _state.update { it.copy(entries = emptyMap(), optionsOpen = false) } }
                 _state.update { it.copy(configuration = config) }
             }
         }
     }
+
+    fun retryConfiguration() = repository.retryConfiguration()
 
     fun savePreferences(value: TranslationPreferences) {
         viewModelScope.launch {

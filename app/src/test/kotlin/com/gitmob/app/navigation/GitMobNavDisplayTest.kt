@@ -13,11 +13,13 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -34,6 +36,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.test.assertIsDisplayed
@@ -57,6 +61,8 @@ import com.gitmob.app.testutil.AccountSessionRule
 import com.gitmob.app.ui.settings.SelectionRow
 import com.gitmob.app.ui.settings.SettingsDropdownRow
 import org.junit.Assert.assertEquals
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -87,6 +93,10 @@ class GitMobNavDisplayTest {
     private var navigationCount = 0
     private var confirmationCount = 0
     private var fallbackCount = 0
+    private var useTabRoots = false
+    private var tabBarInsets = WindowInsets(0)
+    private val entryClicks = mutableMapOf<Route, GitMobEntryNavigation>()
+    private val entryLifecycles = mutableMapOf<Route, Lifecycle>()
 
     @Test
     fun `bounds measurement detects graphics layer scaling`() {
@@ -497,6 +507,128 @@ class GitMobNavDisplayTest {
         assertEquals(0, navigationCount)
     }
 
+    @Test
+    fun `root push and pop keep container and outgoing content bounds stable`() {
+        setNavigationContent(homeRoutes = listOf(HomeRoute), withTabRoots = true)
+        val container = containerBounds()
+        val rootContent = bounds(HomeRoute)
+        assertTrue(rootContent.height < container.height)
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnIdle { entryClicks.getValue(HomeRoute).navigate(AboutRoute) }
+        advanceIntoOrdinaryPop()
+        assertBounds(container, containerBounds())
+        assertBounds(rootContent, bounds(HomeRoute))
+        assertEquals(container.height, bounds(AboutRoute).height, 1f)
+        composeRule.mainClock.advanceTimeBy(1000)
+        composeRule.onNodeWithTag("tab_root_HomeRoute").assertDoesNotExist()
+        composeRule.mainClock.autoAdvance = true
+        composeRule.runOnIdle { entryClicks.getValue(AboutRoute).goBack() }
+        assertBounds(container, containerBounds())
+        assertBounds(rootContent, bounds(HomeRoute))
+    }
+
+    @Test
+    fun `predictive cancellation keeps child full screen and restores root spacing on completion`() {
+        setNavigationContent(predictive = true, homeRoutes = listOf(HomeRoute), withTabRoots = true)
+        val rootContent = bounds(HomeRoute)
+        val container = containerBounds()
+        composeRule.runOnIdle { entryClicks.getValue(HomeRoute).navigate(AboutRoute) }
+        val child = bounds(AboutRoute)
+        startGesture()
+        progress(0.6f)
+        assertEquals(rootContent.height, bounds(HomeRoute).height, 1f)
+        assertEquals(child.height, bounds(AboutRoute).height, 1f)
+        assertBounds(container, containerBounds())
+        cancelGesture()
+        assertBounds(child, bounds(AboutRoute))
+        assertEquals(listOf(HomeRoute, AboutRoute), homeStack().toList())
+        composeRule.onNodeWithTag("tab_root_HomeRoute").assertDoesNotExist()
+        startGesture()
+        progress(0.5f)
+        completeGesture()
+        assertBounds(rootContent, bounds(HomeRoute))
+        assertEquals(1, navigationCount)
+    }
+
+    @Test
+    fun `previewed root cannot navigate until cancellation restores resumed lifecycle`() {
+        setNavigationContent(predictive = true, homeRoutes = listOf(HomeRoute), withTabRoots = true)
+        composeRule.runOnIdle { entryClicks.getValue(HomeRoute).navigate(AboutRoute) }
+        startGesture()
+        progress(0.4f)
+        composeRule.runOnIdle {
+            assertEquals(Lifecycle.State.STARTED, entryLifecycles.getValue(HomeRoute).currentState)
+            entryClicks.getValue(HomeRoute).navigate(ProfileRoute("blocked"))
+            entryClicks.getValue(AboutRoute).navigate(ProfileRoute("also-blocked"))
+        }
+        assertEquals(listOf(HomeRoute, AboutRoute), homeStack().toList())
+        cancelGesture()
+        composeRule.runOnIdle { entryClicks.getValue(AboutRoute).navigate(ProfileRoute("accepted")) }
+        assertEquals(ProfileRoute("accepted"), homeStack().last())
+    }
+
+    @Test
+    fun `same frame clicks from a real entry cannot add a second destination`() {
+        setNavigationContent(homeRoutes = listOf(HomeRoute), withTabRoots = true)
+        composeRule.runOnIdle {
+            val click = entryClicks.getValue(HomeRoute)
+            click.navigate(AboutRoute)
+            click.navigate(TranslationSettingsRoute)
+            click.selectTab(SettingsRoute)
+        }
+        assertEquals(HomeRoute, navState.topLevelRoute)
+        assertEquals(listOf(HomeRoute, AboutRoute), homeStack().toList())
+        composeRule.runOnIdle {
+            val click = entryClicks.getValue(AboutRoute)
+            click.goBack()
+            click.goBack()
+        }
+        assertEquals(listOf(HomeRoute), homeStack().toList())
+    }
+
+    @Test
+    fun `incoming page click waits until ordinary transition settles`() {
+        setNavigationContent(homeRoutes = listOf(HomeRoute), withTabRoots = true)
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnIdle { entryClicks.getValue(HomeRoute).navigate(AboutRoute) }
+        advanceIntoOrdinaryPop()
+        composeRule.runOnIdle {
+            assertEquals(Lifecycle.State.STARTED, entryLifecycles.getValue(AboutRoute).currentState)
+            entryClicks.getValue(AboutRoute).navigate(TranslationSettingsRoute)
+        }
+        assertEquals(listOf(HomeRoute, AboutRoute), homeStack().toList())
+        composeRule.mainClock.advanceTimeBy(1000)
+        composeRule.mainClock.autoAdvance = true
+        composeRule.runOnIdle { entryClicks.getValue(AboutRoute).navigate(TranslationSettingsRoute) }
+        assertEquals(listOf(HomeRoute, AboutRoute, TranslationSettingsRoute), homeStack().toList())
+    }
+
+    @Test
+    fun `three button bottom inset stays inside root bar and child uses full viewport`() {
+        setNavigationContent(homeRoutes = listOf(HomeRoute), withTabRoots = true, bottomInset = 48)
+        assertRootInsetsSurviveRoundTrip()
+    }
+
+    @Test
+    fun `scaled root layout retains spacing across child navigation`() {
+        setNavigationContent(homeRoutes = listOf(HomeRoute), withTabRoots = true, bottomInset = 24, densityScale = 1.1f)
+        assertRootInsetsSurviveRoundTrip()
+    }
+
+    private fun assertRootInsetsSurviveRoundTrip() {
+        val root = bounds(HomeRoute)
+        val container = containerBounds()
+        assertTrue(container.height - root.height > 48f)
+        composeRule.runOnIdle { entryClicks.getValue(HomeRoute).navigate(AboutRoute) }
+        assertEquals(container.height, bounds(AboutRoute).height, 1f)
+        assertBounds(container, containerBounds())
+        composeRule.runOnIdle { entryClicks.getValue(AboutRoute).goBack() }
+        assertBounds(root, bounds(HomeRoute))
+    }
+
+    private fun containerBounds() = composeRule.onNodeWithTag("nav_container")
+        .fetchSemanticsNode().boundsInRoot
+
     private fun assertToolbarBackIsOrdinary(predictive: Boolean) {
         setNavigationContent(predictive = predictive)
         val original = bounds(AboutRoute)
@@ -566,7 +698,12 @@ class GitMobNavDisplayTest {
         predictive: Boolean = false,
         selectedTab: Route = HomeRoute,
         homeRoutes: List<Route> = listOf(HomeRoute, AboutRoute),
+        withTabRoots: Boolean = false,
+        bottomInset: Int = 0,
+        densityScale: Float = 1f,
     ) {
+        useTabRoots = withTabRoots
+        tabBarInsets = WindowInsets(bottom = bottomInset)
         enabled.value = predictive
         navState = GitMobNavState(
             startRoute = HomeRoute,
@@ -595,14 +732,17 @@ class GitMobNavDisplayTest {
                 val provider = remember {
                     { key: NavKey -> NavEntry(key) { Page(key as Route) } }
                 }
+                val density = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(density.density * densityScale, density.fontScale)) {
                 GitMobNavDisplay(
                     entries = navState.toDecoratedEntries(provider),
                     enablePredictiveBack = enabled.value,
                     onBack = ::navigateBack,
                     transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(260)) },
                     popTransitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(260)) },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().testTag("nav_container"),
                 )
+                }
             }
         }
         composeRule.waitForIdle()
@@ -610,6 +750,26 @@ class GitMobNavDisplayTest {
 
     @Composable
     private fun Page(route: Route) {
+        val clicks = rememberEntryNavigation(navigator, route)
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        SideEffect {
+            entryClicks[route] = clicks
+            entryLifecycles[route] = lifecycle
+        }
+        if (useTabRoots && route in listOf(HomeRoute, ReposRoute, StarsRoute, GistRoute, SettingsRoute)) {
+            GitMobTabRoot(
+                route = route,
+                onTabClick = clicks::selectTab,
+                navigationBarInsets = tabBarInsets,
+                modifier = Modifier.testTag("tab_root_" + route::class.simpleName),
+            ) { PageContent(route) }
+        } else {
+            PageContent(route)
+        }
+    }
+
+    @Composable
+    private fun PageContent(route: Route) {
         val pageModel: PageViewModel = viewModel()
         var count by rememberSaveable { mutableIntStateOf(0) }
         SideEffect { models[route] = pageModel }

@@ -1,5 +1,7 @@
 package com.gitmob.app.data.repository
 
+import android.net.Uri
+import com.gitmob.app.data.release.ReleaseAssetFiles
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.UserVisibleException
@@ -24,6 +26,7 @@ class RepoReleaseRepository @Inject constructor(
     private val api: GHApiClient,
     private val apolloClient: ApolloClient,
     private val downloadLauncher: ExternalDownloadLauncher,
+    private val assetFiles: ReleaseAssetFiles,
 ) {
     suspend fun getRepositoryPermission(owner: String, name: String): ApiResult<RepoPermission> =
         when (val result = apolloClient.query(RepositoryPermissionQuery(owner, name)).executeAsApiResult()) {
@@ -45,9 +48,16 @@ class RepoReleaseRepository @Inject constructor(
     suspend fun updateRelease(owner: String, name: String, releaseId: Long, input: SaveRepoReleaseInput): ApiResult<RepoRelease> = safeCall { toRelease(api.patch("/repos/$owner/$name/releases/$releaseId", input.toRequest())) }
     suspend fun deleteRelease(owner: String, name: String, releaseId: Long): ApiResult<Unit> = safeCall { api.delete<Unit>("/repos/$owner/$name/releases/$releaseId") }
     suspend fun generateNotes(owner: String, name: String, tag: String, target: String?, previousTag: String?): ApiResult<ReleaseNotes> = safeCall { val response = api.post<RestReleaseNotes, GenerateNotesRequest>("/repos/$owner/$name/releases/generate-notes", GenerateNotesRequest(tag, target, previousTag)); ReleaseNotes(response.name, response.body) }
-    suspend fun uploadAsset(uploadUrl: String, fileName: String, label: String?, contentType: String, bytes: ByteArray): ApiResult<RepoReleaseAsset> = safeCall {
-        val query = buildString { append(uploadUrl.substringBefore('{')); append("?name="); append(encode(fileName)); label?.takeIf { it.isNotBlank() }?.let { append("&label="); append(encode(it)) } }
-        toAsset(api.uploadBytes<RestAsset>(query, contentType, bytes))
+    suspend fun uploadAsset(uploadUrl: String, uri: Uri, progress: (Long, Long) -> Unit): ApiResult<RepoReleaseAsset> = safeCall {
+        assetFiles.withPreparedAsset(uri) { asset ->
+            val query = buildString {
+                append(uploadUrl.substringBefore('{'))
+                append("?name=")
+                append(encode(asset.name))
+            }
+            progress(0L, asset.length)
+            toAsset(api.uploadFile<RestAsset>(query, asset.contentType, asset.file, asset.length, progress))
+        }
     }
     suspend fun updateAsset(owner: String, name: String, assetId: Long, assetName: String, label: String?): ApiResult<RepoReleaseAsset> = safeCall { toAsset(api.patch("/repos/$owner/$name/releases/assets/$assetId", UpdateAssetRequest(assetName, label))) }
     suspend fun deleteAsset(owner: String, name: String, assetId: Long): ApiResult<Unit> = safeCall { api.delete<Unit>("/repos/$owner/$name/releases/assets/$assetId") }

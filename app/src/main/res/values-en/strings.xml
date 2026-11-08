@@ -575,7 +575,6 @@
     <string name="actions_rerun_failed">Re-run failed jobs</string>
     <string name="actions_delete_run_title">Delete this workflow run?</string>
     <string name="actions_artifacts">Artifacts</string>
-    <string name="actions_artifact_size">%1$d bytes</string>
     <string name="actions_jobs">Jobs</string>
     <string name="actions_state_queued">Queued</string>
     <string name="actions_state_in_progress">In progress</string>
@@ -661,7 +660,7 @@
     <string name="release_notes">Release notes</string>
     <string name="release_assets">Assets</string>
     <string name="release_assets_count">%1$d assets</string>
-    <string name="release_asset_meta">%1$d downloads · %2$d bytes</string>
+    <string name="release_asset_meta">%1$d downloads · %2$s</string>
     <string name="release_upload_asset">Upload asset</string>
     <string name="release_delete">Delete release</string>
     <string name="release_delete_title">Delete release?</string>
@@ -838,6 +837,7 @@
     <string name="translation_reading">Reading assistance</string>
     <string name="translation_enable">Enable translation</string>
     <string name="translation_enable_summary">Translate documents, details and comments on demand</string>
+    <string name="translation_loading">Loading translation settings</string>
     <string name="translation_off">Off</string>
     <string name="translation_provider">Translation service</string>
     <string name="translation_target">Target language</string>
@@ -944,4 +944,14 @@
     <string name="app_update_no_package">No compatible update available</string>
     <string name="repo_code_root">Root</string>
     <string name="repo_code_parent">Go to parent directory</string>
+    <string name="release_asset_preparing">Preparing attachment…</string>
+    <string name="release_asset_uploading">Uploading attachment…</string>
+    <string name="release_asset_cancelling">Cancelling…</string>
+    <string name="release_asset_upload_success">Attachment uploaded</string>
+    <string name="release_asset_upload_failed">Upload failed. Select the file again to retry.</string>
+    <string name="release_asset_upload_cancelled">Upload cancelled</string>
+    <string name="release_asset_progress">Sent %1$s / %2$s</string>
+    <string name="release_asset_read_failed">Unable to read the attachment. Check file access and select it again.</string>
+    <string name="release_asset_storage_failed">Unable to prepare the temporary attachment. Check available storage and try again.</string>
+    <string name="release_notes_draft_changed">The draft changed while notes were being generated. Your input was kept.</string>
 </resources>

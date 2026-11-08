@@ -6,7 +6,6 @@ import com.gitmob.app.ui.translation.TranslationSettingsScreen
 import android.net.Uri
 import com.gitmob.app.data.model.RepoDocumentContext
 import androidx.activity.compose.LocalActivity
-import androidx.annotation.StringRes
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -14,29 +13,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
@@ -46,9 +30,7 @@ import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -128,8 +110,6 @@ import com.gitmob.app.ui.work.WorkDiscussionListScreen
 import com.gitmob.app.ui.work.WorkIssueListScreen
 import com.gitmob.app.ui.work.WorkPullRequestListScreen
 
-private data class BottomTab(val route: Route, @StringRes val labelRes: Int, val icon: ImageVector)
-
 private fun RepositoryCreateOwner.toRepoCreateRoute() = RepoCreateRoute(
     ownerId = id,
     ownerLogin = login,
@@ -151,26 +131,6 @@ private fun RepositoryCreateOwner.toRepoCreateRoute() = RepoCreateRoute(
  */
 private fun crossFadeTransition(): ContentTransform =
     fadeIn(animationSpec = tween(260)) togetherWith fadeOut(animationSpec = tween(260))
-
-private val bottomTabs = listOf(
-    BottomTab(HomeRoute, R.string.nav_tab_home, Icons.Default.Home),
-    BottomTab(ReposRoute, R.string.common_repository, Icons.Default.Storage),
-    BottomTab(StarsRoute, R.string.nav_tab_stars, Icons.Default.Star),
-    BottomTab(GistRoute, R.string.nav_tab_gist, Icons.Default.Code),
-    BottomTab(SettingsRoute, R.string.nav_tab_settings, Icons.Default.Settings),
-)
-
-/**
- * 判断当前显示的路由是否是顶层 Tab（不是 push 路由）。
- * 用于控制是否显示底部 NavigationBar：Tab 根页显示，push 页隐藏。
- */
-private fun GitMobNavState.isShowingTabRoot(): Boolean {
-    val currentStack = backStacks[topLevelRoute] ?: return false
-    return when (currentStack.lastOrNull()) {
-        HomeRoute, ReposRoute, StarsRoute, GistRoute, SettingsRoute -> true
-        else -> false
-    }
-}
 
 /**
  * 顶层入口：登录态二选一切换，登录后进入多栈导航。
@@ -242,17 +202,9 @@ fun GitMobNavGraph(
 }
 
 /**
- * 登录后主 App 骨架：多栈导航 + 底部 NavigationBar（仅 Tab 根页显示）。
- *
- * 对齐 android-skills multiple-backstacks recipe：
- *   - Scaffold contentWindowInsets = WindowInsets(0)：不让 Scaffold 消费任何系统 inset，
- *     所有 inset 由各 Screen 自己的 Scaffold 处理（通过 safeDrawing.only(Top + Horizontal)）
- *   - 只将 NavigationBar 的底部高度作为 NavDisplay 的 bottom padding 传入，
- *     Tab Screen 内部感知不到这个 padding、不需要再挂 Spacer 防遮挡
- *   - Push 路由（二级及以下页）隐藏 NavigationBar，NavDisplay 不再加 bottom padding，
- *     由各 Screen 自己的 Scaffold + WindowInsets.navigationBars 处理底部
- *
- * @param onLogout 设置页登出回调：切回登录页（不进 backStack，直接替换最外层内容）
+ * Five independent tab stacks share a full-screen navigation container.
+ * Each root entry owns its bottom bar and occupied space, so navigating to a child does not
+ * change the outgoing page's constraints. Screens continue to own their top/side system insets.
  */
 @Composable
 private fun LoggedInApp(
@@ -285,7 +237,6 @@ private fun LoggedInApp(
             }
         }
     }
-    val showingTabRoot = navState.isShowingTabRoot()
 
     LaunchedEffect(repoUpdateEventBus, navigator) {
         repoUpdateEventBus.eventsFor(epoch).collect(navigator::onRepositoryUpdate)
@@ -336,167 +287,207 @@ private fun LoggedInApp(
         onDeepLinkConsumed()
     }
 
-    val searchActions = SearchResultActions(
-        repository = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+    fun searchActions(clicks: GitMobEntryNavigation) = SearchResultActions(
+        repository = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
         work = { item ->
-            navigator.navigate(if (item.isPullRequest) RepoPullRequestDetailRoute(item.repoOwner, item.repoName, item.number)
+            clicks.navigate(if (item.isPullRequest) RepoPullRequestDetailRoute(item.repoOwner, item.repoName, item.number)
                 else RepoIssueDetailRoute(item.repoOwner, item.repoName, item.number))
         },
-        account = { navigator.navigate(ProfileRoute(it)) },
+        account = { clicks.navigate(ProfileRoute(it)) },
         file = { item ->
             val target = item.target
-            if (target == null) openExternalUrl(item.htmlUrl)
-            else navigator.navigate(RepoFileDetailRoute(item.owner, item.repository, target.ref, item.path))
+            if (target == null) clicks.run { openExternalUrl(item.htmlUrl) }
+            else clicks.navigate(RepoFileDetailRoute(item.owner, item.repository, target.ref, item.path))
         },
-        homepage = openExternalUrl,
+        homepage = { url -> clicks.run { openExternalUrl(url) } },
     )
     val entryProvider = entryProvider<NavKey> {
-        entry<SearchRoute> {
+        entry<SearchRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             SearchScreen(
-                onBack = { navigator.goBack() },
-                onCategory = { query, category -> navigator.navigate(SearchCategoryRoute(query, category)) },
-                actions = searchActions,
+                onBack = { clicks.goBack() },
+                onCategory = { query, category -> clicks.navigate(SearchCategoryRoute(query, category)) },
+                actions = searchActions(clicks),
             )
         }
         entry<SearchCategoryRoute> { route ->
-            SearchCategoryScreen(route.query, route.category, onBack = { navigator.goBack() }, actions = searchActions)
+            val clicks = rememberEntryNavigation(navigator, route)
+            SearchCategoryScreen(route.query, route.category, onBack = { clicks.goBack() }, actions = searchActions(clicks))
         }
         // ──────────────────────────────────────────────────────────────
         // Tab 根路由（5 个）：各自独立 Screen，不再包 MainTabHost / HorizontalPager
         // ──────────────────────────────────────────────────────────────
-        entry<HomeRoute> {
-            HomeScreen(
-                accountLibrary = accountLibrary,
-                onFollowersClick = { login -> navigator.navigate(FollowersRoute(login)) },
-                onFollowingClick = { login -> navigator.navigate(FollowingRoute(login)) },
-                onReposClick = { login -> navigator.navigate(UserRepoListRoute(login)) },
-                onStarredClick = { login -> navigator.navigate(UserStarredReposRoute(login)) },
-                onGistClick = { navigator.navigate(GistListRoute()) },
-                onOrgClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onWorkIssuesClick = { navigator.navigate(WorkIssuesRoute) },
-                onWorkPullRequestsClick = { navigator.navigate(WorkPullRequestsRoute) },
-                onWorkDiscussionsClick = { navigator.navigate(WorkDiscussionsRoute) },
-                onInboxClick = { navigator.navigate(InboxRoute) },
-                onFavoritesClick = { navigator.navigate(FavoritesRoute()) },
-                onHistoryClick = { navigator.navigate(HistoryRoute()) },
-                onSearchClick = { navigator.navigate(SearchRoute()) },
-                onPinnedRepoClick = { owner, name ->
-                    navigator.navigate(RepoDetailRoute(owner, name))
-                },
-                onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
-            )
+        entry<HomeRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            GitMobTabRoot(route, onTabClick = clicks::selectTab) {
+                HomeScreen(
+                    accountLibrary = accountLibrary,
+                    onFollowersClick = { login -> clicks.navigate(FollowersRoute(login)) },
+                    onFollowingClick = { login -> clicks.navigate(FollowingRoute(login)) },
+                    onReposClick = { login -> clicks.navigate(UserRepoListRoute(login)) },
+                    onStarredClick = { login -> clicks.navigate(UserStarredReposRoute(login)) },
+                    onGistClick = { clicks.navigate(GistListRoute()) },
+                    onOrgClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                    onWorkIssuesClick = { clicks.navigate(WorkIssuesRoute) },
+                    onWorkPullRequestsClick = { clicks.navigate(WorkPullRequestsRoute) },
+                    onWorkDiscussionsClick = { clicks.navigate(WorkDiscussionsRoute) },
+                    onInboxClick = { clicks.navigate(InboxRoute) },
+                    onFavoritesClick = { clicks.navigate(FavoritesRoute()) },
+                    onHistoryClick = { clicks.navigate(HistoryRoute()) },
+                    onSearchClick = { clicks.navigate(SearchRoute()) },
+                    onPinnedRepoClick = { owner, name ->
+                        clicks.navigate(RepoDetailRoute(owner, name))
+                    },
+                    onCreateRepository = { owner -> clicks.navigate(owner.toRepoCreateRoute()) },
+                )
+            }
         }
-        entry<ReposRoute> {
-            ReposScreen(
-                onRepoClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onForkSourceClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onHomepageClick = openExternalUrl,
-                onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
-            )
+        entry<ReposRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            GitMobTabRoot(route, onTabClick = clicks::selectTab) {
+                ReposScreen(
+                    onRepoClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                    onForkSourceClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                    onHomepageClick = { url -> clicks.run { openExternalUrl(url) } },
+                    onCreateRepository = { owner -> clicks.navigate(owner.toRepoCreateRoute()) },
+                )
+            }
         }
-        entry<StarsRoute> {
-            StarsScreen(
-                onRepoClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onForkSourceClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onHomepageClick = openExternalUrl,
-            )
+        entry<StarsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            GitMobTabRoot(route, onTabClick = clicks::selectTab) {
+                StarsScreen(
+                    onRepoClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                    onForkSourceClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                    onHomepageClick = { url -> clicks.run { openExternalUrl(url) } },
+                )
+            }
         }
-        entry<GistRoute> {
-            GistScreen(
-                onCreateGist = { navigator.navigate(GistCreateRoute) },
-                onGistClick = { gist ->
-                    navigator.navigate(GistDetailRoute(gist.apiName))
-                },
-                onForkSourceClick = { id -> navigator.navigate(GistDetailRoute(id)) },
-            )
+        entry<GistRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            GitMobTabRoot(route, onTabClick = clicks::selectTab) {
+                GistScreen(
+                    onCreateGist = { clicks.navigate(GistCreateRoute) },
+                    onGistClick = { gist ->
+                        clicks.navigate(GistDetailRoute(gist.apiName))
+                    },
+                    onForkSourceClick = { id -> clicks.navigate(GistDetailRoute(id)) },
+                )
+            }
         }
-        entry<SettingsRoute> {
-            SettingsScreen(
-                preference = themePreference,
-                onAppearanceClick = { navigator.navigate(AppearanceRoute) },
-                onAdvancedClick = { navigator.navigate(AdvancedSettingsRoute()) },
-                onAboutClick = { navigator.navigate(AboutRoute) },
-                onEditProfileClick = { navigator.navigate(ProfileEditorRoute) },
-                onLogout = onLogout,
-            )
+        entry<SettingsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            GitMobTabRoot(route, onTabClick = clicks::selectTab) {
+                SettingsScreen(
+                    preference = themePreference,
+                    onAppearanceClick = { clicks.navigate(AppearanceRoute) },
+                    onAdvancedClick = { clicks.navigate(AdvancedSettingsRoute()) },
+                    onAboutClick = { clicks.navigate(AboutRoute) },
+                    onEditProfileClick = { clicks.navigate(ProfileEditorRoute) },
+                    onLogout = onLogout,
+                )
+            }
         }
 
         // ──────────────────────────────────────────────────────────────
         // Push 路由：与 Tab 解耦，push 路由进当前激活 Tab 的独立栈
         // 返回键统一走 navigator.goBack()，在 Tab 根上会切回 Home，二级页正常出栈
         // ──────────────────────────────────────────────────────────────
-        entry<AdvancedSettingsRoute> {
+        entry<AdvancedSettingsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             AdvancedSettingsScreen(
-                onBack = { navigator.goBack() }, viewModel = accountLibrary,
-                onTranslation = { navigator.navigate(TranslationSettingsRoute) },
+                onBack = { clicks.goBack() }, viewModel = accountLibrary,
+                onTranslation = { clicks.navigate(TranslationSettingsRoute) },
                 updateContent = updateSettings?.let { content -> { content(epoch) } },
             )
         }
-        entry<TranslationSettingsRoute> { TranslationSettingsScreen(onBack = { navigator.goBack() }) }
-        entry<FavoritesRoute> { FavoritesScreen(accountLibrary = accountLibrary, onBack = { navigator.goBack() }, onGroup = { navigator.navigate(FavoriteGroupRoute(it.id, it.name)) }) }
-        entry<FavoriteGroupRoute> { route -> FavoriteGroupScreen(accountLibrary, route.groupId, initialName = route.name, onGist = { navigator.navigate(GistDetailRoute(it)) }, onBack = { navigator.goBack() }, onRepo = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) }, onHomepage = openExternalUrl) }
-        entry<HistoryRoute> { HistoryScreen(accountLibrary = accountLibrary, onGist = { navigator.navigate(GistDetailRoute(it)) }, onBack = { navigator.goBack() }, onRepo = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) }, onHomepage = openExternalUrl) }
-        entry<InboxRoute> {
+        entry<TranslationSettingsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            TranslationSettingsScreen(onBack = { clicks.goBack() })
+        }
+        entry<FavoritesRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            FavoritesScreen(accountLibrary = accountLibrary, onBack = { clicks.goBack() }, onGroup = { clicks.navigate(FavoriteGroupRoute(it.id, it.name)) })
+        }
+        entry<FavoriteGroupRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            FavoriteGroupScreen(accountLibrary, route.groupId, initialName = route.name, onGist = { clicks.navigate(GistDetailRoute(it)) }, onBack = { clicks.goBack() }, onRepo = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) }, onHomepage = { url -> clicks.run { openExternalUrl(url) } })
+        }
+        entry<HistoryRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            HistoryScreen(accountLibrary = accountLibrary, onGist = { clicks.navigate(GistDetailRoute(it)) }, onBack = { clicks.goBack() }, onRepo = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) }, onHomepage = { url -> clicks.run { openExternalUrl(url) } })
+        }
+        entry<InboxRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             InboxScreen(
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
                 onNotificationClick = { notification ->
-                    navigator.navigate(RepoPlaceholderRoute("${notification.subjectType}：${notification.title}"))
+                    clicks.navigate(RepoPlaceholderRoute("${notification.subjectType}：${notification.title}"))
                 },
             )
         }
-        entry<WorkIssuesRoute> {
+        entry<WorkIssuesRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             WorkIssueListScreen(
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
                 onItemClick = { owner, name, number ->
-                    navigator.navigate(RepoIssueDetailRoute(owner, name, number))
+                    clicks.navigate(RepoIssueDetailRoute(owner, name, number))
                 },
             )
         }
-        entry<WorkPullRequestsRoute> {
+        entry<WorkPullRequestsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             WorkPullRequestListScreen(
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
                 onItemClick = { owner, name, number ->
-                    navigator.navigate(RepoPullRequestDetailRoute(owner, name, number))
+                    clicks.navigate(RepoPullRequestDetailRoute(owner, name, number))
                 },
             )
         }
-        entry<WorkDiscussionsRoute> {
+        entry<WorkDiscussionsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             WorkDiscussionListScreen(
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
                 onItemClick = { owner, name, number ->
-                    navigator.navigate(RepoDiscussionDetailRoute(owner, name, number))
+                    clicks.navigate(RepoDiscussionDetailRoute(owner, name, number))
                 },
             )
         }
-        entry<AboutRoute> {
-            AboutScreen(onBack = { navigator.goBack() })
+        entry<AboutRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            AboutScreen(onBack = { clicks.goBack() })
         }
-        entry<AppearanceRoute> {
+        entry<AppearanceRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             AppearanceScreen(
                 preference = themePreference,
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
             )
         }
-        entry<ProfileEditorRoute> {
-            ProfileEditorScreen(onBack = { navigator.goBack() })
+        entry<ProfileEditorRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            ProfileEditorScreen(onBack = { clicks.goBack() })
         }
         entry<FollowersRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             UserListScreen(
                 login = route.login,
                 mode = UserListMode.FOLLOWERS,
-                onBack = { navigator.goBack() },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onBack = { clicks.goBack() },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
         entry<FollowingRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             UserListScreen(
                 login = route.login,
                 mode = UserListMode.FOLLOWING,
-                onBack = { navigator.goBack() },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onBack = { clicks.goBack() },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
         entry<RepoCreateRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoCreateScreen(
                 defaultOwner = RepositoryCreateOwner(
                     id = route.ownerId,
@@ -510,7 +501,7 @@ private fun LoggedInApp(
                     },
                     canCreateRepository = route.ownerCanCreateRepository,
                 ),
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
                 onCreated = { owner, name ->
                     navigator.goBack()
                     navigator.navigate(RepoDetailRoute(owner, name))
@@ -518,60 +509,62 @@ private fun LoggedInApp(
             )
         }
         entry<ProfileRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             TranslationHost {
                 ProfileScreen(
-                    onDocumentLink = openDocument,
-                    onDocumentExternalLink = openDocumentExternal,
+                    onDocumentLink = { document -> clicks.run { openDocument(document) } },
+                    onDocumentExternalLink = { url -> clicks.run { openDocumentExternal(url) } },
                     login = route.login,
-                    onBack = { navigator.goBack() },
-                    onFollowersClick = { login -> navigator.navigate(FollowersRoute(login)) },
-                    onFollowingClick = { login -> navigator.navigate(FollowingRoute(login)) },
-                    onReposClick = { login -> navigator.navigate(UserRepoListRoute(login)) },
-                    onStarredClick = { login -> navigator.navigate(UserStarredReposRoute(login)) },
-                    onGistClick = { login -> navigator.navigate(GistListRoute(login)) },
-                    onMembersClick = { login -> navigator.navigate(OrgMembersRoute(login)) },
-                    onOrgClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onBack = { clicks.goBack() },
+                    onFollowersClick = { login -> clicks.navigate(FollowersRoute(login)) },
+                    onFollowingClick = { login -> clicks.navigate(FollowingRoute(login)) },
+                    onReposClick = { login -> clicks.navigate(UserRepoListRoute(login)) },
+                    onStarredClick = { login -> clicks.navigate(UserStarredReposRoute(login)) },
+                    onGistClick = { login -> clicks.navigate(GistListRoute(login)) },
+                    onMembersClick = { login -> clicks.navigate(OrgMembersRoute(login)) },
+                    onOrgClick = { login -> clicks.navigate(ProfileRoute(login)) },
                     onPinnedRepoClick = { owner, name ->
-                        navigator.navigate(RepoDetailRoute(owner, name))
+                        clicks.navigate(RepoDetailRoute(owner, name))
                     },
-                    onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
+                    onCreateRepository = { owner -> clicks.navigate(owner.toRepoCreateRoute()) },
                 )
             }
         }
         entry<RepoDetailRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             TranslationHost {
                 RepoDetailScreen(
                     accountLibrary = accountLibrary,
-                    onDocumentLink = openDocument,
-                    onDocumentExternalLink = openDocumentExternal,
+                    onDocumentLink = { document -> clicks.run { openDocument(document) } },
+                    onDocumentExternalLink = { url -> clicks.run { openDocumentExternal(url) } },
                     owner = route.owner,
                     name = route.name,
-                    onBack = { navigator.goBack() },
-                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onBack = { clicks.goBack() },
+                    onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
                     onForkSourceClick = { forkOwner, forkName ->
-                        navigator.navigate(RepoDetailRoute(forkOwner, forkName))
+                        clicks.navigate(RepoDetailRoute(forkOwner, forkName))
                     },
-                    onHomepageClick = openExternalUrl,
+                    onHomepageClick = { url -> clicks.run { openExternalUrl(url) } },
                     onNavigateBranches = { currentRef, canPush, canManageBranchProtection ->
-                        navigator.navigate(
+                        clicks.navigate(
                             RepoBranchesRoute(route.owner, route.name, currentRef, canPush, canManageBranchProtection)
                         )
                     },
-                    onNavigateCode = { ref -> navigator.navigate(RepoCodeRoute(route.owner, route.name, ref)) },
-                    onNavigateCommits = { ref -> navigator.navigate(RepoCommitsRoute(route.owner, route.name, ref)) },
-                    onNavigateWatchers = { navigator.navigate(RepoWatchersRoute(route.owner, route.name)) },
-                    onNavigateStargazers = { navigator.navigate(RepoStargazersRoute(route.owner, route.name)) },
-                    onNavigateForks = { navigator.navigate(RepoForksRoute(route.owner, route.name)) },
+                    onNavigateCode = { ref -> clicks.navigate(RepoCodeRoute(route.owner, route.name, ref)) },
+                    onNavigateCommits = { ref -> clicks.navigate(RepoCommitsRoute(route.owner, route.name, ref)) },
+                    onNavigateWatchers = { clicks.navigate(RepoWatchersRoute(route.owner, route.name)) },
+                    onNavigateStargazers = { clicks.navigate(RepoStargazersRoute(route.owner, route.name)) },
+                    onNavigateForks = { clicks.navigate(RepoForksRoute(route.owner, route.name)) },
                     onNavigateIssues = { permission, viewerCanCreateIssues ->
-                        navigator.navigate(RepoIssuesRoute(route.owner, route.name, permission, viewerCanCreateIssues))
+                        clicks.navigate(RepoIssuesRoute(route.owner, route.name, permission, viewerCanCreateIssues))
                     },
-                    onNavigatePullRequests = { permission -> navigator.navigate(RepoPullRequestsRoute(route.owner, route.name, permission)) },
-                    onNavigateDiscussions = { permission -> navigator.navigate(RepoDiscussionsRoute(route.owner, route.name, permission)) },
-                    onNavigateActions = { permission, defaultRef -> navigator.navigate(RepoActionsRoute(route.owner, route.name, permission, defaultRef)) },
-                    onNavigateReleases = { permission -> navigator.navigate(RepoReleasesRoute(route.owner, route.name, permission)) },
-                    onNavigateContributors = { navigator.navigate(RepoContributorsRoute(route.owner, route.name)) },
-                    onNavigateLicense = { ref -> navigator.navigate(RepoLicenseRoute(route.owner, route.name, ref)) },
-                    onNavigatePlaceholder = { label -> navigator.navigate(RepoPlaceholderRoute(label)) },
+                    onNavigatePullRequests = { permission -> clicks.navigate(RepoPullRequestsRoute(route.owner, route.name, permission)) },
+                    onNavigateDiscussions = { permission -> clicks.navigate(RepoDiscussionsRoute(route.owner, route.name, permission)) },
+                    onNavigateActions = { permission, defaultRef -> clicks.navigate(RepoActionsRoute(route.owner, route.name, permission, defaultRef)) },
+                    onNavigateReleases = { permission -> clicks.navigate(RepoReleasesRoute(route.owner, route.name, permission)) },
+                    onNavigateContributors = { clicks.navigate(RepoContributorsRoute(route.owner, route.name)) },
+                    onNavigateLicense = { ref -> clicks.navigate(RepoLicenseRoute(route.owner, route.name, ref)) },
+                    onNavigatePlaceholder = { label -> clicks.navigate(RepoPlaceholderRoute(label)) },
                     onRepositoryAddressChanged = { owner, name ->
                         navigator.onRepositoryUpdate(RepoUpdateEvent.RepositoryAddressChanged(route.owner, route.name, owner, name))
                     },
@@ -582,32 +575,34 @@ private fun LoggedInApp(
             }
         }
         entry<RepoIssuesRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoIssueListScreen(
                 owner = route.owner,
                 name = route.name,
                 permission = route.permission,
                 viewerCanCreateIssues = route.viewerCanCreateIssues,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onIssueClick = { number -> navigator.navigate(RepoIssueDetailRoute(route.owner, route.name, number, route.permission)) },
-                onCreate = { templateFilename -> navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, permission = route.permission, templateFilename = templateFilename)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onIssueClick = { number -> clicks.navigate(RepoIssueDetailRoute(route.owner, route.name, number, route.permission)) },
+                onCreate = { templateFilename -> clicks.navigate(RepoIssueEditorRoute(route.owner, route.name, permission = route.permission, templateFilename = templateFilename)) },
             )
         }
         entry<RepoIssueDetailRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             TranslationHost {
                 RepoIssueDetailScreen(
                     owner = route.owner,
                     name = route.name,
                     number = route.number,
                     permission = route.permission,
-                    onBack = { navigator.goBack() },
-                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                    onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                    onEdit = { navigator.navigate(RepoIssueEditorRoute(route.owner, route.name, route.number, route.permission)) },
-                    onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onBack = { clicks.goBack() },
+                    onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                    onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                    onEdit = { clicks.navigate(RepoIssueEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                    onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
                     onCompose = { request ->
-                        navigator.navigate(
+                        clicks.navigate(
                             ConversationComposerRoute(
                                 owner = route.owner,
                                 name = route.name,
@@ -625,29 +620,31 @@ private fun LoggedInApp(
             }
         }
         entry<RepoIssueEditorRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoIssueEditorScreen(
                 owner = route.owner,
                 name = route.name,
                 number = route.number,
                 templateFilename = route.templateFilename,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { number -> navigator.goBack(); navigator.navigate(RepoIssueDetailRoute(route.owner, route.name, number, route.permission)) },
             )
         }
         entry<RepoPullRequestsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoPullRequestListScreen(
                 owner = route.owner,
                 name = route.name,
                 permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onPullRequestClick = { number -> navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onPullRequestClick = { number -> clicks.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
                 onCreate = { selection ->
-                    navigator.navigate(
+                    clicks.navigate(
                         RepoPullRequestEditorRoute(
                             owner = selection.baseOwner,
                             name = selection.baseRepository,
@@ -662,27 +659,28 @@ private fun LoggedInApp(
                         ),
                     )
                 },
-                onCreateCommitClick = { commitOwner, commitName, ref, sha -> navigator.navigate(RepoCommitDetailRoute(commitOwner, commitName, sha, ref, route.permission)) },
+                onCreateCommitClick = { commitOwner, commitName, ref, sha -> clicks.navigate(RepoCommitDetailRoute(commitOwner, commitName, sha, ref, route.permission)) },
                 onExistingPullRequestClick = { existingOwner, existingName, number ->
-                    navigator.navigate(RepoPullRequestDetailRoute(existingOwner, existingName, number, route.permission))
+                    clicks.navigate(RepoPullRequestDetailRoute(existingOwner, existingName, number, route.permission))
                 },
             )
         }
         entry<RepoPullRequestDetailRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             TranslationHost {
                 RepoPullRequestDetailScreen(
                     owner = route.owner,
                     name = route.name,
                     number = route.number,
                     permission = route.permission,
-                    onBack = { navigator.goBack() },
-                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                    onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                    onEdit = { navigator.navigate(RepoPullRequestEditorRoute(route.owner, route.name, route.number, route.permission)) },
-                    onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                    onCommitClick = { sha, ref -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, ref, route.permission)) },
+                    onBack = { clicks.goBack() },
+                    onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                    onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                    onEdit = { clicks.navigate(RepoPullRequestEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                    onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                    onCommitClick = { sha, ref -> clicks.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, ref, route.permission)) },
                     onCompose = { request ->
-                        navigator.navigate(
+                        clicks.navigate(
                             ConversationComposerRoute(
                                 owner = route.owner,
                                 name = route.name,
@@ -700,6 +698,7 @@ private fun LoggedInApp(
             }
         }
         entry<RepoPullRequestEditorRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoPullRequestEditorScreen(
                 owner = route.owner,
                 name = route.name,
@@ -711,38 +710,40 @@ private fun LoggedInApp(
                 headName = route.headName,
                 headRef = route.headRef,
                 headRepositoryId = route.headRepositoryId,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { number -> navigator.goBack(); navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission)) },
             )
         }
         entry<RepoDiscussionsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoDiscussionListScreen(
                 owner = route.owner,
                 name = route.name,
                 permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onDiscussionClick = { number -> navigator.navigate(RepoDiscussionDetailRoute(route.owner, route.name, number, route.permission)) },
-                onCreate = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, permission = route.permission)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onDiscussionClick = { number -> clicks.navigate(RepoDiscussionDetailRoute(route.owner, route.name, number, route.permission)) },
+                onCreate = { clicks.navigate(RepoDiscussionEditorRoute(route.owner, route.name, permission = route.permission)) },
             )
         }
         entry<RepoDiscussionDetailRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             TranslationHost {
                 RepoDiscussionDetailScreen(
                     owner = route.owner,
                     name = route.name,
                     number = route.number,
                     permission = route.permission,
-                    onBack = { navigator.goBack() },
-                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                    onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                    onEdit = { navigator.navigate(RepoDiscussionEditorRoute(route.owner, route.name, route.number, route.permission)) },
-                    onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                    onBack = { clicks.goBack() },
+                    onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                    onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                    onEdit = { clicks.navigate(RepoDiscussionEditorRoute(route.owner, route.name, route.number, route.permission)) },
+                    onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
                     onCompose = { request ->
-                        navigator.navigate(
+                        clicks.navigate(
                             ConversationComposerRoute(
                                 owner = route.owner,
                                 name = route.name,
@@ -760,162 +761,177 @@ private fun LoggedInApp(
             }
         }
         entry<RepoDiscussionEditorRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoDiscussionEditorScreen(
                 owner = route.owner,
                 name = route.name,
                 number = route.number,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { number -> navigator.goBack(); navigator.navigate(RepoDiscussionDetailRoute(route.owner, route.name, number, route.permission)) },
             )
         }
         entry<ConversationComposerRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             ConversationComposerScreen(
                 route = route,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onBack = { clicks.goBack() },
+                onSubmitted = { navigator.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
             )
         }
         entry<RepoActionsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoActionsScreen(
                 owner = route.owner,
                 name = route.name,
                 permission = route.permission,
                 defaultRef = route.defaultRef,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onRunClick = { runId -> navigator.navigate(RepoWorkflowRunRoute(route.owner, route.name, runId, route.permission)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onRunClick = { runId -> clicks.navigate(RepoWorkflowRunRoute(route.owner, route.name, runId, route.permission)) },
             )
         }
         entry<RepoWorkflowRunRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoWorkflowRunScreen(
                 owner = route.owner,
                 name = route.name,
                 runId = route.runId,
                 permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
             )
         }
         entry<RepoReleasesRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoReleaseListScreen(
                 owner = route.owner,
                 name = route.name,
                 permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onReleaseClick = { tag -> navigator.navigate(RepoReleaseDetailRoute(route.owner, route.name, tag, route.permission)) },
-                onCreate = { navigator.navigate(RepoReleaseEditorRoute(route.owner, route.name, permission = route.permission)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onReleaseClick = { tag -> clicks.navigate(RepoReleaseDetailRoute(route.owner, route.name, tag, route.permission)) },
+                onCreate = { clicks.navigate(RepoReleaseEditorRoute(route.owner, route.name, permission = route.permission)) },
             )
         }
         entry<RepoReleaseDetailRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoReleaseDetailScreen(
                 owner = route.owner,
                 name = route.name,
                 tag = route.tag,
                 releaseId = null,
                 permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onEdit = { releaseId -> navigator.navigate(RepoReleaseEditorRoute(route.owner, route.name, releaseId, route.permission)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onEdit = { releaseId -> clicks.navigate(RepoReleaseEditorRoute(route.owner, route.name, releaseId, route.permission)) },
             )
         }
         entry<RepoReleaseEditorRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoReleaseEditorScreen(
                 owner = route.owner,
                 name = route.name,
                 releaseId = route.releaseId,
                 permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { tag -> navigator.goBack(); navigator.navigate(RepoReleaseDetailRoute(route.owner, route.name, tag, route.permission)) },
             )
         }
         entry<RepoContributorsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoContributorsScreen(
                 owner = route.owner,
                 name = route.name,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
         entry<RepoLicenseRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoLicenseScreen(
                 owner = route.owner,
                 name = route.name,
                 ref = route.ref,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
             )
         }
         entry<RepoBranchesRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             BranchesScreen(
                 owner = route.owner,
                 name = route.name,
                 currentRef = route.currentRef,
                 canPush = route.canPush,
                 canManageBranchProtection = route.canManageBranchProtection,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
             )
         }
         entry<RepoWatchersRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoWatchersScreen(
                 owner = route.owner,
                 name = route.name,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
         entry<RepoStargazersRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoStargazersScreen(
                 owner = route.owner,
                 name = route.name,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
         entry<RepoForksRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoForksScreen(
                 owner = route.owner,
                 name = route.name,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onForkSourceClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onHomepageClick = openExternalUrl,
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onForkSourceClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onHomepageClick = { url -> clicks.run { openExternalUrl(url) } },
             )
         }
         entry<RepoCodeRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoCodeScreen(
                 owner = route.owner,
                 name = route.name,
                 ref = route.ref,
                 path = route.path,
                 permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onAdd = { navigator.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, null, route.permission)) },
-                onDirectoryClick = { path -> navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, path, route.permission)) },
-                onFileClick = { path -> navigator.navigate(RepoFileDetailRoute(route.owner, route.name, route.ref, path, route.permission)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onAdd = { clicks.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, null, route.permission)) },
+                onDirectoryClick = { path -> clicks.navigate(RepoCodeRoute(route.owner, route.name, route.ref, path, route.permission)) },
+                onFileClick = { path -> clicks.navigate(RepoFileDetailRoute(route.owner, route.name, route.ref, path, route.permission)) },
                 onCreateSyncPullRequest = { info ->
-                    navigator.navigate(
+                    clicks.navigate(
                         RepoPullRequestEditorRoute(
                             owner = route.owner,
                             name = route.name,
@@ -931,38 +947,41 @@ private fun LoggedInApp(
                     )
                 },
                 onExistingSyncPullRequest = { number ->
-                    navigator.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission))
+                    clicks.navigate(RepoPullRequestDetailRoute(route.owner, route.name, number, route.permission))
                 },
             )
         }
         entry<RepoCommitsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoCommitsScreen(
                 owner = route.owner,
                 name = route.name,
                 ref = route.ref,
                 path = route.path,
                 permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onCommitClick = { sha -> navigator.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, route.ref, route.permission)) },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onCommitClick = { sha -> clicks.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, route.ref, route.permission)) },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
         entry<RepoCommitDetailRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoCommitDetailScreen(
                 owner = route.owner,
                 name = route.name,
                 ref = route.ref,
                 sha = route.sha,
                 permission = route.permission,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
         entry<RepoFileDetailRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             TranslationHost {
                 RepoFileDetailScreen(
                     onDirectoryFound = {
@@ -971,29 +990,30 @@ private fun LoggedInApp(
                             navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, route.path, route.permission))
                         }
                     },
-                    onDocumentLink = openDocument,
-                    onDocumentExternalLink = openDocumentExternal,
+                    onDocumentLink = { document -> clicks.run { openDocument(document) } },
+                    onDocumentExternalLink = { url -> clicks.run { openDocumentExternal(url) } },
                     owner = route.owner,
                     name = route.name,
                     ref = route.ref,
                     path = route.path,
-                    onBack = { navigator.goBack() },
-                    onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                    onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                    onEdit = { navigator.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
-                    onHistory = { navigator.navigate(RepoCommitsRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
+                    onBack = { clicks.goBack() },
+                    onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                    onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                    onEdit = { clicks.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
+                    onHistory = { clicks.navigate(RepoCommitsRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
                 )
             }
         }
         entry<RepoFileEditorRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             RepoFileEditorScreen(
                 owner = route.owner,
                 name = route.name,
                 ref = route.ref,
                 path = route.path,
-                onBack = { navigator.goBack() },
-                onOwnerClick = { login -> navigator.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { navigator.goBack() },
             )
         }
@@ -1001,45 +1021,49 @@ private fun LoggedInApp(
         // ========== 复用参数化 Screen 的 push 路由 ==========
 
         entry<UserRepoListRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             ReposScreen(
                 login = route.login,
-                onBack = { navigator.goBack() },
-                onRepoClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onForkSourceClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onHomepageClick = openExternalUrl,
-                onCreateRepository = { owner -> navigator.navigate(owner.toRepoCreateRoute()) },
+                onBack = { clicks.goBack() },
+                onRepoClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onForkSourceClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onHomepageClick = { url -> clicks.run { openExternalUrl(url) } },
+                onCreateRepository = { owner -> clicks.navigate(owner.toRepoCreateRoute()) },
             )
         }
 
         entry<UserStarredReposRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             UserStarredReposScreen(
                 login = route.login,
-                onBack = { navigator.goBack() },
-                onRepoClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onForkSourceClick = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) },
-                onHomepageClick = openExternalUrl,
+                onBack = { clicks.goBack() },
+                onRepoClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onForkSourceClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onHomepageClick = { url -> clicks.run { openExternalUrl(url) } },
             )
         }
 
         entry<GistListRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             GistScreen(
                 login = route.login,
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
                 onCreateGist = if (route.login == null) {
-                    { navigator.navigate(GistCreateRoute) }
+                    { clicks.navigate(GistCreateRoute) }
                 } else {
                     null
                 },
                 onGistClick = { gist ->
-                    navigator.navigate(GistDetailRoute(gist.apiName))
+                    clicks.navigate(GistDetailRoute(gist.apiName))
                 },
-                onForkSourceClick = { id -> navigator.navigate(GistDetailRoute(id)) },
+                onForkSourceClick = { id -> clicks.navigate(GistDetailRoute(id)) },
             )
         }
 
-        entry<GistCreateRoute> {
+        entry<GistCreateRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             GistCreateScreen(
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
                 onCreated = { id ->
                     navigator.goBack()
                     navigator.navigate(GistDetailRoute(id))
@@ -1048,20 +1072,21 @@ private fun LoggedInApp(
         }
 
         entry<GistDetailRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             TranslationHost {
                 GistDetailScreen(
                     accountLibrary = accountLibrary,
                     gistId = route.id,
-                    onBack = { navigator.goBack() },
-                    onOwnerClick = { navigator.navigate(ProfileRoute(it)) },
-                    onForkSourceClick = { navigator.navigate(GistDetailRoute(it)) },
-                    onRevisions = { navigator.navigate(GistRevisionsRoute(route.id)) },
-                    onForks = { navigator.navigate(GistForksRoute(route.id)) },
-                    onStargazers = { nodeId -> navigator.navigate(GistStargazersRoute(nodeId)) },
-                    onAddFile = { navigator.navigate(GistFileEditorRoute(route.id)) },
-                    onEditFile = { file -> navigator.navigate(GistFileEditorRoute(route.id, file.filename)) },
+                    onBack = { clicks.goBack() },
+                    onOwnerClick = { clicks.navigate(ProfileRoute(it)) },
+                    onForkSourceClick = { clicks.navigate(GistDetailRoute(it)) },
+                    onRevisions = { clicks.navigate(GistRevisionsRoute(route.id)) },
+                    onForks = { clicks.navigate(GistForksRoute(route.id)) },
+                    onStargazers = { nodeId -> clicks.navigate(GistStargazersRoute(nodeId)) },
+                    onAddFile = { clicks.navigate(GistFileEditorRoute(route.id)) },
+                    onEditFile = { file -> clicks.navigate(GistFileEditorRoute(route.id, file.filename)) },
                     onCompose = { request ->
-                        navigator.navigate(
+                        clicks.navigate(
                             ConversationComposerRoute(
                                 owner = "",
                                 name = "",
@@ -1082,11 +1107,12 @@ private fun LoggedInApp(
         }
 
         entry<GistRevisionsRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             GistRevisionsScreen(
                 gistId = route.id,
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
                 onRevisionClick = { revision, previous ->
-                    navigator.navigate(
+                    clicks.navigate(
                         GistRevisionDetailRoute(
                             id = route.id,
                             version = revision.version,
@@ -1098,11 +1124,12 @@ private fun LoggedInApp(
                         ),
                     )
                 },
-                onUserClick = { navigator.navigate(ProfileRoute(it)) },
+                onUserClick = { clicks.navigate(ProfileRoute(it)) },
             )
         }
 
         entry<GistRevisionDetailRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             GistRevisionDetailScreen(
                 gistId = route.id,
                 version = route.version,
@@ -1111,91 +1138,58 @@ private fun LoggedInApp(
                 additions = route.additions,
                 deletions = route.deletions,
                 totalChanges = route.totalChanges,
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
             )
         }
 
         entry<GistForksRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             GistForksScreen(
                 gistId = route.id,
-                onBack = { navigator.goBack() },
-                onUserClick = { navigator.navigate(ProfileRoute(it)) },
+                onBack = { clicks.goBack() },
+                onUserClick = { clicks.navigate(ProfileRoute(it)) },
             )
         }
 
         entry<GistStargazersRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             GistStargazersScreen(
                 nodeId = route.nodeId,
-                onBack = { navigator.goBack() },
-                onUserClick = { navigator.navigate(ProfileRoute(it)) },
+                onBack = { clicks.goBack() },
+                onUserClick = { clicks.navigate(ProfileRoute(it)) },
             )
         }
 
         entry<GistFileEditorRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             GistFileEditorScreen(
                 gistId = route.id,
                 filename = route.filename,
-                onBack = { navigator.goBack() },
+                onBack = { clicks.goBack() },
                 onSaved = { navigator.goBack() },
             )
         }
 
         entry<OrgMembersRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
             OrgMembersScreen(
                 orgLogin = route.login,
-                onBack = { navigator.goBack() },
-                onUserClick = { login -> navigator.navigate(ProfileRoute(login)) },
+                onBack = { clicks.goBack() },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
         entry<RepoPlaceholderRoute> { route -> PlaceholderScreen(route.label) }
     }
 
-    Scaffold(
-        bottomBar = {
-            if (showingTabRoot) {
-                NavigationBar {
-                    val selectedRoute = navState.topLevelRoute
-                    bottomTabs.forEach { tab ->
-                        val isSelected = tab.route == selectedRoute
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = {
-                                if (isSelected) {
-                                    navigator.onReselect(tab.route)
-                                } else {
-                                    navigator.navigate(tab.route)
-                                }
-                            },
-                            icon = { Icon(tab.icon, contentDescription = stringResource(tab.labelRes)) },
-                            label = { Text(stringResource(tab.labelRes)) },
-                        )
-                    }
-                }
-            }
+    GitMobNavDisplay(
+        entries = navState.toDecoratedEntries(entryProvider),
+        enablePredictiveBack = enablePredictiveBack,
+        onBack = {
+            val handled = navigator.goBack()
+            if (!handled) activity?.finish()
         },
-        // ★ contentWindowInsets = 0：不让 Scaffold 默认消费 statusBars/navigationBars，
-        // 所有 inset 由各 Screen 自己的 Scaffold 通过 safeDrawing.only(Top + Horizontal) 处理，
-        // 底部 NavigationBar 高度只在 Tab 根页显示时通过 innerPadding.bottom 传给 NavDisplay。
-        contentWindowInsets = WindowInsets(0),
-    ) { innerPadding ->
-        val navBarBottom = innerPadding.calculateBottomPadding()
-
-        GitMobNavDisplay(
-            entries = navState.toDecoratedEntries(entryProvider),
-            enablePredictiveBack = enablePredictiveBack,
-            onBack = {
-                val handled = navigator.goBack()
-                // navigator 返回 false = 已在 Home Tab 根页且栈空 → 交给系统 finish Activity
-                if (!handled) activity?.finish()
-            },
-            transitionSpec = { crossFadeTransition() },
-            popTransitionSpec = { crossFadeTransition() },
-            // 仅在显示 Tab 根页时加 bottom padding（等于 NavigationBar 高度），
-            // 避免 push 路由页与它们内部的 WindowInsets.navigationBars Spacer 重复叠加。
-            modifier = Modifier.fillMaxSize().then(
-                if (showingTabRoot) Modifier.padding(bottom = navBarBottom)
-                else Modifier
-            ),
-        )
-    }
+        transitionSpec = { crossFadeTransition() },
+        popTransitionSpec = { crossFadeTransition() },
+        modifier = Modifier.fillMaxSize(),
+    )
 }

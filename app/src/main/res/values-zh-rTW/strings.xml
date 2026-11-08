@@ -574,7 +574,6 @@
     <string name="actions_rerun_failed">只重新執行失敗工作</string>
     <string name="actions_delete_run_title">刪除此工作流程執行？</string>
     <string name="actions_artifacts">成品</string>
-    <string name="actions_artifact_size">%1$d 位元組</string>
     <string name="actions_jobs">工作</string>
     <string name="actions_state_queued">已排入佇列</string>
     <string name="actions_state_in_progress">進行中</string>
@@ -660,7 +659,7 @@
     <string name="release_notes">發行說明</string>
     <string name="release_assets">資產</string>
     <string name="release_assets_count">資產 %1$d 個</string>
-    <string name="release_asset_meta">下載 %1$d 次 · %2$d 位元組</string>
+    <string name="release_asset_meta">下載 %1$d 次 · %2$s</string>
     <string name="release_upload_asset">上傳資產</string>
     <string name="release_delete">刪除發行版</string>
     <string name="release_delete_title">刪除發行版？</string>
@@ -837,6 +836,7 @@
     <string name="translation_reading">閱讀輔助</string>
     <string name="translation_enable">啟用翻譯</string>
     <string name="translation_enable_summary">按需翻譯文件、詳情與留言</string>
+    <string name="translation_loading">正在讀取翻譯設定</string>
     <string name="translation_off">已關閉</string>
     <string name="translation_provider">翻譯服務</string>
     <string name="translation_target">目標語言</string>
@@ -943,4 +943,14 @@
     <string name="app_update_no_package">暫無適用的更新套件</string>
     <string name="repo_code_root">根目錄</string>
     <string name="repo_code_parent">返回上一層</string>
+    <string name="release_asset_preparing">正在準備附件…</string>
+    <string name="release_asset_uploading">正在上傳附件…</string>
+    <string name="release_asset_cancelling">正在取消…</string>
+    <string name="release_asset_upload_success">附件上傳成功</string>
+    <string name="release_asset_upload_failed">附件上傳失敗，請重新選擇檔案重試。</string>
+    <string name="release_asset_upload_cancelled">上傳已取消</string>
+    <string name="release_asset_progress">已傳送 %1$s / %2$s</string>
+    <string name="release_asset_read_failed">無法讀取附件，請檢查檔案是否仍可存取並重新選擇。</string>
+    <string name="release_asset_storage_failed">無法寫入暫存附件，請檢查可用儲存空間後重試。</string>
+    <string name="release_notes_draft_changed">產生期間草稿已修改，已保留你的輸入。</string>
 </resources>

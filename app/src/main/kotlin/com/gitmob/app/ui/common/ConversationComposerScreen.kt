@@ -61,6 +61,7 @@ fun ConversationComposerScreen(
     onOwnerClick: (String) -> Unit,
     onRepositoryClick: (String, String) -> Unit,
     viewModel: ConversationComposerViewModel = hiltViewModel(),
+    onSubmitted: () -> Unit = onBack,
 ) {
     LaunchedEffect(route) {
         viewModel.init(route.owner, route.name, route.number, route.target, route.subjectId, route.initialText, route.commentId, route.replyToId, route.reviewEvent)
@@ -73,7 +74,7 @@ fun ConversationComposerScreen(
     LaunchedEffect(state.text) {
         if (editorValue.text != state.text) editorValue = editorValue.copy(text = state.text, selection = TextRange(state.text.length))
     }
-    LaunchedEffect(state.submitted) { if (state.submitted) onBack() }
+    LaunchedEffect(state.submitted) { if (state.submitted) onSubmitted() }
 
     fun requestBack() {
         if (dirty && !state.isSubmitting) confirmDiscard = true else if (!state.isSubmitting) onBack()

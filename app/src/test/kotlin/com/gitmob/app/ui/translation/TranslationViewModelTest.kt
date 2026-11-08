@@ -20,7 +20,7 @@ class TranslationViewModelTest {
     private val accounts = AccountSessionRule()
     @get:Rule val rules: RuleChain = RuleChain.outerRule(main).around(accounts)
     private val preferences = TranslationPreferences(enabled = true)
-    private val configuration = MutableStateFlow(TranslationConfiguration(preferences))
+    private val configuration = MutableStateFlow<TranslationConfiguration?>(TranslationConfiguration(preferences))
     private val repository = mockk<TranslationRepository>()
 
     private fun viewModel(): TranslationViewModel {
@@ -45,6 +45,79 @@ class TranslationViewModelTest {
             }
         }
         return TranslationViewModel(repository, accounts.session)
+    }
+
+    @Test fun cachedConfigurationIsAvailableBeforeThePageCollectorStarts() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val vm = viewModel()
+        assertEquals(configuration.value, vm.state.value.configuration)
+        assertEquals(0, configuration.subscriptionCount.value)
+        runCurrent()
+        assertEquals(1, configuration.subscriptionCount.value)
+    }
+
+    @Test fun enteringWithAStorageErrorRetriesAndThePageCanRetryAgain() = runTest {
+        configuration.value = TranslationConfiguration(storageFailed = true)
+        every { repository.retryConfiguration() } just Runs
+        val vm = viewModel()
+        verify(exactly = 1) { repository.retryConfiguration() }
+        vm.retryConfiguration()
+        verify(exactly = 2) { repository.retryConfiguration() }
+        configuration.value = TranslationConfiguration(preferences)
+        runCurrent()
+        assertEquals(preferences, vm.state.value.configuration?.preferences)
+    }
+
+    @Test fun loadingDoesNotEnableActionsAndFirstConfigurationBecomesAvailable() = runTest {
+        configuration.value = null
+        val vm = viewModel()
+        val target = TranslationTarget("body", "hello")
+        assertNull(vm.state.value.configuration)
+        vm.open(target)
+        vm.request()
+        assertFalse(vm.state.value.optionsOpen)
+        assertTrue(vm.state.value.entries.isEmpty())
+        configuration.value = TranslationConfiguration(preferences)
+        runCurrent()
+        vm.open(target)
+        assertTrue(vm.state.value.optionsOpen)
+        assertEquals(preferences, vm.state.value.options)
+    }
+
+    @Test fun sharedConfigurationDoesNotSharePageTranslationsOrConnectionTestResults() = runTest {
+        coEvery { repository.translate(any(), any(), any()) } returns Result.success("translated")
+        val first = viewModel()
+        val target = TranslationTarget("body", "hello")
+        first.open(target)
+        first.request()
+        first.test()
+        advanceUntilIdle()
+        assertTrue(first.state.value.entries.isNotEmpty())
+        assertEquals("translated", first.state.value.testResult)
+
+        val second = viewModel()
+        assertEquals(first.state.value.configuration, second.state.value.configuration)
+        assertTrue(second.state.value.entries.isEmpty())
+        assertNull(second.state.value.selected)
+        assertNull(second.state.value.testResult)
+        assertFalse(second.state.value.testing)
+    }
+
+    @Test fun storageFailureCancelsPageWorkAndClearsVisibleResults() = runTest {
+        var cancelled = false
+        coEvery { repository.translate(any(), any(), any()) } coAnswers {
+            try { awaitCancellation() } finally { cancelled = true }
+        }
+        val vm = viewModel()
+        vm.open(TranslationTarget("body", "hello"))
+        vm.request()
+        runCurrent()
+        configuration.value = TranslationConfiguration(storageFailed = true)
+        advanceUntilIdle()
+        assertTrue(cancelled)
+        assertTrue(vm.state.value.entries.isEmpty())
+        assertFalse(vm.state.value.optionsOpen)
+        assertEquals(true, vm.state.value.configuration?.storageFailed)
     }
 
     @Test fun selectedContentStartsWithoutASendingConfirmation() = runTest {

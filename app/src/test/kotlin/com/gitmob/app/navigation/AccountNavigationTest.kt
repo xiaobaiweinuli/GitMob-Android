@@ -212,6 +212,51 @@ class AccountNavigationTest {
     }
 
     @Test
+    fun `real About entry ignores same frame duplicate clicks and returns to the settings root`() {
+        launch()
+        tab(R.string.nav_tab_settings)
+        val settings = fixture.model<SettingsViewModel>()
+        val about = composeRule.onNodeWithText(text(R.string.settings_about)).performScrollTo()
+            .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        composeRule.runOnIdle {
+            about()
+            about()
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.about_logo_desc)).assertExists()
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_about)).assertExists()
+        assertSame(settings, fixture.model<SettingsViewModel>())
+    }
+
+    @Test
+    fun `real translation entry and rapid toolbar back preserve the advanced settings page`() {
+        launch()
+        tab(R.string.nav_tab_settings)
+        composeRule.onNodeWithText(text(R.string.advanced_settings)).performScrollTo().performClick()
+        val openTranslation = composeRule.onNodeWithText(text(R.string.translation_title)).performScrollTo()
+            .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        val advancedTranslation = fixture.model<TranslationViewModel>()
+        composeRule.runOnIdle {
+            openTranslation()
+            openTranslation()
+        }
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertDoesNotExist()
+        assertNotSame(advancedTranslation, fixture.model<TranslationViewModel>())
+        val back = composeRule.onNodeWithContentDescription(text(R.string.common_back))
+            .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        composeRule.runOnIdle {
+            back()
+            back()
+        }
+        composeRule.onNodeWithText(text(R.string.advanced_settings)).assertIsDisplayed()
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertIsDisplayed()
+    }
+
+    @Test
     fun `switch discards every tab store saved state permission draft and old navigation callback`() {
         launch()
         visitAllTabs()

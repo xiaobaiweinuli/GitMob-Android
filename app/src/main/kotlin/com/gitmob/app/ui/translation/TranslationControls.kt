@@ -47,17 +47,30 @@ fun translationProblemText(problem: TranslationProblem): String = stringResource
 
 internal val translationLanguages = linkedMapOf("zh-CN" to "简体中文", "zh-TW" to "繁體中文", "en" to "English", "ja" to "日本語", "ko" to "한국어", "fr" to "Français", "de" to "Deutsch", "es" to "Español", "ru" to "Русский", "pt" to "Português", "it" to "Italiano")
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TranslationPreferencesEditor(value: TranslationPreferences, onChange: (TranslationPreferences) -> Unit, onConfigure: (TranslationProvider) -> Unit) {
     var providersOpen by remember { mutableStateOf(false) }
+    TranslationProviderSection(value, { providersOpen = true }, onConfigure)
+    TranslationOptionsSection(value, onChange)
+    if (providersOpen) TranslationProviderSheet(value.provider, {
+        onChange(value.copy(provider = it))
+        if (it in setOf(TranslationProvider.BAIDU, TranslationProvider.YOUDAO_OPEN, TranslationProvider.CUSTOM)) onConfigure(it)
+    }, { providersOpen = false })
+}
+
+@Composable
+internal fun TranslationProviderSection(value: TranslationPreferences, onChooseProvider: () -> Unit, onConfigure: (TranslationProvider) -> Unit) {
     SettingsSection(stringResource(R.string.translation_provider)) {
-        SettingsNavigationRow(translationProviderName(value.provider), icon = Icons.Default.Translate, onClick = { providersOpen = true })
+        SettingsNavigationRow(translationProviderName(value.provider), icon = Icons.Default.Translate, onClick = onChooseProvider)
         if (value.provider in setOf(TranslationProvider.BAIDU, TranslationProvider.YOUDAO_OPEN, TranslationProvider.CUSTOM)) {
             HorizontalDivider(Modifier.padding(start = 72.dp))
             SettingsNavigationRow(stringResource(R.string.translation_configure), icon = Icons.Default.Settings, onClick = { onConfigure(value.provider) })
         }
     }
+}
+
+@Composable
+internal fun TranslationOptionsSection(value: TranslationPreferences, onChange: (TranslationPreferences) -> Unit) {
     SettingsSection(stringResource(R.string.translation_options)) {
         SettingsDropdownRow(stringResource(R.string.translation_target), translationLanguages[value.target] ?: value.target, Icons.Default.Language) { dismiss ->
             translationLanguages.forEach { (code, name) -> DropdownMenuItem(text = { Text(name) }, onClick = { dismiss(); onChange(value.copy(target = code)) }) }
@@ -72,10 +85,6 @@ internal fun TranslationPreferencesEditor(value: TranslationPreferences, onChang
             listOf(true, false).forEach { bilingual -> DropdownMenuItem(text = { Text(stringResource(if (bilingual) R.string.translation_bilingual else R.string.translation_only)) }, onClick = { dismiss(); onChange(value.copy(bilingual = bilingual)) }) }
         }
     }
-    if (providersOpen) TranslationProviderSheet(value.provider, {
-        onChange(value.copy(provider = it))
-        if (it in setOf(TranslationProvider.BAIDU, TranslationProvider.YOUDAO_OPEN, TranslationProvider.CUSTOM)) onConfigure(it)
-    }, { providersOpen = false })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

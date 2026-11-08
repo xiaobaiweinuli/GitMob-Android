@@ -29,10 +29,15 @@ fun TranslationSettingsScreen(onBack: () -> Unit, viewModel: TranslationViewMode
     var configure by remember { mutableStateOf<TranslationProvider?>(null) }
     LibraryScaffold(stringResource(R.string.translation_title), onBack) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            if (configuration == null) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            if (configuration == null) item(key = "loading") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.translation_loading), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             else {
                 val preferences = configuration.preferences
-                item {
+                item(key = "enabled") {
                     SettingsSection(stringResource(R.string.translation_title)) {
                         Row(Modifier.fillMaxWidth().toggleable(preferences.enabled, enabled = !configuration.storageFailed, role = Role.Switch, onValueChange = { viewModel.savePreferences(preferences.copy(enabled = it)) }).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Icon(Icons.Default.Translate, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
@@ -44,10 +49,20 @@ fun TranslationSettingsScreen(onBack: () -> Unit, viewModel: TranslationViewMode
                         }
                     }
                 }
-                if (configuration.storageFailed) item { Text(stringResource(R.string.translation_error_storage), color = MaterialTheme.colorScheme.error) }
+                if (configuration.storageFailed) item(key = "storage_error") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.translation_error_storage), color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = viewModel::retryConfiguration) { Text(stringResource(R.string.common_retry)) }
+                    }
+                }
                 else if (preferences.enabled) {
-                    item { Column(verticalArrangement = Arrangement.spacedBy(24.dp)) { TranslationPreferencesEditor(preferences, viewModel::savePreferences) { configure = it } } }
-                    item {
+                    item(key = "provider") {
+                        TranslationProviderSection(preferences, { providersOpen = true }) { configure = it }
+                    }
+                    item(key = "options") {
+                        TranslationOptionsSection(preferences, viewModel::savePreferences)
+                    }
+                    item(key = "test") {
                         SettingsSection(stringResource(R.string.translation_test)) {
                             SettingsNavigationRow(stringResource(R.string.translation_test), stringResource(R.string.translation_test_hint), onClick = { viewModel.test() }, icon = Icons.Default.Wifi, enabled = !state.testing)
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -57,9 +72,9 @@ fun TranslationSettingsScreen(onBack: () -> Unit, viewModel: TranslationViewMode
                             }
                         }
                     }
-                    item { Text(stringResource(R.string.translation_anonymous_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    item(key = "anonymous_hint") { Text(stringResource(R.string.translation_anonymous_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
-                state.notice?.let { problem -> item { Text(translationProblemText(problem), color = MaterialTheme.colorScheme.error) } }
+                state.notice?.let { problem -> item(key = "notice") { Text(translationProblemText(problem), color = MaterialTheme.colorScheme.error) } }
             }
         }
     }
@@ -78,6 +93,7 @@ fun AdvancedTranslationEntry(onClick: () -> Unit, viewModel: TranslationViewMode
     val preferences = state.configuration?.preferences
     SettingsSection(stringResource(R.string.translation_reading)) {
         SettingsNavigationRow(stringResource(R.string.translation_title), summary = when {
+            state.configuration == null -> stringResource(R.string.translation_loading)
             state.configuration?.storageFailed == true -> stringResource(R.string.translation_error_storage)
             preferences?.enabled == true -> translationProviderName(preferences.provider) + " · " + (translationLanguages[preferences.target] ?: preferences.target)
             else -> stringResource(R.string.translation_off)

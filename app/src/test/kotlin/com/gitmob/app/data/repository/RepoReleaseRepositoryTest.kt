@@ -1,5 +1,19 @@
 package com.gitmob.app.data.repository
 
+import android.content.ContentResolver
+import android.database.MatrixCursor
+import android.net.Uri
+import android.provider.OpenableColumns
+import com.gitmob.app.data.release.ReleaseAssetFiles
+import com.gitmob.app.core.error.ApiError
+import kotlinx.coroutines.*
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.io.ByteArrayInputStream
+import java.util.concurrent.TimeUnit
+import okhttp3.mockwebserver.SocketPolicy
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
@@ -26,7 +40,12 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.Rule
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class RepoReleaseRepositoryTest {
+    @get:Rule val folder = TemporaryFolder()
+    private val resolver = mockk<ContentResolver>()
+    private val uri = Uri.parse("content://files/7")
     @get:Rule val accounts = AccountSessionRule()
     private lateinit var server: MockWebServer
     private lateinit var repository: RepoReleaseRepository
@@ -59,6 +78,7 @@ class RepoReleaseRepositoryTest {
                 )
                 .build(),
             downloadLauncher,
+            ReleaseAssetFiles(resolver, folder.root),
         )
     }
 
@@ -139,5 +159,62 @@ class RepoReleaseRepositoryTest {
 
         assertTrue(result is ApiResult.Success)
         verify(exactly = 1) { downloadLauncher.open("https://objects.example/gitmob.apk") }
+    }
+
+    private fun attachment(bytes: ByteArray = byteArrayOf(0, 1, 2, 127, -1)) {
+        every { resolver.query(uri, any(), null, null, null) } answers { MatrixCursor(arrayOf(OpenableColumns.DISPLAY_NAME)).apply { addRow(arrayOf("release asset+#.zip")) } }
+        every { resolver.getType(uri) } returns "application/zip"
+        every { resolver.openInputStream(uri) } answers { ByteArrayInputStream(bytes) }
+    }
+
+    @Test fun uploadUsesReturnedUrlRawBinaryLengthAndExistingAuthentication() = runTest(accounts.context) {
+        attachment()
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":8,"name":"asset.zip","content_type":"application/zip","size":5,"state":"uploaded"}"""))
+        val progress = java.util.concurrent.CopyOnWriteArrayList<Pair<Long, Long>>()
+        val result = repository.uploadAsset(server.url("/uploads/release/7").toString() + "{?name,label}", uri) { sent, total -> progress += sent to total }
+        assertTrue(result is ApiResult.Success)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/uploads/release/7?name=release%20asset%2B%23.zip", request.path)
+        assertEquals("Bearer fake-token", request.getHeader("Authorization"))
+        assertEquals("application/vnd.github+json", request.getHeader("Accept"))
+        assertEquals(com.gitmob.app.core.network.REST_API_VERSION, request.getHeader("X-GitHub-Api-Version"))
+        assertEquals("application/zip", request.getHeader("Content-Type"))
+        assertEquals("5", request.getHeader("Content-Length"))
+        org.junit.Assert.assertArrayEquals(byteArrayOf(0, 1, 2, 127, -1), request.body.readByteArray())
+        assertEquals(0L to 5L, progress.first())
+        assertEquals(5L to 5L, progress.last())
+        assertTrue(folder.root.listFiles()!!.isEmpty())
+    }
+
+    @Test fun failedUploadKeepsErrorMappingAndCleansFile() = runTest(accounts.context) {
+        attachment()
+        server.enqueue(MockResponse().setResponseCode(403).setBody("Forbidden"))
+        val result = repository.uploadAsset(server.url("/uploads/7").toString(), uri) { _, _ -> }
+        assertEquals(ApiError.Forbidden, (result as ApiResult.Failure).error)
+        assertTrue(folder.root.listFiles()!!.isEmpty())
+    }
+
+    @Test fun cancellationClosesNetworkRequestAndCleansPreparedFile() = runTest(accounts.context) {
+        attachment(ByteArray(256 * 1024))
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val task = launch { repository.uploadAsset(server.url("/uploads/7").toString(), uri) { _, _ -> } }
+        val request = withContext(Dispatchers.IO) { server.takeRequest(10, TimeUnit.SECONDS) }
+        org.junit.Assert.assertNotNull(request)
+        task.cancelAndJoin()
+        assertTrue(task.isCancelled)
+        assertTrue(folder.root.listFiles()!!.isEmpty())
+    }
+
+    @Test fun accountSwitchCancelsAnEpochOwnedUploadAndDeletesTheCopy() = runTest(accounts.context) {
+        attachment(ByteArray(128 * 1024))
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        val parent = Job(accounts.session.epoch.job)
+        val task = CoroutineScope(coroutineContext + parent).launch { repository.uploadAsset(server.url("/uploads/7").toString(), uri) { _, _ -> } }
+        org.junit.Assert.assertNotNull(withContext(Dispatchers.IO) { server.takeRequest(10, TimeUnit.SECONDS) })
+        accounts.session.replace(emptyList(), null)
+        task.join()
+        assertTrue(task.isCancelled)
+        assertTrue(folder.root.listFiles()!!.isEmpty())
     }
 }
