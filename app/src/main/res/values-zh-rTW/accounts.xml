@@ -1,4 +1,11 @@
 <resources>
+    <string name="auth_token_invalid">權杖無效或已過期，請檢查權杖後重試</string>
+    <string name="auth_service_unavailable">GitHub 服務暫時無法使用，請稍後重試</string>
+    <string name="auth_response_invalid">GitHub 傳回的資料無效，請稍後重試</string>
+    <string name="auth_storage_read_failed">無法讀取此裝置儲存的帳號憑證，請重試</string>
+    <string name="auth_storage_write_failed">無法在此裝置儲存帳號憑證，請檢查裝置儲存空間後重試</string>
+    <string name="auth_oauth_config_invalid">GitHub 授權設定有誤，請聯絡應用程式維護者</string>
+    <string name="auth_oauth_failed">GitHub 授權失敗，請重新嘗試</string>
     <string name="auth_device_expired">授權碼已過期，請重新取得</string>
     <string name="auth_device_denied">授權已被拒絕，請重新嘗試</string>
     <string name="auth_device_disabled">此應用程式尚未啟用裝置授權</string>

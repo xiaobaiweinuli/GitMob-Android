@@ -152,7 +152,7 @@ class AuthDeviceFlowTest {
         job.join()
 
         assertSame(epoch, accounts.session.epoch)
-        assertEquals(DeviceFlowState.Failed(ApiError.NetworkError), states.last())
+        assertEquals(DeviceFlowState.Failed(ApiError.UserVisible(R.string.auth_storage_write_failed)), states.last())
         coVerify(exactly = 0) { storage.clearActiveAccount(any()) }
         coVerify(exactly = 0) { storage.requireReauthentication(any()) }
     }
@@ -204,6 +204,9 @@ class AuthDeviceFlowTest {
             "access_denied" to R.string.auth_device_denied,
             "device_flow_disabled" to R.string.auth_device_disabled,
             "incorrect_device_code" to R.string.auth_device_invalid,
+            "incorrect_client_credentials" to R.string.auth_oauth_config_invalid,
+            "unsupported_grant_type" to R.string.auth_oauth_config_invalid,
+            "unrecognized" to R.string.auth_oauth_failed,
         )) {
             coEvery { oauth.poll(any()) } returns OAuthTokenResponse(error = error)
             val states = mutableListOf<DeviceFlowState>()

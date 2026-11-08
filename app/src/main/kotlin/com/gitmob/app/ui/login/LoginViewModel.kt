@@ -28,8 +28,9 @@ data class LoginUiState(
     val tokenInput: String = "",
     val isLoading: Boolean = false,
     val loginSucceeded: Boolean = false,
-    /** 输入框下方的即时校验错误（资源 id，跟随应用语言），和顶部全局错误提示分开 */
+    /** 仅空输入和无效 PAT 标记输入框。 */
     @field:StringRes val inlineErrorRes: Int? = null,
+    @field:StringRes val operationErrorRes: Int? = null,
     val authSheet: AuthSheet? = null,
     val deviceFlow: DeviceFlowState? = null,
     val switchingKey: String? = null,
@@ -70,7 +71,7 @@ class LoginViewModel @Inject constructor(
 
     fun onTokenInputChange(value: String) {
         if (_state.value.isLoading) return
-        _state.update { it.copy(tokenInput = value, inlineErrorRes = null) }
+        _state.update { it.copy(tokenInput = value, inlineErrorRes = null, operationErrorRes = null) }
     }
 
     /** 用户点击"登录"按钮的入口。 */
@@ -78,12 +79,12 @@ class LoginViewModel @Inject constructor(
         if (_state.value.isLoading) return
         val token = _state.value.tokenInput.trim()
         if (token.isEmpty()) {
-            _state.update { it.copy(inlineErrorRes = R.string.login_token_required) }
+            _state.update { it.copy(inlineErrorRes = R.string.login_token_required, operationErrorRes = null) }
             return
         }
 
         val started = ++operation
-        _state.update { it.copy(isLoading = true, inlineErrorRes = null) }
+        _state.update { it.copy(isLoading = true, inlineErrorRes = null, operationErrorRes = null) }
         authorizationJob = viewModelScope.launch {
             val result = authRepository.loginWithToken(token)
             currentCoroutineContext().ensureActive()
@@ -93,11 +94,16 @@ class LoginViewModel @Inject constructor(
                     _state.value = LoginUiState(loginSucceeded = true)
                 }
                 is ApiResult.Failure -> {
-                    // 同时发两份：一份给全局顶部 Banner，一份给输入框 inline error（用户直接能看到）
-                    errorEventBus.emit(result.error)
+                    val messageRes = if (result.error == ApiError.Unauthorized) R.string.auth_token_invalid
+                        else result.error.displayMessageRes()
                     _state.update {
-                        it.copy(isLoading = false, inlineErrorRes = result.error.displayMessageRes())
+                        it.copy(
+                            isLoading = false,
+                            inlineErrorRes = messageRes.takeIf { result.error == ApiError.Unauthorized },
+                            operationErrorRes = messageRes.takeUnless { result.error == ApiError.Unauthorized },
+                        )
                     }
+                    errorEventBus.emit(if (result.error == ApiError.Unauthorized) ApiError.UserVisible(messageRes) else result.error)
                 }
             }
         }
@@ -106,7 +112,7 @@ class LoginViewModel @Inject constructor(
     fun retryDeviceFlow() {
         if (_state.value.authSheet != AuthSheet.DEVICE_FLOW || _state.value.isLoading) return
         val started = ++operation
-        _state.update { it.copy(isLoading = true, deviceFlow = DeviceFlowState.Requesting, inlineErrorRes = null) }
+        _state.update { it.copy(isLoading = true, deviceFlow = DeviceFlowState.Requesting, inlineErrorRes = null, operationErrorRes = null) }
         authorizationJob = viewModelScope.launch {
             authRepository.authorizeDevice().collect { result ->
                 currentCoroutineContext().ensureActive()
@@ -114,7 +120,8 @@ class LoginViewModel @Inject constructor(
                 when (result) {
                     is DeviceFlowState.Complete -> _state.value = LoginUiState(loginSucceeded = true)
                     is DeviceFlowState.Failed -> {
-                        _state.update { it.copy(isLoading = false, deviceFlow = result, inlineErrorRes = result.error.displayMessageRes()) }
+                        val messageRes = result.error.displayMessageRes()
+                        _state.update { it.copy(isLoading = false, deviceFlow = result, operationErrorRes = messageRes) }
                         errorEventBus.emit(result.error)
                     }
                     else -> _state.update { it.copy(deviceFlow = result) }
@@ -129,11 +136,11 @@ class LoginViewModel @Inject constructor(
         if (key == accountState.value.activeAccount?.key) return
         if (selected.needsReauthentication) {
             openPat()
-            _state.update { it.copy(inlineErrorRes = R.string.accounts_reauthenticate) }
+            _state.update { it.copy(operationErrorRes = R.string.accounts_reauthenticate) }
             return
         }
         val started = ++operation
-        _state.update { it.copy(isLoading = true, switchingKey = key, inlineErrorRes = null) }
+        _state.update { it.copy(isLoading = true, switchingKey = key, inlineErrorRes = null, operationErrorRes = null) }
         authorizationJob = viewModelScope.launch {
             val result = authRepository.switchAccount(key)
             currentCoroutineContext().ensureActive()
@@ -141,7 +148,8 @@ class LoginViewModel @Inject constructor(
             when (result) {
                 is ApiResult.Success -> _state.value = LoginUiState(loginSucceeded = true)
                 is ApiResult.Failure -> {
-                    _state.update { it.copy(isLoading = false, switchingKey = null, inlineErrorRes = result.error.displayMessageRes()) }
+                    val messageRes = result.error.displayMessageRes()
+                    _state.update { it.copy(isLoading = false, switchingKey = null, operationErrorRes = messageRes) }
                     errorEventBus.emit(result.error)
                 }
             }

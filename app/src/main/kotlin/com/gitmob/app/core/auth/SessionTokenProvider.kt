@@ -1,6 +1,10 @@
 package com.gitmob.app.core.auth
 
+import androidx.annotation.StringRes
+import com.gitmob.app.R
+import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.UnauthorizedException
+import kotlinx.coroutines.CancellationException
 import com.gitmob.app.core.network.GitHubIdentityClient
 import com.gitmob.app.data.model.AccountAuthMethod
 import kotlinx.coroutines.NonCancellable
@@ -29,7 +33,7 @@ class SessionTokenProvider @Inject constructor(
     /** 调用方持有 session.changes；切换目标账号与活动请求复用相同刷新逻辑。 */
     internal suspend fun credentialsFor(key: String, started: AccountEpoch): AccountCredentials {
         started.ensureCurrent()
-        val credentials = storage.credentials(key)
+        val credentials = localAccountOperation(R.string.auth_storage_read_failed) { storage.credentials(key) }
         val now = System.currentTimeMillis()
         if (credentials.expiresAtMillis == null || credentials.expiresAtMillis > now + 30_000) return credentials
         if (credentials.authMethod != AccountAuthMethod.DEVICE_FLOW || credentials.refreshToken == null ||
@@ -46,26 +50,38 @@ class SessionTokenProvider @Inject constructor(
                 throw UnauthorizedException()
             }
             val next = response.credentials()
-            check(next.refreshToken != null) { "Refresh response is missing its new refresh token" }
+            if (next.refreshToken == null) throw UserVisibleException(R.string.auth_response_invalid)
             // 先持久化旋转后的令牌对；身份验证断网时也不能丢掉已失效旧对的替代品。
-            storage.saveCredentials(key, next)
+            localAccountOperation(R.string.auth_storage_write_failed) { storage.saveCredentials(key, next) }
             val user = identity.verify(next.accessToken)
             if (user.id.toString() != key) {
                 invalidate(key)
                 throw UnauthorizedException()
             }
-            storage.updateIdentity(user)
-            session.updateAccounts(storage.snapshot().accounts)
+            localAccountOperation(R.string.auth_storage_write_failed) { storage.updateIdentity(user) }
+            session.updateAccounts(localAccountOperation(R.string.auth_storage_read_failed) { storage.snapshot() }.accounts)
             next
         }
     }
 
     private suspend fun invalidate(key: String) {
         withContext(NonCancellable) {
-            storage.requireReauthentication(key)
-            val stored = storage.snapshot()
+            localAccountOperation(R.string.auth_storage_write_failed) { storage.requireReauthentication(key) }
+            val stored = localAccountOperation(R.string.auth_storage_read_failed) { storage.snapshot() }
             if (session.epoch.accountKey == key) session.replace(stored.accounts, stored.activeKey)
             else session.updateAccounts(stored.accounts)
         }
     }
+}
+
+/** 仅包裹本地账号操作，避免磁盘 IO、密钥或损坏数据被误报为网络失败。 */
+internal suspend inline fun <T> localAccountOperation(@StringRes messageRes: Int, block: () -> T): T = try {
+    block()
+} catch (e: CancellationException) {
+    throw e
+} catch (e: UnauthorizedException) {
+    throw e
+} catch (_: Exception) {
+    // 原始异常可能包含持久化内容，不挂到会被 safeCall 打印的 cause 上。
+    throw UserVisibleException(messageRes)
 }

@@ -127,6 +127,13 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                     enabled = !state.isLoading,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                state.operationErrorRes?.let { messageRes ->
+                    Text(
+                        stringResource(messageRes),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
                 Button(onClick = viewModel::login, enabled = !state.isLoading, modifier = Modifier.fillMaxWidth()) {
                     if (state.isLoading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     else Text(stringResource(R.string.auth_add_account))
@@ -218,7 +225,7 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                         Text(stringResource(R.string.auth_device_remaining, remainingSeconds), style = MaterialTheme.typography.bodySmall)
                     }
                     is DeviceFlowState.Failed -> {
-                        Text(stringResource(state.inlineErrorRes ?: R.string.error_request_failed), color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                        Text(stringResource(state.operationErrorRes ?: R.string.error_request_failed), color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                         Button(onClick = viewModel::retryDeviceFlow, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.auth_device_restart)) }
                     }
                     else -> {

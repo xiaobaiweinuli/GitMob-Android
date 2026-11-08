@@ -87,8 +87,8 @@ fun LoginScreen(
                     modifier = Modifier.padding(top = if (returning) 20.dp else 0.dp),
                 )
             }
-            if (state.inlineErrorRes != null && state.authSheet == null) item(key = "error") {
-                Text(stringResource(state.inlineErrorRes!!), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp))
+            if (state.operationErrorRes != null && state.authSheet == null) item(key = "error") {
+                Text(stringResource(state.operationErrorRes!!), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp))
             }
         }
     }

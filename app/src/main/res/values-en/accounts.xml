@@ -1,4 +1,11 @@
 <resources>
+    <string name="auth_token_invalid">The token is invalid or expired. Check the token and try again.</string>
+    <string name="auth_service_unavailable">GitHub is temporarily unavailable. Try again later.</string>
+    <string name="auth_response_invalid">GitHub returned an invalid response. Try again later.</string>
+    <string name="auth_storage_read_failed">Unable to read account credentials saved on this device. Try again.</string>
+    <string name="auth_storage_write_failed">Unable to save account credentials on this device. Check device storage and try again.</string>
+    <string name="auth_oauth_config_invalid">The GitHub authorization configuration is invalid. Contact the app maintainer.</string>
+    <string name="auth_oauth_failed">GitHub authorization failed. Try again.</string>
     <string name="auth_device_expired">The authorization code expired. Request a new code.</string>
     <string name="auth_device_denied">Authorization was denied. Please try again.</string>
     <string name="auth_device_disabled">Device authorization is not enabled for this app.</string>

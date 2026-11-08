@@ -1,5 +1,7 @@
 package com.gitmob.app.core.network
 
+import com.gitmob.app.R
+import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.data.model.AuthenticatedUser
 import kotlinx.serialization.SerialName
@@ -29,16 +31,20 @@ class GitHubIdentityClient @Inject constructor(
             .header("User-Agent", USER_AGENT)
             .cacheControl(CacheControl.FORCE_NETWORK).get().build()
         val text = client.newCall(request).readCancellable { response ->
+            if (response.code == 403 && (response.header("X-RateLimit-Remaining") == "0" || response.header("Retry-After") != null)) {
+                throw HttpStatusException(429, "Identity request rate limited")
+            }
+            if (response.code in 500..599) throw UserVisibleException(R.string.auth_service_unavailable)
             if (!response.isSuccessful) throw HttpStatusException(response.code, "Identity request failed")
             response.body.string()
         }
         val user = try {
             json.decodeFromString<IdentityResponse>(text)
         } catch (_: SerializationException) {
-            error("Identity response is invalid")
+            throw UserVisibleException(R.string.auth_response_invalid)
         }
-        check(user.id > 0 && user.nodeId.isNotBlank() && user.login.isNotBlank()) {
-            "Identity response is incomplete"
+        if (user.id <= 0 || user.nodeId.isBlank() || user.login.isBlank()) {
+            throw UserVisibleException(R.string.auth_response_invalid)
         }
         return AuthenticatedUser(user.id, user.nodeId, user.login, user.name, user.avatarUrl)
     }

@@ -1,5 +1,8 @@
 package com.gitmob.app.core.auth
 
+import androidx.annotation.StringRes
+import com.gitmob.app.R
+import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.network.USER_AGENT
 import com.gitmob.app.core.network.readCancellable
@@ -49,7 +52,7 @@ class GitHubOAuthClient @Inject constructor(
         json.decodeFromString(text)
     } catch (_: SerializationException) {
         // 解码异常可能包含响应片段；凭据响应不能进入日志。
-        error("OAuth response is invalid")
+        throw UserVisibleException(R.string.auth_response_invalid)
     }
 
     private suspend fun post(path: String, fields: Map<String, String>): String {
@@ -59,8 +62,21 @@ class GitHubOAuthClient @Inject constructor(
             .header("User-Agent", USER_AGENT)
             .post(body).build()
         return client.newCall(request).readCancellable { response ->
+            // HTTP 限流和服务故障优先，不能被响应中的 OAuth error 掩盖。
+            if (response.code == 429 || (response.code == 403 &&
+                (response.header("X-RateLimit-Remaining") == "0" || response.header("Retry-After") != null))) {
+                throw HttpStatusException(429, "OAuth request rate limited")
+            }
+            if (response.code in 500..599) throw UserVisibleException(R.string.auth_service_unavailable)
             val text = response.body.string()
-            if (!response.isSuccessful) throw HttpStatusException(response.code, "OAuth request failed")
+            if (!response.isSuccessful) {
+                val error = try {
+                    json.decodeFromString<OAuthErrorResponse>(text).error
+                } catch (_: SerializationException) {
+                    null
+                }
+                if (error.isNullOrBlank()) throw HttpStatusException(response.code, "OAuth request failed")
+            }
             text
         }
     }
@@ -87,14 +103,32 @@ class OAuthTokenResponse(
     val interval: Long? = null,
 ) {
     fun credentials(now: Long = System.currentTimeMillis()): AccountCredentials {
-        check(error == null && accessToken.isNotBlank() && tokenType.equals("bearer", true)) {
-            "OAuth token response is incomplete"
+        if (error != null) throw UserVisibleException(oauthErrorMessageRes(error))
+        if (accessToken.isBlank() || !tokenType.equals("bearer", true)) {
+            throw UserVisibleException(R.string.auth_response_invalid)
         }
         fun expiry(seconds: Long?): Long? = seconds?.let {
-            check(it > 0 && it <= (Long.MAX_VALUE - now) / 1000) { "Invalid OAuth expiry" }
+            if (it <= 0 || it > (Long.MAX_VALUE - now) / 1000) {
+                throw UserVisibleException(R.string.auth_response_invalid)
+            }
             now + it * 1000
         }
         return AccountCredentials(accessToken, refreshToken?.takeIf(String::isNotBlank),
             expiry(expiresIn), expiry(refreshExpiresIn), AccountAuthMethod.DEVICE_FLOW)
     }
+}
+
+@Serializable
+private class OAuthErrorResponse(val error: String? = null)
+
+/** 只展示本地文案，绝不透传 OAuth 响应中的描述或凭据。 */
+@StringRes
+internal fun oauthErrorMessageRes(error: String): Int = when (error) {
+    "expired_token" -> R.string.auth_device_expired
+    "access_denied" -> R.string.auth_device_denied
+    "device_flow_disabled" -> R.string.auth_device_disabled
+    "incorrect_device_code" -> R.string.auth_device_invalid
+    "incorrect_client_credentials", "unsupported_grant_type" -> R.string.auth_oauth_config_invalid
+    "bad_refresh_token" -> R.string.accounts_reauthenticate
+    else -> R.string.auth_oauth_failed
 }

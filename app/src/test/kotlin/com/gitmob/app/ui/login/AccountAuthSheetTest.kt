@@ -347,4 +347,31 @@ class AccountAuthSheetTest {
             vm.viewModelScope.cancel()
         }
     }
+
+    @Test
+    fun `PAT仅401标记输入错误而操作失败单独展示`() {
+        val repository = mockk<AuthRepository>()
+        val cases = listOf(
+            ApiError.Unauthorized to R.string.auth_token_invalid,
+            ApiError.NetworkError to R.string.error_network,
+            ApiError.RateLimited to R.string.error_rate_limited,
+            ApiError.UserVisible(R.string.auth_storage_write_failed) to R.string.auth_storage_write_failed,
+        )
+        val vm = LoginViewModel(repository, ErrorEventBus(), accounts.session)
+        try {
+            vm.openPat()
+            composeRule.setContent { MaterialTheme { AccountAuthSheet(vm) } }
+            for ((error, resource) in cases) {
+                coEvery { repository.loginWithToken("candidate") } returns ApiResult.Failure(error)
+                composeRule.runOnIdle { vm.onTokenInputChange("candidate") }
+                composeRule.onNodeWithText(text(R.string.auth_add_account)).performSemanticsAction(SemanticsActions.OnClick)
+                composeRule.onNodeWithText(text(resource)).assertIsDisplayed()
+                val hasFieldError = composeRule.onNode(password).fetchSemanticsNode().config.contains(SemanticsProperties.Error)
+                assertEquals(error == ApiError.Unauthorized, hasFieldError)
+                assertEquals(if (error == ApiError.Unauthorized) resource else null, vm.state.value.inlineErrorRes)
+                assertEquals(if (error == ApiError.Unauthorized) null else resource, vm.state.value.operationErrorRes)
+            }
+        } finally { vm.cancelAuthorization(); vm.viewModelScope.cancel() }
+    }
+
 }

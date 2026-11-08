@@ -50,7 +50,7 @@ import org.junit.Test
  * 覆盖场景：
  *   - 空 token 即时校验（inlineError）
  *   - 登录成功：loginSucceeded=true，loading 复位
- *   - 登录失败：错误同时发 ErrorEventBus + inlineError，状态回滚
+ *   - 登录失败：区分输入错误与操作失败，并和 ErrorEventBus 文案一致
  *   - 失败恢复：失败后输入正确 token 再次登录成功
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -128,8 +128,9 @@ class LoginViewModelTest {
         vm.login()
         runCurrent()
 
-        assertNotNull(vm.state.value.inlineErrorRes)
-        assertEquals(listOf(BannerEvent.Error(ApiError.Unauthorized)), events)
+        assertEquals(R.string.auth_token_invalid, vm.state.value.inlineErrorRes)
+        assertNull(vm.state.value.operationErrorRes)
+        assertEquals(listOf(BannerEvent.Error(ApiError.UserVisible(R.string.auth_token_invalid))), events)
         assertFalse(vm.state.value.loginSucceeded)
         assertFalse(vm.state.value.isLoading)
         vm.viewModelScope.cancel()
@@ -147,7 +148,7 @@ class LoginViewModelTest {
         vm.onTokenInputChange("bad")
         vm.login()
         assertFalse(vm.state.value.loginSucceeded)
-        assertNotNull(vm.state.value.inlineErrorRes)
+        assertNotNull(vm.state.value.operationErrorRes)
 
         // 第二次：改token为正确
         vm.onTokenInputChange("good")
@@ -217,7 +218,7 @@ class LoginViewModelTest {
         try {
             vm.openDeviceFlow()
             assertFalse(vm.state.value.isLoading)
-            assertEquals(R.string.auth_device_expired, vm.state.value.inlineErrorRes)
+            assertEquals(R.string.auth_device_expired, vm.state.value.operationErrorRes)
             vm.retryDeviceFlow()
             assertTrue(vm.state.value.isLoading)
             assertEquals(waiting, vm.state.value.deviceFlow)
@@ -258,7 +259,8 @@ class LoginViewModelTest {
             assertEquals(first, accounts.session.state.value.activeAccount)
             assertFalse(vm.state.value.isLoading)
             assertNull(vm.state.value.switchingKey)
-            assertNotNull(vm.state.value.inlineErrorRes)
+            assertNull(vm.state.value.inlineErrorRes)
+            assertEquals(R.string.error_network, vm.state.value.operationErrorRes)
 
             coEvery { auth.switchAccount(second.key) } returns ApiResult.Success(Unit)
             vm.switchAccount(second.key)
@@ -278,7 +280,7 @@ class LoginViewModelTest {
         try {
             vm.switchAccount(second.key)
             assertEquals(AuthSheet.PAT, vm.state.value.authSheet)
-            assertEquals(R.string.accounts_reauthenticate, vm.state.value.inlineErrorRes)
+            assertEquals(R.string.accounts_reauthenticate, vm.state.value.operationErrorRes)
             assertFalse(vm.state.value.isLoading)
             coVerify(exactly = 0) { auth.switchAccount(any()) }
         } finally {
@@ -356,4 +358,43 @@ class LoginViewModelTest {
             vm.viewModelScope.cancel()
         }
     }
+
+    @Test
+    fun `PAT各类操作失败不标红输入且横幅与页面文案一致`() = runTest {
+        val cases = listOf(
+            ApiError.Forbidden to R.string.error_forbidden,
+            ApiError.RateLimited to R.string.error_rate_limited,
+            ApiError.NetworkError to R.string.error_network,
+            ApiError.UserVisible(R.string.auth_service_unavailable) to R.string.auth_service_unavailable,
+            ApiError.UserVisible(R.string.auth_response_invalid) to R.string.auth_response_invalid,
+            ApiError.UserVisible(R.string.auth_storage_read_failed) to R.string.auth_storage_read_failed,
+            ApiError.UserVisible(R.string.auth_storage_write_failed) to R.string.auth_storage_write_failed,
+        )
+        for ((error, messageRes) in cases) {
+            val auth = mockk<AuthRepository>()
+            coEvery { auth.loginWithToken("candidate") } returns ApiResult.Failure(error)
+            val bus = ErrorEventBus()
+            val events = mutableListOf<BannerEvent>()
+            val collector = backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                bus.eventsFor(accounts.session.epoch).collect { events += it }
+            }
+            val vm = LoginViewModel(auth, bus, accounts.session)
+            try {
+                vm.openPat()
+                vm.onTokenInputChange("candidate")
+                vm.login()
+                runCurrent()
+                assertNull(vm.state.value.inlineErrorRes)
+                assertEquals(messageRes, vm.state.value.operationErrorRes)
+                assertEquals(listOf(BannerEvent.Error(error)), events)
+                assertEquals("candidate", vm.state.value.tokenInput)
+                assertFalse(vm.state.value.isLoading)
+                vm.onTokenInputChange("edited")
+                assertNull(vm.state.value.operationErrorRes)
+                vm.cancelAuthorization()
+                assertEquals(LoginUiState(), vm.state.value)
+            } finally { collector.cancel(); vm.viewModelScope.cancel() }
+        }
+    }
+
 }

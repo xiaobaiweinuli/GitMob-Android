@@ -155,8 +155,8 @@ fun SettingsScreen(
                                 }
                                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                                 AccountAuthActions(!authState.isLoading, accountViewModel::openPat, accountViewModel::openDeviceFlow)
-                                if (authState.inlineErrorRes != null && authState.authSheet == null) {
-                                    Text(stringResource(authState.inlineErrorRes!!), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp))
+                                if (authState.operationErrorRes != null && authState.authSheet == null) {
+                                    Text(stringResource(authState.operationErrorRes!!), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp))
                                 }
                             }
                         }

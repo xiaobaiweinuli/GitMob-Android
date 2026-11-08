@@ -1,6 +1,7 @@
 package com.gitmob.app.core.auth
 
 import androidx.datastore.preferences.core.emptyPreferences
+import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
@@ -104,7 +105,7 @@ class SessionTokenProviderTest {
             val api = GHApiClient(OkHttpClient(), Json, provider, server.url("/").toString().removeSuffix("/"))
             val result = safeCall { api.patch<Unit, kotlinx.serialization.json.JsonObject>("/user", buildJsonObject { put("name", "Changed") }) }
 
-            assertEquals(ApiResult.Failure(ApiError.NetworkError), result)
+            assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.auth_storage_write_failed)), result)
             assertEquals(0, server.requestCount)
             assertEquals("old-access", credentials.accessToken)
             assertEquals("old-refresh", credentials.refreshToken)
@@ -184,7 +185,7 @@ class SessionTokenProviderTest {
         val provider = provider()
         coEvery { oauth.refresh("old-refresh") } returns OAuthTokenResponse(accessToken = "new-access", tokenType = "bearer", expiresIn = 3600)
 
-        assertTrue(safeCall { provider.getToken() } is ApiResult.Failure)
+        assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.auth_response_invalid)), safeCall { provider.getToken() })
 
         assertEquals("old-access", credentials.accessToken)
         coVerify(exactly = 0) { storage.saveCredentials(any(), any()) }
@@ -223,4 +224,30 @@ class SessionTokenProviderTest {
         accessToken = "new-access", refreshToken = "new-refresh", tokenType = "bearer",
         expiresIn = 3600, refreshExpiresIn = 86_400,
     )
+
+    @Test
+    fun `本地读取IO或密钥失败不触发刷新也不使账号失效`() = runTest(accounts.context) {
+        val provider = provider()
+        val epoch = accounts.session.epoch
+        for (error in listOf(IOException("disk"), java.security.GeneralSecurityException("key"), IllegalArgumentException("corrupt"))) {
+            coEvery { storage.credentials("1") } throws error
+            assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.auth_storage_read_failed)), safeCall { provider.getToken() })
+        }
+        assertSame(epoch, accounts.session.epoch)
+        coVerify(exactly = 0) { oauth.refresh(any()) }
+        coVerify(exactly = 0) { storage.requireReauthentication(any()) }
+        coVerify(exactly = 0) { identity.verify(any()) }
+    }
+
+    @Test
+    fun `本地操作取消继续传播且授权失效保留原分类`() = runTest {
+        try {
+            localAccountOperation<Unit>(R.string.auth_storage_read_failed) { throw kotlinx.coroutines.CancellationException("closed") }
+            org.junit.Assert.fail("Cancellation must propagate")
+        } catch (_: kotlinx.coroutines.CancellationException) { }
+        assertEquals(ApiResult.Failure(ApiError.Unauthorized), safeCall {
+            localAccountOperation<Unit>(R.string.auth_storage_read_failed) { throw com.gitmob.app.core.error.UnauthorizedException() }
+        })
+    }
+
 }

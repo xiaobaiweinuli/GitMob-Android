@@ -2,6 +2,7 @@ package com.gitmob.app.data.repository
 
 import com.gitmob.app.core.auth.TokenStorage
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.core.auth.AccountContext
@@ -136,7 +137,7 @@ class AuthRepositoryTest {
             server.enqueue(MockResponse().setBody("""{"id":42,"node_id":"U_42","login":"candidate"}"""))
             kotlinx.coroutines.withContext(accounts.context) {
                 cache.set("viewer", "existing")
-                assertEquals(ApiResult.Failure(ApiError.NetworkError), auth.loginWithToken("candidate"))
+                assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.auth_storage_write_failed)), auth.loginWithToken("candidate"))
                 assertEquals("existing", cache.get("viewer"))
             }
             assertTrue(started.isCurrent)
@@ -158,7 +159,7 @@ class AuthRepositoryTest {
         val auth = repository(storage, mockk())
         kotlinx.coroutines.withContext(accounts.context) {
             cache.set("viewer", "existing")
-            assertEquals(ApiResult.Failure(ApiError.NetworkError), auth.logout())
+            assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.auth_storage_write_failed)), auth.logout())
             assertEquals("existing", cache.get("viewer"))
         }
         assertTrue(started.isCurrent)
@@ -284,4 +285,30 @@ class AuthRepositoryTest {
         coVerify(exactly = 0) { storage.saveAccount(any(), any(), any(), any()) }
         coVerify(exactly = 0) { storage.clearActiveAccount(any()) }
     }
+
+    @Test
+    fun `凭据加密失败提示本地保存错误且保留当前会话`() = runTest(accounts.context) {
+        val storage = mockk<TokenStorage>(relaxed = true)
+        val identity = mockk<GitHubIdentityClient>()
+        coEvery { identity.verify("candidate") } returns AuthenticatedUser(2, "U_2", "candidate", null, null)
+        coEvery { storage.saveAccount(any(), any(), any(), any()) } throws java.security.GeneralSecurityException("Keystore unavailable")
+        val started = accounts.session.epoch
+        assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.auth_storage_write_failed)), repository(storage, identity).loginWithToken("candidate"))
+        assertSame(started, accounts.session.epoch)
+        coVerify(exactly = 0) { storage.clearActiveAccount(any()) }
+    }
+
+    @Test
+    fun `切换账号快照读取失败不请求身份且网络失败不保存`() = runTest(accounts.context) {
+        val storage = mockk<TokenStorage>()
+        val identity = mockk<GitHubIdentityClient>()
+        coEvery { storage.snapshot() } throws java.io.IOException("disk")
+        val auth = repository(storage, identity)
+        assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.auth_storage_read_failed)), auth.switchAccount("2"))
+        coVerify(exactly = 0) { identity.verify(any()) }
+        coEvery { identity.verify("candidate") } throws java.io.IOException("offline")
+        assertEquals(ApiResult.Failure(ApiError.NetworkError), auth.loginWithToken("candidate"))
+        coVerify(exactly = 0) { storage.saveAccount(any(), any(), any(), any()) }
+    }
+
 }

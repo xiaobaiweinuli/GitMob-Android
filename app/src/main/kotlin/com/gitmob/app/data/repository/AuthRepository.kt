@@ -11,6 +11,8 @@ import com.gitmob.app.core.auth.AccountEpoch
 import com.gitmob.app.core.auth.GitHubOAuthClient
 import com.gitmob.app.core.auth.SessionTokenProvider
 import com.gitmob.app.core.auth.StoredAccounts
+import com.gitmob.app.core.auth.localAccountOperation
+import com.gitmob.app.core.auth.oauthErrorMessageRes
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -48,11 +50,11 @@ class AuthRepository @Inject constructor(
         safeCall {
             started.ensureCurrent()
             if (accountState.value.isLoaded) return@safeCall
-            var stored = tokenStorage.snapshot()
+            var stored = localAccountOperation(R.string.auth_storage_read_failed) { tokenStorage.snapshot() }
             val active = stored.accounts.firstOrNull { it.key == stored.activeKey }
             if (active != null && !active.needsReauthentication) {
                 val result = safeCall {
-                    val credentials = tokenStorage.credentials(active.key)
+                    val credentials = localAccountOperation(R.string.auth_storage_read_failed) { tokenStorage.credentials(active.key) }
                     if (active.id == null) {
                         val user = identity.verify(credentials.accessToken)
                         commit(user, credentials, started, previousKey = active.key)
@@ -60,12 +62,14 @@ class AuthRepository @Inject constructor(
                 }
                 if (result is ApiResult.Failure) {
                     started.ensureCurrent()
-                    if (result.error == ApiError.Unauthorized) tokenStorage.requireReauthentication(active.key)
-                    stored = tokenStorage.snapshot()
+                    if (result.error == ApiError.Unauthorized) {
+                        localAccountOperation(R.string.auth_storage_write_failed) { tokenStorage.requireReauthentication(active.key) }
+                    }
+                    stored = localAccountOperation(R.string.auth_storage_read_failed) { tokenStorage.snapshot() }
                     publish(stored.copy(activeKey = null))
                     return@safeCall
                 }
-                stored = tokenStorage.snapshot()
+                stored = localAccountOperation(R.string.auth_storage_read_failed) { tokenStorage.snapshot() }
                 if (!started.isCurrent) return@safeCall
             }
             started.ensureCurrent()
@@ -91,7 +95,7 @@ class AuthRepository @Inject constructor(
         return session.changes.withLock {
             safeCall {
                 started.ensureCurrent()
-                val selected = tokenStorage.snapshot().accounts.first { it.key == key }
+                val selected = localAccountOperation(R.string.auth_storage_read_failed) { tokenStorage.snapshot() }.accounts.first { it.key == key }
                 if (selected.needsReauthentication) throw com.gitmob.app.core.error.UnauthorizedException()
                 val credentials = tokens.credentialsFor(key, started)
                 val user = identity.verify(credentials.accessToken)
@@ -117,7 +121,7 @@ class AuthRepository @Inject constructor(
             code.verificationUri != "https://github.com/login/device" ||
             code.expiresIn !in 1..86_400 || code.interval !in 1..86_400
         ) {
-            emit(DeviceFlowState.Failed(ApiError.Unknown("Device response is incomplete")))
+            emit(DeviceFlowState.Failed(ApiError.UserVisible(R.string.auth_response_invalid)))
             return@flow
         }
         val deadline = SystemClock.elapsedRealtime() + code.expiresIn * 1000
@@ -178,22 +182,18 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    private fun deviceError(error: String): ApiError = ApiError.UserVisible(when (error) {
-        "expired_token" -> R.string.auth_device_expired
-        "access_denied" -> R.string.auth_device_denied
-        "device_flow_disabled" -> R.string.auth_device_disabled
-        "incorrect_client_credentials", "incorrect_device_code", "unsupported_grant_type" -> R.string.auth_device_invalid
-        else -> R.string.error_request_failed
-    })
+    private fun deviceError(error: String): ApiError = ApiError.UserVisible(oauthErrorMessageRes(error))
 
     private suspend fun commit(user: AuthenticatedUser, credentials: AccountCredentials, started: AccountEpoch, previousKey: String? = null) {
         currentCoroutineContext().ensureActive()
         started.ensureCurrent()
         withContext(NonCancellable) {
             started.ensureCurrent()
-            libraryMigration.migrateLocked(previousKey, user.id.toString())
-            tokenStorage.saveAccount(user, credentials, previousKey)
-            publish(tokenStorage.snapshot())
+            localAccountOperation(R.string.auth_storage_write_failed) {
+                libraryMigration.migrateLocked(previousKey, user.id.toString())
+                tokenStorage.saveAccount(user, credentials, previousKey)
+            }
+            publish(localAccountOperation(R.string.auth_storage_read_failed) { tokenStorage.snapshot() })
         }
     }
 
@@ -209,8 +209,8 @@ class AuthRepository @Inject constructor(
                 val key = checkNotNull(started.accountKey) { "An active account is required for logout" }
                 withContext(NonCancellable) {
                     started.ensureCurrent()
-                    tokenStorage.clearActiveAccount(key)
-                    publish(tokenStorage.snapshot())
+                    localAccountOperation(R.string.auth_storage_write_failed) { tokenStorage.clearActiveAccount(key) }
+                    publish(localAccountOperation(R.string.auth_storage_read_failed) { tokenStorage.snapshot() })
                 }
             }
         }
