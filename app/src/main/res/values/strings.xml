@@ -228,20 +228,14 @@
     <string name="repos_reset_filters">重置筛选和排序，保留搜索词</string>
     <string name="repos_filter_archived">归档</string>
     <string name="repos_not_archived">未归档</string>
-    <string name="repos_issues_enabled">开启</string>
-    <string name="repos_issues_disabled">关闭</string>
     <string name="repos_filter_time">时间</string>
     <string name="repos_filter_name">名称</string>
     <string name="repos_sort_inactive">未启用</string>
-    <string name="repos_sort_pushed_asc">最早推送</string>
-    <string name="repos_sort_pushed_desc">最近推送</string>
     <string name="repos_sort_stars_asc">最少</string>
     <string name="repos_sort_stars_desc">最多</string>
     <string name="repos_sort_name_desc">倒序</string>
     <string name="repos_sort_name_asc">正序</string>
     <string name="repos_empty">没有符合条件的仓库</string>
-    <string name="repos_empty_batch">尚未找到匹配的仓库，可以继续查找</string>
-    <string name="repos_continue_search">继续查找</string>
 
     <!-- 仓库详情 -->
     <string name="repo_forked_from">" 复刻自 %1$s/%2$s"</string>

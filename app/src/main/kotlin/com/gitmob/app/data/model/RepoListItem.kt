@@ -34,5 +34,6 @@ data class RepoList(
     val hasNextPage: Boolean,
     val endCursor: String?,
     val ownerContext: RepositoryListOwnerContext? = null,
-    val requiresManualContinue: Boolean = false,
+    val receivedCount: Int = items.size,
+    val limitReached: Boolean = false,
 )

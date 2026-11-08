@@ -41,6 +41,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.data.model.RepoFilters
 import com.gitmob.app.data.model.RepoList
@@ -83,7 +84,7 @@ class ReposScreenTest {
     val rules: RuleChain = RuleChain.outerRule(mainDispatcherRule).around(accounts).around(composeRule)
 
     private val repository = mockk<RepoRepository>(relaxUnitFun = true).also {
-        coEvery { it.getRepos(any(), any(), any(), any()) } returns ApiResult.Success(page())
+        coEvery { it.getRepos(any(), any(), any(), any(), any()) } returns ApiResult.Success(page())
     }
     private val models = mutableListOf<ReposViewModel>()
     private val popup = SemanticsMatcher.keyIsDefined(SemanticsProperties.IsPopup)
@@ -122,7 +123,7 @@ class ReposScreenTest {
     @Test
     fun `route login title stays identical before and after owner name loads`() {
         val pending = CompletableDeferred<ApiResult<RepoList>>()
-        coEvery { repository.getRepos(any(), any(), any(), any()) } coAnswers { pending.await() }
+        coEvery { repository.getRepos(any(), any(), any(), any(), any()) } coAnswers { pending.await() }
         setContent(viewModel(), login = "other", onBack = {})
         val title = text(R.string.repos_owner_title, "other")
         composeRule.onNodeWithText(title).assertIsDisplayed()
@@ -134,7 +135,7 @@ class ReposScreenTest {
     }
 
     @Test
-    fun `清空按钮只清搜索词并保留四维筛选及排序`() {
+    fun `清空按钮只清搜索词并保留三维筛选及排序`() {
         val vm = viewModel(SavedStateHandle(mapOf(
             "repos.query" to " needle ", "repos.visibility" to RepoVisibility.PRIVATE.name,
             "repos.archived" to true, "repos.fork" to false, "repos.issues" to false,
@@ -150,13 +151,13 @@ class ReposScreenTest {
         composeRule.onNodeWithContentDescription(text(R.string.repos_clear_search)).assertDoesNotExist()
         composeRule.onNodeWithText(text(R.string.repos_reset)).assertIsDisplayed()
         composeRule.onNode(hasSetTextAction()).assertIsDisplayed()
-        coVerify(exactly = 1) { repository.getRepos(null, null, before.copy(query = ""), false) }
+        coVerify(exactly = 1) { repository.getRepos(null, null, before.copy(query = ""), false, any()) }
     }
 
     @Test
     fun `首次等待时可以展开标题栏搜索且输入法动作只释放焦点`() {
         val pending = CompletableDeferred<ApiResult<RepoList>>()
-        coEvery { repository.getRepos(any(), any(), any(), any()) } coAnswers { pending.await() }
+        coEvery { repository.getRepos(any(), any(), any(), any(), any()) } coAnswers { pending.await() }
         val vm = viewModel()
         setContent(vm)
 
@@ -179,7 +180,7 @@ class ReposScreenTest {
 
     @Test
     fun `首次失败保留筛选控件且列表重试能恢复`() {
-        coEvery { repository.getRepos(null, null, RepoFilters(), false) } returns
+        coEvery { repository.getRepos(null, null, RepoFilters(), false, any()) } returns
             ApiResult.Failure(ApiError.NetworkError) andThen ApiResult.Success(page(repo("recovered")))
         val vm = viewModel()
         setContent(vm)
@@ -189,76 +190,62 @@ class ReposScreenTest {
         composeRule.onNodeWithText(text(R.string.common_retry)).assertIsDisplayed().performClick()
         composeRule.onNodeWithText("recovered").assertIsDisplayed()
         assertFalse(vm.state.value.loadFailed)
-        coVerify(exactly = 2) { repository.getRepos(null, null, RepoFilters(), false) }
+        coVerify(exactly = 2) { repository.getRepos(null, null, RepoFilters(), false, any()) }
     }
 
     @Test
-    fun `连续空批次逐次手动继续末页才显示最终空态`() {
+    fun `搜索上限显示明确提示且不会继续请求`() {
         val filters = RepoFilters(query = "needle")
-        coEvery { repository.getRepos(null, null, filters, false) } returns
-            ApiResult.Success(page(next = "c1", manual = true, total = 300))
-        coEvery { repository.getRepos(null, "c1", filters, false) } returns
-            ApiResult.Success(page(next = "c2", manual = true, total = 300))
-        coEvery { repository.getRepos(null, "c2", filters, false) } returns
-            ApiResult.Success(page(total = 300))
+        coEvery { repository.getRepos(null, null, filters, false, any()) } returns
+            ApiResult.Success(page(repo("found"), total = 1500, received = 1000, limit = true))
         val vm = viewModel(SavedStateHandle(mapOf("repos.query" to "needle")))
         setContent(vm)
-
-        composeRule.onNodeWithText(text(R.string.repos_empty_batch)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.repos_empty)).assertDoesNotExist()
-        coVerify(exactly = 0) { repository.getRepos(null, "c1", filters, false) }
-
-        composeRule.onNodeWithText(text(R.string.repos_continue_search)).performClick()
-        assertEquals("c2", vm.state.value.endCursor)
-        assertEquals(2, vm.state.value.completedBatches)
-        composeRule.onNodeWithText(text(R.string.repos_empty_batch)).assertIsDisplayed()
-        coVerify(exactly = 0) { repository.getRepos(null, "c2", filters, false) }
-
-        composeRule.onNodeWithText(text(R.string.repos_continue_search)).performClick()
-        composeRule.onNodeWithText(text(R.string.repos_empty)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.repos_continue_search)).assertDoesNotExist()
-        assertEquals(3, vm.state.value.completedBatches)
-        coVerify(exactly = 3) { repository.getRepos(any(), any(), any(), any()) }
+        composeRule.onNodeWithText("found").assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT))
+            .performScrollTo().assertIsDisplayed()
+        assertFalse(vm.state.value.canAutoLoadMore)
+        composeRule.runOnIdle { vm.loadMore() }
+        coVerify(exactly = 1) { repository.getRepos(any(), any(), any(), any(), any()) }
     }
 
     @Test
-    fun `后续搜索批次保留累计去重命中而非候选总数`() {
-        val filters = RepoFilters(query = "hit")
-        coEvery { repository.getRepos(null, null, filters, false) } returns
-            ApiResult.Success(page(repo("hit-one"), next = "c1", manual = true, total = 300))
-        coEvery { repository.getRepos(null, "c1", filters, false) } returns
-            ApiResult.Success(page(repo("HIT-ONE"), repo("hit-two"), total = 300))
-        val vm = viewModel(SavedStateHandle(mapOf("repos.query" to "hit")))
+    fun `搜索零匹配直接显示最终空态并保留当前筛选`() {
+        val filters = RepoFilters(query = "needle", isArchived = false, isFork = true)
+        coEvery { repository.getRepos(null, null, filters, false, any()) } returns ApiResult.Success(page())
+        val vm = viewModel(SavedStateHandle(mapOf(
+            "repos.query" to "needle", "repos.archived" to false, "repos.fork" to true,
+        )))
         setContent(vm)
-
-        assertEquals(listOf("hit-one"), vm.state.value.repos.map { it.name })
-        composeRule.onNodeWithText(text(R.string.repos_continue_search)).performScrollTo().performClick()
-        assertEquals(listOf("HIT-ONE", "hit-two"), vm.state.value.repos.map { it.name })
+        composeRule.onNodeWithText(text(R.string.repos_empty)).assertIsDisplayed()
+        capsule(R.string.repos_filter_archived, R.string.repos_not_archived).assertIsDisplayed()
+        capsule(R.string.repo_fork, R.string.repo_fork).performScrollTo().assertIsDisplayed()
+        assertEquals(filters, vm.state.value.filters)
+        coVerify(exactly = 1) { repository.getRepos(any(), any(), any(), any(), any()) }
     }
 
     @Test
     fun `尾项进入可见区域才追加且在途请求不会重入`() {
         val repos = (0..24).map { repo("repo-${it.toString().padStart(2, '0')}") }
         val pending = CompletableDeferred<ApiResult<RepoList>>()
-        coEvery { repository.getRepos(null, null, RepoFilters(), false) } returns ApiResult.Success(page(*repos.toTypedArray(), next = "c1", total = 50))
-        coEvery { repository.getRepos(null, "c1", RepoFilters(), false) } coAnswers { pending.await() }
+        coEvery { repository.getRepos(null, null, RepoFilters(), false, any()) } returns ApiResult.Success(page(*repos.toTypedArray(), next = "c1", total = 50))
+        coEvery { repository.getRepos(null, "c1", RepoFilters(), false, any()) } coAnswers { pending.await() }
         val vm = viewModel()
         setContent(vm)
-        coVerify(exactly = 0) { repository.getRepos(null, "c1", RepoFilters(), false) }
+        coVerify(exactly = 0) { repository.getRepos(null, "c1", RepoFilters(), false, any()) }
 
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(repos.size)
         composeRule.waitForIdle()
         assertTrue(vm.state.value.isLoadingMore)
-        coVerify(exactly = 1) { repository.getRepos(null, "c1", RepoFilters(), false) }
+        coVerify(exactly = 1) { repository.getRepos(null, "c1", RepoFilters(), false, any()) }
         composeRule.runOnIdle { vm.loadMore() }
-        coVerify(exactly = 1) { repository.getRepos(null, "c1", RepoFilters(), false) }
+        coVerify(exactly = 1) { repository.getRepos(null, "c1", RepoFilters(), false, any()) }
         composeRule.runOnIdle { pending.complete(ApiResult.Success(page(repo("last")))) }
     }
 
     @Test
     fun `追加失败不会自动重试且底部按钮保留原批起点`() {
-        coEvery { repository.getRepos(null, null, RepoFilters(), false) } returns ApiResult.Success(page(repo("first"), next = "c1"))
-        coEvery { repository.getRepos(null, "c1", RepoFilters(), false) } returns
+        coEvery { repository.getRepos(null, null, RepoFilters(), false, any()) } returns ApiResult.Success(page(repo("first"), next = "c1"))
+        coEvery { repository.getRepos(null, "c1", RepoFilters(), false, any()) } returns
             ApiResult.Failure(ApiError.NetworkError) andThen ApiResult.Success(page(repo("second")))
         val vm = viewModel()
         setContent(vm)
@@ -267,20 +254,20 @@ class ReposScreenTest {
         composeRule.runOnIdle { vm.updateSearch(" ") }
         composeRule.waitForIdle()
         assertEquals("first", vm.state.value.repos.single().name)
-        coVerify(exactly = 1) { repository.getRepos(null, "c1", RepoFilters(), false) }
+        coVerify(exactly = 1) { repository.getRepos(null, "c1", RepoFilters(), false, any()) }
 
         composeRule.onNodeWithText(text(R.string.common_retry)).performClick()
         composeRule.waitForIdle()
         assertEquals(listOf("first", "second"), vm.state.value.repos.map { it.name })
-        coVerify(exactly = 2) { repository.getRepos(null, "c1", RepoFilters(), false) }
+        coVerify(exactly = 2) { repository.getRepos(null, "c1", RepoFilters(), false, any()) }
     }
 
     @Test
-    fun `后续结果插入前部仍保持原阅读锚点且改条件回顶部`() {
+    fun `后续结果保持服务端顺序和原阅读锚点且改条件回顶部`() {
         val repos = (0..24).map { repo("repo-${it.toString().padStart(2, '0')}") }
-        coEvery { repository.getRepos(null, null, RepoFilters(), false) } returns ApiResult.Success(page(*repos.toTypedArray(), next = "c1"))
-        coEvery { repository.getRepos(null, "c1", RepoFilters(), false) } returns ApiResult.Success(page(repo("alpha")))
-        coEvery { repository.getRepos(null, null, RepoFilters(isArchived = false), false) } returns ApiResult.Success(page(*repos.toTypedArray()))
+        coEvery { repository.getRepos(null, null, RepoFilters(), false, any()) } returns ApiResult.Success(page(*repos.toTypedArray(), next = "c1"))
+        coEvery { repository.getRepos(null, "c1", RepoFilters(), false, any()) } returns ApiResult.Success(page(repo("alpha")))
+        coEvery { repository.getRepos(null, null, RepoFilters(isArchived = false), false, any()) } returns ApiResult.Success(page(*repos.toTypedArray()))
         val vm = viewModel()
         setContent(vm)
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(12)
@@ -289,7 +276,7 @@ class ReposScreenTest {
         composeRule.runOnIdle { vm.loadMore() }
         val after = composeRule.onNodeWithText("repo-12").assertIsDisplayed().fetchSemanticsNode().boundsInRoot.top
         assertEquals(before, after, 1f)
-        assertEquals("alpha", vm.state.value.repos.first().name)
+        assertEquals("alpha", vm.state.value.repos.last().name)
 
         composeRule.runOnIdle { vm.selectArchived(false) }
         composeRule.onNodeWithText("repo-00").assertIsDisplayed()
@@ -304,8 +291,8 @@ class ReposScreenTest {
         openSearch(query)
         val changes = listOf<() -> Unit>(
             { vm.selectVisibility(RepoVisibility.PUBLIC) }, { vm.selectArchived(true) },
-            { vm.selectFork(true) }, { vm.selectIssues(false) },
-            { vm.selectSort(RepoSort.CREATED_ASC) }, { vm.selectSort(RepoSort.STARS_DESC) },
+            { vm.selectFork(true) },
+            { vm.selectSort(RepoSort.UPDATED_ASC) }, { vm.selectSort(RepoSort.STARS_DESC) },
             { vm.selectSort(RepoSort.NAME_DESC) },
         )
         changes.forEach { change ->
@@ -328,7 +315,7 @@ class ReposScreenTest {
     @Config(qualifiers = "w800dp-h360dp-land")
     fun `短横屏大字搜索不另占一行且结果可读筛选不随列表纵向滚动`() {
         val repos = (0..24).map { repo("repo-$it") }
-        coEvery { repository.getRepos(any(), any(), any(), any()) } returns ApiResult.Success(page(*repos.toTypedArray()))
+        coEvery { repository.getRepos(any(), any(), any(), any(), any()) } returns ApiResult.Success(page(*repos.toTypedArray()))
         setContent(viewModel(), fontScale = 1.5f)
         val before = capsule(R.string.work_filter_visibility, R.string.common_all).fetchSemanticsNode().boundsInRoot
         openSearch()
@@ -344,7 +331,7 @@ class ReposScreenTest {
         val repos = (0..24).map { index -> repo("needle-${index.toString().padStart(2, '0')}").let {
             if (index == 12) it.copy(isFork = true, forkedFromOwner = "source-owner", forkedFromName = "source-repo") else it
         } }
-        coEvery { repository.getRepos(any(), any(), any(), any()) } returns ApiResult.Success(page(*repos.toTypedArray()))
+        coEvery { repository.getRepos(any(), any(), any(), any(), any()) } returns ApiResult.Success(page(*repos.toTypedArray()))
         val query = " Needle "
         val vm = viewModel(SavedStateHandle(mapOf("repos.query" to query, "repos.archived" to false)))
         val opened = mutableListOf<Pair<String, String>>()
@@ -381,7 +368,7 @@ class ReposScreenTest {
         assertEquals(listOf("me" to "needle-12", "source-owner" to "source-repo"), opened)
         openSearch(query)
         composeRule.onNode(hasSetTextAction()).assertIsFocused()
-        coVerify(exactly = 1) { repository.getRepos(any(), any(), any(), any()) }
+        coVerify(exactly = 1) { repository.getRepos(any(), any(), any(), any(), any()) }
     }
 
     private fun assertMenusAndMutualSort() {
@@ -391,7 +378,6 @@ class ReposScreenTest {
             R.string.work_filter_visibility to R.string.common_all,
             R.string.repos_filter_archived to R.string.common_all,
             R.string.repo_fork to R.string.common_all,
-            R.string.common_issues to R.string.common_all,
             R.string.repos_filter_time to R.string.work_sort_updated_desc,
             R.string.nav_tab_stars to R.string.repos_sort_inactive,
             R.string.repos_filter_name to R.string.repos_sort_inactive,
@@ -404,23 +390,21 @@ class ReposScreenTest {
         composeRule.onAllNodesWithText(text(R.string.repos_reset)).assertCountEquals(0)
 
         choose(R.string.work_filter_visibility, R.string.common_all,
-            listOf(R.string.common_all, R.string.work_visibility_public, R.string.common_private, R.string.work_visibility_internal), R.string.work_visibility_internal)
+            listOf(R.string.common_all, R.string.work_visibility_public, R.string.common_private), R.string.common_private)
         choose(R.string.repos_filter_archived, R.string.common_all,
             listOf(R.string.common_all, R.string.repos_not_archived, R.string.common_archived), R.string.repos_not_archived)
         choose(R.string.repo_fork, R.string.common_all,
             listOf(R.string.common_all, R.string.gist_category_original, R.string.repo_fork), R.string.gist_category_original)
-        choose(R.string.common_issues, R.string.common_all,
-            listOf(R.string.common_all, R.string.repos_issues_enabled, R.string.repos_issues_disabled), R.string.repos_issues_disabled)
-        assertEquals(RepoFilters(visibility = RepoVisibility.INTERNAL, isArchived = false, isFork = false, hasIssuesEnabled = false), vm.state.value.filters)
+        composeRule.onNodeWithContentDescription(description(R.string.common_issues, R.string.common_all)).assertDoesNotExist()
+        assertEquals(RepoFilters(visibility = RepoVisibility.PRIVATE, isArchived = false, isFork = false), vm.state.value.filters)
         val beforeAll = vm.state.value.filters
         choose(R.string.repo_fork, R.string.gist_category_original,
             listOf(R.string.common_all, R.string.gist_category_original, R.string.repo_fork), R.string.common_all)
         assertEquals(beforeAll.copy(isFork = null), vm.state.value.filters)
 
         choose(R.string.repos_filter_time, R.string.work_sort_updated_desc,
-            listOf(R.string.work_sort_updated_desc, R.string.work_sort_created_asc, R.string.work_sort_created_desc,
-                R.string.work_sort_updated_asc, R.string.repos_sort_pushed_asc, R.string.repos_sort_pushed_desc), R.string.repos_sort_pushed_desc)
-        assertEquals(RepoSort.PUSHED_DESC, vm.state.value.filters.sort)
+            listOf(R.string.work_sort_updated_desc, R.string.work_sort_updated_asc), R.string.work_sort_updated_asc)
+        assertEquals(RepoSort.UPDATED_ASC, vm.state.value.filters.sort)
         choose(R.string.nav_tab_stars, R.string.repos_sort_inactive,
             listOf(R.string.repos_sort_stars_asc, R.string.repos_sort_stars_desc), R.string.repos_sort_stars_desc)
         assertEquals(RepoSort.STARS_DESC, vm.state.value.filters.sort)
@@ -436,7 +420,7 @@ class ReposScreenTest {
     }
 
     private fun assertEntry(login: String?, owner: RepositoryCreateOwner, hasBack: Boolean) {
-        coEvery { repository.getRepos(any(), any(), any(), any()) } returns ApiResult.Success(page(owner = owner))
+        coEvery { repository.getRepos(any(), any(), any(), any(), any()) } returns ApiResult.Success(page(owner = owner))
         setContent(viewModel(), login = login, onBack = if (hasBack) ({}) else null)
         val title = login?.let { text(R.string.repos_owner_title, it) } ?: owner.name ?: owner.login
         composeRule.onNodeWithText(title).assertIsDisplayed()
@@ -506,7 +490,8 @@ class ReposScreenTest {
         vararg repos: RepoListItem,
         next: String? = null,
         total: Int = repos.size,
-        manual: Boolean = false,
+        received: Int = repos.size,
+        limit: Boolean = false,
         owner: RepositoryCreateOwner? = null,
-    ) = RepoList(total, repos.toList(), next != null, next, owner?.let(::RepositoryListOwnerContext), requiresManualContinue = manual)
+    ) = RepoList(total, repos.toList(), next != null, next, owner?.let(::RepositoryListOwnerContext), receivedCount = received, limitReached = limit)
 }

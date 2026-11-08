@@ -59,9 +59,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: |
-            17
-            21
+          java-version: '21'
 
       - name: 恢复并保存 Gradle 缓存
         uses: gradle/actions/setup-gradle@v6

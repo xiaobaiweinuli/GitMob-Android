@@ -53,3 +53,4 @@ reference-github-projects
 /.openchamber
 /artifacts
 /app/schemas
+/output

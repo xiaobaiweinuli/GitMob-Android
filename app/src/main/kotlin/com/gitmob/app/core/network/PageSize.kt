@@ -20,7 +20,7 @@ object PageSize {
 
     // ──────────────── 请求容量（分页列表及固定预取）────────────────
 
-    /** 仓库列表（viewer.repositories / repositoryOwner.repositories） */
+    /** 仓库列表（search(type: REPOSITORY)） */
     const val REPOS = 20
 
     /** 星标仓库列表（viewer.starredRepositories / user.starredRepositories） */
@@ -146,9 +146,6 @@ object PageSize {
     const val SOCIAL_ACCOUNTS = 10
 
     // ──────────────── 单次扫描预算（单位为源页/批次，不是节点数）────────────────
-
-    /** 仓库搜索一次最多扫描的完整源页数，达到预算后由用户手动继续。 */
-    const val REPO_SEARCH_SCAN_PAGE_LIMIT = 5
 
     /** Gist 分类/可见性过滤一次最多扫描的源批次数。 */
     const val GIST_SCAN_BATCH_LIMIT = 5

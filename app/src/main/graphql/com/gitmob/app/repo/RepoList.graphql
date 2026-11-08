@@ -1,5 +1,4 @@
-# 仓库列表公共字段片段：viewer.repositories 与 repositoryOwner(login:).repositories
-# 字段集合 100% 一致，用一份 fragment 避免两处漂移。
+# 仓库列表与全局搜索共用字段，保持卡片数据一致。
 # $topicsFirst 由包含本 fragment 的 operation 声明。
 fragment RepoListFields on Repository {
   name
@@ -22,23 +21,12 @@ fragment RepoListFields on Repository {
   defaultBranchRef { name }
 }
 
-# 当前登录用户自己的仓库（「仓库」Tab）
-query ViewerRepos($after: String, $first: Int!, $topicsFirst: Int!, $visibility: RepositoryVisibility, $isArchived: Boolean, $isFork: Boolean, $hasIssuesEnabled: Boolean, $orderBy: RepositoryOrder!) {
-  viewer {
-    id
-    login
-    name
-    avatarUrl
-    repositories(first: $first, after: $after, ownerAffiliations: [OWNER], visibility: $visibility, isArchived: $isArchived, isFork: $isFork, hasIssuesEnabled: $hasIssuesEnabled, orderBy: $orderBy) {
-      totalCount
-      nodes { ...RepoListFields }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
+# 仓库列表的主体信息；列表数据统一通过 SearchRepositories 获取。
+query ViewerRepos {
+  viewer { id login name avatarUrl }
 }
 
-# 任意指定 owner（用户或组织）的仓库（个人/组织主页点「仓库」）
-query OwnerRepos($login: String!, $after: String, $first: Int!, $topicsFirst: Int!, $visibility: RepositoryVisibility, $isArchived: Boolean, $isFork: Boolean, $hasIssuesEnabled: Boolean, $orderBy: RepositoryOrder!) {
+query OwnerRepos($login: String!) {
   repositoryOwner(login: $login) {
     __typename
     id
@@ -46,11 +34,6 @@ query OwnerRepos($login: String!, $after: String, $first: Int!, $topicsFirst: In
     avatarUrl
     ... on User { name isViewer }
     ... on Organization { name viewerCanCreateRepositories }
-    repositories(first: $first, after: $after, ownerAffiliations: [OWNER], visibility: $visibility, isArchived: $isArchived, isFork: $isFork, hasIssuesEnabled: $hasIssuesEnabled, orderBy: $orderBy) {
-      totalCount
-      nodes { ...RepoListFields }
-      pageInfo { hasNextPage endCursor }
-    }
   }
 }
 

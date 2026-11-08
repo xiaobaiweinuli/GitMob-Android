@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.data.model.RepoFilters
@@ -218,7 +219,6 @@ fun ReposScreen(
                 onVisibility = viewModel::selectVisibility,
                 onArchived = viewModel::selectArchived,
                 onFork = viewModel::selectFork,
-                onIssues = viewModel::selectIssues,
                 onSort = viewModel::selectSort,
                 onReset = viewModel::reset,
             )
@@ -262,6 +262,15 @@ fun ReposScreen(
                             onHomepageClick = onHomepageClick,
                         )
                     }
+                    if (state.limitReached) {
+                        item(key = "repos-search-limit") {
+                            Text(
+                                stringResource(R.string.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT),
+                                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     if (state.hasNextPage) {
                         item(key = paginationKey) {
                             Column(
@@ -272,17 +281,11 @@ fun ReposScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
                             ) {
-                                if (state.repos.isEmpty()) {
-                                    Text(stringResource(R.string.repos_empty_batch), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
                                 when {
                                     state.isBusy -> CircularProgressIndicator(Modifier.size(20.dp))
                                     state.loadMoreFailed -> {
                                         Text(stringResource(R.string.common_load_failed))
                                         Button(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) }
-                                    }
-                                    state.requiresManualContinue -> {
-                                        Button(onClick = viewModel::continueSearch) { Text(stringResource(R.string.repos_continue_search)) }
                                     }
                                     else -> CircularProgressIndicator(Modifier.size(20.dp))
                                 }
@@ -301,7 +304,6 @@ private fun ReposFilterControls(
     onVisibility: (RepoVisibility?) -> Unit,
     onArchived: (Boolean?) -> Unit,
     onFork: (Boolean?) -> Unit,
-    onIssues: (Boolean?) -> Unit,
     onSort: (RepoSort) -> Unit,
     onReset: () -> Unit,
 ) {
@@ -340,13 +342,13 @@ private fun ReposFilterControls(
         ) {
             FilterCapsuleMenu(
                 selected = filters.visibility,
-                options = listOf(null, RepoVisibility.PUBLIC, RepoVisibility.PRIVATE, RepoVisibility.INTERNAL),
+                options = listOf(null, RepoVisibility.PUBLIC, RepoVisibility.PRIVATE),
                 optionLabel = { value ->
                     stringResource(when (value) {
                         null -> R.string.common_all
                         RepoVisibility.PUBLIC -> R.string.work_visibility_public
                         RepoVisibility.PRIVATE -> R.string.common_private
-                        RepoVisibility.INTERNAL -> R.string.work_visibility_internal
+                        RepoVisibility.INTERNAL -> R.string.common_all
                     })
                 },
                 onSelected = onVisibility,
@@ -380,22 +382,8 @@ private fun ReposFilterControls(
                 neutralLabel = stringResource(R.string.repo_fork),
                 isNeutral = { it == null },
             )
-            FilterCapsuleMenu(
-                selected = filters.hasIssuesEnabled,
-                options = listOf(null, true, false),
-                optionLabel = { stringResource(when (it) {
-                    null -> R.string.common_all
-                    true -> R.string.repos_issues_enabled
-                    false -> R.string.repos_issues_disabled
-                }) },
-                onSelected = onIssues,
-                filterLabel = stringResource(R.string.common_issues),
-                neutralLabel = stringResource(R.string.common_issues),
-                isNeutral = { it == null },
-            )
             val timeOptions = listOf(
-                RepoSort.UPDATED_DESC, RepoSort.CREATED_ASC, RepoSort.CREATED_DESC,
-                RepoSort.UPDATED_ASC, RepoSort.PUSHED_ASC, RepoSort.PUSHED_DESC,
+                RepoSort.UPDATED_DESC, RepoSort.UPDATED_ASC,
             )
             FilterCapsuleMenu(
                 selected = filters.sort.takeIf { it in timeOptions },
@@ -434,11 +422,7 @@ private val RepoSort?.labelRes: Int
     @StringRes get() = when (this) {
         null -> R.string.repos_sort_inactive
         RepoSort.UPDATED_DESC -> R.string.work_sort_updated_desc
-        RepoSort.CREATED_ASC -> R.string.work_sort_created_asc
-        RepoSort.CREATED_DESC -> R.string.work_sort_created_desc
         RepoSort.UPDATED_ASC -> R.string.work_sort_updated_asc
-        RepoSort.PUSHED_ASC -> R.string.repos_sort_pushed_asc
-        RepoSort.PUSHED_DESC -> R.string.repos_sort_pushed_desc
         RepoSort.STARS_ASC -> R.string.repos_sort_stars_asc
         RepoSort.STARS_DESC -> R.string.repos_sort_stars_desc
         RepoSort.NAME_DESC -> R.string.repos_sort_name_desc

@@ -36,7 +36,8 @@ data class ReposUiState(
     val loadMoreFailed: Boolean = false,
     val hasNextPage: Boolean = false,
     val endCursor: String? = null,
-    val requiresManualContinue: Boolean = false,
+    val receivedCount: Int = 0,
+    val limitReached: Boolean = false,
     val requestGeneration: Long = 0,
     val completedBatches: Int = 0,
     val scrollToTop: Boolean = true,
@@ -45,7 +46,7 @@ data class ReposUiState(
     val isBusy: Boolean get() = isLoading || isRefreshing || isLoadingMore
     val canAutoLoadMore: Boolean
         get() = !isBusy && hasNextPage && !endCursor.isNullOrBlank() &&
-            !loadMoreFailed && !requiresManualContinue
+            !loadMoreFailed && !limitReached
 }
 
 @HiltViewModel
@@ -62,7 +63,6 @@ class ReposViewModel @Inject constructor(
         const val VISIBILITY_KEY = "repos.visibility"
         const val ARCHIVED_KEY = "repos.archived"
         const val FORK_KEY = "repos.fork"
-        const val ISSUES_KEY = "repos.issues"
         const val SORT_KEY = "repos.sort"
     }
 
@@ -70,10 +70,10 @@ class ReposViewModel @Inject constructor(
         ReposUiState(
             filters = RepoFilters(
                 query = savedStateHandle[QUERY_KEY] ?: "",
-                visibility = RepoVisibility.entries.firstOrNull { it.name == savedStateHandle.get<String>(VISIBILITY_KEY) },
+                visibility = RepoVisibility.entries.firstOrNull { it.name == savedStateHandle.get<String>(VISIBILITY_KEY) }
+                    ?.takeUnless { it == RepoVisibility.INTERNAL },
                 isArchived = savedStateHandle[ARCHIVED_KEY],
                 isFork = savedStateHandle[FORK_KEY],
-                hasIssuesEnabled = savedStateHandle[ISSUES_KEY],
                 sort = RepoSort.entries.firstOrNull { it.name == savedStateHandle.get<String>(SORT_KEY) }
                     ?: RepoSort.UPDATED_DESC,
             ),
@@ -86,6 +86,8 @@ class ReposViewModel @Inject constructor(
     private var queryJob: Job? = null
 
     init {
+        savedStateHandle.remove<Boolean>("repos.issues")
+        saveFilters(_state.value.filters)
         observeRepoUpdates()
     }
 
@@ -105,7 +107,6 @@ class ReposViewModel @Inject constructor(
     fun selectVisibility(value: RepoVisibility?) = changeFilters(_state.value.filters.copy(visibility = value))
     fun selectArchived(value: Boolean?) = changeFilters(_state.value.filters.copy(isArchived = value))
     fun selectFork(value: Boolean?) = changeFilters(_state.value.filters.copy(isFork = value))
-    fun selectIssues(value: Boolean?) = changeFilters(_state.value.filters.copy(hasIssuesEnabled = value))
     fun selectSort(value: RepoSort) = changeFilters(_state.value.filters.copy(sort = value))
     fun reset() = changeFilters(RepoFilters(query = _state.value.filters.query))
 
@@ -121,7 +122,6 @@ class ReposViewModel @Inject constructor(
         savedStateHandle[VISIBILITY_KEY] = filters.visibility?.name
         savedStateHandle[ARCHIVED_KEY] = filters.isArchived
         savedStateHandle[FORK_KEY] = filters.isFork
-        savedStateHandle[ISSUES_KEY] = filters.hasIssuesEnabled
         savedStateHandle[SORT_KEY] = filters.sort.name
     }
 
@@ -140,7 +140,6 @@ class ReposViewModel @Inject constructor(
     }
 
     fun loadMore() = loadNextPage(manual = false)
-    fun continueSearch() = loadNextPage(manual = true)
 
     fun onScrolledToTop(generation: Long) {
         if (_state.value.requestGeneration == generation) _state.update { it.copy(scrollToTop = false) }
@@ -184,13 +183,13 @@ class ReposViewModel @Inject constructor(
         val current = _state.value
         val cursor = current.endCursor
         if (!initialized || current.isBusy || !current.hasNextPage || cursor.isNullOrBlank()) return
-        if (!manual && (current.loadMoreFailed || current.requiresManualContinue)) return
+        if (!manual && current.loadMoreFailed) return
         val requestLogin = login
         val filters = current.filters.normalized()
         val generation = current.requestGeneration
         _state.update { it.copy(isLoadingMore = true, loadMoreFailed = false) }
         queryJob = viewModelScope.launch {
-            val result = repoRepository.getRepos(requestLogin, cursor, filters)
+            val result = repoRepository.getRepos(requestLogin, cursor, filters, received = current.receivedCount)
             if (!isCurrentRequest(requestLogin, filters, generation) || _state.value.endCursor != cursor) return@launch
             when (result) {
                 is ApiResult.Success -> applyPage(result.data, append = true)
@@ -210,13 +209,13 @@ class ReposViewModel @Inject constructor(
             val merged = ((if (append) current.repos else emptyList()) + page.items)
                 .associateBy(RepoListItem::key).values.toList()
             current.copy(
-                repos = current.filters.sort.sorted(merged),
+                repos = merged,
                 hasLoaded = true,
                 ownerContext = page.ownerContext?.owner ?: current.ownerContext,
                 hasNextPage = page.hasNextPage,
                 endCursor = page.endCursor,
-                requiresManualContinue = page.hasNextPage &&
-                    (page.requiresManualContinue || merged.isEmpty() || (append && merged.size == current.repos.size)),
+                receivedCount = page.receivedCount,
+                limitReached = page.limitReached,
                 completedBatches = if (append) current.completedBatches + 1 else 1,
                 isLoading = false,
                 isRefreshing = false,
@@ -241,9 +240,9 @@ class ReposViewModel @Inject constructor(
                     is RepoUpdateEvent.StarChanged -> {
                         repoRepository.invalidateAllCaches()
                         _state.update { state ->
-                            state.copy(repos = state.filters.sort.sorted(state.repos.map {
+                            state.copy(repos = state.repos.map {
                                 if (it.matches(event)) it.copy(stargazerCount = event.stargazerCount) else it
-                            }))
+                            })
                         }
                         if (current.filters.sort in listOf(RepoSort.STARS_ASC, RepoSort.STARS_DESC) || current.isBusy) {
                             loadFirstPage(preserveItems = true, forceRefresh = true)

@@ -12,11 +12,8 @@ import com.gitmob.app.data.model.*
 import com.gitmob.app.graphql.OwnerReposQuery
 import com.gitmob.app.graphql.RepositoryCreateOwnersQuery
 import com.gitmob.app.graphql.ViewerReposQuery
+import com.gitmob.app.graphql.SearchRepositoriesQuery
 import com.gitmob.app.graphql.fragment.RepoListFields
-import com.gitmob.app.graphql.type.OrderDirection
-import com.gitmob.app.graphql.type.RepositoryOrder
-import com.gitmob.app.graphql.type.RepositoryOrderField
-import com.gitmob.app.graphql.type.RepositoryVisibility
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
@@ -33,6 +30,7 @@ class RepoRepository @Inject constructor(
 
     /** 只缓存 viewer 默认条件第一页，TTL 5 min。 */
     private val viewerReposCache = MemoryCache<Unit, RepoList>(ttlMs = 5 * 60_000L)
+    private val ownerCache = MemoryCache<String, RepositoryListOwnerContext>(ttlMs = 5 * 60_000L)
     private val cacheGeneration = MemoryCache<Unit, Long>(ttlMs = Long.MAX_VALUE)
 
     /**
@@ -42,33 +40,66 @@ class RepoRepository @Inject constructor(
         synchronized(viewerReposCache) {
             cacheGeneration.set(Unit, (cacheGeneration.get(Unit) ?: 0) + 1)
             viewerReposCache.invalidateAll()
+            ownerCache.invalidateAll()
         }
     }
 
-    /**
-     * 查询当前主体拥有的仓库；login=null 表示 viewer，其他值表示用户或组织。
-     * 搜索逐页匹配名称／简介，扫描预算由 PageSize 决定，返回最后完整处理页的游标。
-     */
+    /** Lists owned repositories, with all matching and ordering performed by GitHub search. */
     suspend fun getRepos(
         login: String? = null,
         after: String? = null,
         filters: RepoFilters = RepoFilters(),
         forceRefresh: Boolean = false,
+        received: Int = 0,
     ): ApiResult<RepoList> {
-        val query = filters.normalized()
-        val cacheable = login == null && after == null && query == RepoFilters()
+        val normalized = filters.normalized()
+        val cacheable = login == null && after == null && normalized == RepoFilters()
         val generation = synchronized(viewerReposCache) {
-            if (cacheable) {
-                if (forceRefresh) {
-                    cacheGeneration.set(Unit, (cacheGeneration.get(Unit) ?: 0) + 1)
-                    viewerReposCache.invalidateAll()
-                } else {
-                    viewerReposCache.get(Unit)?.let { return ApiResult.Success(it) }
-                }
-            }
+            if (forceRefresh) invalidateAllCaches()
+            if (cacheable) viewerReposCache.get(Unit)?.let { return ApiResult.Success(it) }
             cacheGeneration.get(Unit) ?: 0
         }
-        val result = scanRepos(login, after, query)
+        val owner = when (val result = getListOwner(login, generation)) {
+            is ApiResult.Failure -> return result
+            is ApiResult.Success -> result.data
+        }
+        val remaining = PageSize.SEARCH_ACCESSIBLE_LIMIT - received
+        if (remaining <= 0) return ApiResult.Success(RepoList(
+            totalCount = received, items = emptyList(), hasNextPage = false, endCursor = null,
+            ownerContext = owner, receivedCount = received, limitReached = true,
+        ))
+        val result = when (val response = apolloClient.query(SearchRepositoriesQuery(
+            query = repoSearchQuery(owner.owner, normalized),
+            after = Optional.presentIfNotNull(after),
+            first = minOf(PageSize.REPOS, remaining),
+            topicsFirst = PageSize.TOPICS_PER_REPO,
+        )).executeAsApiResult()) {
+            is ApiResult.Failure -> response
+            is ApiResult.Success -> safeCall {
+                val connection = response.data.search
+                val nodes = connection.nodes.orEmpty()
+                val items = nodes.mapNotNull { it?.onRepository?.repoListFields }.map { it.toDomain() }
+                val count = received + nodes.size
+                val limited = count >= PageSize.SEARCH_ACCESSIBLE_LIMIT &&
+                    (connection.pageInfo.hasNextPage || connection.repositoryCount > count)
+                if (connection.pageInfo.hasNextPage && count < PageSize.SEARCH_ACCESSIBLE_LIMIT) {
+                    check(items.isNotEmpty()) { "Repository search returned an empty continuation page" }
+                    check(!connection.pageInfo.endCursor.isNullOrBlank() && connection.pageInfo.endCursor != after) {
+                        "Repository search cursor did not advance"
+                    }
+                }
+                val hasNext = connection.pageInfo.hasNextPage && count < PageSize.SEARCH_ACCESSIBLE_LIMIT
+                RepoList(
+                    totalCount = connection.repositoryCount,
+                    items = items,
+                    hasNextPage = hasNext,
+                    endCursor = connection.pageInfo.endCursor.takeIf { hasNext },
+                    ownerContext = owner,
+                    receivedCount = count,
+                    limitReached = limited,
+                )
+            }
+        }
         if (cacheable && result is ApiResult.Success) {
             synchronized(viewerReposCache) {
                 if (generation == (cacheGeneration.get(Unit) ?: 0)) viewerReposCache.set(Unit, result.data)
@@ -77,123 +108,39 @@ class RepoRepository @Inject constructor(
         return result
     }
 
-    private suspend fun scanRepos(login: String?, after: String?, filters: RepoFilters): ApiResult<RepoList> {
-        val collected = linkedMapOf<String, RepoListItem>()
-        val cursors = mutableSetOf(after)
-        var cursor = after
-        var scannedPages = 0
-        var ownerId: String? = null
-        while (true) {
-            val page = when (val result = getReposPage(login, cursor, filters)) {
-                is ApiResult.Failure -> return result
-                is ApiResult.Success -> result.data
-            }
-            val batch = safeCall {
-                check(ownerId == null || ownerId == page.ownerContext?.owner?.id) { "Repository owner changed while scanning" }
-                ownerId = page.ownerContext?.owner?.id
-                if (page.hasNextPage) {
-                    check(!page.endCursor.isNullOrBlank() && cursors.add(page.endCursor)) { "Repository cursor did not advance" }
-                }
-                scannedPages++
-                page.items.filter(filters::matchesSearch).forEach { collected[it.key] = it }
-                page.copy(
-                    items = collected.values.toList(),
-                    requiresManualContinue = page.hasNextPage &&
-                        (collected.isEmpty() || (filters.query.isNotEmpty() && scannedPages == PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT)),
-                )
-            }
-            if (batch is ApiResult.Failure) return batch
-            if (!page.hasNextPage || filters.query.isEmpty() || collected.size >= PageSize.REPOS || scannedPages == PageSize.REPO_SEARCH_SCAN_PAGE_LIMIT) {
-                return batch
-            }
-            cursor = page.endCursor
-        }
-    }
-
-    private suspend fun getReposPage(login: String?, after: String?, filters: RepoFilters): ApiResult<RepoList> {
-        val visibility = Optional.presentIfNotNull(filters.visibility?.let { RepositoryVisibility.valueOf(it.name) })
-        val archived = Optional.presentIfNotNull(filters.isArchived)
-        val fork = Optional.presentIfNotNull(filters.isFork)
-        val issues = Optional.presentIfNotNull(filters.hasIssuesEnabled)
-        val order = filters.sort.toOrder()
-        return if (login == null) {
-            when (val result = apolloClient.query(ViewerReposQuery(
-                after = Optional.presentIfNotNull(after),
-                first = PageSize.REPOS,
-                topicsFirst = PageSize.TOPICS_PER_REPO,
-                visibility = visibility,
-                isArchived = archived,
-                isFork = fork,
-                hasIssuesEnabled = issues,
-                orderBy = order,
-            )).executeAsApiResult()) {
-                is ApiResult.Failure -> result
+    private suspend fun getListOwner(login: String?, generation: Long): ApiResult<RepositoryListOwnerContext> {
+        val key = login?.lowercase(java.util.Locale.ROOT).orEmpty()
+        synchronized(viewerReposCache) { ownerCache.get(key)?.let { return ApiResult.Success(it) } }
+        val result = if (login == null) {
+            when (val response = apolloClient.query(ViewerReposQuery()).executeAsApiResult()) {
+                is ApiResult.Failure -> response
                 is ApiResult.Success -> safeCall {
-                    val viewer = result.data.viewer
-                    val conn = viewer.repositories
-                    RepoList(
-                        totalCount = conn.totalCount,
-                        items = conn.nodes.orEmpty().filterNotNull().map { it.repoListFields.toDomain() },
-                        hasNextPage = conn.pageInfo.hasNextPage,
-                        endCursor = conn.pageInfo.endCursor,
-                        ownerContext = RepositoryListOwnerContext(
-                            RepositoryCreateOwner(
-                                id = viewer.id,
-                                login = viewer.login,
-                                name = viewer.name,
-                                avatarUrl = viewer.avatarUrl,
-                                type = RepositoryCreateOwnerType.USER,
-                                canCreateRepository = true,
-                            ),
-                        ),
-                    )
+                    val viewer = response.data.viewer
+                    RepositoryListOwnerContext(RepositoryCreateOwner(
+                        id = viewer.id, login = viewer.login, name = viewer.name, avatarUrl = viewer.avatarUrl,
+                        type = RepositoryCreateOwnerType.USER, canCreateRepository = true,
+                    ))
                 }
             }
         } else {
-            when (val result = apolloClient.query(OwnerReposQuery(
-                login = login,
-                after = Optional.presentIfNotNull(after),
-                first = PageSize.REPOS,
-                topicsFirst = PageSize.TOPICS_PER_REPO,
-                visibility = visibility,
-                isArchived = archived,
-                isFork = fork,
-                hasIssuesEnabled = issues,
-                orderBy = order,
-            )).executeAsApiResult()) {
-                is ApiResult.Failure -> result
+            when (val response = apolloClient.query(OwnerReposQuery(login)).executeAsApiResult()) {
+                is ApiResult.Failure -> response
                 is ApiResult.Success -> safeCall {
-                    val repositoryOwner = result.data.repositoryOwner
-                        ?: throw IllegalStateException("仓库查询根字段缺失（repositoryOwner 为 null）")
-                    val conn = repositoryOwner.repositories
-                    val ownerType = if (repositoryOwner.onOrganization != null) {
-                        RepositoryCreateOwnerType.ORGANIZATION
-                    } else {
-                        RepositoryCreateOwnerType.USER
-                    }
-                    RepoList(
-                        totalCount = conn.totalCount,
-                        items = conn.nodes.orEmpty().filterNotNull().map { it.repoListFields.toDomain() },
-                        hasNextPage = conn.pageInfo.hasNextPage,
-                        endCursor = conn.pageInfo.endCursor,
-                        ownerContext = RepositoryListOwnerContext(
-                            RepositoryCreateOwner(
-                                id = repositoryOwner.id,
-                                login = repositoryOwner.login,
-                                name = repositoryOwner.onUser?.name ?: repositoryOwner.onOrganization?.name,
-                                avatarUrl = repositoryOwner.avatarUrl,
-                                type = ownerType,
-                                canCreateRepository = if (ownerType == RepositoryCreateOwnerType.ORGANIZATION) {
-                                    repositoryOwner.onOrganization?.viewerCanCreateRepositories == true
-                                } else {
-                                    repositoryOwner.onUser?.isViewer == true
-                                },
-                            ),
-                        ),
-                    )
+                    val owner = checkNotNull(response.data.repositoryOwner) { "Repository owner is missing" }
+                    val organization = owner.onOrganization
+                    RepositoryListOwnerContext(RepositoryCreateOwner(
+                        id = owner.id, login = owner.login,
+                        name = owner.onUser?.name ?: organization?.name, avatarUrl = owner.avatarUrl,
+                        type = if (organization != null) RepositoryCreateOwnerType.ORGANIZATION else RepositoryCreateOwnerType.USER,
+                        canCreateRepository = organization?.viewerCanCreateRepositories ?: (owner.onUser?.isViewer == true),
+                    ))
                 }
             }
         }
+        if (result is ApiResult.Success) synchronized(viewerReposCache) {
+            if (generation == (cacheGeneration.get(Unit) ?: 0)) ownerCache.set(key, result.data)
+        }
+        return result
     }
 
     /** Loads the viewer and one page of organizations for the create-repository owner picker. */
@@ -296,8 +243,7 @@ class RepoRepository @Inject constructor(
 
 /**
  * RepoListFields → RepoListItem 公共映射。
- * viewer.repositories 与 repositoryOwner(login:).repositories 的节点结构完全一致，
- * 统一在这里映射，避免两处漂移。
+ * 仓库列表与全局搜索统一映射，保留 API 返回的可见性与卡片数据。
  */
 internal fun RepoListFields.toDomain() = RepoListItem(
     name = name,
@@ -320,18 +266,4 @@ internal fun RepoListFields.toDomain() = RepoListItem(
     openIssueCount = issues.totalCount,
     topics = repositoryTopics.nodes.orEmpty().filterNotNull().map { it.topic.name },
     defaultBranchName = defaultBranchRef?.name,
-)
-
-private fun RepoSort.toOrder() = RepositoryOrder(
-    field = when (this) {
-        RepoSort.UPDATED_ASC, RepoSort.UPDATED_DESC -> RepositoryOrderField.UPDATED_AT
-        RepoSort.CREATED_ASC, RepoSort.CREATED_DESC -> RepositoryOrderField.CREATED_AT
-        RepoSort.PUSHED_ASC, RepoSort.PUSHED_DESC -> RepositoryOrderField.PUSHED_AT
-        RepoSort.STARS_ASC, RepoSort.STARS_DESC -> RepositoryOrderField.STARGAZERS
-        RepoSort.NAME_ASC, RepoSort.NAME_DESC -> RepositoryOrderField.NAME
-    },
-    direction = when (this) {
-        RepoSort.UPDATED_ASC, RepoSort.CREATED_ASC, RepoSort.PUSHED_ASC, RepoSort.STARS_ASC, RepoSort.NAME_ASC -> OrderDirection.ASC
-        RepoSort.UPDATED_DESC, RepoSort.CREATED_DESC, RepoSort.PUSHED_DESC, RepoSort.STARS_DESC, RepoSort.NAME_DESC -> OrderDirection.DESC
-    },
 )
