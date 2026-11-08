@@ -12,11 +12,15 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.auth.AccountSession
@@ -24,6 +28,9 @@ import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.navigation.GitMobNavGraph
 import com.gitmob.app.navigation.DeepLinkDestination
 import com.gitmob.app.navigation.EXTRA_DEEP_LINK_DESTINATION
+import com.gitmob.app.ui.update.AppUpdateViewModel
+import com.gitmob.app.ui.update.AppUpdateSettings
+import com.gitmob.app.ui.update.AppUpdateDialogHost
 import com.gitmob.app.ui.theme.GitMobTheme
 import com.gitmob.app.ui.theme.isDarkTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -37,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var accountSession: AccountSession
 
     private val startupViewModel: StartupViewModel by viewModels()
+    private val appUpdateViewModel: AppUpdateViewModel by viewModels()
     private var deepLinkDestination by mutableStateOf<DeepLinkDestination?>(null)
 
     /**
@@ -76,6 +84,12 @@ class MainActivity : AppCompatActivity() {
 
             if (!isReady) return@setContent
 
+            LaunchedEffect(Unit) {
+                withFrameNanos { }
+                appUpdateViewModel.onAppReady()
+            }
+            val lifecycleState by lifecycle.currentStateAsState()
+
             val isDarkTheme = themePreference.isDarkTheme(isSystemInDarkTheme())
             SideEffect {
                 val systemBarStyle = SystemBarStyle.auto(
@@ -100,7 +114,11 @@ class MainActivity : AppCompatActivity() {
                         enablePredictiveBack = themePreference.enablePredictiveBack,
                         deepLinkDestination = deepLinkDestination,
                         onDeepLinkConsumed = { deepLinkDestination = null },
+                        updateSettings = { epoch -> AppUpdateSettings(appUpdateViewModel, epoch) },
                     )
+                    if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        AppUpdateDialogHost(appUpdateViewModel, accountSession.epoch)
+                    }
                 }
             }
         }

@@ -33,41 +33,37 @@ android {
         applicationId = "com.gitmob.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // 所有构建共用版本来源；同一提交的 Debug、Release 和 CI 版本编号一致。
+        versionCode = providers.exec {
+            workingDir(rootProject.projectDir)
+            commandLine("git", "rev-list", "--count", "HEAD")
+        }.standardOutput.asText.get().trim().toInt()
+        versionName = providers.gradleProperty("APP_VERSION_NAME").get().also {
+            require(Regex("[0-9]+[.][0-9]+[.][0-9]+").matches(it)) {
+                "APP_VERSION_NAME 必须为 major.minor.patch"
+            }
+        }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    /**
-     * 签名方案 A（对齐 SKILL.md 第 9 节）：
-     * 直接复用 Android Studio 首次构建 debug APK 时自动生成的 debug.keystore
-     * （位置：~/.android/debug.keystore，跨平台 fallback 链见下方代码）。
-     *   - 优点：不需要申请真实签名密钥、不需要设置环境变量、开箱即用；
-     *           assembleRelease 产出的 APK 可直接 adb install 到任何真机 / 模拟器。
-     *   - 注意：该 keystore 是公共默认值（密码 "android"，alias "androiddebugkey"），
-     *           仅用于 CI / 测试构建，**不能用于 Google Play 分发**。
-     *           如果后续要生成正式分发包，把 storeFile/storePassword/keyAlias/keyPassword
-     *           改成从系统环境变量（RELEASE_KEYSTORE_*）读取即可，本文件不要硬编码真实密钥。
-     */
+    // CI 使用同一份发布密钥，确保后续版本可覆盖安装；本地未配置时沿用 Debug 签名。
+    val releaseStorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
+    val releaseStorePassword = providers.environmentVariable("RELEASE_KEYSTORE_PASSWORD").orNull
+    val releaseKeyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS").orNull
+    val releaseKeyPassword = providers.environmentVariable("RELEASE_KEY_PASSWORD").orNull
+    val releaseSigningValues = listOf(releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+    val hasReleaseSigning = releaseSigningValues.all { !it.isNullOrBlank() }
+    require(releaseSigningValues.all { it == null } || hasReleaseSigning) {
+        "发布签名需要完整设置 RELEASE_KEYSTORE_PATH、RELEASE_KEYSTORE_PASSWORD、RELEASE_KEY_ALIAS、RELEASE_KEY_PASSWORD"
+    }
     signingConfigs {
-        create("release") {
-            // 跨平台查找 ~/.android/debug.keystore（Windows 为 %USERPROFILE%\.android）
-            val userHome = System.getProperty("user.home")
-                ?: System.getenv("USERPROFILE")
-                ?: System.getenv("HOME")
-                ?: throw GradleException("找不到用户 home 目录，无法定位 debug.keystore")
-            val debugKeystore = File(userHome, ".android${File.separator}debug.keystore")
-            if (!debugKeystore.exists()) {
-                throw GradleException(
-                    "方案 A 签名文件不存在：$debugKeystore\n" +
-                        "请先执行一次 ./gradlew assembleDebug 让 Android Gradle 插件自动生成，" +
-                        "或在 Android Studio 里任意运行一次 debug 构建。"
-                )
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(requireNotNull(releaseStorePath))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             }
-            storeFile = debugKeystore
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
         }
     }
 
@@ -76,7 +72,7 @@ android {
             isMinifyEnabled = true   // 用户要求：release 构建必须开启 R8 混淆
             isShrinkResources = true // 配合 minifyEnabled 删除无用资源
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName(if (hasReleaseSigning) "release" else "debug")
         }
         debug {
             applicationIdSuffix = ".debug"

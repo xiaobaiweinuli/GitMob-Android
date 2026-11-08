@@ -72,6 +72,7 @@ internal fun SettingsNavigationRow(
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     trailingIcon: ImageVector? = Icons.AutoMirrored.Filled.KeyboardArrowRight,
     enabled: Boolean = true,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val destructive = contentColor == MaterialTheme.colorScheme.error
     Row(
@@ -112,7 +113,7 @@ internal fun SettingsNavigationRow(
                 Text(it, style = MaterialTheme.typography.bodySmall, color = if (destructive) contentColor else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        trailingIcon?.let {
+        if (trailingContent != null) trailingContent() else trailingIcon?.let {
             Icon(
                 imageVector = it,
                 contentDescription = null,

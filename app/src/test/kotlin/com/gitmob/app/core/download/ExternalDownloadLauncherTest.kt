@@ -8,6 +8,7 @@ import com.gitmob.app.core.error.UserVisibleException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -29,6 +30,8 @@ class ExternalDownloadLauncherTest {
         val started = shadowOf(context as Application).nextStartedActivity
         assertEquals(Intent.ACTION_VIEW, started.action)
         assertEquals(url, started.dataString)
+        assertEquals(Intent.ACTION_MAIN, started.selector?.action)
+        assertTrue(started.selector?.hasCategory(Intent.CATEGORY_APP_BROWSER) == true)
         assertNull(started.`package`)
         assertNull(started.component)
     }

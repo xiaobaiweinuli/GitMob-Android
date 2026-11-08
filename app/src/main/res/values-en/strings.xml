@@ -935,4 +935,17 @@
     <string name="repo_file_empty">Empty file</string>
     <string name="repo_file_text_unavailable">Text is unavailable for this file</string>
     <string name="repo_file_truncated">Showing partial content. Download to view the full file.</string>
+    <string name="app_update_title">App updates</string>
+    <string name="app_update_automatic">Check automatically</string>
+    <string name="app_update_check">Check for updates</string>
+    <string name="app_update_current_version">Current version %1$s</string>
+    <string name="app_update_checking">Checking for updates…</string>
+    <string name="app_update_available">Update available</string>
+    <string name="app_update_version_change">%1$s → %2$s</string>
+    <string name="app_update_no_notes">No release notes available</string>
+    <string name="app_update_ignore">Ignore this version</string>
+    <string name="app_update_download">Download update</string>
+    <string name="app_update_ignored">This version has been ignored</string>
+    <string name="app_update_up_to_date">You are up to date</string>
+    <string name="app_update_no_package">No compatible update available</string>
 </resources>

@@ -26,7 +26,7 @@ class ErrorEventBus @Inject constructor() {
         events.emit(BannerEvent.Error(error), epoch)
     }
 
-    suspend fun emitNotice(@StringRes messageRes: Int) {
-        events.emit(BannerEvent.Notice(messageRes))
+    suspend fun emitNotice(@StringRes messageRes: Int, epoch: AccountEpoch = AccountContext.ensureCurrent()) {
+        events.emit(BannerEvent.Notice(messageRes), epoch)
     }
 }

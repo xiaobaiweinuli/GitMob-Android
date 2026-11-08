@@ -1,0 +1,137 @@
+name: Build GitMob APK
+run-name: GitMob · ${{ github.ref_name }} · ${{ (github.event_name == 'push' || inputs.publish_release) && '发布' || '仅构建' }}
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: '构建成功后发布正式 Release 并设为 Latest'
+        type: boolean
+        default: false
+      release_title:
+        description: '更新标题（发布时填写）'
+        type: string
+      release_notes:
+        description: '更新正文（Markdown，多行可用 \n 分隔）'
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gitmob-apk-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: 检出完整提交历史
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 准备更新标题与正文
+        if: github.event_name == 'push' || inputs.publish_release
+        env:
+          RELEASE_TITLE: ${{ inputs.release_title }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            git cat-file -e "$GITHUB_REF^{tag}"
+            git for-each-ref --format='%(contents:subject)' "$GITHUB_REF" > "$RUNNER_TEMP/release-title.txt"
+            git for-each-ref --format='%(contents:body)' "$GITHUB_REF" > "$RUNNER_TEMP/release-notes.md"
+          else
+            : "${RELEASE_TITLE:?发布时必须填写更新标题}"
+            printf '%s' "$RELEASE_TITLE" > "$RUNNER_TEMP/release-title.txt"
+            printf '%s' "${RELEASE_NOTES//\\n/$'\n'}" > "$RUNNER_TEMP/release-notes.md"
+          fi
+
+      - name: 设置 Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            21
+
+      - name: 恢复并保存 Gradle 缓存
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: false
+          cache-cleanup: on-success
+
+      - name: 准备发布签名
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/gitmob-release.jks"
+
+      - name: 构建通用 Release APK
+        env:
+          RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/gitmob-release.jks
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ vars.KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          version_args=()
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version_args+=("-PAPP_VERSION_NAME=${GITHUB_REF_NAME#v}")
+          fi
+          ./gradlew :app:assembleRelease --build-cache --console=plain --stacktrace "${version_args[@]}"
+
+      - name: 整理 APK
+        id: apk
+        run: |
+          metadata=app/build/outputs/apk/release/output-metadata.json
+          version_name=$(jq -r '.elements[0].versionName' "$metadata")
+          version_code=$(jq -r '.elements[0].versionCode' "$metadata")
+          apk_name="GitMob-v${version_name}-${version_code}.apk"
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/$apk_name"
+          {
+            echo "tag=v$version_name"
+            echo "apk_name=$apk_name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/${{ steps.apk.outputs.apk_name }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 保存混淆映射
+        uses: actions/upload-artifact@v7
+        with:
+          name: GitMob-mapping-${{ steps.apk.outputs.tag }}
+          path: app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 发布正式 Release
+        if: github.event_name == 'push' || inputs.publish_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.apk.outputs.tag }}
+          APK_NAME: ${{ steps.apk.outputs.apk_name }}
+        run: |
+          gh release create "$RELEASE_TAG" "dist/$APK_NAME" \
+            --target "$GITHUB_SHA" --title "$(cat "$RUNNER_TEMP/release-title.txt")" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" --draft
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+
+      - name: 清理临时签名文件
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/gitmob-release.jks"

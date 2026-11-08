@@ -189,6 +189,7 @@ fun GitMobNavGraph(
     enablePredictiveBack: Boolean,
     deepLinkDestination: DeepLinkDestination? = null,
     onDeepLinkConsumed: () -> Unit = {},
+    updateSettings: (@Composable (AccountEpoch) -> Unit)? = null,
 ) {
     val epoch = accountSession.epoch
     if (epoch.id != accountState.sessionId) return
@@ -211,6 +212,7 @@ fun GitMobNavGraph(
                 deepLinkDestination = deepLinkDestination.takeUnless { it == DeepLinkDestination.BrowserUnavailable },
                 onDeepLinkConsumed = onDeepLinkConsumed,
                 repoUpdateEventBus = repoUpdateEventBus,
+                updateSettings = updateSettings,
                 epoch = epoch,
             )
         } else {
@@ -261,6 +263,7 @@ private fun LoggedInApp(
     onDeepLinkConsumed: () -> Unit,
     repoUpdateEventBus: RepoUpdateEventBus,
     epoch: AccountEpoch,
+    updateSettings: (@Composable (AccountEpoch) -> Unit)?,
 ) {
     // Resolve before entryProvider installs each navigation entry's own store.
     val accountLibrary: AccountLibraryViewModel = hiltViewModel()
@@ -422,7 +425,13 @@ private fun LoggedInApp(
         // Push 路由：与 Tab 解耦，push 路由进当前激活 Tab 的独立栈
         // 返回键统一走 navigator.goBack()，在 Tab 根上会切回 Home，二级页正常出栈
         // ──────────────────────────────────────────────────────────────
-        entry<AdvancedSettingsRoute> { AdvancedSettingsScreen(onBack = { navigator.goBack() }, viewModel = accountLibrary, onTranslation = { navigator.navigate(TranslationSettingsRoute) }) }
+        entry<AdvancedSettingsRoute> {
+            AdvancedSettingsScreen(
+                onBack = { navigator.goBack() }, viewModel = accountLibrary,
+                onTranslation = { navigator.navigate(TranslationSettingsRoute) },
+                updateContent = updateSettings?.let { content -> { content(epoch) } },
+            )
+        }
         entry<TranslationSettingsRoute> { TranslationSettingsScreen(onBack = { navigator.goBack() }) }
         entry<FavoritesRoute> { FavoritesScreen(accountLibrary = accountLibrary, onBack = { navigator.goBack() }, onGroup = { navigator.navigate(FavoriteGroupRoute(it.id, it.name)) }) }
         entry<FavoriteGroupRoute> { route -> FavoriteGroupScreen(accountLibrary, route.groupId, initialName = route.name, onGist = { navigator.navigate(GistDetailRoute(it)) }, onBack = { navigator.goBack() }, onRepo = { owner, name -> navigator.navigate(RepoDetailRoute(owner, name)) }, onHomepage = openExternalUrl) }

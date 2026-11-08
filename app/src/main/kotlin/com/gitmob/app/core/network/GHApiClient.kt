@@ -55,6 +55,30 @@ class GHApiClient @Inject constructor(
         accept: String = DEFAULT_ACCEPT,
     ): T = executeRest("GET", path, body = null, accept = accept)
 
+    /** 固定公共资源读取，不携带用户凭证，也不依赖账号会话。 */
+    suspend inline fun <reified T> getPublic(path: String): T =
+        json.decodeFromString(readPublic(path))
+
+    @PublishedApi
+    internal suspend fun readPublic(path: String): String {
+        val request = Request.Builder()
+            .url("$restBaseUrl$path")
+            .header("Accept", DEFAULT_ACCEPT)
+            .header("X-GitHub-Api-Version", REST_API_VERSION)
+            .header("User-Agent", USER_AGENT)
+            .get()
+            .build()
+        return okHttpClient.newCall(request).readCancellable { response ->
+            if (!response.isSuccessful) {
+                val code = if (response.code == 403 &&
+                    (response.header("X-RateLimit-Remaining") == "0" || response.header("Retry-After") != null)
+                ) 429 else response.code
+                throw HttpStatusException(code, response.message)
+            }
+            response.body.string()
+        }
+    }
+
     suspend inline fun <reified T, reified B> post(
         path: String,
         body: B,

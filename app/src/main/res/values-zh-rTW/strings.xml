@@ -934,4 +934,17 @@
     <string name="repo_file_empty">空檔案</string>
     <string name="repo_file_text_unavailable">無法顯示此檔案的文字</string>
     <string name="repo_file_truncated">僅顯示部分內容，請下載查看完整檔案</string>
+    <string name="app_update_title">應用程式更新</string>
+    <string name="app_update_automatic">自動檢查更新</string>
+    <string name="app_update_check">檢查更新</string>
+    <string name="app_update_current_version">目前版本 %1$s</string>
+    <string name="app_update_checking">正在檢查更新…</string>
+    <string name="app_update_available">發現新版本</string>
+    <string name="app_update_version_change">%1$s → %2$s</string>
+    <string name="app_update_no_notes">暫無更新說明</string>
+    <string name="app_update_ignore">忽略此版本</string>
+    <string name="app_update_download">下載更新</string>
+    <string name="app_update_ignored">已忽略此版本</string>
+    <string name="app_update_up_to_date">已是最新版本</string>
+    <string name="app_update_no_package">暫無適用的更新套件</string>
 </resources>

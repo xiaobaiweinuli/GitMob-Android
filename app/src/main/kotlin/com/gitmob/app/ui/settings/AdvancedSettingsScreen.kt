@@ -28,7 +28,12 @@ import com.gitmob.app.data.model.HistoryLimitResult
 import com.gitmob.app.ui.library.*
 
 @Composable
-fun AdvancedSettingsScreen(onBack: () -> Unit, viewModel: AccountLibraryViewModel, onTranslation: () -> Unit = {}) {
+fun AdvancedSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: AccountLibraryViewModel,
+    onTranslation: () -> Unit = {},
+    updateContent: (@Composable () -> Unit)? = null,
+) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val pending by viewModel.pendingSettings.collectAsStateWithLifecycle()
     val count = if (settings.value?.historyEnabled == true) {
@@ -36,7 +41,7 @@ fun AdvancedSettingsScreen(onBack: () -> Unit, viewModel: AccountLibraryViewMode
         value
     } else HistoryCountState()
     AdvancedSettingsContent(settings, count, pending, onBack, viewModel::retrySettings, viewModel::retryHistoryCount,
-        viewModel::favoritesEnabled, viewModel::historyEnabled, viewModel::historyLimit, viewModel::clearHistory, onTranslation)
+        viewModel::favoritesEnabled, viewModel::historyEnabled, viewModel::historyLimit, viewModel::clearHistory, onTranslation, updateContent)
 }
 
 @Composable
@@ -46,6 +51,7 @@ internal fun AdvancedSettingsContent(
     favorites: (Boolean) -> Unit, history: (Boolean) -> Unit,
     limit: (Int, Boolean, (HistoryLimitResult) -> Unit) -> Unit, clear: (() -> Unit) -> Unit,
     onTranslation: (() -> Unit)? = null,
+    updateContent: (@Composable () -> Unit)? = null,
 ) {
     val settings = settingsState.value
     val limitBusy = LibrarySettingOperation.Limit in pending
@@ -84,6 +90,7 @@ internal fun AdvancedSettingsContent(
                 }
             } }
             if (onTranslation != null) item { com.gitmob.app.ui.translation.AdvancedTranslationEntry(onTranslation) }
+            if (updateContent != null) item { updateContent() }
         }
     }
     if (showLimit) {
@@ -115,7 +122,7 @@ internal fun AdvancedSettingsContent(
 }
 
 @Composable
-private fun AdvancedSwitch(title: String, summary: String, icon: ImageVector, checked: Boolean, enabled: Boolean, change: (Boolean) -> Unit) {
+internal fun AdvancedSwitch(title: String, summary: String?, icon: ImageVector, checked: Boolean, enabled: Boolean, change: (Boolean) -> Unit) {
     val haptic = LocalHapticFeedback.current
     Row(Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Switch) {
         haptic.performHapticFeedback(HapticFeedbackType.ToggleOn)
@@ -127,7 +134,7 @@ private fun AdvancedSwitch(title: String, summary: String, icon: ImageVector, ch
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (summary != null) Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked, onCheckedChange = null, enabled = enabled)
     }
