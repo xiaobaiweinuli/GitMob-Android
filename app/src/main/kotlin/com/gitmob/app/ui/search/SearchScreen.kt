@@ -123,10 +123,10 @@ fun SearchScreen(
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
         },
-        contentWindowInsets = WindowInsets.safeDrawing,
+        contentWindowInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout),
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, contentPadding = PaddingValues(bottom = 16.dp)) {
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 16.dp)) {
                 if (showingResults && state.submittedQuery.isNotEmpty()) {
                     SearchCategory.entries.forEach { category ->
                         val section = state.sections[category] ?: SearchSectionState(loading = true)
@@ -193,17 +193,24 @@ fun SearchScreen(
                 }
             }
             if (focused && WindowInsets.isImeVisible) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(syntaxSuggestions(input), key = { it.token }) { syntax ->
-                        val separator = stringResource(R.string.search_list_separator)
-                        val categories = syntax.categories.map { stringResource(it.titleRes) }.joinToString(separator)
-                        val description = stringResource(R.string.search_syntax_description, syntax.token, categories)
-                        Surface(onClick = { input = insertSyntax(input, syntax); showingResults = false },
-                            shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = description }) {
-                            Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-                                Text(syntax.token, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomCenter).imePadding(),
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    Column {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(syntaxSuggestions(input), key = { it.token }) { syntax ->
+                                val separator = stringResource(R.string.search_list_separator)
+                                val categories = syntax.categories.map { stringResource(it.titleRes) }.joinToString(separator)
+                                val description = stringResource(R.string.search_syntax_description, syntax.token, categories)
+                                Surface(onClick = { input = insertSyntax(input, syntax); showingResults = false },
+                                    shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = description }) {
+                                    Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                                        Text(syntax.token, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
                             }
                         }
                     }
