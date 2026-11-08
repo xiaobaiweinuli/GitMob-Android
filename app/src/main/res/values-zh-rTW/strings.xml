@@ -947,4 +947,6 @@
     <string name="app_update_ignored">已忽略此版本</string>
     <string name="app_update_up_to_date">已是最新版本</string>
     <string name="app_update_no_package">暫無適用的更新套件</string>
+    <string name="repo_code_root">根目錄</string>
+    <string name="repo_code_parent">返回上一層</string>
 </resources>

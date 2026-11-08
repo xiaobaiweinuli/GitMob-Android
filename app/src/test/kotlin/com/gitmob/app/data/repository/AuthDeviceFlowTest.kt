@@ -1,5 +1,6 @@
 package com.gitmob.app.data.repository
 
+import android.os.SystemClock
 import androidx.datastore.preferences.core.emptyPreferences
 import com.gitmob.app.R
 import com.gitmob.app.core.auth.AccountCredentials
@@ -18,6 +19,9 @@ import com.gitmob.app.data.model.GitHubAccount
 import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,6 +31,8 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import org.junit.Before
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -44,7 +50,14 @@ class AuthDeviceFlowTest {
     private val user = AuthenticatedUser(42, "U_42", "candidate", null, null)
     private val savedAccount = GitHubAccount("42", 42, "U_42", "candidate", authMethod = AccountAuthMethod.DEVICE_FLOW)
 
-    private fun repository(): AuthRepository {
+    @Before
+    fun setUpClock() { mockkStatic(SystemClock::class) }
+
+    @After
+    fun restoreClock() { unmockkStatic(SystemClock::class) }
+
+    private fun repository(nowMillis: () -> Long): AuthRepository {
+        every { SystemClock.elapsedRealtime() } answers { nowMillis() }
         coEvery { oauth.startDeviceFlow() } returns code()
         coEvery { identity.verify("device-access") } returns user
         coEvery { storage.snapshot() } returns StoredAccounts(listOf(savedAccount), savedAccount.key)
@@ -53,7 +66,7 @@ class AuthDeviceFlowTest {
 
     @Test
     fun `关闭等待面板取消轮询且不提交凭据`() = runTest(accounts.context) {
-        val auth = repository()
+        val auth = repository { testScheduler.currentTime }
         coEvery { oauth.poll(any()) } returns OAuthTokenResponse(error = "authorization_pending")
         val states = mutableListOf<DeviceFlowState>()
         val job = launch { auth.authorizeDevice().collect { states += it } }
@@ -72,7 +85,7 @@ class AuthDeviceFlowTest {
 
     @Test
     fun `取消发生在身份验证完成前不能提交迟到成功`() = runTest(accounts.context) {
-        val auth = repository()
+        val auth = repository { testScheduler.currentTime }
         coEvery { oauth.poll(any()) } returns token()
         val verification = CompletableDeferred<AuthenticatedUser>()
         coEvery { identity.verify(any()) } coAnswers { withContext(NonCancellable) { verification.await() } }
@@ -95,7 +108,7 @@ class AuthDeviceFlowTest {
 
     @Test
     fun `提交已开始时取消仍原子完成持久化和会话发布但不发迟到Complete`() = runTest(accounts.context) {
-        val auth = repository()
+        val auth = repository { testScheduler.currentTime }
         coEvery { oauth.poll(any()) } returns token()
         val persist = CompletableDeferred<Unit>()
         coEvery { storage.saveAccount(any(), any(), any(), any()) } coAnswers {
@@ -128,7 +141,7 @@ class AuthDeviceFlowTest {
 
     @Test
     fun `DeviceFlow提交持久化失败保留旧会话且返回失败可重试`() = runTest(accounts.context) {
-        val auth = repository()
+        val auth = repository { testScheduler.currentTime }
         coEvery { oauth.poll(any()) } returns token()
         coEvery { storage.saveAccount(any(), any(), any(), any()) } throws IOException("Storage unavailable")
         val epoch = accounts.session.epoch
@@ -146,7 +159,7 @@ class AuthDeviceFlowTest {
 
     @Test
     fun `slow_down至少加五秒且网络失败遵循退避不提前轮询`() = runTest(accounts.context) {
-        val auth = repository()
+        val auth = repository { testScheduler.currentTime }
         coEvery { oauth.poll(any()) } returnsMany listOf(
             OAuthTokenResponse(error = "slow_down", interval = 6),
             OAuthTokenResponse(error = "authorization_pending"),
@@ -157,6 +170,7 @@ class AuthDeviceFlowTest {
             advanceTimeBy(5_000)
             runCurrent()
             assertEquals(DeviceFlowStatus.SLOW_DOWN, (states.last() as DeviceFlowState.Waiting).status)
+            assertEquals(900_000L, (states.last() as DeviceFlowState.Waiting).expiresAtElapsedRealtimeMillis)
             advanceTimeBy(9_999)
             runCurrent()
             coVerify(exactly = 1) { oauth.poll(any()) }
@@ -174,6 +188,8 @@ class AuthDeviceFlowTest {
             advanceTimeBy(1)
             runCurrent()
             coVerify(exactly = 4) { oauth.poll(any()) }
+            assertEquals(listOf(900_000L), states.filterIsInstance<DeviceFlowState.Waiting>()
+                .map { it.expiresAtElapsedRealtimeMillis }.distinct())
         } finally {
             job.cancel()
             job.join()
@@ -182,7 +198,7 @@ class AuthDeviceFlowTest {
 
     @Test
     fun `授权终态错误正确分类且不保存凭据`() = runTest(accounts.context) {
-        val auth = repository()
+        val auth = repository { testScheduler.currentTime }
         for ((error, resource) in listOf(
             "expired_token" to R.string.auth_device_expired,
             "access_denied" to R.string.auth_device_denied,
@@ -203,13 +219,31 @@ class AuthDeviceFlowTest {
 
     @Test
     fun `不完整验证码和非GitHub授权URL在轮询前拒绝`() = runTest(accounts.context) {
-        val auth = repository()
+        val auth = repository { testScheduler.currentTime }
         for (invalid in listOf(code(uri = "https://example.test/login/device"), code(expires = 0), code(interval = 0))) {
             coEvery { oauth.startDeviceFlow() } returns invalid
             val states = mutableListOf<DeviceFlowState>()
             auth.authorizeDevice().collect { states += it }
             assertTrue(states.last() is DeviceFlowState.Failed)
         }
+        coVerify(exactly = 0) { oauth.poll(any()) }
+    }
+
+    @Test
+    fun `轮询等待在固定期限到期且不会多请求一次`() = runTest(accounts.context) {
+        val auth = repository { testScheduler.currentTime }
+        coEvery { oauth.startDeviceFlow() } returns code(expires = 3, interval = 5)
+        val states = mutableListOf<DeviceFlowState>()
+        val job = launch { auth.authorizeDevice().collect { states += it } }
+        runCurrent()
+        assertEquals(3_000L, (states.last() as DeviceFlowState.Waiting).expiresAtElapsedRealtimeMillis)
+        advanceTimeBy(2_999)
+        runCurrent()
+        assertTrue(states.last() is DeviceFlowState.Waiting)
+        advanceTimeBy(1)
+        runCurrent()
+        job.join()
+        assertEquals(DeviceFlowState.Failed(ApiError.UserVisible(R.string.auth_device_expired)), states.last())
         coVerify(exactly = 0) { oauth.poll(any()) }
     }
 

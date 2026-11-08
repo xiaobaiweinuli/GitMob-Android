@@ -948,4 +948,6 @@
     <string name="app_update_ignored">This version has been ignored</string>
     <string name="app_update_up_to_date">You are up to date</string>
     <string name="app_update_no_package">No compatible update available</string>
+    <string name="repo_code_root">Root</string>
+    <string name="repo_code_parent">Go to parent directory</string>
 </resources>

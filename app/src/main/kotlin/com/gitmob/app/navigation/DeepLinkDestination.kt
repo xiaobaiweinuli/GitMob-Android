@@ -53,6 +53,8 @@ object DeepLinkRouter {
             !uri.host.equals("github.com", ignoreCase = true) -> return DeepLinkDestination.Unsupported
         }
         if (segments.isEmpty()) return DeepLinkDestination.Unsupported
+        // 设备授权属于浏览器流程，不能按 /{owner}/{repo} 解析。
+        if (segments == listOf("login", "device")) return DeepLinkDestination.Unsupported
 
         // https://github.com/orgs/{org} 特殊前缀，等价于组织主页
         if (segments.size >= 2 && segments[0] == "orgs") {

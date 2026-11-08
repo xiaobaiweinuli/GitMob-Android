@@ -148,8 +148,8 @@ class LoginViewModel @Inject constructor(
         }
     }
 
-    fun browserUnavailable() {
-        viewModelScope.launch { errorEventBus.emit(ApiError.UserVisible(R.string.auth_browser_unavailable)) }
+    fun browserUnavailable(@StringRes messageRes: Int = R.string.auth_browser_unavailable) {
+        viewModelScope.launch { errorEventBus.emit(ApiError.UserVisible(messageRes)) }
     }
 
     override fun onCleared() {

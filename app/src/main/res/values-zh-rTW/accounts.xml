@@ -11,8 +11,13 @@
     <string name="accounts_expanded">帳號清單已展開</string>
     <string name="accounts_collapsed">帳號清單已收合</string>
     <string name="accounts_switch_hint">%1$d 個已儲存帳號 · 點按切換</string>
-    <string name="accounts_add_description">使用 PAT 或 Device Flow 新增 GitHub 帳號。</string>
+    <string name="accounts_add_description">連接你的 GitHub 帳號，從這裡開始瀏覽與協作。</string>
     <string name="accounts_choose_description">選擇已儲存的帳號，或新增其他 GitHub 帳號。</string>
+    <string name="login_saved_accounts">已儲存的帳號</string>
+    <string name="login_device_action">透過 GitHub 授權</string>
+    <string name="login_device_description">Device Flow · 瀏覽器授權，無須填寫權杖。</string>
+    <string name="login_pat_action">使用個人存取權杖</string>
+    <string name="login_pat_description">PAT · 適合已有權杖，或需要自行設定權限的帳號。</string>
     <string name="accounts_logout_section">登出目前帳號</string>
     <string name="accounts_logout_description">僅刪除此帳號在本裝置的憑證，保留其他帳號；不會撤銷 GitHub 授權。</string>
 
@@ -21,9 +26,14 @@
     <string name="auth_pat_label">Personal Access Token</string>
     <string name="auth_pat_help">憑證在本裝置加密儲存；關閉面板會清空輸入。</string>
     <string name="auth_add_account">驗證並新增</string>
-    <string name="auth_profile_permission">登入成功不代表擁有所有操作權限。修改個人資料需要 user scope 或對應的個人資料寫入權限。</string>
+    <string name="auth_create_classic_pat">建立傳統 PAT</string>
+    <string name="auth_no_token">還沒有權杖？</string>
+    <string name="auth_create_classic_pat_help">已預選儲存庫、個人資料、Gist、組織、通知、工作流程、儲存庫刪除與討論權限。建立後複製權杖返回貼上。</string>
+    <string name="auth_profile_permission">登入成功不代表擁有所有操作權限。</string>
     <string name="auth_device_description">在瀏覽器中登入 GitHub 並輸入下方授權碼，無須向 GitMob 提供密碼。</string>
     <string name="auth_device_code">裝置授權碼</string>
+    <string name="auth_device_copy">複製授權碼</string>
+    <string name="auth_device_copied">已複製</string>
     <string name="auth_open_browser">開啟 GitHub 授權頁面</string>
     <string name="auth_browser_unavailable">無法開啟瀏覽器，請手動前往 github.com/login/device 並輸入授權碼。</string>
     <string name="auth_device_waiting">等待你在瀏覽器中完成授權…</string>

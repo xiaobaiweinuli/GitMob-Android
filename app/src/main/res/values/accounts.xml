@@ -11,8 +11,13 @@
     <string name="accounts_expanded">账号列表已展开</string>
     <string name="accounts_collapsed">账号列表已收起</string>
     <string name="accounts_switch_hint">%1$d 个已保存账号 · 点按切换</string>
-    <string name="accounts_add_description">使用 PAT 或 Device Flow 添加 GitHub 账号。</string>
+    <string name="accounts_add_description">连接你的 GitHub 账号，从这里开始浏览与协作。</string>
     <string name="accounts_choose_description">选择一个已保存账号，或添加其他 GitHub 账号。</string>
+    <string name="login_saved_accounts">已保存的账号</string>
+    <string name="login_device_action">通过 GitHub 授权</string>
+    <string name="login_device_description">Device Flow · 浏览器授权，无需填写令牌。</string>
+    <string name="login_pat_action">使用个人访问令牌</string>
+    <string name="login_pat_description">PAT · 适合已有令牌，或需要自行配置权限的账号。</string>
     <string name="accounts_logout_section">退出当前账号</string>
     <string name="accounts_logout_description">仅删除当前账号在此设备的凭据，其他账号保留；不会撤销 GitHub 授权。</string>
 
@@ -21,9 +26,14 @@
     <string name="auth_pat_label">Personal Access Token</string>
     <string name="auth_pat_help">凭据在此设备加密保存；关闭弹窗会清空输入。</string>
     <string name="auth_add_account">验证并添加</string>
-    <string name="auth_profile_permission">登录成功不代表所有操作都有权限。修改资料需要 user scope 或相应的个人资料写入权限。</string>
+    <string name="auth_create_classic_pat">创建经典 PAT</string>
+    <string name="auth_no_token">还没有令牌？</string>
+    <string name="auth_create_classic_pat_help">已预选仓库、资料、Gist、组织、通知、工作流、仓库删除和讨论权限。创建后复制令牌返回粘贴。</string>
+    <string name="auth_profile_permission">登录成功不代表所有操作都有权限。</string>
     <string name="auth_device_description">在浏览器中登录 GitHub 并输入下方授权码，无需向 GitMob 提供密码。</string>
     <string name="auth_device_code">设备授权码</string>
+    <string name="auth_device_copy">复制授权码</string>
+    <string name="auth_device_copied">已复制</string>
     <string name="auth_open_browser">打开 GitHub 授权页面</string>
     <string name="auth_browser_unavailable">无法打开浏览器，请手动访问 github.com/login/device 并输入授权码。</string>
     <string name="auth_device_waiting">等待你在浏览器中完成授权…</string>

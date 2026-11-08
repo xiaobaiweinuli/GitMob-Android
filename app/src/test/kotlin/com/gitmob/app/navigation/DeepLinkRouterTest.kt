@@ -18,6 +18,14 @@ import org.robolectric.annotation.Config
 class DeepLinkRouterTest {
 
     @Test
+    fun `设备授权地址交给浏览器普通仓库仍正常解析`() {
+        for (url in listOf("https://github.com/login/device", "https://github.com/login/device/?source=app#code")) {
+            assertEquals(DeepLinkDestination.Unsupported, DeepLinkRouter.parse(Uri.parse(url)))
+        }
+        assertEquals(DeepLinkDestination.RepoOverview("owner", "device"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/device")))
+    }
+
+    @Test
     fun `Gist链接按域名解析并兼容旧版短ID`() {
         val id = "c38cacab22bf0fffb94b247e09a4d948"
         listOf(

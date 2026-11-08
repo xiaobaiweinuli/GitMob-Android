@@ -11,8 +11,13 @@
     <string name="accounts_expanded">Account list expanded</string>
     <string name="accounts_collapsed">Account list collapsed</string>
     <string name="accounts_switch_hint">%1$d saved accounts · Tap to switch</string>
-    <string name="accounts_add_description">Add a GitHub account with a PAT or Device Flow.</string>
+    <string name="accounts_add_description">Connect your GitHub account to start exploring and collaborating.</string>
     <string name="accounts_choose_description">Choose a saved account or add another GitHub account.</string>
+    <string name="login_saved_accounts">Saved accounts</string>
+    <string name="login_device_action">Authorize with GitHub</string>
+    <string name="login_device_description">Device Flow · Authorize in your browser without entering a token.</string>
+    <string name="login_pat_action">Use a personal access token</string>
+    <string name="login_pat_description">PAT · For existing tokens or accounts with manually configured permissions.</string>
     <string name="accounts_logout_section">Sign out of the current account</string>
     <string name="accounts_logout_description">Remove only this account’s credentials from this device. Keep other accounts and GitHub authorization.</string>
 
@@ -21,9 +26,14 @@
     <string name="auth_pat_label">Personal Access Token</string>
     <string name="auth_pat_help">Credentials are encrypted on this device. Closing this sheet clears the input.</string>
     <string name="auth_add_account">Verify and add</string>
-    <string name="auth_profile_permission">Signing in does not grant every permission. Profile updates need the user scope or the corresponding profile write permission.</string>
+    <string name="auth_create_classic_pat">Create a classic PAT</string>
+    <string name="auth_no_token">Need a token?</string>
+    <string name="auth_create_classic_pat_help">Repository, profile, Gist, organization, notification, workflow, repository deletion, and discussion permissions are preselected. After creating the token, copy it and paste it here.</string>
+    <string name="auth_profile_permission">Signing in does not grant every permission.</string>
     <string name="auth_device_description">Sign in to GitHub in your browser and enter the code below. No password is shared with GitMob.</string>
     <string name="auth_device_code">Device authorization code</string>
+    <string name="auth_device_copy">Copy authorization code</string>
+    <string name="auth_device_copied">Copied</string>
     <string name="auth_open_browser">Open GitHub authorization</string>
     <string name="auth_browser_unavailable">Cannot open a browser. Visit github.com/login/device and enter the code manually.</string>
     <string name="auth_device_waiting">Waiting for authorization in your browser…</string>

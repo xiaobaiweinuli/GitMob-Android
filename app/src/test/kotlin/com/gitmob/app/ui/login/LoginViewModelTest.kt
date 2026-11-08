@@ -196,7 +196,7 @@ class LoginViewModelTest {
         val auth = mockk<AuthRepository>()
         var attempts = 0
         var cancelled = false
-        val waiting = DeviceFlowState.Waiting("ABCD-EFGH", "https://github.com/login/device", 600, DeviceFlowStatus.SLOW_DOWN)
+        val waiting = DeviceFlowState.Waiting("ABCD-EFGH", "https://github.com/login/device", 600_000L, DeviceFlowStatus.SLOW_DOWN)
         every { auth.authorizeDevice() } answers {
             flow {
                 attempts++
@@ -314,9 +314,30 @@ class LoginViewModelTest {
     }
 
     @Test
+    fun `PAT浏览器失败使用通用错误且不改变输入状态`() = runTest {
+        val bus = ErrorEventBus()
+        val events = mutableListOf<BannerEvent>()
+        backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            bus.eventsFor(accounts.session.epoch).collect { events += it }
+        }
+        val vm = LoginViewModel(mockk(), bus, accounts.session)
+        try {
+            vm.openPat()
+            vm.onTokenInputChange("candidate")
+            val before = vm.state.value
+            vm.browserUnavailable(R.string.deep_link_browser_unavailable)
+            runCurrent()
+            assertEquals(listOf(BannerEvent.Error(ApiError.UserVisible(R.string.deep_link_browser_unavailable))), events)
+            assertEquals(before, vm.state.value)
+        } finally {
+            vm.viewModelScope.cancel()
+        }
+    }
+
+    @Test
     fun `浏览器打开失败报告顶部错误但不取消授权码`() = runTest {
         val auth = mockk<AuthRepository>()
-        val waiting = DeviceFlowState.Waiting("ABCD-EFGH", "https://github.com/login/device", 600)
+        val waiting = DeviceFlowState.Waiting("ABCD-EFGH", "https://github.com/login/device", 600_000L)
         every { auth.authorizeDevice() } returns flow { emit(waiting); awaitCancellation() }
         val bus = ErrorEventBus()
         val events = mutableListOf<BannerEvent>()

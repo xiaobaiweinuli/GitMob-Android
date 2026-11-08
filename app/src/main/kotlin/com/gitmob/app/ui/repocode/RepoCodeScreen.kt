@@ -1,11 +1,14 @@
 package com.gitmob.app.ui.repocode
 
+import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +25,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.SubdirectoryArrowLeft
+import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Download
@@ -35,7 +41,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -55,6 +60,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -94,6 +101,7 @@ fun RepoCodeScreen(
     val context = LocalContext.current
     val uploadMessage = stringResource(R.string.repo_upload_commit)
     var addMenuExpanded by remember { mutableStateOf(false) }
+    var downloadMenuExpanded by remember(owner, name, ref, path) { mutableStateOf(false) }
     var uploadError by remember { mutableStateOf<String?>(null) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
@@ -124,7 +132,7 @@ fun RepoCodeScreen(
                     RepositoryContextTitle(
                         owner = owner,
                         repository = name,
-                        pageTitle = path.ifBlank { stringResource(R.string.repo_code) },
+                        pageTitle = stringResource(R.string.repo_code),
                         onOwnerClick = onOwnerClick,
                         onRepositoryClick = onRepositoryClick,
                     )
@@ -136,15 +144,27 @@ fun RepoCodeScreen(
                             Icon(Icons.Default.Sync, stringResource(R.string.repo_sync_title))
                         }
                     }
-                    IconButton(onClick = viewModel::downloadArchive, enabled = !state.openingDownload && !state.isFolderExporting) {
-                        if (state.openingDownload) CircularProgressIndicator() else Icon(Icons.Default.Archive, stringResource(R.string.repo_download_archive))
-                    }
-                    if (path.isNotBlank()) {
+                    Box {
                         IconButton(
-                            onClick = { folderZipPicker.launch(folderZipFileName(name, ref, path)) },
-                            enabled = !state.isFolderExporting,
+                            onClick = {
+                                if (path.isBlank()) viewModel.downloadArchive() else downloadMenuExpanded = true
+                            },
+                            enabled = !state.openingDownload && !state.isFolderExporting,
                         ) {
-                            Icon(Icons.Default.Download, stringResource(R.string.repo_download_folder))
+                            if (state.openingDownload) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.Download, stringResource(if (path.isBlank()) R.string.repo_download_archive else R.string.common_download))
+                        }
+                        DropdownMenu(expanded = downloadMenuExpanded, onDismissRequest = { downloadMenuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.repo_download_archive)) },
+                                leadingIcon = { Icon(Icons.Default.Archive, null) },
+                                onClick = { downloadMenuExpanded = false; viewModel.downloadArchive() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.repo_download_folder)) },
+                                leadingIcon = { Icon(Icons.Default.Folder, null) },
+                                onClick = { downloadMenuExpanded = false; folderZipPicker.launch(folderZipFileName(name, ref, path)) },
+                            )
                         }
                     }
                     if (state.tree?.isCommitSnapshot == false && state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && state.tree?.isArchived == false) {
@@ -165,19 +185,40 @@ fun RepoCodeScreen(
         },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     ) { padding ->
-        when {
-            state.isLoading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            state.loadFailed || state.tree == null -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); TextButton(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) } }
-            else -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-                if (path.isNotBlank()) item(key = "parent") { ListItem(headlineContent = { Text("..") }, leadingContent = { Icon(Icons.Default.Folder, null) }, modifier = Modifier.clickable { onDirectoryClick(path.substringBeforeLast('/', "")) }); HorizontalDivider() }
-                items(state.tree!!.entries, key = { it.path }) { entry ->
-                    ListItem(
-                        headlineContent = { Text(entry.name) },
-                        supportingContent = { Text(listOfNotNull(entry.languageName, entry.size?.takeIf { it > 0 }?.let { "$it B" }).joinToString(" · ")) },
-                        leadingContent = { Icon(if (entry.type == RepoEntryType.DIRECTORY) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile, null) },
-                        modifier = Modifier.fillMaxWidth().clickable { if (entry.type == RepoEntryType.DIRECTORY) onDirectoryClick(entry.path) else onFileClick(entry.path) },
-                    )
-                    HorizontalDivider()
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            RepoCodeLocation(ref, path, onDirectoryClick)
+            HorizontalDivider()
+            when {
+                state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                state.loadFailed || state.tree == null -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Text(stringResource(R.string.common_load_failed))
+                    TextButton(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) }
+                }
+                else -> LazyColumn(Modifier.fillMaxSize()) {
+                    if (path.isNotBlank()) item(key = "parent") {
+                        RepoCodeRow(
+                            name = stringResource(R.string.repo_code_parent),
+                            icon = Icons.Default.SubdirectoryArrowLeft,
+                            directory = true,
+                            onClick = { onDirectoryClick(path.trimEnd('/').substringBeforeLast('/', "")) },
+                        )
+                    }
+                    items(state.tree!!.entries, key = { it.path }) { entry ->
+                        val directory = entry.type == RepoEntryType.DIRECTORY
+                        RepoCodeRow(
+                            name = entry.name,
+                            icon = if (directory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
+                            directory = directory,
+                            size = entry.size?.takeIf { it >= 0 && !directory }?.let { Formatter.formatShortFileSize(context, it) },
+                            showChevron = directory,
+                            onClick = { if (directory) onDirectoryClick(entry.path) else onFileClick(entry.path) },
+                        )
+                    }
+                    if (state.tree!!.entries.isEmpty()) item {
+                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.common_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         }
@@ -237,6 +278,66 @@ fun RepoCodeScreen(
             pullRequest = { viewModel.openSyncPullRequest(onExistingSyncPullRequest, onCreateSyncPullRequest) },
         )
     }
+}
+
+@Composable
+private fun RepoCodeLocation(ref: String, path: String, onDirectoryClick: (String) -> Unit) {
+    val segments = remember(path) { path.split('/').filter(String::isNotBlank) }
+    val pathScroll = rememberScrollState()
+    LaunchedEffect(path, pathScroll.maxValue) { pathScroll.scrollTo(pathScroll.maxValue) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.AutoMirrored.Filled.AltRoute, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(ref, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(pathScroll),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (segments.isEmpty()) {
+                Text(stringResource(R.string.repo_code_root), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
+            } else {
+                TextButton(onClick = { onDirectoryClick("") }) { Text(stringResource(R.string.repo_code_root), maxLines = 1) }
+                segments.forEachIndexed { index, segment ->
+                    Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (index == segments.lastIndex) {
+                        Text(segment, style = MaterialTheme.typography.bodyMedium, maxLines = 1, modifier = Modifier.padding(horizontal = 12.dp, vertical = 16.dp))
+                    } else {
+                        TextButton(onClick = { onDirectoryClick(segments.take(index + 1).joinToString("/")) }) { Text(segment, maxLines = 1) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RepoCodeRow(
+    name: String,
+    icon: ImageVector,
+    directory: Boolean,
+    size: String? = null,
+    showChevron: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = if (directory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        if (showChevron) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else if (size != null) {
+            Text(size, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+    }
+    HorizontalDivider(Modifier.padding(start = 56.dp, end = 16.dp))
 }
 
 @Composable

@@ -1,5 +1,7 @@
 package com.gitmob.app.data.repository
 
+import android.os.SystemClock
+
 import com.gitmob.app.data.local.library.LibraryAccountMigration
 import com.gitmob.app.core.auth.TokenStorage
 import com.gitmob.app.core.auth.AccountCredentials
@@ -118,20 +120,20 @@ class AuthRepository @Inject constructor(
             emit(DeviceFlowState.Failed(ApiError.Unknown("Device response is incomplete")))
             return@flow
         }
-        val deadline = System.nanoTime() + code.expiresIn * 1_000_000_000
+        val deadline = SystemClock.elapsedRealtime() + code.expiresIn * 1000
         var interval = code.interval
         var networkDelay = interval
         var status = DeviceFlowStatus.WAITING
         while (true) {
             started.ensureCurrent()
-            val remaining = (deadline - System.nanoTime()) / 1_000_000_000
+            val remaining = deadline - SystemClock.elapsedRealtime()
             if (remaining <= 0) {
                 emit(DeviceFlowState.Failed(deviceError("expired_token")))
                 return@flow
             }
-            emit(DeviceFlowState.Waiting(code.userCode, code.verificationUri, remaining, status))
-            delay(minOf(networkDelay, remaining) * 1000)
-            if (System.nanoTime() >= deadline) continue
+            emit(DeviceFlowState.Waiting(code.userCode, code.verificationUri, deadline, status))
+            delay(minOf(networkDelay * 1000, remaining))
+            if (SystemClock.elapsedRealtime() >= deadline) continue
             val response = when (val result = safeCall { oauth.poll(code.deviceCode) }) {
                 is ApiResult.Failure -> {
                     if (result.error == ApiError.NetworkError || result.error == ApiError.RateLimited) {

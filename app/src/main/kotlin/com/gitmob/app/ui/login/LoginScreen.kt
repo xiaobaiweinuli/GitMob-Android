@@ -1,29 +1,43 @@
 package com.gitmob.app.ui.login
 
-import com.gitmob.app.R
-import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 
 @Composable
 fun LoginScreen(
@@ -32,35 +46,105 @@ fun LoginScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val accounts by viewModel.accountState.collectAsStateWithLifecycle()
+    val returning = accounts.accounts.isNotEmpty()
     DisposableEffect(viewModel) { onDispose { viewModel.cancelAuthorization() } }
 
-    // LoginScreen 不在 MainTabsScaffold 管辖范围内（没有内层 Scaffold 加 padding），
-    // 启用 enableEdgeToEdge() 后必须自己处理 systemBars insets，
-    // 否则输入框会被底部导航栏/顶部状态栏盖住。
-    LazyColumn(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.systemBars)
             .wrapContentWidth()
             .widthIn(max = 680.dp),
-        contentPadding = PaddingValues(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item {
-            Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.login_title), style = MaterialTheme.typography.headlineMedium)
-                Text(stringResource(if (accounts.accounts.isEmpty()) R.string.accounts_add_description else R.string.accounts_choose_description), style = MaterialTheme.typography.bodyMedium)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = if (maxWidth <= 360.dp) 16.dp else 24.dp, vertical = 24.dp),
+            // 多余高度按上 45% / 下 55% 分配；内容超出视口时从顶部正常滚动。
+            verticalArrangement = Arrangement.spacedBy(0.dp, BiasAlignment.Vertical(-0.1f)),
+        ) {
+            item(key = "hero") {
+                LoginHero(returning, Modifier.padding(bottom = if (returning) 16.dp else 48.dp))
             }
-        }
-        items(accounts.accounts, key = { it.key }) { account ->
-            AccountOption(account, selected = false, switching = state.switchingKey == account.key, enabled = !state.isLoading) {
-                viewModel.switchAccount(account.key)
+            if (returning) item(key = "accounts-heading") {
+                Text(
+                    stringResource(R.string.login_saved_accounts),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
             }
-        }
-        item { AccountAuthActions(!state.isLoading, viewModel::openPat, viewModel::openDeviceFlow) }
-        if (state.inlineErrorRes != null && state.authSheet == null) item {
-            Text(stringResource(state.inlineErrorRes!!), color = MaterialTheme.colorScheme.error)
+            items(accounts.accounts, key = { it.key }) { account ->
+                Column(Modifier.padding(bottom = 12.dp)) {
+                    AccountOption(account, selected = false, switching = state.switchingKey == account.key, enabled = !state.isLoading) {
+                        viewModel.switchAccount(account.key)
+                    }
+                }
+            }
+            item(key = "auth-methods") {
+                LoginAuthMethods(
+                    enabled = !state.isLoading,
+                    onDevice = viewModel::openDeviceFlow,
+                    onPat = viewModel::openPat,
+                    modifier = Modifier.padding(top = if (returning) 20.dp else 0.dp),
+                )
+            }
+            if (state.inlineErrorRes != null && state.authSheet == null) item(key = "error") {
+                Text(stringResource(state.inlineErrorRes!!), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp))
+            }
         }
     }
     AccountAuthSheet(viewModel)
+}
+
+@Composable
+private fun LoginHero(returning: Boolean, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Image(
+            painterResource(R.mipmap.ic_launcher),
+            contentDescription = null,
+            modifier = Modifier.size(if (returning) 64.dp else 88.dp),
+        )
+        Text(
+            stringResource(R.string.login_title),
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+            stringResource(if (returning) R.string.accounts_choose_description else R.string.accounts_add_description),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 12.dp).widthIn(max = 280.dp),
+        )
+    }
+}
+
+@Composable
+private fun LoginAuthMethods(enabled: Boolean, onDevice: () -> Unit, onPat: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onDevice, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                Icon(Icons.Default.Computer, contentDescription = null, modifier = Modifier.size(20.dp))
+                Text(stringResource(R.string.login_device_action), Modifier.padding(start = 8.dp), textAlign = TextAlign.Center)
+            }
+            Text(
+                stringResource(R.string.login_device_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onPat, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(20.dp))
+                Text(stringResource(R.string.login_pat_action), Modifier.padding(start = 8.dp), textAlign = TextAlign.Center)
+            }
+            Text(
+                stringResource(R.string.login_pat_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+        }
+    }
 }

@@ -51,6 +51,19 @@ class DeepLinkActivityTest {
     }
 
     @Test
+    fun `设备授权链接进入应用后转交浏览器而非仓库`() {
+        val url = "https://github.com/login/device?source=app"
+        val activity = launch(url)
+        val browser = shadowOf(activity).nextStartedActivity
+        assertEquals(url, browser.dataString)
+        assertEquals(Intent.ACTION_VIEW, browser.action)
+        assertEquals(Intent.ACTION_MAIN, browser.selector?.action)
+        assertTrue(browser.selector!!.hasCategory(Intent.CATEGORY_APP_BROWSER))
+        assertFalse(browser.hasExtra(EXTRA_DEEP_LINK_DESTINATION))
+        assertTrue(activity.isFinishing)
+    }
+
+    @Test
     fun `没有浏览器时将错误交给主界面`() {
         val application = ApplicationProvider.getApplicationContext<Application>()
         shadowOf(application).checkActivities(true)
