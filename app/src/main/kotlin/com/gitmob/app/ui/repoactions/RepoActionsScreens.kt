@@ -3,6 +3,9 @@ package com.gitmob.app.ui.repoactions
 import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +15,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -146,33 +152,140 @@ private fun DispatchDialog(workflow: RepoWorkflow, definitions: List<WorkflowDis
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RepoWorkflowRunScreen(owner: String, name: String, runId: Long, permission: RepoPermission?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, viewModel: RepoWorkflowRunViewModel = hiltViewModel()) {
+fun RepoWorkflowRunScreen(
+    owner: String, name: String, runId: Long, permission: RepoPermission?,
+    onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit,
+    onStepClick: (RepoActionStepLogKey) -> Unit,
+    viewModel: RepoWorkflowRunViewModel = hiltViewModel(),
+) {
     val context = LocalContext.current
     LaunchedEffect(owner, name, runId) { viewModel.init(owner, name, runId, permission) }
+    DisposableEffect(viewModel) { onDispose { viewModel.cancelLogDownload() } }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    var focusedStep by rememberSaveable(owner, name, runId) { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
-    Scaffold(topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(R.string.actions_run_number, runId), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = {
-        if (state.detail != null) Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
-            DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.conversation_share)) },
-                    leadingIcon = { Icon(Icons.Default.Share, null) },
-                    onClick = { menu = false; viewModel.share() },
-                )
-                if (state.capabilities.canPush) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.actions_cancel)) }, onClick = { menu = false; viewModel.cancel() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.actions_force_cancel)) }, onClick = { menu = false; viewModel.cancel(true) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.actions_rerun)) }, onClick = { menu = false; viewModel.rerun() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.actions_rerun_failed)) }, onClick = { menu = false; viewModel.rerun(true) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }, onClick = { menu = false; viewModel.confirmDelete(true) })
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { RepositoryContextTitle(owner, name, stringResource(R.string.actions_run_number, runId), onOwnerClick, onRepositoryClick) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                actions = {
+                    if (state.detail != null) Box {
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
+                        DropdownMenu(menu, { menu = false }) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.conversation_share)) }, leadingIcon = { Icon(Icons.Default.Share, null) }, onClick = { menu = false; viewModel.share() })
+                            if (state.capabilities.canPush) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.actions_cancel)) }, enabled = !state.isMutating, onClick = { menu = false; viewModel.cancel() })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.actions_force_cancel)) }, enabled = !state.isMutating, onClick = { menu = false; viewModel.cancel(true) })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.actions_rerun)) }, enabled = !state.isMutating, onClick = { menu = false; viewModel.requestRerun(false) })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.actions_rerun_failed)) }, enabled = !state.isMutating, onClick = { menu = false; viewModel.requestRerun(true) })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }, enabled = !state.isMutating, onClick = { menu = false; viewModel.confirmDelete(true) })
+                            }
+                        }
+                    }
+                },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing,
+    ) { padding ->
+        PullToRefreshBox(state.isLoading && state.detail != null, viewModel::load, Modifier.fillMaxSize().padding(padding)) {
+            val detail = state.detail
+            when {
+                state.isLoading && detail == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                state.loadFailed -> ActionsRetry(viewModel::load)
+                detail != null -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                    item(key = "summary") {
+                        val run = detail.run
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(run.displayTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                            Text(listOf(actionStateLabel(run.status), actionStateLabel(run.conclusion)).filter(String::isNotBlank).joinToString(" / "))
+                            Text("${run.event} · ${run.headBranch ?: run.headSha.take(7)} · #${run.runNumber}${run.runAttempt?.let { ".$it" }.orEmpty()}")
+                        }
+                    }
+                    if (detail.artifacts.isNotEmpty()) {
+                        item(key = "artifacts") { Text(stringResource(R.string.actions_artifacts), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }
+                        items(detail.artifacts, key = { "artifact-${it.id}" }) { artifact ->
+                            val opening = artifact.id in state.openingArtifactIds
+                            ListItem(headlineContent = { Text(artifact.name) }, supportingContent = { Text(Formatter.formatShortFileSize(context, artifact.sizeInBytes)) }, trailingContent = {
+                                IconButton(onClick = { viewModel.downloadArtifact(artifact) }, enabled = !artifact.expired && !opening) {
+                                    if (opening) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Default.Download, stringResource(R.string.common_download))
+                                }
+                            })
+                        }
+                    }
+                    item(key = "jobs") {
+                        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.actions_jobs), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            ActionLogTooltip(stringResource(R.string.actions_logs_download_zip)) {
+                                TextButton(onClick = viewModel::downloadLogs, enabled = !state.openingLogs && !state.isLoading, modifier = Modifier.heightIn(min = 48.dp)) {
+                                    if (state.openingLogs) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    else Icon(Icons.Default.Download, stringResource(R.string.actions_logs_download_zip))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(stringResource(R.string.actions_logs_zip_label))
+                                }
+                            }
+                        }
+                    }
+                    detail.jobs.forEach { job ->
+                        item(key = "job-${job.id}") {
+                            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(if (job.conclusion == "success") Icons.Default.CheckCircle else Icons.Default.RadioButtonChecked, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(job.name, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        items(job.steps, key = { "step-${job.id}-${it.number}" }) { step ->
+                            val identity = "${job.id}:${step.number}"
+                            val focusRequester = remember { FocusRequester() }
+                            LaunchedEffect(focusedStep) { if (focusedStep == identity) focusRequester.requestFocus() }
+                            Row(
+                                Modifier.fillMaxWidth().focusRequester(focusRequester).clickable(onClick = {
+                                    focusedStep = identity
+                                    onStepClick(RepoActionStepLogKey(owner, name, runId, detail.run.runAttempt, job.id, step.number))
+                                }).heightIn(min = 48.dp).padding(start = 48.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Text("${step.number}. ${step.name}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text(actionStateLabel(step.conclusion ?: step.status), style = MaterialTheme.typography.labelMedium, modifier = Modifier.widthIn(max = 100.dp))
+                                Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp))
+                            }
+                        }
+                        item(key = "divider-${job.id}") { HorizontalDivider(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
+                    }
                 }
             }
         }
-    }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) }, contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) { padding ->
-        when { state.isLoading && state.detail == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; state.loadFailed -> ActionsRetry(viewModel::load); state.detail != null -> LazyColumn(Modifier.fillMaxSize().padding(padding)) { item { val run = state.detail!!.run; val status = actionStateLabel(run.status); val conclusion = actionStateLabel(run.conclusion); Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(run.displayTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text(listOf(status, conclusion).filter(String::isNotBlank).joinToString(" / ")); Text("${run.event} · ${run.headBranch ?: run.headSha.take(7)} · #${run.runNumber}.${run.runAttempt}") } }; if (state.detail!!.artifacts.isNotEmpty()) { item { Text(stringResource(R.string.actions_artifacts), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }; items(state.detail!!.artifacts, key = { it.id }) { artifact -> val opening = artifact.id in state.openingArtifactIds; ListItem(headlineContent = { Text(artifact.name) }, supportingContent = { Text(Formatter.formatShortFileSize(context, artifact.sizeInBytes)) }, trailingContent = { IconButton(onClick = { viewModel.downloadArtifact(artifact) }, enabled = !artifact.expired && !opening) { if (opening) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Download, stringResource(R.string.common_download)) } }) } }; item { Text(stringResource(R.string.actions_jobs), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }; items(state.detail!!.jobs, key = { it.id }) { job -> Column(Modifier.fillMaxWidth().padding(16.dp)) { Row { Icon(if (job.conclusion == "success") Icons.Default.CheckCircle else Icons.Default.RadioButtonChecked, null); Spacer(Modifier.width(8.dp)); Text(job.name, fontWeight = FontWeight.SemiBold) }; job.steps.forEach { step -> Text("${step.number}. ${step.name} · ${actionStateLabel(step.conclusion ?: step.status)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 32.dp, top = 4.dp)) }; HorizontalDivider(Modifier.padding(top = 12.dp)) } } } }
     }
-    if (state.pendingDelete) AlertDialog(onDismissRequest = { viewModel.confirmDelete(false) }, title = { Text(stringResource(R.string.actions_delete_run_title)) }, text = { Text(stringResource(R.string.common_cannot_be_undone)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDelete(false) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = { viewModel.delete(onBack) }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } })
+    state.pendingRerunFailedOnly?.let { failedOnly ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissRerun,
+            title = { Text(stringResource(if (failedOnly) R.string.actions_rerun_failed else R.string.actions_rerun)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(if (failedOnly) R.string.actions_rerun_failed_scope else R.string.actions_rerun_all_scope))
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(state.enableDebugLogging, enabled = !state.isMutating, role = Role.Checkbox, onValueChange = viewModel::setDebugLogging), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = state.enableDebugLogging, onCheckedChange = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.actions_debug_logging))
+                    }
+                    Text(stringResource(R.string.actions_debug_logging_description), style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = viewModel::confirmRerun, enabled = !state.isMutating) { Text(stringResource(R.string.common_confirm)) } },
+            dismissButton = { TextButton(onClick = viewModel::dismissRerun, enabled = !state.isMutating) { Text(stringResource(R.string.common_cancel)) } },
+        )
+    }
+    if (state.pendingDelete) AlertDialog(
+        onDismissRequest = { viewModel.confirmDelete(false) },
+        title = { Text(stringResource(R.string.actions_delete_run_title)) },
+        text = { Text(stringResource(R.string.common_cannot_be_undone)) },
+        dismissButton = { TextButton(onClick = { viewModel.confirmDelete(false) }) { Text(stringResource(R.string.common_cancel)) } },
+        confirmButton = { TextButton(onClick = { viewModel.delete(onBack) }, enabled = !state.isMutating) { Text(stringResource(R.string.common_delete)) } },
+    )
 }
 
 @Composable private fun ActionsRetry(retry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = retry) { Text(stringResource(R.string.common_retry)) } } }

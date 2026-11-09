@@ -16,7 +16,10 @@ import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
 import com.gitmob.app.data.repository.RepoActionsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -134,6 +137,10 @@ data class RepoWorkflowRunUiState(
     val loadFailed: Boolean = false,
     val pendingDelete: Boolean = false,
     val openingArtifactIds: Set<Long> = emptySet(),
+    val openingLogs: Boolean = false,
+    val pendingRerunFailedOnly: Boolean? = null,
+    val enableDebugLogging: Boolean = false,
+    val isMutating: Boolean = false,
 )
 
 @HiltViewModel
@@ -146,14 +153,114 @@ class RepoWorkflowRunViewModel @Inject constructor(
 ) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoWorkflowRunUiState())
     val state: StateFlow<RepoWorkflowRunUiState> = _state.asStateFlow()
-    private var owner = ""; private var name = ""; private var runId = 0L; private var initialized = false
-    fun init(owner: String, name: String, runId: Long, permission: RepoPermission?) { if (initialized) return; initialized = true; this.owner = owner; this.name = name; this.runId = runId; permission?.let { _state.update { s -> s.copy(permission = it, capabilities = it.toCapabilities()) } } ?: viewModelScope.launch { when (val result = repository.getRepositoryPermission(owner, name)) { is ApiResult.Success -> _state.update { it.copy(permission = result.data, capabilities = result.data.toCapabilities()) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }; load() }
-    fun load() { viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getRun(owner, name, runId)) { is ApiResult.Success -> _state.update { it.copy(detail = result.data, isLoading = false) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
+    private var owner = ""
+    private var name = ""
+    private var runId = 0L
+    private var initialized = false
+    private var loadJob: Job? = null
+    private var downloadJob: Job? = null
+    private var downloadGeneration = 0
+    private var generation = 0
+
+    fun init(owner: String, name: String, runId: Long, permission: RepoPermission?) {
+        if (initialized) return
+        initialized = true
+        this.owner = owner
+        this.name = name
+        this.runId = runId
+        if (permission != null) {
+            _state.update { it.copy(permission = permission, capabilities = permission.toCapabilities()) }
+        } else viewModelScope.launch {
+            when (val result = repository.getRepositoryPermission(owner, name)) {
+                is ApiResult.Success -> _state.update { it.copy(permission = result.data, capabilities = result.data.toCapabilities()) }
+                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            }
+        }
+        load()
+    }
+
+    fun load() {
+        loadJob?.cancel()
+        cancelLogDownload()
+        val request = ++generation
+        _state.update { it.copy(isLoading = true, loadFailed = false) }
+        loadJob = viewModelScope.launch {
+            val result = repository.getRun(owner, name, runId)
+            currentCoroutineContext().ensureActive()
+            accountEpoch.ensureCurrent()
+            if (request != generation) return@launch
+            when (result) {
+                is ApiResult.Success -> _state.update { it.copy(detail = result.data, isLoading = false) }
+                is ApiResult.Failure -> {
+                    _state.update { it.copy(isLoading = false, loadFailed = true) }
+                    errorEventBus.emit(result.error)
+                }
+            }
+        }
+    }
+
     fun cancel(force: Boolean = false) = runAction { repository.cancel(owner, name, runId, force) }
-    fun share() { if (accountEpoch.isCurrent) _state.value.detail?.run?.htmlUrl?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share) }
-    fun rerun(failedOnly: Boolean = false) = runAction { repository.rerun(owner, name, runId, failedOnly) }
+    fun share() {
+        if (accountEpoch.isCurrent) _state.value.detail?.run?.htmlUrl?.takeIf(String::isNotBlank)?.let(shareLinkLauncher::share)
+    }
+    fun requestRerun(failedOnly: Boolean) {
+        if (!_state.value.capabilities.canPush || _state.value.isMutating) return
+        _state.update { it.copy(pendingRerunFailedOnly = failedOnly, enableDebugLogging = false) }
+    }
+    fun dismissRerun() {
+        if (!_state.value.isMutating) _state.update { it.copy(pendingRerunFailedOnly = null, enableDebugLogging = false) }
+    }
+    fun setDebugLogging(enabled: Boolean) {
+        if (!_state.value.isMutating) _state.update { it.copy(enableDebugLogging = enabled) }
+    }
+    fun confirmRerun() {
+        val failedOnly = _state.value.pendingRerunFailedOnly ?: return
+        val debug = _state.value.enableDebugLogging
+        runAction { repository.rerun(owner, name, runId, failedOnly, debug) }
+    }
     fun confirmDelete(value: Boolean) = _state.update { it.copy(pendingDelete = value) }
-    fun delete(done: () -> Unit) { if (!_state.value.capabilities.canPush) return; viewModelScope.launch { when (val result = repository.deleteRun(owner, name, runId)) { is ApiResult.Success -> { repoUpdateEventBus.emit(RepoUpdateEvent.ActionRunChanged(owner, name, runId)); done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = false) } } } } }
+    fun delete(done: () -> Unit) {
+        if (!_state.value.capabilities.canPush || _state.value.isMutating) return
+        _state.update { it.copy(isMutating = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.deleteRun(owner, name, runId)) {
+                    is ApiResult.Success -> { repoUpdateEventBus.emit(RepoUpdateEvent.ActionRunChanged(owner, name, runId)); done() }
+                    is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = false) } }
+                }
+            } finally { _state.update { it.copy(isMutating = false) } }
+        }
+    }
+
+    fun downloadLogs() {
+        val current = _state.value
+        val run = current.detail?.run ?: return
+        if (current.openingLogs || current.isLoading || !accountEpoch.isCurrent) return
+        _state.update { it.copy(openingLogs = true) }
+        val request = ++downloadGeneration
+        downloadJob = viewModelScope.launch {
+            try {
+                val result = repository.downloadRunLogs(owner, name, run.id, run.runAttempt)
+                currentCoroutineContext().ensureActive()
+                accountEpoch.ensureCurrent()
+                if (request != downloadGeneration) return@launch
+                when (result) {
+                    is ApiResult.Success -> errorEventBus.emitNotice(R.string.download_opened_externally)
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                }
+            } finally {
+                if (request == downloadGeneration) _state.update { it.copy(openingLogs = false) }
+            }
+        }
+    }
+
+    fun cancelLogDownload() {
+        ++downloadGeneration
+        downloadJob?.cancel()
+        downloadJob = null
+        _state.update { it.copy(openingLogs = false) }
+    }
+
     fun downloadArtifact(artifact: RepoActionArtifact) {
         if (artifact.expired || artifact.id in _state.value.openingArtifactIds) return
         viewModelScope.launch {
@@ -163,10 +270,91 @@ class RepoWorkflowRunViewModel @Inject constructor(
                     is ApiResult.Success -> errorEventBus.emitNotice(R.string.download_opened_externally)
                     is ApiResult.Failure -> errorEventBus.emit(result.error)
                 }
-            } finally {
-                _state.update { it.copy(openingArtifactIds = it.openingArtifactIds - artifact.id) }
+            } finally { _state.update { it.copy(openingArtifactIds = it.openingArtifactIds - artifact.id) } }
+        }
+    }
+
+    private fun runAction(block: suspend () -> ApiResult<Unit>) {
+        if (!_state.value.capabilities.canPush || _state.value.isMutating || !accountEpoch.isCurrent) return
+        _state.update { it.copy(isMutating = true) }
+        viewModelScope.launch {
+            try {
+                val result = block()
+                currentCoroutineContext().ensureActive()
+                accountEpoch.ensureCurrent()
+                when (result) {
+                    is ApiResult.Success -> {
+                        _state.update { it.copy(pendingRerunFailedOnly = null, enableDebugLogging = false) }
+                        repoUpdateEventBus.emit(RepoUpdateEvent.ActionRunChanged(owner, name, runId))
+                        load()
+                    }
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                }
+            } finally { _state.update { it.copy(isMutating = false) } }
+        }
+    }
+}
+
+data class RepoActionStepLogUiState(
+    val log: RepoActionStepLog? = null,
+    val isLoading: Boolean = false,
+    val error: ApiError? = null,
+    val wrapLines: Boolean = false,
+)
+
+@HiltViewModel
+class RepoActionStepLogViewModel @Inject constructor(
+    private val repository: RepoActionsRepository,
+    private val errorEventBus: ErrorEventBus,
+    session: AccountSession,
+) : AccountViewModel(session) {
+    private val _state = MutableStateFlow(RepoActionStepLogUiState())
+    val state: StateFlow<RepoActionStepLogUiState> = _state.asStateFlow()
+    private var key: RepoActionStepLogKey? = null
+    private var request: Job? = null
+    private var generation = 0
+
+    init {
+        viewModelScope.launch {
+            try { awaitCancellation() } finally { close() }
+        }
+    }
+
+    fun init(key: RepoActionStepLogKey) {
+        if (this.key == key) return
+        close()
+        this.key = key
+        load()
+    }
+    fun load() {
+        val requestedKey = key ?: return
+        if (!accountEpoch.isCurrent) return
+        request?.cancel()
+        val requestedGeneration = ++generation
+        _state.update { it.copy(log = null, isLoading = true, error = null) }
+        request = viewModelScope.launch {
+            val result = repository.getStepLog(requestedKey)
+            currentCoroutineContext().ensureActive()
+            accountEpoch.ensureCurrent()
+            if (key != requestedKey || generation != requestedGeneration) return@launch
+            when (result) {
+                is ApiResult.Success -> _state.update { it.copy(log = result.data, isLoading = false) }
+                is ApiResult.Failure -> {
+                    _state.update { it.copy(error = result.error, isLoading = false) }
+                    errorEventBus.emit(result.error)
+                }
             }
         }
     }
-    private fun runAction(block: suspend () -> ApiResult<Unit>) { if (!_state.value.capabilities.canPush) return; viewModelScope.launch { when (val result = block()) { is ApiResult.Success -> { repoUpdateEventBus.emit(RepoUpdateEvent.ActionRunChanged(owner, name, runId)); load() }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
+    fun setWrapLines(enabled: Boolean) = _state.update { it.copy(wrapLines = enabled) }
+    fun copied() {
+        viewModelScope.launch { errorEventBus.emitNotice(if (_state.value.log?.truncated == true) R.string.actions_logs_copied_partial else R.string.actions_logs_copied) }
+    }
+    fun close() {
+        ++generation
+        request?.cancel()
+        request = null
+        key = null
+        _state.value = RepoActionStepLogUiState()
+    }
 }

@@ -16,6 +16,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
+import okhttp3.CookieJar
+import java.io.IOException
 import kotlinx.coroutines.withContext
 import java.net.URI
 import javax.inject.Inject
@@ -152,18 +155,79 @@ class GHApiClient @Inject constructor(
         return noRedirectClient.newCall(request).readCancellable { response ->
             if (response.code !in setOf(301, 302, 303, 307, 308)) {
                 if (!response.isSuccessful) {
-                    throw HttpStatusException(response.code, "Download endpoint returned ${response.code}")
+                    val code = if (response.code == 403 &&
+                        (response.header("X-RateLimit-Remaining") == "0" || response.header("Retry-After") != null)
+                    ) 429 else response.code
+                    throw HttpStatusException(code, "Download endpoint returned $code")
                 }
                 return@readCancellable null
             }
             val location = response.header("Location") ?: return@readCancellable null
             val resolved = runCatching { URI(request.url.toString()).resolve(location).normalize() }.getOrNull()
                 ?: return@readCancellable null
-            if (!resolved.isAbsolute || !resolved.scheme.equals("https", ignoreCase = true) || resolved.userInfo != null) {
+            if (!resolved.isAbsolute || !resolved.scheme.equals("https", ignoreCase = true) || resolved.userInfo != null || resolved.host.isNullOrBlank()) {
                 return@readCancellable null
             }
             resolved.toString()
         }.also { epoch.ensureCurrent() }
+    }
+
+    /** Bounded, cancellable plain text preview. Signed URLs and API credentials never enter UI state. */
+    suspend fun getActionLogPreview(url: String, maxBytes: Int = 1024 * 1024, maxLines: Int = 10_000): ActionLogPreview {
+        require(maxBytes > 0 && maxLines > 0)
+        val parsed = url.toHttpUrl()
+        require(parsed.isHttps && parsed.username.isEmpty() && parsed.password.isEmpty())
+        val epoch = AccountContext.ensureCurrent()
+        val context = currentCoroutineContext()
+        val client = okHttpClient.newBuilder().cookieJar(CookieJar.NO_COOKIES)
+            .authenticator(okhttp3.Authenticator.NONE).cache(null)
+            .followRedirects(false).followSslRedirects(false).build()
+        val request = Request.Builder().url(parsed).header("Accept", "text/plain").get().build()
+        try {
+            return client.newCall(request).readCancellable { response ->
+                if (!response.isSuccessful) {
+                    val code = if (response.code == 403 &&
+                        (response.header("X-RateLimit-Remaining") == "0" || response.header("Retry-After") != null)
+                    ) 429 else response.code
+                    throw HttpStatusException(code, "Log request failed ($code)")
+                }
+                val source = response.body.source()
+                val output = okio.Buffer()
+                val chunk = okio.Buffer()
+                var lines = 0
+                var truncated = false
+                while (output.size < maxBytes && lines < maxLines) {
+                    context.ensureActive()
+                    val count = source.read(chunk, minOf(8192L, maxBytes.toLong() - output.size))
+                    if (count == -1L) break
+                    val bytes = chunk.readByteArray()
+                    var keep = bytes.size
+                    for (index in bytes.indices) {
+                        if (bytes[index] == 10.toByte() && ++lines == maxLines) {
+                            keep = index + 1
+                            break
+                        }
+                    }
+                    output.write(bytes, 0, keep)
+                    if (keep < bytes.size) { truncated = true; break }
+                }
+                if (!truncated && (output.size == maxBytes.toLong() || lines == maxLines)) truncated = !source.exhausted()
+                val bytes = output.readByteArray()
+                // Do not manufacture a replacement glyph when the byte limit cuts a UTF-8 code point.
+                var end = bytes.size
+                if (truncated && end > 0) {
+                    var lead = end - 1
+                    while (lead > 0 && bytes[lead].toInt() and 0xC0 == 0x80) lead--
+                    val first = bytes[lead].toInt() and 0xFF
+                    val expected = when { first >= 0xF0 -> 4; first >= 0xE0 -> 3; first >= 0xC0 -> 2; else -> 1 }
+                    if (end - lead < expected) end = lead
+                }
+                ActionLogPreview(bytes.decodeToString(0, end), truncated)
+            }.also { context.ensureActive(); epoch.ensureCurrent() }
+        } catch (_: IOException) {
+            // Transport exception messages can contain the temporary signed address.
+            throw IOException("Action log transport failed")
+        }
     }
 
     /** Release assets retain the same authentication, REST headers, and cancellable transport. */
@@ -261,8 +325,16 @@ class GHApiClient @Inject constructor(
                 }
                 buffer.readByteArray()
             }
-            if (!response.isSuccessful) throw HttpStatusException(response.code, bytes.decodeToString())
+            if (!response.isSuccessful) {
+                val code = if (response.code == 403 &&
+                    (response.header("X-RateLimit-Remaining") == "0" || response.header("Retry-After") != null)
+                ) 429 else response.code
+                throw HttpStatusException(code, bytes.decodeToString())
+            }
             bytes
         }.also { epoch.ensureCurrent() }
     }
 }
+
+/** Network payload; repository maps it into the action log domain model. */
+data class ActionLogPreview(val text: String, val truncated: Boolean)

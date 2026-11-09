@@ -958,4 +958,26 @@
     <string name="repo_code_search">Search code</string>
     <string name="repo_code_search_hint">Enter keywords or search syntax, then press Search</string>
     <string name="repo_code_search_scope_conflict">Search is limited to this repository. Remove repo:, user:, or org: qualifiers.</string>
+    <string name="actions_logs_title">Step logs</string>
+    <string name="actions_logs_download_zip">Download logs ZIP for this attempt</string>
+    <string name="actions_logs_zip_label">ZIP</string>
+    <string name="actions_logs_context">Step %1$d · Attempt %2$s</string>
+    <string name="actions_logs_unknown_attempt">unknown</string>
+    <string name="actions_logs_refresh">Refresh logs</string>
+    <string name="actions_logs_copy">Copy logs</string>
+    <string name="actions_logs_copy_partial">Copy loaded logs</string>
+    <string name="actions_logs_copied">Logs copied</string>
+    <string name="actions_logs_copied_partial">Loaded portion of logs copied</string>
+    <string name="actions_logs_wrap">Wrap lines</string>
+    <string name="actions_logs_truncated">Showing a partial preview (up to 1 MiB or 10,000 lines). Return to Jobs to download the complete logs ZIP.</string>
+    <string name="actions_logs_waiting">This step has not started. Logs are not available yet.</string>
+    <string name="actions_logs_skipped">This step was skipped and has no logs.</string>
+    <string name="actions_logs_empty">This step has no log content.</string>
+    <string name="actions_logs_unavailable">Logs are currently unavailable. Please try again later.</string>
+    <string name="actions_logs_attempt_unavailable">Attempt information is unavailable. Refresh the run details.</string>
+    <string name="actions_logs_attempt_changed">The attempt has changed or the job no longer matches. Go back and refresh the run details.</string>
+    <string name="actions_rerun_all_scope">Re-run all jobs in this workflow run.</string>
+    <string name="actions_rerun_failed_scope">Re-run failed jobs and their dependent jobs.</string>
+    <string name="actions_debug_logging">Enable debug logging</string>
+    <string name="actions_debug_logging_description">Enable runner diagnostic and step debug logs for this re-run only.</string>
 </resources>

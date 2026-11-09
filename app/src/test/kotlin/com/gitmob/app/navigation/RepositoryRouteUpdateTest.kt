@@ -96,6 +96,20 @@ class RepositoryRouteUpdateTest {
         assertEquals(ReposRoute, navigator.state.topLevelRoute)
     }
 
+
+    @Test
+    fun `log route survives serialization and repository address changes with identifiers only`() {
+        val route = RepoActionStepLogRoute("old", "repo", 42, 3, 101, 8)
+        val encoded = kotlinx.serialization.json.Json.encodeToString(RepoActionStepLogRoute.serializer(), route)
+        assertEquals(route, kotlinx.serialization.json.Json.decodeFromString(RepoActionStepLogRoute.serializer(), encoded))
+        assertEquals(
+            RepoActionStepLogRoute("new", "renamed", 42, 3, 101, 8),
+            route.replaceRepositoryAddress("old", "repo", "new", "renamed"),
+        )
+        assertEquals(setOf("owner", "name", "runId", "attempt", "jobId", "stepNumber"),
+            (kotlinx.serialization.json.Json.parseToJsonElement(encoded) as kotlinx.serialization.json.JsonObject).keys)
+    }
+
     private fun navigator(
         homeStack: NavBackStack<NavKey>,
         starsStack: NavBackStack<NavKey>,

@@ -962,4 +962,26 @@
     <string name="repo_code_search">搜索代码</string>
     <string name="repo_code_search_hint">输入关键词或搜索语法，按回车搜索</string>
     <string name="repo_code_search_scope_conflict">搜索范围固定为当前仓库，请移除 repo:、user: 或 org: 条件</string>
+    <string name="actions_logs_title">步骤日志</string>
+    <string name="actions_logs_download_zip">下载当前尝试的日志 ZIP</string>
+    <string name="actions_logs_zip_label">ZIP</string>
+    <string name="actions_logs_context">步骤 %1$d · 尝试 %2$s</string>
+    <string name="actions_logs_unknown_attempt">未知</string>
+    <string name="actions_logs_refresh">刷新日志</string>
+    <string name="actions_logs_copy">复制日志</string>
+    <string name="actions_logs_copy_partial">复制已加载的日志</string>
+    <string name="actions_logs_copied">已复制日志</string>
+    <string name="actions_logs_copied_partial">已复制已加载部分的日志</string>
+    <string name="actions_logs_wrap">自动换行</string>
+    <string name="actions_logs_truncated">仅显示部分日志（最多 1 MiB 或 10,000 行），完整日志可返回作业下载 ZIP。</string>
+    <string name="actions_logs_waiting">此步骤尚未开始，日志暂不可用。</string>
+    <string name="actions_logs_skipped">此步骤已跳过，没有日志。</string>
+    <string name="actions_logs_empty">此步骤没有日志内容。</string>
+    <string name="actions_logs_unavailable">日志暂不可用，请稍后重试。</string>
+    <string name="actions_logs_attempt_unavailable">运行尝试信息暂不可用，请刷新运行详情。</string>
+    <string name="actions_logs_attempt_changed">运行尝试已更新或作业信息不匹配，请返回并刷新运行详情。</string>
+    <string name="actions_rerun_all_scope">将重新运行此工作流的全部作业。</string>
+    <string name="actions_rerun_failed_scope">将重新运行失败作业及依赖它们的作业。</string>
+    <string name="actions_debug_logging">启用调试日志记录</string>
+    <string name="actions_debug_logging_description">仅对本次重新运行启用运行器诊断日志和步骤调试日志。</string>
 </resources>

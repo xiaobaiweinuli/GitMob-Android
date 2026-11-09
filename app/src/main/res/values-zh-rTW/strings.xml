@@ -957,4 +957,26 @@
     <string name="repo_code_search">搜尋程式碼</string>
     <string name="repo_code_search_hint">輸入關鍵字或搜尋語法，按 Enter 搜尋</string>
     <string name="repo_code_search_scope_conflict">搜尋範圍固定為目前儲存庫，請移除 repo:、user: 或 org: 條件</string>
+    <string name="actions_logs_title">步驟日誌</string>
+    <string name="actions_logs_download_zip">下載目前嘗試的日誌 ZIP</string>
+    <string name="actions_logs_zip_label">ZIP</string>
+    <string name="actions_logs_context">步驟 %1$d · 嘗試 %2$s</string>
+    <string name="actions_logs_unknown_attempt">未知</string>
+    <string name="actions_logs_refresh">重新整理日誌</string>
+    <string name="actions_logs_copy">複製日誌</string>
+    <string name="actions_logs_copy_partial">複製已載入的日誌</string>
+    <string name="actions_logs_copied">已複製日誌</string>
+    <string name="actions_logs_copied_partial">已複製已載入部分的日誌</string>
+    <string name="actions_logs_wrap">自動換行</string>
+    <string name="actions_logs_truncated">僅顯示部分日誌（最多 1 MiB 或 10,000 行），完整日誌可返回作業下載 ZIP。</string>
+    <string name="actions_logs_waiting">此步驟尚未開始，日誌暫時無法使用。</string>
+    <string name="actions_logs_skipped">此步驟已略過，沒有日誌。</string>
+    <string name="actions_logs_empty">此步驟沒有日誌內容。</string>
+    <string name="actions_logs_unavailable">日誌暫時無法使用，請稍後重試。</string>
+    <string name="actions_logs_attempt_unavailable">執行嘗試資訊暫時無法使用，請重新整理執行詳情。</string>
+    <string name="actions_logs_attempt_changed">執行嘗試已更新或作業資訊不符，請返回並重新整理執行詳情。</string>
+    <string name="actions_rerun_all_scope">將重新執行此工作流程的全部作業。</string>
+    <string name="actions_rerun_failed_scope">將重新執行失敗作業及相依於它們的作業。</string>
+    <string name="actions_debug_logging">啟用偵錯日誌記錄</string>
+    <string name="actions_debug_logging_description">僅對本次重新執行啟用執行器診斷日誌和步驟偵錯日誌。</string>
 </resources>

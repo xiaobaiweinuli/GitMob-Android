@@ -124,6 +124,9 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
 ) : Route
 @Serializable data class RepoActionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val defaultRef: String? = null) : Route
 @Serializable data class RepoWorkflowRunRoute(val owner: String, val name: String, val runId: Long, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoActionStepLogRoute(
+    val owner: String, val name: String, val runId: Long, val attempt: Int?, val jobId: Long, val stepNumber: Int,
+) : Route
 @Serializable data class RepoReleasesRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoReleaseDetailRoute(val owner: String, val name: String, val tag: String, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoReleaseEditorRoute(val owner: String, val name: String, val releaseId: Long? = null, val permission: RepoPermission? = null) : Route
@@ -213,6 +216,7 @@ internal fun Route.replaceRepositoryAddress(owner: String, name: String, newOwne
         is ConversationComposerRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
         is RepoActionsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoWorkflowRunRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoActionStepLogRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
         is RepoReleasesRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoReleaseDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoReleaseEditorRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this

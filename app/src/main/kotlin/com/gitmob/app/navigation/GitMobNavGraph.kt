@@ -51,6 +51,8 @@ import com.gitmob.app.data.model.AccountState
 import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.ui.branches.BranchesScreen
 import com.gitmob.app.ui.common.ConversationComposerScreen
+import com.gitmob.app.ui.repoactions.RepoActionStepLogScreen
+import com.gitmob.app.data.model.RepoActionStepLogKey
 import com.gitmob.app.ui.repoactions.RepoActionsScreen
 import com.gitmob.app.ui.repoactions.RepoWorkflowRunScreen
 import com.gitmob.app.ui.repocommunity.RepoContributorsScreen
@@ -808,9 +810,17 @@ private fun LoggedInApp(
                 name = route.name,
                 runId = route.runId,
                 permission = route.permission,
+                onStepClick = { key -> clicks.navigate(RepoActionStepLogRoute(key.owner, key.name, key.runId, key.attempt, key.jobId, key.stepNumber)) },
                 onBack = { clicks.goBack() },
                 onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
                 onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+            )
+        }
+        entry<RepoActionStepLogRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            RepoActionStepLogScreen(
+                logKey = RepoActionStepLogKey(route.owner, route.name, route.runId, route.attempt, route.jobId, route.stepNumber),
+                onBack = { clicks.goBack() },
             )
         }
         entry<RepoReleasesRoute> { route ->

@@ -30,7 +30,7 @@ data class RepoWorkflowRun(
     val conclusion: String?,
     val workflowId: Long,
     val runNumber: Int,
-    val runAttempt: Int,
+    val runAttempt: Int?,
     val headBranch: String?,
     val headSha: String,
     val actor: SimpleUser?,
@@ -65,4 +65,24 @@ data class RepoWorkflowRunDetail(
     val run: RepoWorkflowRun,
     val jobs: List<RepoActionJob>,
     val artifacts: List<RepoActionArtifact>,
+)
+
+/** Route/request identity never contains credentials, URLs or log contents. */
+data class RepoActionStepLogKey(
+    val owner: String,
+    val name: String,
+    val runId: Long,
+    val attempt: Int?,
+    val jobId: Long,
+    val stepNumber: Int,
+)
+
+enum class ActionLogAvailability { READY, WAITING, SKIPPED }
+
+data class RepoActionStepLog(
+    val jobName: String,
+    val stepName: String,
+    val availability: ActionLogAvailability,
+    val text: String = "",
+    val truncated: Boolean = false,
 )

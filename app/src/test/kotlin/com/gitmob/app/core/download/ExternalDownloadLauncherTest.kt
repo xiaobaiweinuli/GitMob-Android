@@ -34,6 +34,8 @@ class ExternalDownloadLauncherTest {
         assertTrue(started.selector?.hasCategory(Intent.CATEGORY_APP_BROWSER) == true)
         assertNull(started.`package`)
         assertNull(started.component)
+        assertNull(started.extras)
+        assertNull(started.selector?.extras)
     }
 
     @Test
@@ -49,4 +51,15 @@ class ExternalDownloadLauncherTest {
             launcher.open("https://token@example.com/file.apk")
         }
     }
+
+    @Test
+    fun `no browser reports a user visible error without adding authentication extras`() {
+        val unavailable = io.mockk.mockk<Context>()
+        io.mockk.every { unavailable.startActivity(any()) } throws android.content.ActivityNotFoundException()
+        val error = assertThrows(UserVisibleException::class.java) {
+            ExternalDownloadLauncher(unavailable).open("https://logs.example/run.zip?signature=temporary")
+        }
+        assertEquals(com.gitmob.app.R.string.download_external_app_unavailable, error.messageRes)
+    }
+
 }
