@@ -128,7 +128,13 @@ internal val searchSyntax = listOf(
     SearchSyntax("repos:>10", ">10", setOf(SearchCategory.USERS, SearchCategory.ORGANIZATIONS), false),
 )
 
-private fun completionRange(input: TextFieldValue): IntRange? {
+// Verified REST code syntax; tokens carry no example values in the repository page.
+internal val repoCodeSyntax = listOf(
+    "path:", "language:", "filename:", "extension:", "in:", "size:",
+    "AND", "NOT", "\"\"", "-path:", "-language:",
+).map { SearchSyntax(it, "", setOf(SearchCategory.CODE)) }
+
+private fun completionRange(input: TextFieldValue, token: String? = null): IntRange? {
     if (!input.selection.collapsed) return null
     val cursor = input.selection.end
     val start = input.text.take(cursor).indexOfLast(Char::isWhitespace) + 1
@@ -136,7 +142,9 @@ private fun completionRange(input: TextFieldValue): IntRange? {
     if (prefix.isEmpty() || '"' in prefix) return null
     // Do not complete within a quoted phrase, including multiword phrases.
     if (input.text.take(start).count { it == '"' } % 2 != 0) return null
-    if (searchSyntax.none { it.token.startsWith(prefix, ignoreCase = true) }) return null
+    if (token != null) {
+        if (!token.startsWith(prefix, ignoreCase = true)) return null
+    } else if (searchSyntax.none { it.token.startsWith(prefix, ignoreCase = true) }) return null
     val end = input.text.indexOfFirstFrom(cursor) { it.isWhitespace() }
     return start until end
 }
@@ -154,17 +162,25 @@ internal fun syntaxSuggestions(input: TextFieldValue): List<SearchSyntax> {
     }
 }
 
-internal fun insertSyntax(input: TextFieldValue, syntax: SearchSyntax): TextFieldValue {
-    val completion = completionRange(input)
+internal fun insertSyntax(input: TextFieldValue, syntax: SearchSyntax, bare: Boolean = false): TextFieldValue {
+    val completion = completionRange(input, syntax.token.takeIf { bare })
     val start = completion?.first ?: input.selection.min
     val end = completion?.let { it.last + 1 } ?: input.selection.max
     val leading = if (start > 0 && !input.text[start - 1].isWhitespace()) " " else ""
-    val trailing = if (end == input.text.length || !input.text[end].isWhitespace()) " " else ""
+    val trailing = when {
+        end < input.text.length -> if (!input.text[end].isWhitespace()) " " else ""
+        bare && (syntax.token.endsWith(':') || syntax.token == "\"\"") -> ""
+        else -> " "
+    }
     val inserted = leading + syntax.token + trailing
     val text = input.text.replaceRange(start, end, inserted)
     val valueStart = if (syntax.value.isEmpty()) -1 else syntax.token.lastIndexOf(syntax.value)
-    val selection = if (valueStart < 0) TextRange(start + inserted.length)
-        else TextRange(start + leading.length + valueStart, start + leading.length + valueStart + syntax.value.length)
+    val selection = when {
+        bare && syntax.token == "\"\"" -> TextRange(start + leading.length + 1)
+        bare && syntax.token.endsWith(':') -> TextRange(start + leading.length + syntax.token.length)
+        valueStart < 0 -> TextRange(start + inserted.length)
+        else -> TextRange(start + leading.length + valueStart, start + leading.length + valueStart + syntax.value.length)
+    }
     val shift = inserted.length - (end - start)
     val composition = input.composition?.let {
         when {

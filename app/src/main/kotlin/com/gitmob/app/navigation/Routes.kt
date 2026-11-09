@@ -19,6 +19,7 @@ sealed interface Route : NavKey
 
 @Serializable data class SearchRoute(val page: String = "search") : Route
 @Serializable data class SearchCategoryRoute(val query: String, val category: SearchCategory) : Route
+@Serializable data class RepoCodeSearchRoute(val owner: String, val name: String, val path: String = "", val isFork: Boolean = false) : Route
 
 /** 关注者 / 关注列表，参数化路由（不是底部 Tab，从 HomeScreen 点击跳转进来） */
 @Serializable data class FollowersRoute(val login: String) : Route
@@ -218,6 +219,7 @@ internal fun Route.replaceRepositoryAddress(owner: String, name: String, newOwne
         is RepoContributorsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
         is RepoLicenseRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
         is RepoBranchesRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, canPush = false, canManageBranchProtection = false) else this
+        is RepoCodeSearchRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
         is RepoCodeRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoCommitsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoCommitDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this

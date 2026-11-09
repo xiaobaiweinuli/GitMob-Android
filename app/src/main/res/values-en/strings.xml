@@ -675,6 +675,7 @@
     <string name="contributors_type_user">User</string>
     <string name="contributors_type_bot">Bot</string>
     <string name="contributors_type_organization">Organization</string>
+    <string name="contributors_type_anonymous">Anonymous</string>
     <string name="license_copy">Copy license text</string>
     <string name="about_logo_desc">GitMob logo</string>
     <string name="conversation_share">Share</string>
@@ -954,4 +955,7 @@
     <string name="release_asset_read_failed">Unable to read the attachment. Check file access and select it again.</string>
     <string name="release_asset_storage_failed">Unable to prepare the temporary attachment. Check available storage and try again.</string>
     <string name="release_notes_draft_changed">The draft changed while notes were being generated. Your input was kept.</string>
+    <string name="repo_code_search">Search code</string>
+    <string name="repo_code_search_hint">Enter keywords or search syntax, then press Search</string>
+    <string name="repo_code_search_scope_conflict">Search is limited to this repository. Remove repo:, user:, or org: qualifiers.</string>
 </resources>

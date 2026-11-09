@@ -38,6 +38,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -296,6 +297,36 @@ class RepoCodeScreenTest {
         coVerify(exactly = 0) { repository.resolveArchiveDownloadUrl(any(), any(), any()) }
     }
 
+    @Test
+    fun `search remains available for archived read-only snapshots`() {
+        var searches = 0
+        render(archived = true, snapshot = true, permission = RepoPermission.READ, onSearch = { searches++ })
+        composeRule.onNodeWithContentDescription(context.getString(R.string.repo_code_search))
+            .assertIsDisplayed().assertIsEnabled().performClick()
+        assertEquals(1, searches)
+    }
+
+    @Test
+    fun `search waits for repository metadata and passes the fork flag`() {
+        val treeGate = CompletableDeferred<Unit>()
+        var searchedFork: Boolean? = null
+        render(treeGate = treeGate, onSearch = { searchedFork = it })
+        val search = composeRule.onNodeWithContentDescription(context.getString(R.string.repo_code_search))
+        search.assertIsDisplayed().assertIsNotEnabled().performClick()
+        assertNull(searchedFork)
+        composeRule.runOnIdle { treeGate.complete(Unit) }
+        search.assertIsEnabled().performClick()
+        assertEquals(true, searchedFork)
+    }
+
+    @Test
+    fun `search passes false for an ordinary repository`() {
+        var searchedFork: Boolean? = null
+        render(isFork = false, onSearch = { searchedFork = it })
+        composeRule.onNodeWithContentDescription(context.getString(R.string.repo_code_search)).performClick()
+        assertEquals(false, searchedFork)
+    }
+
     private fun node(resource: Int) = composeRule.onNodeWithText(context.getString(resource))
 
     private fun openSync() {
@@ -309,22 +340,29 @@ class RepoCodeScreenTest {
         snapshot: Boolean = false,
         permission: RepoPermission = RepoPermission.WRITE,
         entries: List<RepoTreeEntry> = emptyList(),
+        isFork: Boolean = true,
+        treeGate: CompletableDeferred<Unit>? = null,
+        onSearch: (Boolean) -> Unit = {},
         onDirectoryClick: (String) -> Unit = {},
         onFileClick: (String) -> Unit = {},
     ) {
-        coEvery { repository.getCodeTree("viewer", "fork", ref, path) } returns ApiResult.Success(
-            RepoCodeTree(
-                repositoryId = "fork-id", permission = permission, capabilities = permission.toCapabilities(archived),
-                isArchived = archived, ref = ref, headOid = "forksha", path = path, entries = entries, isFork = true, isCommitSnapshot = snapshot,
-            ),
-        )
+        coEvery { repository.getCodeTree("viewer", "fork", ref, path) } coAnswers {
+            treeGate?.await()
+            ApiResult.Success(
+                RepoCodeTree(
+                    repositoryId = "fork-id", permission = permission, capabilities = permission.toCapabilities(archived),
+                    isArchived = archived, ref = ref, headOid = "forksha", path = path, entries = entries, isFork = isFork, isCommitSnapshot = snapshot,
+                ),
+            )
+        }
         coEvery { repository.getForkSync("viewer", "fork", "main") } returns ApiResult.Success(comparison)
         viewModel = RepoCodeViewModel(repository, pullRequests, ErrorEventBus(), downloadLauncher, RepoUpdateEventBus(), accounts.session)
         composeRule.setContent {
             MaterialTheme {
                 RepoCodeScreen(
                     owner = "viewer", name = "fork", ref = ref, path = path, permission = permission,
-                    onBack = {}, onOwnerClick = {}, onRepositoryClick = { _, _ -> }, onAdd = {}, onDirectoryClick = onDirectoryClick, onFileClick = onFileClick,
+                    onBack = {},
+                    onSearch = onSearch, onOwnerClick = {}, onRepositoryClick = { _, _ -> }, onAdd = {}, onDirectoryClick = onDirectoryClick, onFileClick = onFileClick,
                     onCreateSyncPullRequest = { createdPr = it }, onExistingSyncPullRequest = { existingPr = it }, viewModel = viewModel,
                 )
             }

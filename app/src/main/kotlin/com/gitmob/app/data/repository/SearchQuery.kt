@@ -5,14 +5,14 @@ import com.gitmob.app.data.model.SearchFileTarget
 import java.net.URI
 
 /** Only scope tokens outside quoted strings are interpreted. All other syntax stays with GitHub. */
-internal fun unquotedSearchTokens(query: String): List<String> {
+internal fun unquotedSearchTokens(query: String, includeQuotedValues: Boolean = false): List<String> {
     val tokens = mutableListOf<String>()
     val token = StringBuilder()
     var quoted = false
     var containsQuote = false
     var escaped = false
     fun finish() {
-        if (token.isNotEmpty() && !containsQuote) tokens += token.toString()
+        if (token.isNotEmpty() && (!containsQuote || (includeQuotedValues && token.first() != '"'))) tokens += token.toString()
         token.clear()
         containsQuote = false
     }
@@ -53,4 +53,20 @@ internal fun searchFileTarget(htmlUrl: String, owner: String, repository: String
     val ref = urlPath.removePrefix(prefix).removeSuffix(suffix)
     if (ref.isBlank()) return null
     return SearchFileTarget(ref)
+}
+
+/** The visible input never carries the repository scope. GitHub interprets the remaining syntax. */
+internal fun repositoryCodeSearchQuery(input: String, owner: String, name: String, isFork: Boolean): String? {
+    val query = input.trim()
+    if (query.isEmpty()) return null
+    val changesScope = unquotedSearchTokens(query, includeQuotedValues = true).any {
+        it.removePrefix("-").substringBefore(':').lowercase() in setOf("repo", "user", "org") && ':' in it
+    }
+    return if (changesScope) null else "repo:$owner/$name $query" + if (isFork) " fork:true" else ""
+}
+
+internal fun repositoryCodeSearchInput(path: String): String {
+    if (path.isEmpty()) return ""
+    val escaped = path.replace("\\", "\\\\").replace("\"", "\\\"")
+    return if (path.any { it.isWhitespace() || it == '"' || it == '\\' }) "path:\"$escaped\"" else "path:$path"
 }

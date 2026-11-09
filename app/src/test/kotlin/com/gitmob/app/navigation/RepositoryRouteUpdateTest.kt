@@ -27,6 +27,14 @@ class RepositoryRouteUpdateTest {
     }
 
     @Test
+    fun `address replacement preserves repository code search directory and fork scope`() {
+        assertEquals(
+            RepoCodeSearchRoute("new", "renamed", "app/src", isFork = true),
+            RepoCodeSearchRoute("old", "repo", "app/src", isFork = true).replaceRepositoryAddress("old", "repo", "new", "renamed"),
+        )
+    }
+
+    @Test
     fun `pull request editor updates base and head addresses independently`() {
         val route = RepoPullRequestEditorRoute(
             owner = "old",

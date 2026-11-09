@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
+import com.gitmob.app.ui.search.RepoCodeSearchScreen
 import com.gitmob.app.ui.search.SearchScreen
 import com.gitmob.app.ui.search.SearchCategoryScreen
 import com.gitmob.app.ui.search.SearchResultActions
@@ -309,6 +310,11 @@ private fun LoggedInApp(
                 onCategory = { query, category -> clicks.navigate(SearchCategoryRoute(query, category)) },
                 actions = searchActions(clicks),
             )
+        }
+        entry<RepoCodeSearchRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            RepoCodeSearchScreen(route.owner, route.name, route.path, route.isFork,
+                onBack = { clicks.goBack() }, onFile = searchActions(clicks).file)
         }
         entry<SearchCategoryRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
@@ -927,6 +933,7 @@ private fun LoggedInApp(
                 onBack = { clicks.goBack() },
                 onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
                 onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onSearch = { isFork -> clicks.navigate(RepoCodeSearchRoute(route.owner, route.name, route.path, isFork)) },
                 onAdd = { clicks.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, null, route.permission)) },
                 onDirectoryClick = { path -> clicks.navigate(RepoCodeRoute(route.owner, route.name, route.ref, path, route.permission)) },
                 onFileClick = { path -> clicks.navigate(RepoFileDetailRoute(route.owner, route.name, route.ref, path, route.permission)) },

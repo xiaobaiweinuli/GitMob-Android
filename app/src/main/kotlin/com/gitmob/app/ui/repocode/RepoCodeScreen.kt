@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -87,6 +88,7 @@ fun RepoCodeScreen(
     path: String,
     permission: RepoPermission?,
     onBack: () -> Unit,
+    onSearch: (Boolean) -> Unit,
     onOwnerClick: (String) -> Unit,
     onRepositoryClick: (String, String) -> Unit,
     onAdd: () -> Unit,
@@ -139,6 +141,9 @@ fun RepoCodeScreen(
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
+                    IconButton(onClick = { state.tree?.let { onSearch(it.isFork) } }, enabled = state.tree != null) {
+                        Icon(Icons.Default.Search, stringResource(R.string.repo_code_search))
+                    }
                     if (state.tree?.isFork == true && state.tree?.isCommitSnapshot == false) {
                         IconButton(onClick = viewModel::openSync, enabled = !state.isSyncBusy) {
                             Icon(Icons.Default.Sync, stringResource(R.string.repo_sync_title))

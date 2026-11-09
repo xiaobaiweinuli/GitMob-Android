@@ -16,7 +16,18 @@ import javax.inject.Singleton
 class RepoCommunityRepository @Inject constructor(private val api: GHApiClient) {
     suspend fun getContributors(owner: String, name: String, page: Int = 1): ApiResult<Pair<List<RepoContributor>, Boolean>> = safeCall {
         val values = api.get<List<RestContributor>>("/repos/$owner/$name/contributors?per_page=${PageSize.CONTRIBUTORS}&page=$page&anon=1")
-        values.map { RepoContributor(it.login ?: it.name, it.avatarUrl, it.htmlUrl, it.contributions, it.type) } to
+        values.map { contributor ->
+            RepoContributor(
+                // Anonymous authors can share a name; preserve their separate email identities.
+                key = contributor.id?.let { "user:$it" } ?: contributor.email?.let { "anonymous:$it" },
+                login = contributor.login,
+                displayName = contributor.login ?: contributor.name,
+                avatarUrl = contributor.avatarUrl,
+                profileUrl = contributor.htmlUrl,
+                contributions = contributor.contributions,
+                type = contributor.type,
+            )
+        } to
             (values.size >= PageSize.CONTRIBUTORS)
     }
     suspend fun getLicense(owner: String, name: String, ref: String): ApiResult<RepoLicenseDocument> = safeCall {
@@ -26,6 +37,15 @@ class RepoCommunityRepository @Inject constructor(private val api: GHApiClient) 
     }
 }
 
-@Serializable private data class RestContributor(val login: String? = null, val name: String? = null, @SerialName("avatar_url") val avatarUrl: String? = null, @SerialName("html_url") val htmlUrl: String? = null, val contributions: Int = 0, val type: String? = null)
+@Serializable private data class RestContributor(
+    val id: Long? = null,
+    val login: String? = null,
+    val name: String? = null,
+    val email: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    @SerialName("html_url") val htmlUrl: String? = null,
+    val contributions: Int = 0,
+    val type: String? = null,
+)
 @Serializable private data class RestLicenseInfo(val name: String = "", @SerialName("spdx_id") val spdxId: String? = null)
 @Serializable private data class RestLicense(val name: String = "LICENSE", val path: String = "LICENSE", @SerialName("html_url") val htmlUrl: String? = null, val content: String? = null, val encoding: String? = null, val license: RestLicenseInfo? = null)

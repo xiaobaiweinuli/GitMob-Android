@@ -130,7 +130,7 @@ private fun CodeResult(item: SearchItem.Code, actions: SearchResultActions) {
 }
 
 @Composable
-private fun CodeSnippets(snippets: List<SearchSnippet>) {
+internal fun CodeSnippets(snippets: List<SearchSnippet>) {
     val highlight = MaterialTheme.colorScheme.tertiaryContainer
     val highlightText = MaterialTheme.colorScheme.onTertiaryContainer
     val codeStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)

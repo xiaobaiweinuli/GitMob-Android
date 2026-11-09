@@ -5,6 +5,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SearchQueryTest {
+    @Test fun repositoryCodeQueryKeepsTheRepositoryHiddenAndPreservesSearchSyntax() {
+        assertEquals("repo:owner/repo SearchSyntax path:app language:kotlin",
+            repositoryCodeSearchQuery(" SearchSyntax path:app language:kotlin ", "owner", "repo", isFork = false))
+        assertNull(repositoryCodeSearchQuery(" ", "owner", "repo", isFork = false))
+        assertEquals("repo:owner/repo \"repo:other/project\"", repositoryCodeSearchQuery("\"repo:other/project\"", "owner", "repo", isFork = false))
+        listOf("repo:other/project", "user:someone", "-org:team", "REPO:\"other/project\"").forEach {
+            assertNull(repositoryCodeSearchQuery("needle $it", "owner", "repo", isFork = false))
+        }
+    }
+
+    @Test fun repositoryForkQueriesAppendTheQualifierAndStillRejectBlankOrChangedScope() {
+        assertEquals("repo:owner/repo path:app keyword fork:true",
+            repositoryCodeSearchQuery(" path:app keyword ", "owner", "repo", isFork = true))
+        assertEquals("repo:owner/repo path:app fork:true",
+            repositoryCodeSearchQuery("path:app", "owner", "repo", isFork = true))
+        assertNull(repositoryCodeSearchQuery(" ", "owner", "repo", isFork = true))
+        assertNull(repositoryCodeSearchQuery("needle repo:other/project", "owner", "repo", isFork = true))
+    }
+
+    @Test fun repositoryDirectoryInputPreservesTheActualPathAndQuotesSpaces() {
+        assertEquals("", repositoryCodeSearchInput(""))
+        assertEquals("path:app", repositoryCodeSearchInput("app"))
+        assertEquals("path:app/src/main", repositoryCodeSearchInput("app/src/main"))
+        assertEquals("path:\"docs/my folder\"", repositoryCodeSearchInput("docs/my folder"))
+        assertEquals("path:\"docs/\\\"quoted\\\"\"", repositoryCodeSearchInput("docs/\"quoted\""))
+    }
+
     @Test fun scopesRespectQuotedTextAndExplicitConflicts() {
         assertEquals("bug is:issue", scopedSearchQuery("bug", SearchCategory.ISSUES))
         assertEquals("bug type:pr", scopedSearchQuery("bug type:pr", SearchCategory.PULL_REQUESTS))
