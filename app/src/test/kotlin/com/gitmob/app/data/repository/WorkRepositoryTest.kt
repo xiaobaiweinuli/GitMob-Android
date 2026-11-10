@@ -2,7 +2,7 @@ package com.gitmob.app.data.repository
 
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.DiscussionStateReason
@@ -52,7 +52,7 @@ class WorkRepositoryTest {
                 .okHttpClient(OkHttpClient())
                 .addHttpInterceptor(
                     AuthHttpInterceptor(
-                        object : AccessTokenProvider {
+                        object : TestAccessTokenProvider {
                             override suspend fun getToken() = "fake-token"
                         },
                     ),

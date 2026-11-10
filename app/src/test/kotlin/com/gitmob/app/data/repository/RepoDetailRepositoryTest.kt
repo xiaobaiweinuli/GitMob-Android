@@ -9,7 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
@@ -38,7 +38,7 @@ class RepoDetailRepositoryTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
-        val tokenProvider = object : AccessTokenProvider {
+        val tokenProvider = object : TestAccessTokenProvider {
             override suspend fun getToken() = "fake-token"
         }
         val api = GHApiClient(

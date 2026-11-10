@@ -4,7 +4,7 @@ import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoDocumentContext
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.core.auth.TokenStorage
@@ -63,7 +63,7 @@ private fun buildApolloClient(baseUrl: String): ApolloClient =
         .okHttpClient(OkHttpClient())
         .addHttpInterceptor(
             AuthHttpInterceptor(
-                object : AccessTokenProvider {
+                object : TestAccessTokenProvider {
                     override suspend fun getToken() = "fake-token"
                 },
             ),
@@ -73,7 +73,7 @@ private fun buildApolloClient(baseUrl: String): ApolloClient =
 private fun buildUserRepository(baseUrl: String, session: AccountSession, storage: TokenStorage = mockk(relaxed = true)) = UserRepository(
     buildApolloClient(baseUrl),
     GHApiClient(OkHttpClient(), Json { ignoreUnknownKeys = true; explicitNulls = false },
-        object : AccessTokenProvider { override suspend fun getToken() = "fake-token" }, baseUrl),
+        object : TestAccessTokenProvider { override suspend fun getToken() = "fake-token" }, baseUrl),
     storage,
     session,
 )

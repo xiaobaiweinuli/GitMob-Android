@@ -1,6 +1,6 @@
 package com.gitmob.app.data.repository
 
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -33,7 +33,7 @@ class AppUpdateRepositoryTest {
     @Before fun setup() {
         server = MockWebServer().apply { start() }
         repository = AppUpdateRepository(GHApiClient(OkHttpClient(), Json { ignoreUnknownKeys = true },
-            object : AccessTokenProvider {
+            object : TestAccessTokenProvider {
                 override suspend fun getToken(): String? = error("Public update check must never read a token")
             }, server.url("/").toString().removeSuffix("/")), markdown, downloads)
     }

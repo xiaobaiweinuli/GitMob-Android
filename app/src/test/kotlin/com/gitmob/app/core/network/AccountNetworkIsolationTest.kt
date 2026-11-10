@@ -2,7 +2,7 @@ package com.gitmob.app.core.network
 
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.core.error.ApiResult
@@ -36,7 +36,7 @@ class AccountNetworkIsolationTest {
     private val first = GitHubAccount("1", 1, "U_1", "first")
     private val second = GitHubAccount("2", 2, "U_2", "second")
     private val client = OkHttpClient()
-    private val provider = object : AccessTokenProvider {
+    private val provider = object : TestAccessTokenProvider {
         override suspend fun getToken() = "token-${AccountContext.ensureCurrent().accountKey}"
     }
 
@@ -52,11 +52,11 @@ class AccountNetworkIsolationTest {
         server.shutdown()
     }
 
-    private fun api(tokens: AccessTokenProvider = provider) = GHApiClient(
+    private fun api(tokens: TestAccessTokenProvider = provider) = GHApiClient(
         client, Json { ignoreUnknownKeys = true }, tokens, server.url("/").toString().removeSuffix("/"),
     )
 
-    private fun apollo(tokens: AccessTokenProvider = provider) = ApolloClient.Builder()
+    private fun apollo(tokens: TestAccessTokenProvider = provider) = ApolloClient.Builder()
         .serverUrl(server.url("/graphql").toString()).okHttpClient(client)
         .addHttpInterceptor(AuthHttpInterceptor(tokens)).build()
 
@@ -75,7 +75,7 @@ class AccountNetworkIsolationTest {
     fun `REST令牌等待期间切换后不能发出旧请求`() = runTest {
         val waiting = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        val tokens = object : AccessTokenProvider {
+        val tokens = object : TestAccessTokenProvider {
             override suspend fun getToken(): String {
                 waiting.complete(Unit)
                 release.await()
@@ -97,7 +97,7 @@ class AccountNetworkIsolationTest {
     fun `Apollo令牌等待期间切换后不能发出旧请求`() = runTest {
         val waiting = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        val tokens = object : AccessTokenProvider {
+        val tokens = object : TestAccessTokenProvider {
             override suspend fun getToken(): String {
                 waiting.complete(Unit)
                 release.await()
@@ -122,7 +122,7 @@ class AccountNetworkIsolationTest {
     @Test
     fun `创建分支第二步前切换不使用新账号提交旧操作`() = runTest {
         var reads = 0
-        val tokens = object : AccessTokenProvider {
+        val tokens = object : TestAccessTokenProvider {
             override suspend fun getToken(): String {
                 val captured = AccountContext.ensureCurrent()
                 if (++reads == 2) session.replace(listOf(first, second), second.key)

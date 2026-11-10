@@ -2,7 +2,7 @@ package com.gitmob.app.data.repository
 
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
@@ -38,7 +38,7 @@ class RepoDiscussionRepositoryTest {
             ApolloClient.Builder()
                 .serverUrl("$baseUrl/graphql")
                 .okHttpClient(OkHttpClient())
-                .addHttpInterceptor(AuthHttpInterceptor(object : AccessTokenProvider { override suspend fun getToken() = "token" }))
+                .addHttpInterceptor(AuthHttpInterceptor(object : TestAccessTokenProvider { override suspend fun getToken() = "token" }))
                 .build(),
         )
     }

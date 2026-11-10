@@ -8,11 +8,7 @@ import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.network.USER_AGENT
 
-/**
- * Apollo 通道的鉴权/UA 头注入。对齐 GHApiClient 内 GraphQL 分支的头语义：
- * Authorization: Bearer <token>（有 token 时）、User-Agent 强制携带。
- * token 获取是 suspend，Apollo HttpInterceptor 的 intercept 同为 suspend，天然适配。
- */
+/** Apollo 鉴权头注入与 HTTP 401 处理；普通 GraphQL 字段错误不改变账号状态。 */
 class AuthHttpInterceptor(
     private val tokenProvider: AccessTokenProvider,
 ) : HttpInterceptor {
@@ -23,10 +19,20 @@ class AuthHttpInterceptor(
         val epoch = AccountContext.ensureCurrent()
         val builder = request.newBuilder()
             .addHeader("User-Agent", USER_AGENT)
-        tokenProvider.getToken()?.let { token ->
+        val token = tokenProvider.getToken()
+        if (token != null) {
             builder.addHeader("Authorization", "Bearer $token")
         }
         epoch.ensureCurrent()
-        return chain.proceed(builder.build()).also { epoch.ensureCurrent() }
+        val response = chain.proceed(builder.build())
+        try {
+            epoch.ensureCurrent()
+            if (response.statusCode == 401 && token != null) tokenProvider.onUnauthorized(token, epoch)
+            epoch.ensureCurrent()
+            return response
+        } catch (e: Exception) {
+            response.body?.close()
+            throw e
+        }
     }
 }

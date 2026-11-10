@@ -14,6 +14,7 @@ import com.gitmob.app.core.auth.StoredAccounts
 import com.gitmob.app.core.auth.localAccountOperation
 import com.gitmob.app.core.auth.oauthErrorMessageRes
 import com.gitmob.app.R
+import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
@@ -98,7 +99,12 @@ class AuthRepository @Inject constructor(
                 val selected = localAccountOperation(R.string.auth_storage_read_failed) { tokenStorage.snapshot() }.accounts.first { it.key == key }
                 if (selected.needsReauthentication) throw com.gitmob.app.core.error.UnauthorizedException()
                 val credentials = tokens.credentialsFor(key, started)
-                val user = identity.verify(credentials.accessToken)
+                val user = try {
+                    identity.verify(credentials.accessToken)
+                } catch (e: HttpStatusException) {
+                    if (e.code == 401) tokens.invalidate(key)
+                    throw e
+                }
                 check(selected.id == null || selected.id == user.id) { "Stored credential belongs to another identity" }
                 commit(user, credentials, started, previousKey = key)
             }

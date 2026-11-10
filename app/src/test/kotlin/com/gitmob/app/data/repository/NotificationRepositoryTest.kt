@@ -1,6 +1,6 @@
 package com.gitmob.app.data.repository
 
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.data.model.InboxReadFilter
@@ -29,7 +29,7 @@ class NotificationRepositoryTest {
         val api = GHApiClient(
             okHttpClient = OkHttpClient(),
             json = Json { ignoreUnknownKeys = true },
-            tokenProvider = object : AccessTokenProvider {
+            tokenProvider = object : TestAccessTokenProvider {
                 override suspend fun getToken() = "fake-token"
             },
             restBaseUrl = baseUrl,

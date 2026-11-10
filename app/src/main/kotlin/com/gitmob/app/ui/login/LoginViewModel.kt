@@ -9,9 +9,12 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.error.displayMessageRes
+import com.gitmob.app.data.model.AccountAuthMethod
+import com.gitmob.app.data.model.GitHubAccount
 import com.gitmob.app.data.model.DeviceFlowState
 import com.gitmob.app.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -135,13 +138,13 @@ class LoginViewModel @Inject constructor(
         val selected = accountState.value.accounts.firstOrNull { it.key == key } ?: return
         if (key == accountState.value.activeAccount?.key) return
         if (selected.needsReauthentication) {
-            openPat()
-            _state.update { it.copy(operationErrorRes = R.string.accounts_reauthenticate) }
+            reauthorize(selected)
             return
         }
         val started = ++operation
         _state.update { it.copy(isLoading = true, switchingKey = key, inlineErrorRes = null, operationErrorRes = null) }
-        authorizationJob = viewModelScope.launch {
+        // 先保存任务引用，避免同步失败时覆盖重新授权启动的新任务。
+        authorizationJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
             val result = authRepository.switchAccount(key)
             currentCoroutineContext().ensureActive()
             if (started != operation || !accountEpoch.isCurrent) return@launch
@@ -150,10 +153,23 @@ class LoginViewModel @Inject constructor(
                 is ApiResult.Failure -> {
                     val messageRes = result.error.displayMessageRes()
                     _state.update { it.copy(isLoading = false, switchingKey = null, operationErrorRes = messageRes) }
+                    if (result.error == ApiError.Unauthorized) {
+                        reauthorize(selected)
+                        return@launch
+                    }
                     errorEventBus.emit(result.error)
                 }
             }
         }
+        authorizationJob?.start()
+    }
+
+    private fun reauthorize(account: GitHubAccount) {
+        when (account.authMethod) {
+            AccountAuthMethod.DEVICE_FLOW -> openDeviceFlow()
+            AccountAuthMethod.PAT, AccountAuthMethod.LEGACY -> openPat()
+        }
+        _state.update { it.copy(operationErrorRes = R.string.accounts_reauthenticate) }
     }
 
     fun browserUnavailable(@StringRes messageRes: Int = R.string.auth_browser_unavailable) {

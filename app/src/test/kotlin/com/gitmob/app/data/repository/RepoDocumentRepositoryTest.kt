@@ -1,6 +1,6 @@
 package com.gitmob.app.data.repository
 
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.ui.common.RepoDocumentResources
@@ -42,7 +42,7 @@ class RepoDocumentRepositoryTest {
 
     @Before fun setup() {
         server = MockWebServer().apply { start() }
-        api = GHApiClient(OkHttpClient(), Json, object : AccessTokenProvider {
+        api = GHApiClient(OkHttpClient(), Json, object : TestAccessTokenProvider {
             override suspend fun getToken() = "test-token"
         }, server.url("/").toString().removeSuffix("/"))
         repository = RepoDocumentRepository(api, updates)

@@ -2,7 +2,7 @@ package com.gitmob.app.data.repository
 
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -59,7 +59,7 @@ class RepoActionsRepositoryTest {
                     } else chain.proceed(chain.request())
                 }.build(),
                 json = Json { ignoreUnknownKeys = true },
-                tokenProvider = object : AccessTokenProvider {
+                tokenProvider = object : TestAccessTokenProvider {
                     override suspend fun getToken() = "fake-token"
                 },
                 restBaseUrl = baseUrl,
@@ -69,7 +69,7 @@ class RepoActionsRepositoryTest {
                 .okHttpClient(OkHttpClient())
                 .addHttpInterceptor(
                     AuthHttpInterceptor(
-                        object : AccessTokenProvider {
+                        object : TestAccessTokenProvider {
                             override suspend fun getToken() = "fake-token"
                         },
                     ),

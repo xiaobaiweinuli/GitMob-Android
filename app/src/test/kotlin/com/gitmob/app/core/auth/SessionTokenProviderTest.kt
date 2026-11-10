@@ -215,6 +215,64 @@ class SessionTokenProviderTest {
         }
     }
 
+    @Test
+    fun `当前令牌401保留账号并清除活动会话且重复响应只处理一次`() = runTest(accounts.context) {
+        credentials = AccountCredentials("current-access")
+        val provider = provider()
+        val epoch = accounts.session.epoch
+
+        provider.onUnauthorized("current-access", epoch)
+        provider.onUnauthorized("current-access", epoch)
+
+        assertEquals(null, accounts.session.state.value.activeAccount)
+        assertEquals(listOf(account.copy(needsReauthentication = true)), accounts.session.state.value.accounts)
+        assertFalse(epoch.isCurrent)
+        coVerify(exactly = 1) { storage.requireReauthentication("1") }
+        coVerify(exactly = 0) { storage.clearActiveAccount(any()) }
+    }
+
+    @Test
+    fun `刷新后的旧令牌401不使当前令牌失效`() = runTest(accounts.context) {
+        val provider = provider()
+        val epoch = accounts.session.epoch
+        coEvery { oauth.refresh("old-refresh") } returns rotatedResponse()
+        assertEquals("new-access", provider.getToken())
+
+        provider.onUnauthorized("old-access", epoch)
+
+        assertSame(epoch, accounts.session.epoch)
+        assertFalse(stored.accounts.single().needsReauthentication)
+        coVerify(exactly = 0) { storage.requireReauthentication(any()) }
+    }
+
+    @Test
+    fun `同账号重新登录后旧会话401不清除新会话`() = runTest(accounts.context) {
+        val provider = provider()
+        val old = accounts.session.epoch
+        accounts.session.replace(listOf(account), account.key)
+        val current = accounts.session.epoch
+
+        provider.onUnauthorized(credentials.accessToken, old)
+
+        assertSame(current, accounts.session.epoch)
+        assertEquals(account, accounts.session.state.value.activeAccount)
+        coVerify(exactly = 0) { storage.requireReauthentication(any()) }
+    }
+
+    @Test
+    fun `刷新身份验证401保留旋转令牌并进入重新授权`() = runTest(accounts.context) {
+        val provider = provider()
+        coEvery { oauth.refresh("old-refresh") } returns rotatedResponse()
+        coEvery { identity.verify("new-access") } throws com.gitmob.app.core.error.HttpStatusException(401, "Bad credentials")
+
+        assertEquals(ApiResult.Failure(ApiError.Unauthorized), safeCall { provider.getToken() })
+
+        assertEquals("new-access", credentials.accessToken)
+        assertTrue(stored.accounts.single().needsReauthentication)
+        assertEquals(null, accounts.session.state.value.activeAccount)
+        coVerify(exactly = 1) { storage.requireReauthentication("1") }
+    }
+
     private fun expiredCredentials() = AccountCredentials(
         "old-access", "old-refresh", System.currentTimeMillis() - 1,
         System.currentTimeMillis() + 86_400_000, AccountAuthMethod.DEVICE_FLOW,

@@ -2,7 +2,7 @@ package com.gitmob.app.data.repository
 
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
@@ -52,7 +52,7 @@ class RepoRepositoryTest {
     fun setup() {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
-        val tokenProvider = object : AccessTokenProvider {
+        val tokenProvider = object : TestAccessTokenProvider {
             override suspend fun getToken() = "fake-token"
         }
         val api = GHApiClient(

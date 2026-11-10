@@ -311,4 +311,35 @@ class AuthRepositoryTest {
         coVerify(exactly = 0) { storage.saveAccount(any(), any(), any(), any()) }
     }
 
+    @Test
+    fun `切换候选账号401只标记候选账号且保留当前会话`() = runTest {
+        val current = GitHubAccount("1", 1, "U_1", "current")
+        val selected = GitHubAccount("2", 2, "U_2", "selected", authMethod = AccountAuthMethod.DEVICE_FLOW)
+        accounts.session.replace(listOf(current, selected), current.key)
+        val epoch = accounts.session.epoch
+        var stored = StoredAccounts(listOf(current, selected), current.key)
+        val storage = mockk<TokenStorage>(relaxed = true)
+        coEvery { storage.snapshot() } coAnswers { stored }
+        coEvery { storage.credentials(selected.key) } returns AccountCredentials("selected-token", authMethod = AccountAuthMethod.DEVICE_FLOW)
+        coEvery { storage.requireReauthentication(selected.key) } coAnswers {
+            stored = stored.copy(accounts = listOf(current, selected.copy(needsReauthentication = true)))
+        }
+        val identity = mockk<GitHubIdentityClient>()
+        val oauth = mockk<com.gitmob.app.core.auth.GitHubOAuthClient>()
+        val tokens = SessionTokenProvider(storage, accounts.session, oauth, identity)
+        val auth = AuthRepository(storage, identity, accounts.session, oauth, tokens, mockk(relaxed = true))
+
+        for (code in listOf(403, 404, 429, 500, 401)) {
+            coEvery { identity.verify("selected-token") } throws com.gitmob.app.core.error.HttpStatusException(code, "rejected")
+            val result = withContext(AccountContext(epoch)) { auth.switchAccount(selected.key) }
+            assertTrue(result is ApiResult.Failure)
+            assertSame(epoch, accounts.session.epoch)
+            assertEquals(current, accounts.session.state.value.activeAccount)
+            assertEquals(code == 401, accounts.session.state.value.accounts.last().needsReauthentication)
+        }
+        coVerify(exactly = 1) { storage.requireReauthentication(selected.key) }
+        coVerify(exactly = 0) { storage.requireReauthentication(current.key) }
+        coVerify(exactly = 0) { storage.clearActiveAccount(any()) }
+    }
+
 }

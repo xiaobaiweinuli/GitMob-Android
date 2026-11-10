@@ -16,7 +16,7 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.R
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
@@ -58,7 +58,7 @@ class RepoContributorsScreenTest {
         val api = GHApiClient(
             okHttpClient = OkHttpClient(),
             json = Json { ignoreUnknownKeys = true },
-            tokenProvider = object : AccessTokenProvider {
+            tokenProvider = object : TestAccessTokenProvider {
                 override suspend fun getToken() = "fake-token"
             },
             restBaseUrl = server.url("/").toString().removeSuffix("/"),

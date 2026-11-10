@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 import okhttp3.mockwebserver.SocketPolicy
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
@@ -61,7 +61,7 @@ class RepoReleaseRepositoryTest {
             GHApiClient(
                 okHttpClient = OkHttpClient(),
                 json = Json { ignoreUnknownKeys = true },
-                tokenProvider = object : AccessTokenProvider {
+                tokenProvider = object : TestAccessTokenProvider {
                     override suspend fun getToken() = "fake-token"
                 },
                 restBaseUrl = baseUrl,
@@ -71,7 +71,7 @@ class RepoReleaseRepositoryTest {
                 .okHttpClient(OkHttpClient())
                 .addHttpInterceptor(
                     AuthHttpInterceptor(
-                        object : AccessTokenProvider {
+                        object : TestAccessTokenProvider {
                             override suspend fun getToken() = "fake-token"
                         },
                     ),

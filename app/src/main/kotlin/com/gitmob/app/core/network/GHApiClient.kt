@@ -8,6 +8,8 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Call
+import okhttp3.Response
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -152,7 +154,7 @@ class GHApiClient @Inject constructor(
             .followRedirects(false)
             .followSslRedirects(false)
             .build()
-        return noRedirectClient.newCall(request).readCancellable { response ->
+        return readAccountResponse(noRedirectClient.newCall(request)) { response ->
             if (response.code !in setOf(301, 302, 303, 307, 308)) {
                 if (!response.isSuccessful) {
                     val code = if (response.code == 403 &&
@@ -160,13 +162,13 @@ class GHApiClient @Inject constructor(
                     ) 429 else response.code
                     throw HttpStatusException(code, "Download endpoint returned $code")
                 }
-                return@readCancellable null
+                return@readAccountResponse null
             }
-            val location = response.header("Location") ?: return@readCancellable null
+            val location = response.header("Location") ?: return@readAccountResponse null
             val resolved = runCatching { URI(request.url.toString()).resolve(location).normalize() }.getOrNull()
-                ?: return@readCancellable null
+                ?: return@readAccountResponse null
             if (!resolved.isAbsolute || !resolved.scheme.equals("https", ignoreCase = true) || resolved.userInfo != null || resolved.host.isNullOrBlank()) {
-                return@readCancellable null
+                return@readAccountResponse null
             }
             resolved.toString()
         }.also { epoch.ensureCurrent() }
@@ -312,8 +314,7 @@ class GHApiClient @Inject constructor(
 
     @PublishedApi
     internal suspend fun readUpload(request: Request, maxBytes: Int? = null): ByteArray {
-        val epoch = AccountContext.ensureCurrent()
-        return okHttpClient.newCall(request).readCancellable { response ->
+        return readAccountResponse(okHttpClient.newCall(request)) { response ->
             if (maxBytes != null && !response.isSuccessful) throw HttpStatusException(response.code, "Image request failed")
             val bytes = if (maxBytes == null) response.body.bytes() else {
                 require(maxBytes > 0)
@@ -332,7 +333,29 @@ class GHApiClient @Inject constructor(
                 throw HttpStatusException(code, bytes.decodeToString())
             }
             bytes
-        }.also { epoch.ensureCurrent() }
+        }
+    }
+
+    private suspend fun <T> readAccountResponse(call: Call, read: (Response) -> T): T {
+        val epoch = AccountContext.ensureCurrent()
+        val authorization = call.request().header("Authorization")
+        var rejectedToken: String? = null
+        return try {
+            call.readCancellable { response ->
+                // 跨域重定向会移除 Authorization；匿名资源的 401 不代表账号失效。
+                if (response.code == 401 && authorization != null &&
+                    response.request.header("Authorization") == authorization
+                ) {
+                    rejectedToken = authorization.removePrefix("Bearer ")
+                    throw HttpStatusException(401, "GitHub rejected the access token")
+                }
+                read(response)
+            }.also { epoch.ensureCurrent() }
+        } catch (e: HttpStatusException) {
+            epoch.ensureCurrent()
+            rejectedToken?.let { tokenProvider.onUnauthorized(it, epoch) }
+            throw e
+        }
     }
 }
 

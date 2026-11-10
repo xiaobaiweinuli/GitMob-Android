@@ -1,6 +1,6 @@
 package com.gitmob.app.core.network
 
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -25,7 +25,7 @@ class ActionLogTransportTest {
             assertNull(chain.request().header("X-GitHub-Api-Version"))
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
                 .code(200).message("OK").body(body.toResponseBody()).build()
-        }.build(), Json, object : AccessTokenProvider { override suspend fun getToken(): String = error("Signed logs must not ask for a token") }, "https://api.example",
+        }.build(), Json, object : TestAccessTokenProvider { override suspend fun getToken(): String = error("Signed logs must not ask for a token") }, "https://api.example",
     )
 
     @Test fun `byte limit truncates without corrupting a multibyte code point`() = runTest(accounts.context) {
@@ -52,7 +52,7 @@ class ActionLogTransportTest {
     }
     @Test fun `network errors do not expose the signed URL in their message or cause`() = runTest(accounts.context) {
         val client = GHApiClient(OkHttpClient.Builder().addInterceptor { throw IOException("https://logs.example/?signature=secret") }.build(), Json,
-            object : AccessTokenProvider { override suspend fun getToken() = "fake" }, "https://api.example")
+            object : TestAccessTokenProvider { override suspend fun getToken() = "fake" }, "https://api.example")
         try {
             client.getActionLogPreview("https://logs.example/log")
             fail("Expected IOException")
@@ -65,7 +65,7 @@ class ActionLogTransportTest {
         val waiting = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val client = GHApiClient(OkHttpClient.Builder().addInterceptor { error("Must not make a request") }.build(), Json,
-            object : AccessTokenProvider { override suspend fun getToken(): String { waiting.complete(Unit); release.await(); return "old-token" } }, "https://api.example")
+            object : TestAccessTokenProvider { override suspend fun getToken(): String { waiting.complete(Unit); release.await(); return "old-token" } }, "https://api.example")
         val work = async(accounts.context) { client.resolveRestDownloadUrl("/logs") }
         waiting.await()
         accounts.session.replace(emptyList(), null)

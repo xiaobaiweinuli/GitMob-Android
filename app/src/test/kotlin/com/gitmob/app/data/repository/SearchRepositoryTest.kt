@@ -3,7 +3,7 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.R
-import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
@@ -30,7 +30,7 @@ class SearchRepositoryTest {
         server = MockWebServer().apply { start() }
         val client = OkHttpClient()
         apollo = ApolloClient.Builder().serverUrl(server.url("/graphql").toString()).okHttpClient(client).build()
-        val tokens = object : AccessTokenProvider { override suspend fun getToken() = "token" }
+        val tokens = object : TestAccessTokenProvider { override suspend fun getToken() = "token" }
         repository = SearchRepository(apollo, GHApiClient(client, Json { ignoreUnknownKeys = true }, tokens, server.url("/").toString().trimEnd('/')))
     }
     @After fun close() { apollo.close(); server.shutdown() }

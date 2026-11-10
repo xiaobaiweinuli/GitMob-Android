@@ -2,6 +2,7 @@ package com.gitmob.app.core.auth
 
 import androidx.annotation.StringRes
 import com.gitmob.app.R
+import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.UnauthorizedException
 import kotlinx.coroutines.CancellationException
@@ -30,6 +31,16 @@ class SessionTokenProvider @Inject constructor(
         }
     }
 
+    override suspend fun onUnauthorized(token: String, epoch: AccountEpoch) {
+        session.changes.withLock {
+            val key = epoch.accountKey ?: return
+            if (!epoch.isCurrent) return
+            val current = localAccountOperation(R.string.auth_storage_read_failed) { storage.credentials(key) }
+            // 旧请求的 401 不能使已刷新或重新登录后的凭据失效。
+            if (current.accessToken == token) invalidate(key)
+        }
+    }
+
     /** 调用方持有 session.changes；切换目标账号与活动请求复用相同刷新逻辑。 */
     internal suspend fun credentialsFor(key: String, started: AccountEpoch): AccountCredentials {
         started.ensureCurrent()
@@ -53,7 +64,12 @@ class SessionTokenProvider @Inject constructor(
             if (next.refreshToken == null) throw UserVisibleException(R.string.auth_response_invalid)
             // 先持久化旋转后的令牌对；身份验证断网时也不能丢掉已失效旧对的替代品。
             localAccountOperation(R.string.auth_storage_write_failed) { storage.saveCredentials(key, next) }
-            val user = identity.verify(next.accessToken)
+            val user = try {
+                identity.verify(next.accessToken)
+            } catch (e: HttpStatusException) {
+                if (e.code == 401) invalidate(key)
+                throw e
+            }
             if (user.id.toString() != key) {
                 invalidate(key)
                 throw UnauthorizedException()
@@ -64,7 +80,8 @@ class SessionTokenProvider @Inject constructor(
         }
     }
 
-    private suspend fun invalidate(key: String) {
+    /** 调用方持有 session.changes；失效候选账号时保留当前活动账号。 */
+    internal suspend fun invalidate(key: String) {
         withContext(NonCancellable) {
             localAccountOperation(R.string.auth_storage_write_failed) { storage.requireReauthentication(key) }
             val stored = localAccountOperation(R.string.auth_storage_read_failed) { storage.snapshot() }
