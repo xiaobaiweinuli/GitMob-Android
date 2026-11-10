@@ -64,6 +64,7 @@ fun MarkdownWebView(
     translation: TranslationPresentation? = null,
     displayAttempt: Int = 0,
     onTranslationDisplayError: () -> Unit = {},
+    navigationDocument: NavigationDocument? = null,
 ) {
     val cssFileName = if (backgroundColor.luminance() < 0.5f) {
         "github-markdown-dark.css"
@@ -84,31 +85,29 @@ fun MarkdownWebView(
     }
     val controlled = translation?.document?.safeHtml != null
     val currentDisplayError by rememberUpdatedState(onTranslationDisplayError)
-    // Resources belong to the logical document, not to an individual WebView instance.
-    DisposableEffect(documentResources) { onDispose { documentResources?.close() } }
-    val retainedSize = remember(bodyHtml, documentResources) { intArrayOf(0) }
-    val webViewHolder = remember(bodyHtml, documentResources, controlled) { MarkdownTranslationController { currentDisplayError() } }
-    val client = remember(documentResources, webViewHolder) {
-        documentResources?.let { resources ->
-            RepoDocumentWebViewClient(resources, { currentDocumentLink(it) }, { currentExternalLink(it) }, webViewHolder::pageReady, webViewHolder::pageError)
-        } ?: ExternalLinkWebViewClient(webViewHolder::pageReady, webViewHolder::pageError) { currentExternalLink(it) }
+    DisposableEffect(documentResources, navigationDocument) {
+        onDispose { if (navigationDocument == null) documentResources?.close() }
     }
+    val viewState = remember(bodyHtml, documentResources, controlled, navigationDocument) {
+        navigationDocument?.renderer(controlled) ?: MarkdownWebViewState(documentResources)
+    }
+    val webViewHolder = viewState.controller
+    val client = viewState.client
     val script = remember(context, controlled) {
         if (controlled) context.assets.open("markdown-translation.js").bufferedReader().use { it.readText() } else null
     }
     val sourceCss = MaterialTheme.colorScheme.onSurfaceVariant.toCssHex()
     val borderCss = MaterialTheme.colorScheme.outlineVariant.toCssHex()
     // Results and progress never participate in the HTML loading identity.
-    val documentId = remember(bodyHtml, translation?.document, cssFileName, backgroundCss, sourceCss, borderCss, displayAttempt) { UUID.randomUUID().toString() }
-    val nonce = remember(documentId) { UUID.randomUUID().toString() }
-    val fullHtml = remember(documentId) {
+    val page = viewState.pageFor(listOf(bodyHtml, translation?.document, cssFileName,
+        backgroundCss, sourceCss, borderCss, displayAttempt))
+    val fullHtml = remember(page) {
         buildMarkdownDocument(translation?.document?.safeHtml ?: bodyHtml, stylesheet, backgroundCss,
-            script = script, nonce = nonce, documentId = documentId, sourceCss = sourceCss, borderCss = borderCss)
+            script = script, nonce = page.nonce, documentId = page.documentId, sourceCss = sourceCss, borderCss = borderCss)
     }
-    val pageKey = remember(fullHtml, documentResources) { Any() }
 
-    // A new controlled instance never enables scripts on previously loaded raw HTML.
-    key(bodyHtml, documentResources, controlled) {
+    // Raw and script-controlled documents always use separate WebView instances.
+    key(viewState) {
     AndroidView(
         modifier = modifier
             .fillMaxWidth()
@@ -119,12 +118,10 @@ fun MarkdownWebView(
             // 从底部进入时有一条"死区"空白，静止也不恢复）。位置一变就强制重绘，
             // 把"滚动即重绘"的 View 世界契约还给 WebView。
             .onGloballyPositioned {
-                if (it.size.height > 0) retainedSize[0] = it.size.height
                 webViewHolder.webView?.postInvalidateOnAnimation()
             },
         factory = { context ->
-            val webView = NoVerticalScrollWebView(context).apply {
-                onImageClick = { selectedImage = it }
+            val webView = webViewHolder.webView ?: NoVerticalScrollWebView(context).apply {
                 settings.javaScriptEnabled = controlled
                 settings.javaScriptCanOpenWindowsAutomatically = false
                 settings.setSupportMultipleWindows(false)
@@ -166,14 +163,18 @@ fun MarkdownWebView(
                 })
             }
             webViewHolder.webView = webView
-            createMarkdownWebViewHost(webView).apply { minimumHeight = retainedSize[0] }
+            webView.onResume()
+            createMarkdownWebViewHost(webView)
         },
         update = { host ->
             val webView = host.getChildAt(0) as? WebView ?: return@AndroidView
+            viewState.onDocumentLink = { currentDocumentLink(it) }
+            viewState.onExternalLink = { currentExternalLink(it) }
+            viewState.bindDisplayError { currentDisplayError() }
             (webView as? NoVerticalScrollWebView)?.onImageClick = { selectedImage = it }
-            if (webView.tag !== pageKey) {
-                webView.tag = pageKey
-                webViewHolder.begin(pageKey, if (controlled) documentId else null)
+            if (webView.tag !== page) {
+                webView.tag = page
+                webViewHolder.begin(page, if (controlled) page.documentId else null)
                 webView.setWebViewClient(client)
                 webView.settings.allowFileAccess = false
                 webView.settings.allowContentAccess = !controlled && documentResources == null
@@ -189,10 +190,8 @@ fun MarkdownWebView(
             webViewHolder.submit(translation)
         },
         onRelease = { host ->
-            webViewHolder.release()
-            (webViewHolder.webView as? NoVerticalScrollWebView)?.onImageClick = null
-            webViewHolder.webView = null
-            releaseMarkdownWebViewHost(host)
+            viewState.detach(host)
+            if (navigationDocument == null) viewState.close()
         },
     )
     }
@@ -212,6 +211,69 @@ fun MarkdownWebView(
             }
         })
     }
+}
+
+/** Renderer state survives composition only when a navigation document owns it. */
+internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
+    var onDocumentLink: ((RepoDocumentContext) -> Unit)? = null
+    var onExternalLink: ((String) -> Unit)? = null
+    private var onDisplayError: (() -> Unit)? = null
+    private var pendingDisplayError = false
+    val controller = MarkdownTranslationController {
+        val handler = onDisplayError
+        if (handler == null) pendingDisplayError = true else handler()
+    }
+    val client: WebViewClient = resources?.let {
+        RepoDocumentWebViewClient(it, { onDocumentLink?.invoke(it) }, { onExternalLink?.invoke(it) },
+            controller::pageReady, controller::pageError)
+    } ?: ExternalLinkWebViewClient(controller::pageReady, controller::pageError) { onExternalLink?.invoke(it) }
+    private var pageInputs: List<Any?>? = null
+    private var page = MarkdownPage()
+
+    fun pageFor(inputs: List<Any?>): MarkdownPage {
+        if (pageInputs != inputs) {
+            pageInputs = inputs
+            page = MarkdownPage()
+        }
+        return page
+    }
+
+    fun bindDisplayError(handler: () -> Unit) {
+        onDisplayError = handler
+        if (pendingDisplayError) {
+            pendingDisplayError = false
+            handler()
+        }
+    }
+
+    fun detach(host: FrameLayout) {
+        onDocumentLink = null
+        onExternalLink = null
+        onDisplayError = null
+        controller.webView?.let { view ->
+            (view as? NoVerticalScrollWebView)?.onImageClick = null
+            host.removeView(view)
+            view.onPause()
+        }
+    }
+
+    fun close() {
+        onDocumentLink = null
+        onExternalLink = null
+        onDisplayError = null
+        controller.release()
+        val view = controller.webView ?: return
+        controller.webView = null
+        (view as? NoVerticalScrollWebView)?.onImageClick = null
+        (view.parent as? ViewGroup)?.removeView(view)
+        view.stopLoading()
+        view.destroy()
+    }
+}
+
+internal class MarkdownPage {
+    val documentId: String = UUID.randomUUID().toString()
+    val nonce: String = UUID.randomUUID().toString()
 }
 
 /** Generic Markdown delegates links to the system instead of replacing its embedded document. */
@@ -261,7 +323,7 @@ internal class MarkdownTranslationController(private val onError: () -> Unit) {
     fun submit(value: TranslationPresentation?) { pending = value; flush() }
     fun pageReady(view: WebView) {
         if (view !== webView) return
-        if (documentId == null) { (view.parent as? View)?.minimumHeight = 0; view.requestLayout(); return }
+        if (documentId == null) { view.requestLayout(); return }
         if (ready || failed) return
         val expected = pageKey
         runCatching {
@@ -301,7 +363,6 @@ internal class MarkdownTranslationController(private val onError: () -> Unit) {
     private fun current(view: WebView, key: Any?) = view === webView && pageKey === key && view.tag === key && !failed
     private fun parse(value: String?): JSONObject? = runCatching { JSONObject(value.orEmpty()) }.getOrNull()
     private fun remeasure(view: WebView) {
-        (view.parent as? View)?.let { it.minimumHeight = 0; it.requestLayout() }
         view.requestLayout(); view.postInvalidateOnAnimation()
     }
     private fun fail() {

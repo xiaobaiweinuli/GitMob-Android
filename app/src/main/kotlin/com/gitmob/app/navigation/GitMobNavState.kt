@@ -17,6 +17,7 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.runtime.serialization.NavKeySerializer
 import androidx.savedstate.compose.serialization.serializers.MutableStateSerializer
+import com.gitmob.app.ui.common.rememberDocumentNavEntryDecorator
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.auth.AccountEpoch
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -108,6 +109,7 @@ class GitMobNavState(
             val decorators = listOf(
                 rememberSaveableStateHolderNavEntryDecorator<NavKey>(),
                 rememberViewModelStoreNavEntryDecorator<NavKey>(),
+                rememberDocumentNavEntryDecorator<NavKey>(),
             )
             rememberDecoratedNavEntries(
                 backStack = stack,

@@ -35,7 +35,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -132,31 +131,6 @@ class RepoFileSourceTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val clipboard = context.getSystemService(ClipboardManager::class.java)
         assertEquals(text, clipboard.primaryClip!!.getItemAt(0).text.toString())
-    }
-
-    @Test fun previewScrollRestoresAfterAsynchronousLayoutWithoutOverridingUserScroll() {
-        val visible = mutableStateOf(true)
-        val contentHeight = mutableStateOf(1000.dp)
-        lateinit var scroll: ScrollState
-        compose.setContent {
-            scroll = rememberScrollState()
-            if (visible.value) {
-                RepoFilePreviewViewport(scroll, Modifier.size(260.dp, 180.dp).testTag("preview")) {
-                    Box(Modifier.height(contentHeight.value))
-                }
-            }
-        }
-        compose.runOnIdle { runBlocking { scroll.scrollTo(240) } }
-        compose.runOnIdle { visible.value = false }
-        compose.runOnIdle { contentHeight.value = 0.dp; visible.value = true }
-        compose.runOnIdle { assertEquals(0, scroll.value); contentHeight.value = 1000.dp }
-        compose.runOnIdle { assertEquals(240, scroll.value); visible.value = false }
-        compose.runOnIdle { contentHeight.value = 260.dp; visible.value = true }
-        compose.onNodeWithTag("preview").performTouchInput { swipeDown() }
-        val userOffset = compose.runOnIdle { scroll.value }
-        assertTrue(userOffset < 240)
-        compose.runOnIdle { contentHeight.value = 1000.dp }
-        compose.runOnIdle { assertEquals(userOffset, scroll.value) }
     }
 
     @Test fun compactMenuToggleHasOneActionAndSnapshotHidesWrites() {

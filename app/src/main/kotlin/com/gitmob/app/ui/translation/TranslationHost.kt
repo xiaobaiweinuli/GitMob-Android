@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.translation
 
+import com.gitmob.app.ui.common.NavigationDocument
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -125,6 +127,7 @@ fun TranslationHtml(
     documentResources: RepoDocumentResources? = null,
     onDocumentLink: (RepoDocumentContext) -> Unit = {},
     onExternalLink: ((String) -> Unit)? = null,
+    navigationDocument: NavigationDocument? = null,
 ) {
     val target = remember(translationKey, bodyHtml) { TranslationTarget(translationKey, bodyHtml, true) }
     val controller = LocalTranslationController.current
@@ -137,6 +140,7 @@ fun TranslationHtml(
         TranslationStatus(target, Modifier.padding(horizontal = 8.dp))
         MarkdownWebView(bodyHtml, backgroundColor = backgroundColor, documentResources = documentResources,
             onDocumentLink = onDocumentLink, onExternalLink = onExternalLink, translation = presentation,
+            navigationDocument = navigationDocument,
             displayAttempt = entry?.displayAttempt ?: 0,
             onTranslationDisplayError = { controller?.viewModel?.displayFailed(target, entry?.generation ?: -1) })
         TranslationStatus(target, Modifier.padding(horizontal = 8.dp), completedOnly = true)

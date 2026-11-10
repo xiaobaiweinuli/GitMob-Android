@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repocode
 
-import androidx.compose.foundation.ScrollState
+import com.gitmob.app.ui.common.rememberNavigationDocument
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,16 +44,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -65,7 +63,6 @@ import com.gitmob.app.ui.translation.TranslationFileMenuItem
 import com.gitmob.app.ui.translation.TranslationHtml
 import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.RepositoryImagePreview
-import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -144,15 +141,15 @@ fun RepoFileDetailScreen(
                             RepositoryImagePreview(requireNotNull(state.previewContext), file.byteSize, Modifier.weight(1f))
                         }
                         state.previewMode && previewHtml != null -> {
-                            // Owned by this preview composition; a return from source creates a fresh scope.
-                            val documentResources = remember(previewHtml, state.previewContext, state.previewRevision, viewModel) {
-                                state.previewContext?.let(viewModel::createDocumentResources)
-                            }
-                            RepoFilePreviewViewport(previewScroll, Modifier.weight(1f)) {
+                            val document = rememberNavigationDocument(
+                                previewHtml, state.previewContext, state.previewRevision, viewModel::createDocumentResources,
+                            )
+                            Column(Modifier.weight(1f).verticalScroll(previewScroll)) {
                                 TranslationHtml(
                                     translationKey = "file:$owner/$name/$ref/$path",
                                     bodyHtml = previewHtml,
-                                    documentResources = documentResources,
+                                    documentResources = document.resources,
+                                    navigationDocument = document,
                                     onDocumentLink = onDocumentLink,
                                     onExternalLink = onDocumentExternalLink,
                                 )
@@ -273,32 +270,5 @@ private fun RepoFileMenuAction(
         if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         else Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = contentColor)
         Text(label, color = contentColor, style = MaterialTheme.typography.bodyLarge)
-    }
-}
-
-/** Restore only after asynchronous document layout can contain the previous scroll offset. */
-@Composable
-internal fun RepoFilePreviewViewport(
-    scrollState: ScrollState,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val restoreOffset = remember { scrollState.value }
-    var restored by remember { mutableStateOf(restoreOffset == 0) }
-    var contentHeight by remember { mutableIntStateOf(0) }
-    var viewportHeight by remember { mutableIntStateOf(0) }
-    LaunchedEffect(contentHeight, viewportHeight) {
-        if (!restored && viewportHeight > 0 && contentHeight - viewportHeight >= restoreOffset) {
-            scrollState.scrollTo(restoreOffset)
-            restored = true
-        }
-    }
-    // An explicit user scroll takes precedence if images or WebView layout are still pending.
-    LaunchedEffect(scrollState) {
-        snapshotFlow { scrollState.isScrollInProgress }.first { it }
-        restored = true
-    }
-    Column(modifier.onSizeChanged { viewportHeight = it.height }.verticalScroll(scrollState)) {
-        Box(Modifier.fillMaxWidth().onSizeChanged { contentHeight = it.height }) { content() }
     }
 }

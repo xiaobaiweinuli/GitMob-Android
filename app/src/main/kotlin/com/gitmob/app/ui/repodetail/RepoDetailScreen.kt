@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.repodetail
 
+import com.gitmob.app.ui.common.rememberNavigationDocument
+
 import com.gitmob.app.ui.translation.*
 import com.gitmob.app.data.translation.TranslationTarget
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -292,9 +294,9 @@ fun RepoDetailScreen(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                                 )
                             }
-                            val documentResources = remember(readmeHtml, state.readmeContext, state.readmeRevision, viewModel) {
-                                state.readmeContext?.let(viewModel::createDocumentResources)
-                            }
+                            val document = rememberNavigationDocument(
+                                readmeHtml, state.readmeContext, state.readmeRevision, viewModel::createDocumentResources,
+                            )
                             TranslationHtml(
                                 translationKey = readmeTarget.key,
                                 bodyHtml = readmeHtml,
@@ -302,7 +304,8 @@ fun RepoDetailScreen(
                                     val bounds = it.boundsInWindow()
                                     readmeVisible = bounds.height > 0 && bounds.bottom > viewport.top && bounds.top < viewport.bottom
                                 },
-                                documentResources = documentResources,
+                                documentResources = document.resources,
+                                navigationDocument = document,
                                 onDocumentLink = onDocumentLink,
                                 onExternalLink = onDocumentExternalLink,
                             )
