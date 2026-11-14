@@ -30,6 +30,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -151,7 +152,7 @@ fun SearchScreen(
                                     val remaining = (page.totalCount - page.items.size).coerceAtLeast(0)
                                     if (remaining > 0 || page.next != null || page.incomplete) TextButton(
                                         onClick = { openCategory(state.submittedQuery, category, record = false) }, modifier = Modifier.fillMaxWidth(),
-                                    ) { Text(if (page.incomplete) stringResource(R.string.search_more_unknown) else stringResource(R.string.search_more, remaining)) }
+                                    ) { Text(if (page.incomplete) stringResource(R.string.search_more_unknown) else pluralStringResource(R.plurals.search_more, remaining, remaining)) }
                                 }
                                 HorizontalDivider(Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             }

@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.pluralStringResource
 import androidx.core.net.toUri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -134,7 +135,7 @@ fun ProfilePersonHeader(
         Row(modifier = Modifier.padding(top = 12.dp)) {
             if (onFollowersClick != null) {
                 Text(
-                    stringResource(R.string.common_followers_count, followersCount),
+                    pluralStringResource(R.plurals.common_followers_count, followersCount, followersCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
@@ -143,7 +144,7 @@ fun ProfilePersonHeader(
                 )
             } else {
                 Text(
-                    stringResource(R.string.common_followers_count, followersCount),
+                    pluralStringResource(R.plurals.common_followers_count, followersCount, followersCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(end = 16.dp),

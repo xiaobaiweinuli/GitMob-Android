@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.repodetail
 
+import androidx.core.graphics.toColorInt
 import com.gitmob.app.ui.common.rememberNavigationDocument
 
 import com.gitmob.app.ui.translation.*
@@ -448,7 +449,7 @@ private fun RepoHeader(
             ) {
                 detail.languageName?.let { lang ->
                     val dotColor = detail.languageColor
-                        ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+                        ?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }
                         ?: MaterialTheme.colorScheme.outline
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(10.dp)) {}

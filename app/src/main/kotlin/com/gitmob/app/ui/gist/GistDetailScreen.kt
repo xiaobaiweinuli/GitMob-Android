@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.gist
 
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.text.selection.SelectionContainer
 import com.gitmob.app.ui.translation.*
@@ -357,8 +358,8 @@ internal fun GistDetailContent(
                         stringResource(
                             R.string.gist_detail_metadata,
                             stringResource(if (detail.isPublic) R.string.work_visibility_public else R.string.common_private),
-                            detail.files.size,
-                            detail.commentCount,
+                            pluralStringResource(R.plurals.gist_files_count, detail.files.size, detail.files.size),
+                            pluralStringResource(R.plurals.gist_comments_count, detail.commentCount, detail.commentCount),
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -498,7 +499,7 @@ internal fun GistFileCard(
             Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(file.filename, fontWeight = FontWeight.SemiBold)
-                    Text(stringResource(R.string.gist_file_metadata, file.language ?: file.type.orEmpty(), file.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(pluralStringResource(R.plurals.gist_file_metadata, file.size, file.language ?: file.type.orEmpty(), file.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Box {
                     IconButton(onClick = { onMenuChange(true) }) { Icon(Icons.Default.MoreVert, stringResource(R.string.common_more)) }

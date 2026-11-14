@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.repopullrequests
 
+import androidx.compose.ui.res.pluralStringResource
 import com.gitmob.app.ui.translation.TranslationMenuItem
 import com.gitmob.app.ui.translation.TranslationText
 import com.gitmob.app.data.translation.TranslationTarget
@@ -238,7 +239,7 @@ private fun PullRequestFilters(state: RepoPullRequestListUiState, viewModel: Rep
             )
         }
         Text(
-            text = stringResource(R.string.work_items_count, state.totalCount),
+            text = pluralStringResource(R.plurals.work_items_count, state.totalCount, state.totalCount),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -599,7 +600,7 @@ private fun PullRequestHeader(pullRequest: RepoPullRequest) {
             pullRequest.reviewDecision?.let { AssistChip(onClick = {}, label = { Text(pullRequestReviewStateLabel(it)) }) }
         }
         Text("${pullRequest.headRepositoryNameWithOwner.orEmpty()}:${pullRequest.headRefName} -> ${pullRequest.baseRefName}", style = MaterialTheme.typography.bodySmall)
-        Text(stringResource(R.string.pr_diff_stats, pullRequest.additions, pullRequest.deletions, pullRequest.changedFiles), style = MaterialTheme.typography.bodySmall)
+        Text(pluralStringResource(R.plurals.pr_diff_stats, pullRequest.changedFiles, pullRequest.additions, pullRequest.deletions, pullRequest.changedFiles), style = MaterialTheme.typography.bodySmall)
     }
 }
 

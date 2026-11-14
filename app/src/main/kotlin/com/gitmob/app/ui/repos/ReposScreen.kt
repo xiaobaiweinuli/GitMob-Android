@@ -60,6 +60,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -266,7 +267,7 @@ fun ReposScreen(
                     if (state.limitReached) {
                         item(key = "repos-search-limit") {
                             Text(
-                                stringResource(R.string.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT),
+                                pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
                                 modifier = Modifier.fillMaxWidth().padding(24.dp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

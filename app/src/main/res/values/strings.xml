@@ -35,7 +35,6 @@
     <string name="nav_tab_settings">设置</string>
     <string name="nav_tab_gist" translatable="false">Gist</string>
     <string name="nav_placeholder_wip">%1$s（开发中）</string>
-    <string name="nav_code_browser">代码浏览（%1$s）</string>
     <string name="nav_commit_history">提交历史（%1$s）</string>
 
     <!-- 通用 · 跨页复用词 -->
@@ -51,7 +50,9 @@
     <string name="common_select_organization">选择组织</string>
     <string name="common_follow">关注</string>
     <string name="common_following">已关注</string>
-    <string name="common_followers_count">%1$d 个关注者</string>
+    <plurals name="common_followers_count">
+        <item quantity="other">%1$d 个关注者</item>
+    </plurals>
     <string name="common_following_count">%1$d 关注</string>
     <string name="common_badge_developer_program">开发者计划成员</string>
     <string name="common_badge_bounty_hunter">安全赏金猎人</string>
@@ -87,7 +88,6 @@
     <string name="settings_about_summary">版本、项目与社区信息</string>
     <string name="settings_section_account">账号</string>
     <string name="settings_logout">退出登录</string>
-    <string name="settings_logout_summary">退出当前 GitHub 账号</string>
     <string name="download_opened_externally">已交给系统打开下载链接</string>
     <string name="download_address_unavailable">无法获取下载地址，请重试</string>
     <string name="download_external_app_unavailable">系统没有可打开此下载链接的应用</string>
@@ -184,8 +184,9 @@
     <string name="common_retry">重试</string>
 
     <!-- 工作 · 议题/PR/讨论列表筛选 -->
-    <string name="work_items_count">%1$d 条</string>
-    <string name="work_select_filter">选择%1$s</string>
+    <plurals name="work_items_count">
+        <item quantity="other">%1$d 条</item>
+    </plurals>
     <string name="work_select_filter_value">选择%1$s，当前为%2$s</string>
     <string name="work_filter_state">状态</string>
     <string name="work_filter_relation">关系</string>
@@ -240,8 +241,6 @@
     <!-- 仓库详情 -->
     <string name="repo_forked_from">" 复刻自 %1$s/%2$s"</string>
     <string name="repo_template">模板</string>
-    <string name="repo_starred_count">" 已标星 %1$d"</string>
-    <string name="repo_star_count">" 标星 %1$d"</string>
     <string name="repo_stargazers">标星用户</string>
     <string name="repo_forks">直接复刻</string>
     <string name="repo_stargazers_count">标星 %1$d</string>
@@ -318,13 +317,21 @@
     <string name="repo_transfer_still_pending">实际地址尚未变化，请等待接收或稍后检查</string>
     <string name="repo_sync_title">同步当前分支</string>
     <string name="repo_sync_direction">%1$s/%2$s:%3$s → %4$s/%5$s:%3$s</string>
-    <string name="repo_sync_counts">领先 %1$d 个提交 · 落后 %2$d 个提交</string>
+    <string name="repo_sync_counts">%1$s · %2$s</string>
+    <plurals name="repo_sync_ahead">
+        <item quantity="other">领先 %1$d 个提交</item>
+    </plurals>
+    <plurals name="repo_sync_behind">
+        <item quantity="other">落后 %1$d 个提交</item>
+    </plurals>
     <string name="repo_sync_up_to_date">当前分支已包含上游的全部提交</string>
     <string name="repo_sync_merge">合并上游</string>
     <string name="repo_sync_merge_hint">保留当前分支的提交；发生冲突时停止，不强制覆盖。</string>
     <string name="repo_sync_discard">丢弃提交并对齐上游</string>
     <string name="repo_sync_discard_title">丢弃当前分支的提交？</string>
-    <string name="repo_sync_discard_warning">将丢弃 %1$d 个领先提交，强制对齐上游。请自行备份；客户端不能保证恢复。保护规则或跨网络对象限制可能拒绝更新。</string>
+    <plurals name="repo_sync_discard_warning">
+        <item quantity="other">将丢弃 %1$d 个领先提交，强制对齐上游。请自行备份；客户端不能保证恢复。保护规则或跨网络对象限制可能拒绝更新。</item>
+    </plurals>
     <string name="repo_sync_confirm_branch">输入当前分支名以确认</string>
     <string name="repo_sync_current_head">当前 SHA：%1$s</string>
     <string name="repo_sync_upstream_head">上游 SHA：%1$s</string>
@@ -416,8 +423,6 @@
     <string name="repos_owner_title">%1$s 的仓库</string>
     <string name="userstars_title">%1$s 的星标</string>
     <string name="login_title">登录 GitMob</string>
-    <string name="login_subtitle">使用你在 GitHub 上创建的 Personal Access Token 登录</string>
-    <string name="login_button">登录</string>
 
     <!-- 批次 F · 仓库议题列表/详情 -->
     <string name="issue_new">新建议题</string>
@@ -450,9 +455,7 @@
     <string name="issue_filter_updated_30d">最近 30 天更新</string>
     <string name="issue_meta_milestone">里程碑 %1$s</string>
     <string name="issue_editor_title_label">标题</string>
-    <string name="issue_editor_body_label">Markdown 正文</string>
     <string name="issue_form_required_label">%1$s *</string>
-    <string name="issue_create">创建</string>
     <string name="common_refresh">刷新</string>
     <string name="issue_title_number">议题 #%1$d</string>
     <string name="issue_subscribe">订阅</string>
@@ -463,13 +466,10 @@
     <string name="issue_close_duplicate">关闭为重复</string>
     <string name="issue_reopen">重新打开</string>
     <string name="issue_delete">删除议题</string>
-    <string name="issue_comment_add">添加评论</string>
-    <string name="issue_comment_submit">提交评论</string>
     <string name="issue_comments_count">评论 %1$d</string>
     <string name="issue_delete_comment_title">删除评论？</string>
     <string name="issue_detail_milestone">里程碑：%1$s</string>
     <string name="issue_detail_assignees">指派：%1$s</string>
-    <string name="issue_edit_comment">编辑评论</string>
     <string name="common_deleted_user">已删除用户</string>
     <string name="pr_new">新建拉取请求</string>
     <string name="pr_edit">编辑拉取请求</string>
@@ -506,13 +506,14 @@
     <string name="pr_create_no_text_diff">没有可显示的文本差异</string>
     <string name="pr_create_changes">更改</string>
     <string name="pr_create_files_changed">%1$d%2$s 个文件已更改</string>
-    <string name="pr_create_commits_count">%1$d 个提交</string>
+    <plurals name="pr_create_commits_count">
+        <item quantity="other">%1$d 个提交</item>
+    </plurals>
     <string name="pr_create_active_pull_requests">活动拉取请求</string>
     <string name="pr_create_existing_hint">已经存在一个使用这两个分支的开放拉取请求。</string>
     <string name="pr_create_compare_footer">与其他人讨论并查看此比较中的更改。</string>
     <string name="pr_create_submit">创建拉取请求</string>
     <string name="pr_create_draft">创建为草稿</string>
-    <string name="pr_draft">草稿</string>
     <string name="pr_merged">已合并</string>
     <string name="pr_close">关闭拉取请求</string>
     <string name="pr_reopen">重新打开拉取请求</string>
@@ -521,15 +522,15 @@
     <string name="pr_update_branch">更新分支</string>
     <string name="pr_merge">合并</string>
     <string name="pr_review">提交审查</string>
-    <string name="pr_submit_review">提交审查</string>
     <string name="pr_resolve">标记已解决</string>
     <string name="pr_unresolve">取消已解决</string>
     <string name="pr_tab_conversation">对话</string>
     <string name="pr_tab_files">已更改文件</string>
     <string name="pr_tab_commits">提交</string>
     <string name="pr_tab_reviews">审查</string>
-    <string name="pr_file_stats">新增 %1$d，删除 %2$d</string>
-    <string name="pr_diff_stats">新增 %1$d，删除 %2$d，%3$d 个文件</string>
+    <plurals name="pr_diff_stats">
+        <item quantity="other">新增 %1$d，删除 %2$d，%3$d 个文件</item>
+    </plurals>
     <string name="pr_commit_title">提交标题（可选）</string>
     <string name="pr_commit_message">提交消息（可选）</string>
     <string name="pr_enable_auto_merge">启用自动合并</string>
@@ -555,10 +556,8 @@
     <string name="discussion_answer_filter">回答状态</string>
     <string name="discussion_answered">已回答</string>
     <string name="discussion_unanswered">未回答</string>
-    <string name="discussion_answer">答案</string>
     <string name="discussion_mark_answer">标记为答案</string>
     <string name="discussion_unmark_answer">取消答案标记</string>
-    <string name="discussion_reply">回复</string>
     <string name="discussion_close">关闭讨论</string>
     <string name="discussion_reopen">重新打开讨论</string>
     <string name="discussion_delete_title">删除讨论 #%1$d？</string>
@@ -603,10 +602,18 @@
     <string name="common_download">下载</string>
     <string name="gist_detail_title">Gist 详情</string>
     <string name="gist_no_description">无描述</string>
-    <string name="gist_detail_metadata">%1$s · %2$d 个文件 · %3$d 条评论</string>
+    <string name="gist_detail_metadata">%1$s · %2$s · %3$s</string>
+    <plurals name="gist_files_count">
+        <item quantity="other">%1$d 个文件</item>
+    </plurals>
+    <plurals name="gist_comments_count">
+        <item quantity="other">%1$d 条评论</item>
+    </plurals>
     <string name="gist_forked_from">复刻自 %1$s</string>
     <string name="gist_files">文件</string>
-    <string name="gist_file_metadata">%1$s · %2$d 字节</string>
+    <plurals name="gist_file_metadata">
+        <item quantity="other">%1$s · %2$d 字节</item>
+    </plurals>
     <string name="gist_file_truncated">文件内容已被 API 截断，请下载查看完整内容。</string>
     <string name="gist_file_binary">二进制文件无法以内嵌文本显示。</string>
     <string name="gist_download_zip">下载 ZIP</string>
@@ -621,8 +628,6 @@
     <string name="gist_delete_file">删除文件</string>
     <string name="gist_delete_file_confirm">确定删除 %1$s？</string>
     <string name="gist_comments">评论</string>
-    <string name="gist_add_comment">添加评论</string>
-    <string name="gist_edit_comment">编辑评论</string>
     <string name="gist_delete_comment">删除评论</string>
     <string name="gist_delete_comment_confirm">确定永久删除这条评论？</string>
     <string name="gist_comments_closed">评论已关闭</string>
@@ -633,7 +638,16 @@
     <string name="gist_revisions">修订历史</string>
     <string name="gist_revisions_description">查看版本、作者与增删统计</string>
     <string name="gist_revision_detail">修订差异</string>
-    <string name="gist_revision_changes">新增 %1$d · 删除 %2$d · 共 %3$d 处变更</string>
+    <string name="gist_revision_changes">%1$s · %2$s · %3$s</string>
+    <plurals name="gist_revision_additions">
+        <item quantity="other">新增 %1$d</item>
+    </plurals>
+    <plurals name="gist_revision_deletions">
+        <item quantity="other">删除 %1$d</item>
+    </plurals>
+    <plurals name="gist_revision_total_changes">
+        <item quantity="other">共 %1$d 处变更</item>
+    </plurals>
     <string name="gist_revision_no_previous">这是最早的修订，没有更早的相邻快照可比较。</string>
     <string name="gist_revision_no_diff">相邻快照没有文本差异。</string>
     <string name="gist_no_revisions">暂无修订记录</string>
@@ -663,8 +677,12 @@
     <string name="release_title">标题</string>
     <string name="release_notes">发行说明</string>
     <string name="release_assets">资产</string>
-    <string name="release_assets_count">资产 %1$d 个</string>
-    <string name="release_asset_meta">下载 %1$d 次 · %2$s</string>
+    <plurals name="release_assets_count">
+        <item quantity="other">资产 %1$d 个</item>
+    </plurals>
+    <plurals name="release_asset_meta">
+        <item quantity="other">下载 %1$d 次 · %2$s</item>
+    </plurals>
     <string name="release_upload_asset">上传资产</string>
     <string name="release_delete">删除发行版</string>
     <string name="release_delete_title">删除发行版？</string>
@@ -675,7 +693,9 @@
     <string name="release_asset_label">显示标签（可选）</string>
     <string name="release_generate_notes">自动生成发行说明</string>
     <string name="contributors_empty">暂无贡献者</string>
-    <string name="contributors_count">%1$d 次贡献</string>
+    <plurals name="contributors_count">
+        <item quantity="other">%1$d 次贡献</item>
+    </plurals>
     <string name="contributors_type_user">用户</string>
     <string name="contributors_type_bot">自动程序</string>
     <string name="contributors_type_organization">组织</string>
@@ -689,8 +709,6 @@
     <string name="conversation_comment">评论</string>
     <string name="conversation_write_comment">写评论</string>
     <string name="conversation_edit_comment">编辑评论</string>
-    <string name="conversation_markdown_body">Markdown 内容</string>
-    <string name="conversation_submitting">提交中…</string>
     <string name="conversation_send">发送</string>
     <string name="conversation_edit_tab">编辑</string>
     <string name="conversation_preview_tab">预览</string>
@@ -711,8 +729,6 @@
     <string name="conversation_tool_quote">引用</string>
     <string name="conversation_tool_inline_code">行内代码</string>
     <string name="conversation_tool_code_block">代码块</string>
-    <string name="conversation_tool_undo">撤销</string>
-    <string name="conversation_tool_redo">重做</string>
     <string name="conversation_edited">已编辑</string>
     <string name="conversation_edit_history">编辑历史</string>
     <string name="conversation_no_edit_diff">没有可显示的编辑差异</string>
@@ -720,7 +736,6 @@
     <string name="git_commit_files_unknown">文件数未知</string>
     <string name="git_commit_stats">新增 %1$d，删除 %2$d，%3$s</string>
     <string name="git_commit_no_diff">此文件没有可显示的文本 Diff</string>
-    <string name="git_commit_binary">二进制文件，无法显示文本 Diff</string>
     <string name="git_commit_changed_files">变更文件</string>
     <string name="git_commit_detail">提交 %1$s</string>
     <string name="common_more">更多</string>
@@ -748,7 +763,9 @@
     <string name="repo_download_folder">下载文件夹</string>
     <string name="repo_downloading_folder">正在生成文件夹 ZIP</string>
     <string name="repo_collecting_folder_files">正在读取文件列表…</string>
-    <string name="repo_folder_download_progress">已处理 %1$d / %2$d 个文件</string>
+    <plurals name="repo_folder_download_progress">
+        <item quantity="other">已处理 %1$d / %2$d 个文件</item>
+    </plurals>
     <string name="repo_folder_download_complete">文件夹 ZIP 已保存</string>
     <string name="repo_folder_save_failed">无法保存文件夹 ZIP</string>
     <string name="repo_download_archive">下载仓库归档</string>
@@ -777,7 +794,9 @@
     <string name="history_limit">最大记录条数</string>
     <string name="history_clear">清空历史记录</string>
     <string name="history_limit_hint">1–1000</string>
-    <string name="history_trim_confirm">将删除最早的 %1$d 条记录，保留最近 %2$d 条。</string>
+    <plurals name="history_trim_confirm">
+        <item quantity="other">将删除最早的 %1$d 条记录，保留最近 %2$d 条。</item>
+    </plurals>
     <string name="history_clear_confirm">确定清空全部浏览历史？</string>
     <string name="history_delete">删除记录</string>
     <string name="history_delete_description">删除 %1$s 的历史记录</string>
@@ -799,7 +818,9 @@
     <string name="library_edit">编辑</string>
     <string name="library_done">完成</string>
     <string name="library_save">保存</string>
-    <string name="library_group_count">%1$d 个仓库</string>
+    <plurals name="library_group_count">
+        <item quantity="other">%1$d 个仓库</item>
+    </plurals>
     <string name="library_no_favorites">暂无收藏</string>
     <string name="library_no_history">暂无浏览记录</string>
     <string name="library_invalid_group">分组名称需要 1–30 个字符</string>
@@ -820,9 +841,10 @@
     <string name="history_limit_summary">%1$d 条 · 默认 100 条</string>
     <string name="history_count">%1$d 条记录</string>
     <string name="favorites_summary">%1$d 个收藏 · %2$d 个分组</string>
-    <string name="favorites_default_count">%1$d 个仓库 · 未分类的收藏</string>
+    <plurals name="favorites_default_count">
+        <item quantity="other">%1$d 个仓库 · 未分类的收藏</item>
+    </plurals>
     <string name="favorites_local_hint">收藏不改变仓库的 GitHub 星标。</string>
-    <string name="image_source_tab">代码</string>
     <string name="image_viewer_title">查看图片</string>
     <string name="image_viewer_close">关闭图片查看器</string>
     <string name="image_actions">图片操作</string>
@@ -834,7 +856,9 @@
     <string name="image_zoom_out">缩小图片</string>
     <string name="image_gesture_hint">双指缩放 · 双击放大 · 放大后拖动</string>
     <string name="image_preview_failed">图片加载失败，请重试</string>
-    <string name="image_file_size">%1$d 字节</string>
+    <plurals name="image_file_size">
+        <item quantity="other">%1$d 字节</item>
+    </plurals>
     <string name="image_preview_too_large">图片超过 8 MiB 预览限制，可下载后查看</string>
 
     <!-- Translation -->
@@ -916,10 +940,14 @@
     <string name="search_clear_history_body">清除当前账号的全部搜索记录。</string>
     <string name="search_clear">清除</string>
     <string name="search_empty">没有找到结果</string>
-    <string name="search_more">查看另外 %1$d 项</string>
+    <plurals name="search_more">
+        <item quantity="other">查看另外 %1$d 项</item>
+    </plurals>
     <string name="search_more_unknown">查看更多代码结果</string>
     <string name="search_incomplete">结果可能不完整</string>
-    <string name="search_limit">最多可查看前 %1$d 项，请增加条件</string>
+    <plurals name="search_limit">
+        <item quantity="other">最多可查看前 %1$d 项，请增加条件</item>
+    </plurals>
     <string name="search_end">已显示全部结果</string>
     <string name="search_scope_conflict">搜索条件与此分类冲突，请返回调整条件</string>
     <string name="search_invalid_query">搜索条件无效，请返回检查语法</string>

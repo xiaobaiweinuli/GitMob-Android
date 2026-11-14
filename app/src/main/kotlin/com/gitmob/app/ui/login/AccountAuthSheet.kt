@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -222,7 +223,7 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                             }),
                             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         )
-                        Text(stringResource(R.string.auth_device_remaining, remainingSeconds), style = MaterialTheme.typography.bodySmall)
+                        Text(pluralStringResource(R.plurals.auth_device_remaining, remainingSeconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), remainingSeconds), style = MaterialTheme.typography.bodySmall)
                     }
                     is DeviceFlowState.Failed -> {
                         Text(stringResource(state.operationErrorRes ?: R.string.error_request_failed), color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })

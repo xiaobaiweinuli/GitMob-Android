@@ -23,6 +23,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,7 +79,7 @@ internal fun RepositoryImagePreview(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var viewing by remember(image) { mutableStateOf(false) }
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(stringResource(R.string.image_file_size, byteSize), style = MaterialTheme.typography.labelMedium,
+        Text(pluralStringResource(R.plurals.image_file_size, byteSize.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), byteSize), style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         ImageSurface(state, viewModel::retry, viewModel::decodeFailed, viewModel::download,
             image.description.orEmpty(), Modifier.fillMaxWidth().height(300.dp), onClick = { viewing = true })

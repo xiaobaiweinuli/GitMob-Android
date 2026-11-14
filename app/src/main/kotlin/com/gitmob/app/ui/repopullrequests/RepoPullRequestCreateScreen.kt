@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -151,7 +152,7 @@ private fun ColumnScope.ComparePage(
                     item {
                         CompareSummaryRow(
                             icon = { Icon(Icons.Default.AccountTree, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            title = stringResource(R.string.pr_create_commits_count, comparison.totalCommits),
+                            title = pluralStringResource(R.plurals.pr_create_commits_count, comparison.totalCommits, comparison.totalCommits),
                             onClick = viewModel::showCommits,
                         ) { Text(comparison.commits.firstOrNull()?.committedDate?.take(10).orEmpty(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }

@@ -178,6 +178,5 @@ class LoginViewModel @Inject constructor(
 
     override fun onCleared() {
         cancelAuthorization()
-        super.onCleared()
     }
 }

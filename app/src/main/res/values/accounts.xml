@@ -17,7 +17,9 @@
     <string name="accounts_reauthenticate">此账号需要重新授权</string>
     <string name="accounts_expanded">账号列表已展开</string>
     <string name="accounts_collapsed">账号列表已收起</string>
-    <string name="accounts_switch_hint">%1$d 个已保存账号 · 点按切换</string>
+    <plurals name="accounts_switch_hint">
+        <item quantity="other">%1$d 个已保存账号 · 点按切换</item>
+    </plurals>
     <string name="accounts_add_description">连接你的 GitHub 账号，从这里开始浏览与协作。</string>
     <string name="accounts_choose_description">选择一个已保存账号，或添加其他 GitHub 账号。</string>
     <string name="login_saved_accounts">已保存的账号</string>
@@ -46,7 +48,9 @@
     <string name="auth_device_waiting">等待你在浏览器中完成授权…</string>
     <string name="auth_device_slow_down">GitHub 要求降低频率，已延长轮询间隔…</string>
     <string name="auth_device_network_retry">网络暂时不可用，正在延迟重试…</string>
-    <string name="auth_device_remaining">授权码剩余 %1$d 秒</string>
+    <plurals name="auth_device_remaining">
+        <item quantity="other">授权码剩余 %1$d 秒</item>
+    </plurals>
     <string name="auth_device_restart">重新获取授权码</string>
     <string name="auth_device_requesting">正在获取授权码…</string>
     <string name="auth_device_scope">将请求仓库、资料、Gist、组织、通知、仓库删除及工作流权限。关闭弹窗会取消本次等待，不会撤销已授予的 GitHub 授权。</string>

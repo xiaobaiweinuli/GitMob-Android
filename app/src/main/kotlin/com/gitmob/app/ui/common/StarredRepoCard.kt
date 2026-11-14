@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.toColorInt
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.StarredRepo
@@ -174,7 +175,7 @@ fun StarredRepoCard(
                 ) {
                     repo.languageName?.let { lang ->
                         val dotColor = repo.languageColor
-                            ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+                            ?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }
                             ?: MaterialTheme.colorScheme.outline
                         Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(10.dp)) {}
                         Text(

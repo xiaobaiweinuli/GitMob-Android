@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -186,7 +187,7 @@ fun RepoCodeSearchScreen(
                                 when {
                                     section.error != null -> SearchFailure(section.error) { viewModel.retry(SearchCategory.CODE) }
                                     section.loading && page != null -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                                    page?.limitReached == true -> Text(stringResource(R.string.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT),
+                                    page?.limitReached == true -> Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
                                         style = MaterialTheme.typography.bodySmall)
                                     page != null && page.next == null && page.items.isNotEmpty() -> Text(stringResource(R.string.search_end),
                                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

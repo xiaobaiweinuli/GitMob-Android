@@ -193,8 +193,8 @@ fun DiscussionStateIcon(
     stateReason: DiscussionStateReason?,
     isAnswered: Boolean,
     locked: Boolean,
-    isClosed: Boolean = false,
     modifier: Modifier = Modifier,
+    isClosed: Boolean = false,
     size: Dp = 24.dp,
 ) {
     GitHubStateIcon(discussionStateVisual(stateReason, isAnswered, locked, isClosed), modifier, size)

@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -63,7 +64,14 @@ fun GistRevisionDetailScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(comparison.revision.version, fontWeight = FontWeight.SemiBold)
                             Text(comparison.revision.committedAt.take(19), style = MaterialTheme.typography.bodySmall)
-                            Text(stringResource(R.string.gist_revision_changes, comparison.revision.additions, comparison.revision.deletions, comparison.revision.totalChanges))
+                            Text(
+                                stringResource(
+                                    R.string.gist_revision_changes,
+                                    pluralStringResource(R.plurals.gist_revision_additions, comparison.revision.additions, comparison.revision.additions),
+                                    pluralStringResource(R.plurals.gist_revision_deletions, comparison.revision.deletions, comparison.revision.deletions),
+                                    pluralStringResource(R.plurals.gist_revision_total_changes, comparison.revision.totalChanges, comparison.revision.totalChanges),
+                                ),
+                            )
                         }
                     }
                     if (comparison.previousVersion == null) item("no-previous") {

@@ -129,8 +129,8 @@ private fun FilterCapsuleSurface(
     label: String,
     selectedText: String,
     filterLabel: String,
-    labelContent: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
+    labelContent: (@Composable () -> Unit)? = null,
     content: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }

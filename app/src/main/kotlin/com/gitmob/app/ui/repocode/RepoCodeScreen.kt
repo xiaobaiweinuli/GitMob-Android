@@ -62,6 +62,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -248,8 +249,9 @@ fun RepoCodeScreen(
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
-                            stringResource(
-                                R.string.repo_folder_download_progress,
+                            pluralStringResource(
+                                R.plurals.repo_folder_download_progress,
+                                state.folderExportTotal,
                                 state.folderExportCompleted,
                                 state.folderExportTotal,
                             ),
@@ -374,7 +376,7 @@ private fun ForkSyncDialog(
             text = {
                 Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     direction?.let { Text(it) }
-                    Text(stringResource(R.string.repo_sync_discard_warning, info.aheadBy), color = MaterialTheme.colorScheme.error)
+                    Text(pluralStringResource(R.plurals.repo_sync_discard_warning, info.aheadBy, info.aheadBy), color = MaterialTheme.colorScheme.error)
                     info.currentOid?.let { Text(stringResource(R.string.repo_sync_current_head, it.take(12))) }
                     info.upstreamOid?.let { Text(stringResource(R.string.repo_sync_upstream_head, it.take(12))) }
                     OutlinedTextField(
@@ -463,7 +465,14 @@ private fun ForkSyncContent(
             RepoForkSyncStatus.NO_COMMON_ANCESTOR -> Text(stringResource(R.string.repo_sync_no_common_ancestor))
             RepoForkSyncStatus.READY -> {
                 Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
-                    Text(stringResource(R.string.repo_sync_counts, info.aheadBy, info.behindBy), modifier = Modifier.fillMaxWidth().padding(16.dp))
+                    Text(
+                        stringResource(
+                            R.string.repo_sync_counts,
+                            pluralStringResource(R.plurals.repo_sync_ahead, info.aheadBy, info.aheadBy),
+                            pluralStringResource(R.plurals.repo_sync_behind, info.behindBy, info.behindBy),
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    )
                 }
                 if (info.behindBy == 0) Text(stringResource(R.string.repo_sync_up_to_date))
                 if (!state.capabilities.canPush) Text(stringResource(R.string.repo_sync_no_permission))

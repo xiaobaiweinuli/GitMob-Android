@@ -17,7 +17,10 @@
     <string name="accounts_reauthenticate">This account needs authorization again</string>
     <string name="accounts_expanded">Account list expanded</string>
     <string name="accounts_collapsed">Account list collapsed</string>
-    <string name="accounts_switch_hint">%1$d saved accounts · Tap to switch</string>
+    <plurals name="accounts_switch_hint">
+        <item quantity="one">%1$d saved account · Tap to switch</item>
+        <item quantity="other">%1$d saved accounts · Tap to switch</item>
+    </plurals>
     <string name="accounts_add_description">Connect your GitHub account to start exploring and collaborating.</string>
     <string name="accounts_choose_description">Choose a saved account or add another GitHub account.</string>
     <string name="login_saved_accounts">Saved accounts</string>
@@ -46,7 +49,10 @@
     <string name="auth_device_waiting">Waiting for authorization in your browser…</string>
     <string name="auth_device_slow_down">GitHub requested a slower polling rate. The interval has been extended…</string>
     <string name="auth_device_network_retry">Network temporarily unavailable. Retrying after a delay…</string>
-    <string name="auth_device_remaining">Code expires in %1$d seconds</string>
+    <plurals name="auth_device_remaining">
+        <item quantity="one">Code expires in %1$d second</item>
+        <item quantity="other">Code expires in %1$d seconds</item>
+    </plurals>
     <string name="auth_device_restart">Request a new code</string>
     <string name="auth_device_requesting">Requesting an authorization code…</string>
     <string name="auth_device_scope">Requests repository, profile, Gist, organization, notification, repository deletion, and workflow permissions. Closing this sheet cancels waiting, not existing GitHub authorization.</string>

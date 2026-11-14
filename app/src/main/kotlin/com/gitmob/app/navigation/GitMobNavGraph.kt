@@ -1,9 +1,9 @@
 package com.gitmob.app.navigation
 
+import androidx.core.net.toUri
 import com.gitmob.app.ui.translation.TranslationHost
 import com.gitmob.app.ui.translation.TranslationSettingsScreen
 
-import android.net.Uri
 import com.gitmob.app.data.model.RepoDocumentContext
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.ContentTransform
@@ -279,7 +279,7 @@ private fun LoggedInApp(
         }
     }
     val openDocumentExternal: (String) -> Unit = { url ->
-        val destination = DeepLinkRouter.parse(Uri.parse(url))
+        val destination = DeepLinkRouter.parse(url.toUri())
         if (destination == DeepLinkDestination.Unsupported) openExternalUrl(url)
         else navigateDeepLink(destination)
     }

@@ -2,7 +2,6 @@ package com.gitmob.app.ui.settings
 
 import androidx.compose.material3.ExperimentalMaterial3Api
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -47,6 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -191,7 +191,7 @@ private fun AboutLinkRow(icon: ImageVector?, label: String, sub: String, url: St
         icon = icon,
         title = label,
         summary = sub,
-        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
+        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) },
         trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
     )
 }

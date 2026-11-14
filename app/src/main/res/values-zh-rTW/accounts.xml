@@ -17,7 +17,9 @@
     <string name="accounts_reauthenticate">此帳號需要重新授權</string>
     <string name="accounts_expanded">帳號清單已展開</string>
     <string name="accounts_collapsed">帳號清單已收合</string>
-    <string name="accounts_switch_hint">%1$d 個已儲存帳號 · 點按切換</string>
+    <plurals name="accounts_switch_hint">
+        <item quantity="other">%1$d 個已儲存帳號 · 點按切換</item>
+    </plurals>
     <string name="accounts_add_description">連接你的 GitHub 帳號，從這裡開始瀏覽與協作。</string>
     <string name="accounts_choose_description">選擇已儲存的帳號，或新增其他 GitHub 帳號。</string>
     <string name="login_saved_accounts">已儲存的帳號</string>
@@ -46,7 +48,9 @@
     <string name="auth_device_waiting">等待你在瀏覽器中完成授權…</string>
     <string name="auth_device_slow_down">GitHub 要求降低頻率，已延長輪詢間隔…</string>
     <string name="auth_device_network_retry">網路暫時無法使用，正在延遲重試…</string>
-    <string name="auth_device_remaining">授權碼剩餘 %1$d 秒</string>
+    <plurals name="auth_device_remaining">
+        <item quantity="other">授權碼剩餘 %1$d 秒</item>
+    </plurals>
     <string name="auth_device_restart">重新取得授權碼</string>
     <string name="auth_device_requesting">正在取得授權碼…</string>
     <string name="auth_device_scope">將要求儲存庫、個人資料、Gist、組織、通知、儲存庫刪除及工作流程權限。關閉面板會取消本次等待，不會撤銷已授予的 GitHub 授權。</string>

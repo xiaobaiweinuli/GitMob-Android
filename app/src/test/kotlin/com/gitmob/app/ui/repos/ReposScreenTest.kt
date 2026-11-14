@@ -201,7 +201,10 @@ class ReposScreenTest {
         val vm = viewModel(SavedStateHandle(mapOf("repos.query" to "needle")))
         setContent(vm)
         composeRule.onNodeWithText("found").assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT))
+        val limitMessage = ApplicationProvider.getApplicationContext<Context>().resources.getQuantityString(
+            R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT,
+        )
+        composeRule.onNodeWithText(limitMessage)
             .performScrollTo().assertIsDisplayed()
         assertFalse(vm.state.value.canAutoLoadMore)
         composeRule.runOnIdle { vm.loadMore() }

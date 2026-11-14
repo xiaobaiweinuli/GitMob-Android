@@ -281,7 +281,7 @@ class AccountAuthSheetTest {
         every { repository.authorizeDevice() } returns flow { emit(waiting); awaitCancellation() }
         val vm = LoginViewModel(repository, ErrorEventBus(), accounts.session)
         fun seconds() = ((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0) + 999) / 1000
-        fun countdown(value: Long) = ApplicationProvider.getApplicationContext<Context>().getString(R.string.auth_device_remaining, value)
+        fun countdown(value: Long) = ApplicationProvider.getApplicationContext<Context>().resources.getQuantityString(R.plurals.auth_device_remaining, value.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), value)
         try {
             vm.openDeviceFlow()
             composeRule.setContent { MaterialTheme { AccountAuthSheet(vm) } }

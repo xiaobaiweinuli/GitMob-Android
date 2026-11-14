@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.toColorInt
 import com.gitmob.app.R
 import com.gitmob.app.data.model.GistListItem
 
@@ -159,7 +160,7 @@ fun GistCard(
             ) {
                 preview?.languageName?.let { language ->
                     val languageColor = preview.languageColor
-                        ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+                        ?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }
                         ?: MaterialTheme.colorScheme.outline
                     Surface(
                         color = languageColor,

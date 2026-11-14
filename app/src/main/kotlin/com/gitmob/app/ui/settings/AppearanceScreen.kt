@@ -54,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -351,7 +352,7 @@ private fun PageScaleRow(
     scale: Float,
     onScaleChangeFinished: (Float) -> Unit,
 ) {
-    var sliderValue by rememberSaveable(scale) { mutableStateOf(scale.coerceIn(0.8f, 1.1f)) }
+    var sliderValue by rememberSaveable(scale) { mutableFloatStateOf(scale.coerceIn(0.8f, 1.1f)) }
     val haptic = LocalHapticFeedback.current
     Column(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),

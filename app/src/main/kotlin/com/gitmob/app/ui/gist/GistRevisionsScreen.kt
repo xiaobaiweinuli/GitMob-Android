@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -80,7 +81,12 @@ fun GistRevisionsScreen(
                             Text(revision.committedAt.take(19), style = MaterialTheme.typography.bodySmall)
                         }
                         Text(
-                            stringResource(R.string.gist_revision_changes, revision.additions, revision.deletions, revision.totalChanges),
+                            stringResource(
+                                R.string.gist_revision_changes,
+                                pluralStringResource(R.plurals.gist_revision_additions, revision.additions, revision.additions),
+                                pluralStringResource(R.plurals.gist_revision_deletions, revision.deletions, revision.deletions),
+                                pluralStringResource(R.plurals.gist_revision_total_changes, revision.totalChanges, revision.totalChanges),
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

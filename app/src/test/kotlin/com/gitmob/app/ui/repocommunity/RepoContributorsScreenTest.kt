@@ -79,8 +79,8 @@ class RepoContributorsScreenTest {
         ]""", 2)
 
         compose.onAllNodesWithText("DrKLO").assertCountEquals(2)
-        compose.onNodeWithText(context.getString(R.string.contributors_count, 318)).assertIsDisplayed()
-        compose.onNodeWithText(context.getString(R.string.contributors_count, 6)).assertIsDisplayed()
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.contributors_count, 318, 318)).assertIsDisplayed()
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.contributors_count, 6, 6)).assertIsDisplayed()
         assertEquals(listOf(318, 6), viewModel.state.value.items.map { it.contributions })
         assertEquals(listOf(null, null), viewModel.state.value.items.map { it.login })
         assertFalse(viewModel.state.value.hasNextPage)
@@ -116,8 +116,8 @@ class RepoContributorsScreenTest {
         ]""", 2)
 
         compose.onAllNodesWithText("Same author").assertCountEquals(2)
-        compose.onNodeWithText(context.getString(R.string.contributors_count, 2)).assertIsDisplayed()
-        compose.onNodeWithText(context.getString(R.string.contributors_count, 1)).assertIsDisplayed()
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.contributors_count, 2, 2)).assertIsDisplayed()
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.contributors_count, 1, 1)).assertIsDisplayed()
     }
 
     @Test fun nextPageKeepsSameNameAnonymousAndRegisteredContributors() {
@@ -136,9 +136,9 @@ class RepoContributorsScreenTest {
         compose.onNode(hasScrollToIndexAction()).performScrollToIndex(PageSize.CONTRIBUTORS)
         awaitItems(PageSize.CONTRIBUTORS + 2)
         compose.onNode(hasScrollToIndexAction()).performScrollToIndex(PageSize.CONTRIBUTORS)
-        compose.onNode(hasText("DrKLO") and hasText(context.getString(R.string.contributors_count, 6)))
+        compose.onNode(hasText("DrKLO") and hasText(context.resources.getQuantityString(R.plurals.contributors_count, 6, 6)))
             .assertIsNotEnabled()
-        compose.onNode(hasText("DrKLO") and hasText(context.getString(R.string.contributors_count, 1)))
+        compose.onNode(hasText("DrKLO") and hasText(context.resources.getQuantityString(R.plurals.contributors_count, 1, 1)))
             .assertIsEnabled().performClick()
         assertEquals("DrKLO", openedLogin)
         assertEquals(318, viewModel.state.value.items.first().contributions)

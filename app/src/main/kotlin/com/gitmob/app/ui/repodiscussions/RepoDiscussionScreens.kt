@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.repodiscussions
 
+import androidx.compose.ui.res.pluralStringResource
 import com.gitmob.app.ui.translation.TranslationMenuItem
 import com.gitmob.app.ui.translation.TranslationText
 import com.gitmob.app.data.translation.TranslationTarget
@@ -326,7 +327,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
             )
         }
         Text(
-            text = stringResource(R.string.work_items_count, state.totalCount),
+            text = pluralStringResource(R.plurals.work_items_count, state.totalCount, state.totalCount),
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
         )

@@ -42,8 +42,8 @@ import coil3.compose.AsyncImage
 fun GitCommitRow(
     commit: RepoCommitSummary,
     onClick: () -> Unit,
-    onAuthorClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onAuthorClick: ((String) -> Unit)? = null,
 ) {
     val actor = commit.author ?: commit.committer
     val authorLogin = actor?.login?.takeIf(String::isNotBlank)
@@ -77,9 +77,9 @@ fun GitCommitRow(
 @Composable
 fun GitChangedFileRow(
     file: RepoChangedFile,
+    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     onRevert: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Row(modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp)) {

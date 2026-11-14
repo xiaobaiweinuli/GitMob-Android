@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -59,7 +60,7 @@ internal fun AdvancedSettingsContent(
     var showLimit by rememberSaveable { mutableStateOf(false) }
     var limitText by rememberSaveable { mutableStateOf("") }
     var trimLimit by rememberSaveable { mutableStateOf<Int?>(null) }
-    var trimCount by rememberSaveable { mutableStateOf(0) }
+    var trimCount by rememberSaveable { mutableIntStateOf(0) }
     var showClear by rememberSaveable { mutableStateOf(false) }
     LibraryScaffold(stringResource(R.string.advanced_settings), back) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -112,12 +113,22 @@ internal fun AdvancedSettingsContent(
             }, enabled = valid && !limitBusy) { Text(stringResource(R.string.library_save)) } },
         )
     }
-    trimLimit?.let { target -> LibraryConfirm(stringResource(R.string.history_limit), stringResource(R.string.history_trim_confirm, (trimCount - target).coerceAtLeast(0), target), limitBusy, { trimLimit = null }) { limit(target, true) { result ->
-        when (result) {
-            HistoryLimitResult.Saved -> { trimLimit = null; showLimit = false }
-            is HistoryLimitResult.NeedsConfirmation -> trimCount = result.count
+    trimLimit?.let { target ->
+        val recordsToDelete = (trimCount - target).coerceAtLeast(0)
+        LibraryConfirm(
+            stringResource(R.string.history_limit),
+            pluralStringResource(R.plurals.history_trim_confirm, recordsToDelete, recordsToDelete, target),
+            limitBusy,
+            { trimLimit = null },
+        ) {
+            limit(target, true) { result ->
+                when (result) {
+                    HistoryLimitResult.Saved -> { trimLimit = null; showLimit = false }
+                    is HistoryLimitResult.NeedsConfirmation -> trimCount = result.count
+                }
+            }
         }
-    } } }
+    }
     if (showClear) LibraryConfirm(stringResource(R.string.history_clear), stringResource(R.string.history_clear_confirm), clearBusy, { showClear = false }) { clear { showClear = false } }
 }
 

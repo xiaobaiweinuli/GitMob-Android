@@ -88,7 +88,11 @@ class RepoCodeScreenTest {
 
         composeRule.onNodeWithText(context.getString(R.string.repo_sync_direction, "upstream", "repo", "main", "viewer", "fork"))
             .assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.repo_sync_counts, 2, 3)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(
+            R.string.repo_sync_counts,
+            context.resources.getQuantityString(R.plurals.repo_sync_ahead, 2, 2),
+            context.resources.getQuantityString(R.plurals.repo_sync_behind, 3, 3),
+        )).assertIsDisplayed()
         node(R.string.repo_sync_discard).assertIsDisplayed()
         node(R.string.repo_sync_pr).performScrollTo().assertIsDisplayed()
         val secondary = node(R.string.repo_sync_pr).fetchSemanticsNode().boundsInRoot

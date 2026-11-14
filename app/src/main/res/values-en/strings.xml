@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Settings · Language -->
     <string name="settings_language">Language</string>
     <string name="settings_language_system">Follow system</string>
@@ -30,7 +30,6 @@
     <string name="nav_tab_stars">Stars</string>
     <string name="nav_tab_settings">Settings</string>
     <string name="nav_placeholder_wip">%1$s (in development)</string>
-    <string name="nav_code_browser">Code browser (%1$s)</string>
     <string name="nav_commit_history">Commit history (%1$s)</string>
 
     <!-- Common · shared vocabulary -->
@@ -46,8 +45,12 @@
     <string name="common_select_organization">Select organization</string>
     <string name="common_follow">Follow</string>
     <string name="common_following">Following</string>
-    <string name="common_followers_count">%1$d followers</string>
-    <string name="common_following_count">%1$d following</string>
+    <plurals name="common_followers_count">
+        <item quantity="one">%1$d follower</item>
+        <item quantity="other">%1$d followers</item>
+    </plurals>
+    <!-- "following" is invariant for every count. -->
+    <string name="common_following_count" tools:ignore="PluralsCandidate">%1$d following</string>
     <string name="common_badge_developer_program">Developer Program Member</string>
     <string name="common_badge_bounty_hunter">Security Bounty Hunter</string>
     <string name="common_badge_campus_expert">Campus Expert</string>
@@ -82,7 +85,6 @@
     <string name="settings_about_summary">Version, project, and community info</string>
     <string name="settings_section_account">Account</string>
     <string name="settings_logout">Sign out</string>
-    <string name="settings_logout_summary">Sign out of the current GitHub account</string>
     <string name="download_opened_externally">Sent the download link to the system</string>
     <string name="download_address_unavailable">Could not get the download address. Try again.</string>
     <string name="download_external_app_unavailable">No app can open this download link</string>
@@ -179,8 +181,10 @@
     <string name="common_retry">Retry</string>
 
     <!-- Work · issue/PR/discussion list filters -->
-    <string name="work_items_count">%1$d items</string>
-    <string name="work_select_filter">Select %1$s</string>
+    <plurals name="work_items_count">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
     <string name="work_select_filter_value">Select %1$s, current %2$s</string>
     <string name="work_filter_state">State</string>
     <string name="work_filter_relation">Relation</string>
@@ -235,8 +239,6 @@
     <!-- Repository detail -->
     <string name="repo_forked_from">" Forked from %1$s/%2$s"</string>
     <string name="repo_template">Template</string>
-    <string name="repo_starred_count">" Starred %1$d"</string>
-    <string name="repo_star_count">" Star %1$d"</string>
     <string name="repo_stargazers">Stargazers</string>
     <string name="repo_forks">Direct forks</string>
     <string name="repo_stargazers_count">Stars %1$d</string>
@@ -313,13 +315,24 @@
     <string name="repo_transfer_still_pending">The actual address has not changed. Wait for acceptance or check later.</string>
     <string name="repo_sync_title">Sync current branch</string>
     <string name="repo_sync_direction">%1$s/%2$s:%3$s → %4$s/%5$s:%3$s</string>
-    <string name="repo_sync_counts">%1$d commits ahead · %2$d commits behind</string>
+    <string name="repo_sync_counts">%1$s · %2$s</string>
+    <plurals name="repo_sync_ahead">
+        <item quantity="one">%1$d commit ahead</item>
+        <item quantity="other">%1$d commits ahead</item>
+    </plurals>
+    <plurals name="repo_sync_behind">
+        <item quantity="one">%1$d commit behind</item>
+        <item quantity="other">%1$d commits behind</item>
+    </plurals>
     <string name="repo_sync_up_to_date">This branch already contains all upstream commits</string>
     <string name="repo_sync_merge">Merge upstream</string>
     <string name="repo_sync_merge_hint">Keep current commits. Stop on conflicts without forcing an overwrite.</string>
     <string name="repo_sync_discard">Discard commits and match upstream</string>
     <string name="repo_sync_discard_title">Discard this branch\'s commits?</string>
-    <string name="repo_sync_discard_warning">Discard %1$d ahead commits and force the branch to match upstream. Back up first; recovery is not guaranteed. Protection rules or cross-network object restrictions may reject the update.</string>
+    <plurals name="repo_sync_discard_warning">
+        <item quantity="one">Discard %1$d ahead commit and force the branch to match upstream. Back up first; recovery is not guaranteed. Protection rules or cross-network object restrictions may reject the update.</item>
+        <item quantity="other">Discard %1$d ahead commits and force the branch to match upstream. Back up first; recovery is not guaranteed. Protection rules or cross-network object restrictions may reject the update.</item>
+    </plurals>
     <string name="repo_sync_confirm_branch">Enter the current branch name to confirm</string>
     <string name="repo_sync_current_head">Current SHA: %1$s</string>
     <string name="repo_sync_upstream_head">Upstream SHA: %1$s</string>
@@ -411,8 +424,6 @@
     <string name="repos_owner_title">Repositories by %1$s</string>
     <string name="userstars_title">Stars by %1$s</string>
     <string name="login_title">Sign in to GitMob</string>
-    <string name="login_subtitle">Sign in with a Personal Access Token created on GitHub</string>
-    <string name="login_button">Sign in</string>
 
     <!-- Batch F · repository issue list/detail -->
     <string name="issue_new">New issue</string>
@@ -431,7 +442,8 @@
     <string name="issue_assignees">Assignees</string>
     <string name="issue_author_filter">Author</string>
     <string name="issue_updated_filter">Updated</string>
-    <string name="issue_filter_selected_count">%1$d selected</string>
+    <!-- "selected" is invariant for every count. -->
+    <string name="issue_filter_selected_count" tools:ignore="PluralsCandidate">%1$d selected</string>
     <string name="issue_filter_clear_labels">Clear labels</string>
     <string name="issue_filter_all_milestones">All milestones</string>
     <string name="issue_no_milestone">No milestone</string>
@@ -446,9 +458,7 @@
     <string name="issue_filter_updated_30d">Updated in the last 30 days</string>
     <string name="issue_meta_milestone">Milestone %1$s</string>
     <string name="issue_editor_title_label">Title</string>
-    <string name="issue_editor_body_label">Markdown body</string>
     <string name="issue_form_required_label">%1$s *</string>
-    <string name="issue_create">Create</string>
     <string name="common_refresh">Refresh</string>
     <string name="issue_title_number">Issue #%1$d</string>
     <string name="issue_subscribe">Subscribe</string>
@@ -459,13 +469,10 @@
     <string name="issue_close_duplicate">Close as duplicate</string>
     <string name="issue_reopen">Reopen</string>
     <string name="issue_delete">Delete issue</string>
-    <string name="issue_comment_add">Add a comment</string>
-    <string name="issue_comment_submit">Submit comment</string>
     <string name="issue_comments_count">Comments (%1$d)</string>
     <string name="issue_delete_comment_title">Delete comment?</string>
     <string name="issue_detail_milestone">Milestone: %1$s</string>
     <string name="issue_detail_assignees">Assignees: %1$s</string>
-    <string name="issue_edit_comment">Edit comment</string>
     <string name="common_deleted_user">Deleted user</string>
     <string name="pr_new">New pull request</string>
     <string name="pr_edit">Edit pull request</string>
@@ -502,13 +509,15 @@
     <string name="pr_create_no_text_diff">No text diff is available</string>
     <string name="pr_create_changes">Changes</string>
     <string name="pr_create_files_changed">%1$d%2$s files changed</string>
-    <string name="pr_create_commits_count">%1$d commits</string>
+    <plurals name="pr_create_commits_count">
+        <item quantity="one">%1$d commit</item>
+        <item quantity="other">%1$d commits</item>
+    </plurals>
     <string name="pr_create_active_pull_requests">Active pull requests</string>
     <string name="pr_create_existing_hint">An open pull request already exists for these branches.</string>
     <string name="pr_create_compare_footer">Discuss with others and review the changes in this comparison.</string>
     <string name="pr_create_submit">Create pull request</string>
     <string name="pr_create_draft">Create as draft</string>
-    <string name="pr_draft">Draft</string>
     <string name="pr_merged">Merged</string>
     <string name="pr_close">Close pull request</string>
     <string name="pr_reopen">Reopen pull request</string>
@@ -517,15 +526,16 @@
     <string name="pr_update_branch">Update branch</string>
     <string name="pr_merge">Merge</string>
     <string name="pr_review">Submit review</string>
-    <string name="pr_submit_review">Submit review</string>
     <string name="pr_resolve">Resolve</string>
     <string name="pr_unresolve">Unresolve</string>
     <string name="pr_tab_conversation">Conversation</string>
     <string name="pr_tab_files">Files changed</string>
     <string name="pr_tab_commits">Commits</string>
     <string name="pr_tab_reviews">Reviews</string>
-    <string name="pr_file_stats">+%1$d, -%2$d</string>
-    <string name="pr_diff_stats">+%1$d, -%2$d, %3$d files</string>
+    <plurals name="pr_diff_stats">
+        <item quantity="one">+%1$d, -%2$d, %3$d file</item>
+        <item quantity="other">+%1$d, -%2$d, %3$d files</item>
+    </plurals>
     <string name="pr_commit_title">Commit title (optional)</string>
     <string name="pr_commit_message">Commit message (optional)</string>
     <string name="pr_enable_auto_merge">Enable auto-merge</string>
@@ -551,10 +561,8 @@
     <string name="discussion_answer_filter">Answer status</string>
     <string name="discussion_answered">Answered</string>
     <string name="discussion_unanswered">Unanswered</string>
-    <string name="discussion_answer">Answer</string>
     <string name="discussion_mark_answer">Mark as answer</string>
     <string name="discussion_unmark_answer">Unmark answer</string>
-    <string name="discussion_reply">Reply</string>
     <string name="discussion_close">Close discussion</string>
     <string name="discussion_reopen">Reopen discussion</string>
     <string name="discussion_delete_title">Delete discussion #%1$d?</string>
@@ -599,10 +607,21 @@
     <string name="common_download">Download</string>
     <string name="gist_detail_title">Gist details</string>
     <string name="gist_no_description">No description</string>
-    <string name="gist_detail_metadata">%1$s · %2$d files · %3$d comments</string>
+    <string name="gist_detail_metadata">%1$s · %2$s · %3$s</string>
+    <plurals name="gist_files_count">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+    <plurals name="gist_comments_count">
+        <item quantity="one">%1$d comment</item>
+        <item quantity="other">%1$d comments</item>
+    </plurals>
     <string name="gist_forked_from">Forked from %1$s</string>
     <string name="gist_files">Files</string>
-    <string name="gist_file_metadata">%1$s · %2$d bytes</string>
+    <plurals name="gist_file_metadata">
+        <item quantity="one">%1$s · %2$d byte</item>
+        <item quantity="other">%1$s · %2$d bytes</item>
+    </plurals>
     <string name="gist_file_truncated">The API truncated this file. Download it to view the complete content.</string>
     <string name="gist_file_binary">Binary files cannot be shown as inline text.</string>
     <string name="gist_download_zip">Download ZIP</string>
@@ -617,8 +636,6 @@
     <string name="gist_delete_file">Delete file</string>
     <string name="gist_delete_file_confirm">Delete %1$s?</string>
     <string name="gist_comments">Comments</string>
-    <string name="gist_add_comment">Add comment</string>
-    <string name="gist_edit_comment">Edit comment</string>
     <string name="gist_delete_comment">Delete comment</string>
     <string name="gist_delete_comment_confirm">Permanently delete this comment?</string>
     <string name="gist_comments_closed">Comments are closed</string>
@@ -629,7 +646,19 @@
     <string name="gist_revisions">Revision history</string>
     <string name="gist_revisions_description">View versions, authors, and line changes</string>
     <string name="gist_revision_detail">Revision diff</string>
-    <string name="gist_revision_changes">%1$d additions · %2$d deletions · %3$d changes</string>
+    <string name="gist_revision_changes">%1$s · %2$s · %3$s</string>
+    <plurals name="gist_revision_additions">
+        <item quantity="one">%1$d addition</item>
+        <item quantity="other">%1$d additions</item>
+    </plurals>
+    <plurals name="gist_revision_deletions">
+        <item quantity="one">%1$d deletion</item>
+        <item quantity="other">%1$d deletions</item>
+    </plurals>
+    <plurals name="gist_revision_total_changes">
+        <item quantity="one">%1$d change</item>
+        <item quantity="other">%1$d changes</item>
+    </plurals>
     <string name="gist_revision_no_previous">This is the oldest revision, so there is no adjacent earlier snapshot to compare.</string>
     <string name="gist_revision_no_diff">The adjacent snapshots have no text differences.</string>
     <string name="gist_no_revisions">No revisions</string>
@@ -659,8 +688,14 @@
     <string name="release_title">Title</string>
     <string name="release_notes">Release notes</string>
     <string name="release_assets">Assets</string>
-    <string name="release_assets_count">%1$d assets</string>
-    <string name="release_asset_meta">%1$d downloads · %2$s</string>
+    <plurals name="release_assets_count">
+        <item quantity="one">%1$d asset</item>
+        <item quantity="other">%1$d assets</item>
+    </plurals>
+    <plurals name="release_asset_meta">
+        <item quantity="one">%1$d download · %2$s</item>
+        <item quantity="other">%1$d downloads · %2$s</item>
+    </plurals>
     <string name="release_upload_asset">Upload asset</string>
     <string name="release_delete">Delete release</string>
     <string name="release_delete_title">Delete release?</string>
@@ -671,7 +706,10 @@
     <string name="release_asset_label">Display label (optional)</string>
     <string name="release_generate_notes">Generate release notes</string>
     <string name="contributors_empty">No contributors</string>
-    <string name="contributors_count">%1$d contributions</string>
+    <plurals name="contributors_count">
+        <item quantity="one">%1$d contribution</item>
+        <item quantity="other">%1$d contributions</item>
+    </plurals>
     <string name="contributors_type_user">User</string>
     <string name="contributors_type_bot">Bot</string>
     <string name="contributors_type_organization">Organization</string>
@@ -685,8 +723,6 @@
     <string name="conversation_comment">Comment</string>
     <string name="conversation_write_comment">Write a comment</string>
     <string name="conversation_edit_comment">Edit comment</string>
-    <string name="conversation_markdown_body">Markdown content</string>
-    <string name="conversation_submitting">Submitting…</string>
     <string name="conversation_send">Send</string>
     <string name="conversation_edit_tab">Edit</string>
     <string name="conversation_preview_tab">Preview</string>
@@ -707,8 +743,6 @@
     <string name="conversation_tool_quote">Quote</string>
     <string name="conversation_tool_inline_code">Inline code</string>
     <string name="conversation_tool_code_block">Code block</string>
-    <string name="conversation_tool_undo">Undo</string>
-    <string name="conversation_tool_redo">Redo</string>
     <string name="conversation_edited">Edited</string>
     <string name="conversation_edit_history">Edit history</string>
     <string name="conversation_no_edit_diff">No edit diff available</string>
@@ -716,7 +750,6 @@
     <string name="git_commit_files_unknown">Files unknown</string>
     <string name="git_commit_stats">+%1$d, -%2$d, %3$s</string>
     <string name="git_commit_no_diff">No text diff is available for this file</string>
-    <string name="git_commit_binary">Binary file; text diff unavailable</string>
     <string name="git_commit_changed_files">Changed files</string>
     <string name="git_commit_detail">Commit %1$s</string>
     <string name="common_more">More</string>
@@ -744,7 +777,10 @@
     <string name="repo_download_folder">Download folder</string>
     <string name="repo_downloading_folder">Creating folder ZIP</string>
     <string name="repo_collecting_folder_files">Reading the file list…</string>
-    <string name="repo_folder_download_progress">Processed %1$d of %2$d files</string>
+    <plurals name="repo_folder_download_progress">
+        <item quantity="one">Processed %1$d of %2$d file</item>
+        <item quantity="other">Processed %1$d of %2$d files</item>
+    </plurals>
     <string name="repo_folder_download_complete">Folder ZIP saved</string>
     <string name="repo_folder_save_failed">Couldn\'t save the folder ZIP</string>
     <string name="repo_download_archive">Download repository archive</string>
@@ -773,7 +809,10 @@
     <string name="history_limit">Maximum records</string>
     <string name="history_clear">Clear history</string>
     <string name="history_limit_hint">1–1000</string>
-    <string name="history_trim_confirm">Delete the oldest %1$d records and keep the latest %2$d.</string>
+    <plurals name="history_trim_confirm">
+        <item quantity="one">Delete the oldest %1$d record and keep the latest %2$d.</item>
+        <item quantity="other">Delete the oldest %1$d records and keep the latest %2$d.</item>
+    </plurals>
     <string name="history_clear_confirm">Clear all browsing history?</string>
     <string name="history_delete">Delete record</string>
     <string name="history_delete_description">Delete history for %1$s</string>
@@ -795,7 +834,10 @@
     <string name="library_edit">Edit</string>
     <string name="library_done">Done</string>
     <string name="library_save">Save</string>
-    <string name="library_group_count">%1$d repositories</string>
+    <plurals name="library_group_count">
+        <item quantity="one">%1$d repository</item>
+        <item quantity="other">%1$d repositories</item>
+    </plurals>
     <string name="library_no_favorites">No favorites yet</string>
     <string name="library_no_history">No browsing history yet</string>
     <string name="library_invalid_group">Use 1–30 characters for the group name</string>
@@ -816,9 +858,11 @@
     <string name="history_limit_summary">%1$d · Default: 100</string>
     <string name="history_count">Records: %1$d</string>
     <string name="favorites_summary">Favorites: %1$d · Groups: %2$d</string>
-    <string name="favorites_default_count">%1$d repositories · Ungrouped favorites</string>
+    <plurals name="favorites_default_count">
+        <item quantity="one">%1$d repository · Ungrouped favorites</item>
+        <item quantity="other">%1$d repositories · Ungrouped favorites</item>
+    </plurals>
     <string name="favorites_local_hint">Favorites do not change GitHub stars.</string>
-    <string name="image_source_tab">Code</string>
     <string name="image_viewer_title">View image</string>
     <string name="image_viewer_close">Close image viewer</string>
     <string name="image_actions">Image actions</string>
@@ -830,7 +874,10 @@
     <string name="image_zoom_out">Zoom out</string>
     <string name="image_gesture_hint">Pinch to zoom · Double-tap to enlarge · Drag when zoomed</string>
     <string name="image_preview_failed">Image could not be loaded. Try again.</string>
-    <string name="image_file_size">%1$d bytes</string>
+    <plurals name="image_file_size">
+        <item quantity="one">%1$d byte</item>
+        <item quantity="other">%1$d bytes</item>
+    </plurals>
     <string name="image_preview_too_large">Image exceeds the 8 MiB preview limit. Download it to view.</string>
 
     <!-- Translation -->
@@ -912,10 +959,16 @@
     <string name="search_clear_history_body">Clear all recent searches for this account.</string>
     <string name="search_clear">Clear</string>
     <string name="search_empty">No results found</string>
-    <string name="search_more">View %1$d more results</string>
+    <plurals name="search_more">
+        <item quantity="one">View %1$d more result</item>
+        <item quantity="other">View %1$d more results</item>
+    </plurals>
     <string name="search_more_unknown">View more code results</string>
     <string name="search_incomplete">Results may be incomplete</string>
-    <string name="search_limit">Only the first %1$d results are accessible. Refine your query.</string>
+    <plurals name="search_limit">
+        <item quantity="one">Only the first %1$d result is accessible. Refine your query.</item>
+        <item quantity="other">Only the first %1$d results are accessible. Refine your query.</item>
+    </plurals>
     <string name="search_end">All results shown</string>
     <string name="search_scope_conflict">The query conflicts with this category. Go back to edit it.</string>
     <string name="search_invalid_query">Invalid query. Go back to check the syntax.</string>

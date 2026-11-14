@@ -69,7 +69,7 @@ class AdvancedSettingsScreenTest {
         compose.onNode(hasSetTextAction()).performTextReplacement("40")
         compose.onNodeWithText(context.getString(R.string.library_save)).performClick()
         assertEquals(null, saved)
-        compose.onNodeWithText(context.getString(R.string.history_trim_confirm, 40, 40)).assertExists()
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.history_trim_confirm, 40, 40, 40)).assertExists()
         compose.onNodeWithText(context.getString(R.string.library_confirm)).performClick()
         assertEquals(40, saved)
     }

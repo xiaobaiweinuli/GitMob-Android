@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -136,7 +137,7 @@ fun SettingsScreen(
                             Column(Modifier.weight(1f)) {
                                 AccountIdentity(active.name, active.login, active.avatarUrl, Modifier.fillMaxWidth())
                                 Text(
-                                    stringResource(R.string.accounts_switch_hint, accounts.accounts.size),
+                                    pluralStringResource(R.plurals.accounts_switch_hint, accounts.accounts.size, accounts.accounts.size),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(start = 64.dp),
