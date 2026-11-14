@@ -23,7 +23,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,12 +77,10 @@ internal fun RepositoryImagePreview(
     DisposableEffect(viewModel) { onDispose { viewModel.clear() } }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var viewing by remember(image) { mutableStateOf(false) }
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(pluralStringResource(R.plurals.image_file_size, byteSize.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), byteSize), style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ImageSurface(state, viewModel::retry, viewModel::decodeFailed, viewModel::download,
-            image.description.orEmpty(), Modifier.fillMaxWidth().height(300.dp), onClick = { viewing = true })
-    }
+    ImageSurface(state, viewModel::retry, viewModel::decodeFailed, viewModel::download,
+        image.description.orEmpty(), modifier.fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)).padding(16.dp),
+        onClick = { viewing = true })
     if (viewing) ImageViewerDialog(image, document, state, viewModel::retry, viewModel::decodeFailed,
         viewModel::download, { viewing = false }, {})
 }
@@ -160,7 +157,7 @@ private fun ImageSurface(
         val resource = state.resource
         when {
             state.isLoading -> CircularProgressIndicator()
-            state.error != null -> Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            state.error != null -> Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 val tooLarge = (state.error as? ApiError.UserVisible)?.messageRes == R.string.image_preview_too_large
                 Text(stringResource(if (tooLarge) R.string.image_preview_too_large else R.string.image_preview_failed))
                 if (tooLarge) OutlinedButton(onDownload, enabled = !state.isDownloading) { Text(stringResource(R.string.common_download)) }

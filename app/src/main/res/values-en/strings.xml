@@ -874,10 +874,6 @@
     <string name="image_zoom_out">Zoom out</string>
     <string name="image_gesture_hint">Pinch to zoom · Double-tap to enlarge · Drag when zoomed</string>
     <string name="image_preview_failed">Image could not be loaded. Try again.</string>
-    <plurals name="image_file_size">
-        <item quantity="one">%1$d byte</item>
-        <item quantity="other">%1$d bytes</item>
-    </plurals>
     <string name="image_preview_too_large">Image exceeds the 8 MiB preview limit. Download it to view.</string>
 
     <!-- Translation -->

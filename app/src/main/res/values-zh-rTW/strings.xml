@@ -851,9 +851,6 @@
     <string name="image_zoom_out">縮小圖片</string>
     <string name="image_gesture_hint">雙指縮放 · 點兩下放大 · 放大後拖曳</string>
     <string name="image_preview_failed">圖片載入失敗，請重試</string>
-    <plurals name="image_file_size">
-        <item quantity="other">%1$d 位元組</item>
-    </plurals>
     <string name="image_preview_too_large">圖片超過 8 MiB 預覽限制，可下載後檢視</string>
 
     <!-- Translation -->
