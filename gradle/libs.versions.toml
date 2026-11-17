@@ -20,7 +20,7 @@ desugarNio = "2.1.5"
 
 # 架构与导航
 lifecycle = "2.11.0"
-navigation3 = "1.1.4"
+navigation3 = "1.2.0"
 kotlinxCoroutines = "1.11.0"
 
 # 数据与网络

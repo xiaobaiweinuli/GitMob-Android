@@ -1,6 +1,7 @@
 package com.gitmob.app.navigation
 
 import android.app.Application
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
@@ -30,6 +31,20 @@ class DeepLinkActivityTest {
         assertTrue(forwarded.flags and Intent.FLAG_ACTIVITY_CLEAR_TOP != 0)
         assertTrue(forwarded.flags and Intent.FLAG_ACTIVITY_SINGLE_TOP != 0)
         assertTrue(activity.isFinishing)
+    }
+
+    @Test
+    fun `repository links use a displayless forwarding activity and finish immediately`() {
+        for ((owner, name) in listOf("tanmoumou252" to "skill_toolkit", "OpenMinis" to "ish-pkgs")) {
+            val activity = launch("https://github.com/$owner/$name")
+            val info = activity.packageManager.getActivityInfo(ComponentName(activity, DeepLinkActivity::class.java), 0)
+            assertEquals(android.R.style.Theme_NoDisplay, info.theme)
+            assertTrue(activity.isFinishing)
+            val forwarded = shadowOf(activity).nextStartedActivity
+            @Suppress("DEPRECATION")
+            val destination = forwarded.getSerializableExtra(EXTRA_DEEP_LINK_DESTINATION)
+            assertEquals(DeepLinkDestination.RepoOverview(owner, name), destination)
+        }
     }
 
     @Test

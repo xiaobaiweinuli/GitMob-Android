@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.os.BundleCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,7 +46,7 @@ class MainActivity : AppCompatActivity() {
 
     private val startupViewModel: StartupViewModel by viewModels()
     private val appUpdateViewModel: AppUpdateViewModel by viewModels()
-    private var deepLinkDestination by mutableStateOf<DeepLinkDestination?>(null)
+    private var pendingDeepLink by mutableStateOf<DeepLinkDestination?>(null)
 
     /**
      * 启动链路（KernelSU 同款零依赖配方，分析见 文档/splash-screen-deep-analysis.md §10）：
@@ -61,7 +62,12 @@ class MainActivity : AppCompatActivity() {
      */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        deepLinkDestination = intent.deepLinkDestination()
+        // 重建时以已保存状态为准；null 表示已消费，不能回退到系统保留的启动 Intent。
+        pendingDeepLink = if (savedInstanceState != null) {
+            BundleCompat.getSerializable(savedInstanceState, STATE_PENDING_DEEP_LINK, DeepLinkDestination::class.java)
+        } else {
+            intent.deepLinkDestination()
+        }
         enableEdgeToEdge()
 
         val content: View = findViewById(android.R.id.content)
@@ -112,8 +118,8 @@ class MainActivity : AppCompatActivity() {
                         repoUpdateEventBus = repoUpdateEventBus,
                         themePreference = themePreference,
                         enablePredictiveBack = themePreference.enablePredictiveBack,
-                        deepLinkDestination = deepLinkDestination,
-                        onDeepLinkConsumed = { deepLinkDestination = null },
+                        deepLinkDestination = pendingDeepLink,
+                        onDeepLinkConsumed = { pendingDeepLink = null },
                         updateSettings = { epoch -> AppUpdateSettings(appUpdateViewModel, epoch) },
                     )
                     if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
@@ -124,13 +130,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putSerializable(STATE_PENDING_DEEP_LINK, pendingDeepLink)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        deepLinkDestination = intent.deepLinkDestination()
+        pendingDeepLink = intent.deepLinkDestination()
     }
 
     @Suppress("DEPRECATION")
     private fun Intent.deepLinkDestination(): DeepLinkDestination? =
         getSerializableExtra(EXTRA_DEEP_LINK_DESTINATION) as? DeepLinkDestination
+
+    private companion object {
+        const val STATE_PENDING_DEEP_LINK = "pending_deep_link"
+    }
 }

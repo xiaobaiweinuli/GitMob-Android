@@ -5,6 +5,7 @@ import com.gitmob.app.testutil.libraryRepositoryStub
 import android.app.Application
 import android.content.Context
 import android.os.Bundle
+import android.os.Parcel
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +41,7 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.GistUpdateEventBus
 import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.core.event.RepoTransferPendingStore
 import com.gitmob.app.core.preferences.ThemePreferenceStore
 import com.gitmob.app.data.model.FollowState
 import com.gitmob.app.data.model.GHUser
@@ -64,6 +66,7 @@ import com.gitmob.app.data.model.ViewerProfile
 import com.gitmob.app.data.repository.AuthRepository
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.data.repository.RepoRepository
+import com.gitmob.app.data.repository.RepoDetailRepository
 import com.gitmob.app.data.repository.StarRepository
 import com.gitmob.app.data.repository.TranslationRepository
 import com.gitmob.app.data.translation.*
@@ -77,6 +80,7 @@ import com.gitmob.app.ui.gist.GistViewModel
 import com.gitmob.app.ui.home.HomeViewModel
 import com.gitmob.app.ui.login.LoginViewModel
 import com.gitmob.app.ui.repos.ReposViewModel
+import com.gitmob.app.ui.repodetail.RepoDetailViewModel
 import com.gitmob.app.ui.settings.SettingsViewModel
 import com.gitmob.app.ui.stars.StarsViewModel
 import com.gitmob.app.ui.theme.ThemePreference
@@ -94,6 +98,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -130,6 +135,7 @@ class AccountNavigationTest {
     @After
     fun closeActivity() {
         composeRule.runOnUiThread { controller?.close() }
+        HostActivity.fixture?.session?.epoch?.job?.cancel()
         HostActivity.fixture = null
     }
 
@@ -422,6 +428,7 @@ class AccountNavigationTest {
         coVerify(exactly = 1) { fixture.gists.getGist("abc123") }
         assertEquals(null, fixture.deepLinkDestination)
         assertEquals(1, fixture.consumedDeepLinks)
+        assertTrue(fixture.creations.none { it.model is HomeViewModel })
     }
 
     @Test
@@ -446,6 +453,134 @@ class AccountNavigationTest {
     }
 
     @Test
+    fun `cold repository link displays the target without creating Home`() {
+        launch(DeepLinkDestination.RepoOverview("tanmoumou252", "skill_toolkit"))
+        composeRule.onNodeWithText("skill_toolkit").assertIsDisplayed()
+        coVerify(exactly = 1) { fixture.repoDetails.getRepoDetail("tanmoumou252", "skill_toolkit") }
+        assertTrue(fixture.creations.none { it.model is HomeViewModel })
+        assertEquals(1, fixture.consumedDeepLinks)
+    }
+
+    @Test
+    fun `warm repository link removes the previous page without the ordinary fade`() {
+        launch()
+        tab(R.string.nav_tab_settings)
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnIdle {
+            fixture.deepLinkDestination = DeepLinkDestination.RepoOverview("OpenMinis", "ish-pkgs")
+        }
+        // Allow snapshot/effect delivery and scene disposal (six frames in Robolectric),
+        // while staying well below the ordinary 260 ms fade.
+        repeat(8) {
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.waitForIdle()
+        }
+        composeRule.onNodeWithText("ish-pkgs").assertIsDisplayed()
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertDoesNotExist()
+        coVerify(exactly = 1) { fixture.repoDetails.getRepoDetail("OpenMinis", "ish-pkgs") }
+        assertEquals(1, fixture.consumedDeepLinks)
+        composeRule.mainClock.autoAdvance = true
+        composeRule.runOnIdle { controller!!.get().onBackPressedDispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertIsDisplayed()
+    }
+
+    @Test
+    fun `successive repository links keep their history and duplicate targets only consume once per delivery`() {
+        launch(DeepLinkDestination.RepoOverview("tanmoumou252", "skill_toolkit"))
+        repeat(2) {
+            composeRule.runOnIdle {
+                fixture.deepLinkDestination = DeepLinkDestination.RepoOverview("OpenMinis", "ish-pkgs")
+            }
+            composeRule.waitForIdle()
+        }
+        composeRule.onNodeWithText("ish-pkgs").assertIsDisplayed()
+        assertEquals(3, fixture.consumedDeepLinks)
+        coVerify(exactly = 1) { fixture.repoDetails.getRepoDetail("OpenMinis", "ish-pkgs") }
+        composeRule.runOnIdle { controller!!.get().onBackPressedDispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("skill_toolkit").assertIsDisplayed()
+    }
+
+    @Test
+    fun `recreation restores the consumed deep link stack and does not reopen it after back`() {
+        launch(DeepLinkDestination.GistDetail("abc123"))
+        val detail = fixture.model<GistDetailViewModel>()
+        composeRule.runOnUiThread { controller!!.recreate() }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Deep link abc123")[0].assertIsDisplayed()
+        assertSame(detail, fixture.model<GistDetailViewModel>())
+        composeRule.runOnIdle { controller!!.get().onBackPressedDispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+        composeRule.runOnUiThread { controller!!.recreate() }
+        composeRule.waitForIdle()
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertIsDisplayed()
+        composeRule.onNodeWithText("Deep link abc123").assertDoesNotExist()
+        assertEquals(null, fixture.deepLinkDestination)
+        assertEquals(1, fixture.consumedDeepLinks)
+        coVerify(exactly = 1) { fixture.gists.getGist("abc123") }
+    }
+
+    @Test
+    fun `process recreation restores consumed deep link without consuming it again`() {
+        launch(DeepLinkDestination.GistDetail("abc123"))
+        val oldEpoch = fixture.session.epoch
+        val detail = fixture.model<GistDetailViewModel>()
+
+        val restored = restoreInNewProcess(fixture.alpha)
+
+        assertFalse(oldEpoch.id == restored.session.epoch.id)
+        composeRule.onAllNodesWithText("Deep link abc123")[0].assertIsDisplayed()
+        assertNotSame(detail, restored.model<GistDetailViewModel>())
+        assertEquals(null, restored.deepLinkDestination)
+        assertEquals(0, restored.consumedDeepLinks)
+        composeRule.runOnIdle { controller!!.get().onBackPressedDispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+        composeRule.runOnUiThread { controller!!.recreate() }
+        composeRule.waitForIdle()
+        composeRule.onNode(hasText(text(R.string.nav_tab_home)) and tabRole).assertIsDisplayed()
+        composeRule.onNodeWithText("Deep link abc123").assertDoesNotExist()
+    }
+
+    @Test
+    fun `process recreation restores selected tab history and other tab saved filters`() {
+        launch()
+        tab(R.string.common_repository)
+        val repos = fixture.model<ReposViewModel>()
+        composeRule.onNodeWithContentDescription(text(R.string.repos_search)).performClick()
+        composeRule.onNode(hasSetTextAction()).performTextInput("alpha-only")
+        composeRule.runOnIdle { repos.selectVisibility(RepoVisibility.PRIVATE) }
+        tab(R.string.nav_tab_settings)
+        composeRule.onNodeWithText(text(R.string.settings_about)).performScrollTo().performClick()
+
+        val restored = restoreInNewProcess(fixture.alpha)
+
+        composeRule.onNodeWithContentDescription(text(R.string.about_logo_desc)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+        composeRule.onNodeWithText(text(R.string.settings_about)).assertExists()
+        tab(R.string.common_repository)
+        assertNotSame(repos, restored.model<ReposViewModel>())
+        assertEquals("alpha-only", restored.model<ReposViewModel>().state.value.filters.query)
+        assertEquals(RepoVisibility.PRIVATE, restored.model<ReposViewModel>().state.value.filters.visibility)
+        composeRule.onNode(hasSetTextAction()).assertIsDisplayed()
+    }
+
+    @Test
+    fun `same account new session clears detail and does not restore it on recreation`() {
+        launch(DeepLinkDestination.GistDetail("abc123"))
+        val detail = fixture.model<GistDetailViewModel>()
+
+        switchTo(fixture.alpha)
+
+        assertTrue(fixture.creation(detail).cleared)
+        composeRule.onNode(hasText(text(R.string.nav_tab_home)) and tabRole).assertIsDisplayed()
+        composeRule.runOnUiThread { controller!!.recreate() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Deep link abc123").assertDoesNotExist()
+        assertEquals(1, fixture.consumedDeepLinks)
+    }
+
+    @Test
     fun `浏览器不可用时未登录也能显示全局错误`() {
         composeRule.mainClock.autoAdvance = false
         launch(DeepLinkDestination.BrowserUnavailable, loggedIn = false)
@@ -464,6 +599,31 @@ class AccountNavigationTest {
         HostActivity.fixture = fixture
         composeRule.runOnUiThread { controller = Robolectric.buildActivity(HostActivity::class.java).setup() }
         composeRule.waitForIdle()
+    }
+
+    private fun restoreInNewProcess(account: GitHubAccount): NavigationFixture {
+        val restored = NavigationFixture(AccountSession())
+        restored.session.replace(listOf(restored.alpha, restored.beta), account.key)
+        composeRule.runOnUiThread {
+            val saved = Bundle()
+            controller!!.pause().stop().saveInstanceState(saved).destroy()
+            fixture.session.epoch.job.cancel()
+            // 通过 Parcel 和全新 Activity/AccountSession 恢复，不保留旧 ViewModelStore。
+            val parcel = Parcel.obtain()
+            val state = try {
+                saved.writeToParcel(parcel, 0)
+                parcel.setDataPosition(0)
+                Bundle.CREATOR.createFromParcel(parcel).apply {
+                    classLoader = HostActivity::class.java.classLoader
+                }
+            } finally {
+                parcel.recycle()
+            }
+            HostActivity.fixture = restored
+            controller = Robolectric.buildActivity(HostActivity::class.java).setup(state)
+        }
+        composeRule.waitForIdle()
+        return restored
     }
 
     private fun visitAllTabs() {
@@ -513,6 +673,7 @@ internal class NavigationFixture(val session: AccountSession) {
     val beta = GitHubAccount("2", 2, "U_2", "beta", "Beta")
     val users = mockk<UserRepository>()
     private val repos = mockk<RepoRepository>(relaxUnitFun = true)
+    val repoDetails = mockk<RepoDetailRepository>()
     val gists = mockk<GistRepository>()
     val translations = mockk<TranslationRepository>()
     var deepLinkDestination by mutableStateOf<DeepLinkDestination?>(null)
@@ -527,6 +688,8 @@ internal class NavigationFixture(val session: AccountSession) {
     data class Creation(val model: AccountViewModel, val handle: SavedStateHandle, var cleared: Boolean = false)
 
     init {
+        // Keep the API pending: navigation must show the target independently of network latency.
+        coEvery { repoDetails.getRepoDetail(any(), any()) } coAnswers { awaitCancellation() }
         every { translations.configuration } returns MutableStateFlow(TranslationConfiguration())
         coEvery { gists.getGist(any()) } coAnswers {
             val id = firstArg<String>()
@@ -582,6 +745,10 @@ internal class NavigationFixture(val session: AccountSession) {
         com.gitmob.app.ui.library.AccountLibraryViewModel::class.java to { com.gitmob.app.ui.library.AccountLibraryViewModel(libraryRepositoryStub(), errors, session) },
         com.gitmob.app.ui.library.LibraryViewModel::class.java to { com.gitmob.app.ui.library.LibraryViewModel(libraryRepositoryStub(), errors, session) },
         HomeViewModel::class.java to { HomeViewModel(users, errors, repoEvents, session) },
+        RepoDetailViewModel::class.java to {
+            RepoDetailViewModel(repoDetails, repos, stars, mockk(), repoEvents, errors, mockk(),
+                RepoTransferPendingStore(), session, libraryRepositoryStub(), mockk())
+        },
         ReposViewModel::class.java to { ReposViewModel(repos, repoEvents, errors, it, session) },
         StarsViewModel::class.java to { StarsViewModel(stars, repoEvents, errors, session) },
         GistViewModel::class.java to { GistViewModel(gists, errors, it, gistEvents, session) },

@@ -7,6 +7,8 @@ import com.gitmob.app.ui.translation.TranslationSettingsScreen
 import com.gitmob.app.data.model.RepoDocumentContext
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
@@ -122,6 +125,29 @@ private fun RepositoryCreateOwner.toRepoCreateRoute() = RepoCreateRoute(
     ownerCanCreateRepository = canCreateRepository,
 )
 
+/** 外部 GitHub / Gist 链接目标 → 站内路由；浏览器分流与不支持的链接返回 null。 */
+private fun DeepLinkDestination.toRoute(): Route? = when (this) {
+    is DeepLinkDestination.GistDetail -> GistDetailRoute(id)
+    is DeepLinkDestination.Profile -> ProfileRoute(login)
+    is DeepLinkDestination.RepoOverview -> RepoDetailRoute(owner, repo)
+    is DeepLinkDestination.IssueList -> RepoIssuesRoute(owner, repo)
+    is DeepLinkDestination.IssueDetail -> RepoIssueDetailRoute(owner, repo, number)
+    is DeepLinkDestination.FileView -> RepoFileDetailRoute(owner, repo, ref, path)
+    is DeepLinkDestination.DirView -> RepoCodeRoute(owner, repo, ref, path)
+    is DeepLinkDestination.CommitDetail -> RepoCommitDetailRoute(owner, repo, sha)
+    is DeepLinkDestination.CommitList -> RepoCommitsRoute(owner, repo, ref, path)
+    is DeepLinkDestination.PullRequestDetail -> RepoPullRequestDetailRoute(owner, repo, number)
+    is DeepLinkDestination.PullRequestList -> RepoPullRequestsRoute(owner, repo)
+    is DeepLinkDestination.DiscussionDetail -> RepoDiscussionDetailRoute(owner, repo, number)
+    is DeepLinkDestination.DiscussionList -> RepoDiscussionsRoute(owner, repo)
+    is DeepLinkDestination.Actions -> RepoActionsRoute(owner, repo)
+    is DeepLinkDestination.WorkflowRun -> RepoWorkflowRunRoute(owner, repo, runId)
+    is DeepLinkDestination.ReleaseList -> RepoReleasesRoute(owner, repo)
+    is DeepLinkDestination.ReleaseDetail -> RepoReleaseDetailRoute(owner, repo, tag)
+    is DeepLinkDestination.Contributors -> RepoContributorsRoute(owner, repo)
+    DeepLinkDestination.BrowserUnavailable, DeepLinkDestination.Unsupported -> null
+}
+
 /**
  * 全站统一的页面转场：淡入淡出（draw 阶段 alpha，无位移）。
  *
@@ -156,16 +182,18 @@ fun GitMobNavGraph(
 ) {
     val epoch = accountSession.epoch
     if (epoch.id != accountState.sessionId) return
+    // 进程重建恢复此 key；运行期间会话变化则重新生成。
+    val navigationStateKey = rememberSaveable(epoch.id) { epoch.id }
     val savedStates = rememberSaveableStateHolder()
-    // 同账号配置变更保留状态；换会话销毁父 Store 及五栈 entry，不靠根 key 猜测生命周期。
-    key(accountState.sessionId) {
-    val provider = rememberViewModelStoreProvider(key = epoch.id)
-    val owner = rememberViewModelStoreOwner(key = epoch.id, provider = provider)
+    // 换会话仍销毁父 Store 及五栈 entry，并移除旧会话的已保存状态。
+    key(navigationStateKey) {
+    val provider = rememberViewModelStoreProvider(key = navigationStateKey)
+    val owner = rememberViewModelStoreOwner(key = navigationStateKey, provider = provider)
     DisposableEffect(epoch) {
-        onDispose { if (!epoch.isCurrent) savedStates.removeState(epoch.id) }
+        onDispose { if (!epoch.isCurrent) savedStates.removeState(navigationStateKey) }
     }
     CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
-    savedStates.SaveableStateProvider(epoch.id) {
+    savedStates.SaveableStateProvider(navigationStateKey) {
     Box(modifier = Modifier.fillMaxSize()) {
         if (accountState.activeAccount != null) {
             LoggedInApp(
@@ -222,7 +250,8 @@ private fun LoggedInApp(
 ) {
     // Resolve before entryProvider installs each navigation entry's own store.
     val accountLibrary: AccountLibraryViewModel = hiltViewModel()
-    val navState = rememberGitMobNavState(startRoute = HomeRoute)
+    val externalRoute = deepLinkDestination?.toRoute()
+    val navState = rememberGitMobNavState(startRoute = HomeRoute, initialRoute = externalRoute)
     val navigator = remember(navState, epoch) { GitMobNavigator(navState, epoch) }
     val activity = LocalActivity.current
     val uriHandler = LocalUriHandler.current
@@ -245,30 +274,6 @@ private fun LoggedInApp(
         repoUpdateEventBus.eventsFor(epoch).collect(navigator::onRepositoryUpdate)
     }
 
-    fun navigateDeepLink(destination: DeepLinkDestination) {
-        if (!epoch.isCurrent) return
-        when (destination) {
-            is DeepLinkDestination.GistDetail -> navigator.navigate(GistDetailRoute(destination.id))
-            is DeepLinkDestination.Profile -> navigator.navigate(ProfileRoute(destination.login))
-            is DeepLinkDestination.RepoOverview -> navigator.navigate(RepoDetailRoute(destination.owner, destination.repo))
-            is DeepLinkDestination.IssueList -> navigator.navigate(RepoIssuesRoute(destination.owner, destination.repo))
-            is DeepLinkDestination.IssueDetail -> navigator.navigate(RepoIssueDetailRoute(destination.owner, destination.repo, destination.number))
-            is DeepLinkDestination.FileView -> navigator.navigate(RepoFileDetailRoute(destination.owner, destination.repo, destination.ref, destination.path))
-            is DeepLinkDestination.DirView -> navigator.navigate(RepoCodeRoute(destination.owner, destination.repo, destination.ref, destination.path))
-            is DeepLinkDestination.CommitDetail -> navigator.navigate(RepoCommitDetailRoute(destination.owner, destination.repo, destination.sha))
-            is DeepLinkDestination.CommitList -> navigator.navigate(RepoCommitsRoute(destination.owner, destination.repo, destination.ref, destination.path))
-            is DeepLinkDestination.PullRequestDetail -> navigator.navigate(RepoPullRequestDetailRoute(destination.owner, destination.repo, destination.number))
-            is DeepLinkDestination.PullRequestList -> navigator.navigate(RepoPullRequestsRoute(destination.owner, destination.repo))
-            is DeepLinkDestination.DiscussionDetail -> navigator.navigate(RepoDiscussionDetailRoute(destination.owner, destination.repo, destination.number))
-            is DeepLinkDestination.DiscussionList -> navigator.navigate(RepoDiscussionsRoute(destination.owner, destination.repo))
-            is DeepLinkDestination.Actions -> navigator.navigate(RepoActionsRoute(destination.owner, destination.repo))
-            is DeepLinkDestination.WorkflowRun -> navigator.navigate(RepoWorkflowRunRoute(destination.owner, destination.repo, destination.runId))
-            is DeepLinkDestination.ReleaseList -> navigator.navigate(RepoReleasesRoute(destination.owner, destination.repo))
-            is DeepLinkDestination.ReleaseDetail -> navigator.navigate(RepoReleaseDetailRoute(destination.owner, destination.repo, destination.tag))
-            is DeepLinkDestination.Contributors -> navigator.navigate(RepoContributorsRoute(destination.owner, destination.repo))
-            DeepLinkDestination.BrowserUnavailable, DeepLinkDestination.Unsupported -> Unit
-        }
-    }
     val openDocument: (RepoDocumentContext) -> Unit = { document ->
         if (epoch.isCurrent) {
             if (document.filePath.isEmpty() || document.filePath.endsWith('/')) {
@@ -281,12 +286,13 @@ private fun LoggedInApp(
     val openDocumentExternal: (String) -> Unit = { url ->
         val destination = DeepLinkRouter.parse(url.toUri())
         if (destination == DeepLinkDestination.Unsupported) openExternalUrl(url)
-        else navigateDeepLink(destination)
+        else destination.toRoute()?.let { navigator.navigate(it) }
     }
     LaunchedEffect(deepLinkDestination) {
-        if (!epoch.isCurrent) return@LaunchedEffect
         val destination = deepLinkDestination ?: return@LaunchedEffect
-        navigateDeepLink(destination)
+        if (!epoch.isCurrent) return@LaunchedEffect
+        // 外部入口直接进入；重复目标保持本次转场模式，过期账号不能消费待处理入口。
+        destination.toRoute()?.let { navigator.navigate(it, withoutAnimation = true) }
         onDeepLinkConsumed()
     }
 
@@ -1205,7 +1211,13 @@ private fun LoggedInApp(
             val handled = navigator.goBack()
             if (!handled) activity?.finish()
         },
-        transitionSpec = { crossFadeTransition() },
+        transitionSpec = {
+            if (navigator.withoutForwardAnimation) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                crossFadeTransition()
+            }
+        },
         popTransitionSpec = { crossFadeTransition() },
         modifier = Modifier.fillMaxSize(),
     )

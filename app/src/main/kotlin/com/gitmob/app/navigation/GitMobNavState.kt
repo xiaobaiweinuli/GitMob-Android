@@ -45,10 +45,12 @@ private val topLevelRoutes: Set<Route> = setOf(
  *   - 状态通过 rememberSerializable + MutableStateSerializer 持久化，支持进程重建恢复
  *
  * @param startRoute 初始/首页 Tab（必须是 topLevelRoutes 之一），默认 HomeRoute
+ * @param initialRoute 外部深链目标：仅用于首次创建 startRoute 的入口栈
  */
 @Composable
 fun rememberGitMobNavState(
     startRoute: Route = HomeRoute,
+    initialRoute: Route? = null,
 ): GitMobNavState {
     val topLevelRoute = rememberSerializable(
         startRoute,
@@ -58,7 +60,11 @@ fun rememberGitMobNavState(
 
     // 每个顶层路由一个独立的 NavBackStack，各自保存自己的 push 浏览历史
     val backStacks = topLevelRoutes.associateWith { key ->
-        rememberNavBackStack(key)
+        // 外部深链：入口栈直接包含目标，首帧即目标页。
+        // rememberNavBackStack 没有 key，消费后 initialRoute 变 null 也不会重建栈。
+        val target = if (key == startRoute) initialRoute else null
+        val initialKeys: Array<NavKey> = if (target != null) arrayOf(key, target) else arrayOf(key)
+        rememberNavBackStack(*initialKeys)
     }
 
     return remember(startRoute) {
@@ -156,19 +162,29 @@ class GitMobNavigator(
     private val _reselectEvents = MutableSharedFlow<Route>(extraBufferCapacity = 1)
     val reselectEvents = _reselectEvents.asSharedFlow()
 
+    /** 最近一次实际前进是否跳过转场；重复目标不修改，普通导航、切 Tab 和返回时复位。 */
+    var withoutForwardAnimation = false
+        private set
+
     /**
      * 导航入口：顶层 Tab 切换 或 push 路由入栈。
      *
      * @param route 目标路由：是 topLevelRoute 就切 Tab，否则 push 到当前栈
+     * @param withoutAnimation 本次前进跳过转场（外部深链直接进入）
      */
-    fun navigate(route: Route) {
+    fun navigate(route: Route, withoutAnimation: Boolean = false) {
         if (!epoch.isCurrent) return
         if (route in topLevelRoutes) {
+            if (state.topLevelRoute == route) return
+            withoutForwardAnimation = withoutAnimation
             state.topLevelRoute = route
         } else {
             val stack = state.backStacks[state.topLevelRoute] ?: return
             // Compare the complete route: distinct arguments and revisits deeper in history remain valid.
-            if (stack.lastOrNull() != route) stack.add(route)
+            if (stack.lastOrNull() != route) {
+                withoutForwardAnimation = withoutAnimation
+                stack.add(route)
+            }
         }
     }
 
@@ -221,11 +237,13 @@ class GitMobNavigator(
             // 在首页 Tab 上按返回 → 交给系统 finish
             if (state.topLevelRoute == state.startRoute) return false
             // 在非首页 Tab 上按返回 → 切回首页 Tab（退出 through home）
+            withoutForwardAnimation = false
             state.topLevelRoute = state.startRoute
             return true
         }
 
         // 当前栈还有 push 路由 → 正常出栈
+        withoutForwardAnimation = false
         currentStack.removeLastOrNull()
         return true
     }
