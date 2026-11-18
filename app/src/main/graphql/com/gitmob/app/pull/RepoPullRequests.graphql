@@ -84,3 +84,26 @@ query RepoPullRequestDetail($owner: String!, $name: String!, $number: Int!, $aft
         }
     }
 }
+
+# 仓库内关键词搜索，复用列表字段及真实仓库权限。
+query SearchRepoPullRequests($owner: String!, $name: String!, $searchQuery: String!, $after: String, $first: Int!, $metadataFirst: Int!) {
+    repository(owner: $owner, name: $name) {
+        id
+        viewerPermission
+        hasPullRequestsEnabled
+        pullRequestCreationPolicy
+        defaultBranchRef { name }
+        mergeCommitAllowed
+        squashMergeAllowed
+        rebaseMergeAllowed
+    }
+    search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
+        issueCount
+        nodes {
+            ... on PullRequest {
+                ...PullRequestFields
+            }
+        }
+        pageInfo { hasNextPage endCursor }
+    }
+}

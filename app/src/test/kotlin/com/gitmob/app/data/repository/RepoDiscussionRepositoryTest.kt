@@ -8,6 +8,7 @@ import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.CommentAuthorAssociation
 import com.gitmob.app.data.model.RepoDiscussionFilter
+import com.gitmob.app.data.model.RepoDiscussionSort
 import com.gitmob.app.data.model.RepoDiscussionState
 import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
@@ -124,6 +125,27 @@ class RepoDiscussionRepositoryTest {
         assertTrue(repository.getDiscussions("o", "r", RepoDiscussionFilter()) is ApiResult.Failure)
         server.enqueue(MockResponse().setResponseCode(403))
         assertTrue(repository.getDiscussion("o", "r", 7) is ApiResult.Failure)
+    }
+
+    @Test
+    fun `repo search uses selected category name and connection retains category id`() = runTest(accounts.context) {
+        val detail = Json.parseToJsonElement(detailJson()).jsonObject.getValue("data").jsonObject.getValue("repository").jsonObject
+        val categoryNodes = detail.getValue("categories")
+        val node = detail.getValue("discussion").toString().replaceFirst("{", "{\"__typename\":\"Discussion\",")
+        val metadata = """"id":"R1","viewerPermission":"READ","hasDiscussionsEnabled":true,"categories":$categoryNodes"""
+        val connection = """"pageInfo":{"hasNextPage":false,"endCursor":null}"""
+        server.enqueue(MockResponse().setBody("""{"data":{"repository":{$metadata,"discussions":{"totalCount":0,"nodes":[],$connection}}}}"""))
+        val categories = (repository.getDiscussions("o", "r", RepoDiscussionFilter()) as ApiResult.Success).data.categories
+        takeVariables()
+        val filter = RepoDiscussionFilter(category = categories.single(), sort = RepoDiscussionSort.CREATED_DESC, answered = false)
+        server.enqueue(MockResponse().setBody("""{"data":{"repository":{$metadata},"search":{"discussionCount":1,"nodes":[$node],$connection}}}"""))
+        val page = (repository.searchDiscussions("o", "r", "help", filter) as ApiResult.Success).data
+        assertEquals(7, page.items.single().number)
+        assertTrue(page.categories.single().isAnswerable)
+        assertEquals(JsonPrimitive("repo:o/r \"help\" is:open category:\"General\" is:unanswered sort:date_created-desc"), takeVariables()["searchQuery"])
+        server.enqueue(MockResponse().setBody("""{"data":{"repository":{$metadata,"discussions":{"totalCount":0,"nodes":[],$connection}}}}"""))
+        repository.getDiscussions("o", "r", filter)
+        assertEquals(JsonPrimitive("CAT1"), takeVariables()["categoryId"])
     }
 
     private fun takeVariables() =

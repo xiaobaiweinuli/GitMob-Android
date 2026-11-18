@@ -1,5 +1,7 @@
 package com.gitmob.app.data.repository
 
+import com.gitmob.app.data.model.SearchContinuation
+import com.gitmob.app.graphql.SearchRepoDiscussionsQuery
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.api.Optional
 import com.gitmob.app.core.error.ApiResult
@@ -64,6 +66,53 @@ import javax.inject.Singleton
 @Singleton
 class RepoDiscussionRepository @Inject constructor(private val apolloClient: ApolloClient) {
 
+    suspend fun searchDiscussions(
+        owner: String,
+        name: String,
+        keywords: String,
+        filter: RepoDiscussionFilter,
+        position: SearchContinuation? = null,
+    ): ApiResult<RepoDiscussionPage> =
+        when (val result = apolloClient.query(
+            SearchRepoDiscussionsQuery(
+                owner = owner,
+                name = name,
+                searchQuery = repoDiscussionSearchQuery(owner, name, keywords, filter),
+                after = Optional.presentIfNotNull(position?.cursor),
+                first = PageSize.REPO_ISSUES,
+                metadataFirst = PageSize.METADATA,
+                categoriesFirst = PageSize.DISCUSSION_CATEGORIES,
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repo = result.data.repository ?: error("Repository not found")
+                val permission = RepoIssueRepository.parsePermission(repo.viewerPermission?.rawValue)
+                val search = result.data.search
+                // Count raw positions, including unavailable nodes, toward GitHub's search limit.
+                val received = (position?.received ?: 0) + search.nodes.orEmpty().size
+                val endCursor = search.pageInfo.endCursor
+                val next = if (search.pageInfo.hasNextPage && !endCursor.isNullOrBlank() &&
+                    endCursor != position?.cursor && received < PageSize.SEARCH_ACCESSIBLE_LIMIT
+                ) SearchContinuation(cursor = endCursor, received = received) else null
+                RepoDiscussionPage(
+                    repositoryId = repo.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    hasDiscussionsEnabled = repo.hasDiscussionsEnabled,
+                    categories = repo.categories.nodes.orEmpty().filterNotNull().map { toCategory(it.discussionCategoryFields) },
+                    totalCount = search.discussionCount,
+                    items = search.nodes.orEmpty().mapNotNull { it?.onDiscussion }
+                        .map { toDiscussion(it.discussionFields, it.comments.totalCount) },
+                    hasNextPage = next != null,
+                    endCursor = endCursor,
+                    searchNext = next,
+                    searchLimitReached = received >= PageSize.SEARCH_ACCESSIBLE_LIMIT &&
+                        (search.pageInfo.hasNextPage || search.discussionCount > received),
+                )
+            }
+        }
+
     suspend fun getDiscussions(owner: String, name: String, filter: RepoDiscussionFilter, after: String? = null): ApiResult<RepoDiscussionPage> =
         when (val result = apolloClient.query(
             RepoDiscussionsQuery(
@@ -72,7 +121,7 @@ class RepoDiscussionRepository @Inject constructor(private val apolloClient: Apo
                 after = Optional.presentIfNotNull(after),
                 states = Optional.present(states(filter.state)),
                 orderBy = Optional.present(order(filter.sort)),
-                categoryId = Optional.presentIfNotNull(filter.categoryId),
+                categoryId = Optional.presentIfNotNull(filter.category?.id),
                 answered = Optional.presentIfNotNull(filter.answered),
                 first = PageSize.REPO_ISSUES,
                 categoriesFirst = PageSize.DISCUSSION_CATEGORIES,

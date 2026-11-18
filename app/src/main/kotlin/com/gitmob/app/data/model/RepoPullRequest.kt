@@ -4,7 +4,7 @@ import com.gitmob.app.core.permission.RepoCapabilities
 import com.gitmob.app.core.permission.RepoPermission
 
 enum class RepoPullRequestState { OPEN, CLOSED, MERGED }
-enum class RepoPullRequestStateFilter { OPEN, CLOSED, MERGED, ALL }
+enum class RepoPullRequestStateFilter { OPEN, CLOSED, ALL }
 enum class RepoPullRequestSort { UPDATED_DESC, UPDATED_ASC, CREATED_DESC, CREATED_ASC, COMMENTS_DESC, COMMENTS_ASC }
 enum class RepoPullRequestMergeMethod { MERGE, SQUASH, REBASE }
 enum class RepoPullRequestReviewEvent { COMMENT, APPROVE, REQUEST_CHANGES }
@@ -69,6 +69,8 @@ data class RepoPullRequestPage(
     val items: List<RepoPullRequest>,
     val hasNextPage: Boolean,
     val endCursor: String?,
+    val searchNext: SearchContinuation? = null,
+    val searchLimitReached: Boolean = false,
 )
 
 data class RepoPullRequestComment(

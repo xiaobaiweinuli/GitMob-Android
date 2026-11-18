@@ -451,8 +451,7 @@
     <string name="issue_filter_assigned_any">Assigned to anyone</string>
     <string name="issue_filter_assigned_none">Assigned to nobody</string>
     <string name="issue_filter_all_authors">All authors</string>
-    <string name="issue_filter_mentioned">Mentioned</string>
-    <string name="issue_filter_subscribed">Subscribed</string>
+    <string name="issue_filter_mentioned_me">Mentioning me</string>
     <string name="issue_filter_all_updated">Any update time</string>
     <string name="issue_filter_updated_7d">Updated in the last 7 days</string>
     <string name="issue_filter_updated_30d">Updated in the last 30 days</string>
@@ -1029,4 +1028,9 @@
     <string name="actions_rerun_failed_scope">Re-run failed jobs and their dependent jobs.</string>
     <string name="actions_debug_logging">Enable debug logging</string>
     <string name="actions_debug_logging_description">Enable runner diagnostic and step debug logs for this re-run only.</string>
+    <string name="repo_list_search">Search this list</string>
+    <string name="repo_issue_search_hint">Search issue keywords</string>
+    <string name="repo_pr_search_hint">Search pull request keywords</string>
+    <string name="repo_discussion_search_hint">Search discussion keywords</string>
+    <string name="repo_filter_any_label">Any label</string>
 </resources>

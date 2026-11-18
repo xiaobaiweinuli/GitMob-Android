@@ -26,6 +26,11 @@ data class RepoIssueListUiState(
     val items: List<RepoIssue> = emptyList(),
     val totalCount: Int = 0,
     val filter: RepoIssueFilter = RepoIssueFilter(),
+    val submittedQuery: String = "",
+    val listRevision: Long = 0,
+    val nextCursor: String? = null,
+    val loadMoreFailed: Boolean = false,
+    val searchLimitReached: Boolean = false,
     val permission: RepoPermission = RepoPermission.NONE,
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
     val viewerCanCreateIssues: Boolean = false,
@@ -58,9 +63,11 @@ class RepoIssueListViewModel @Inject constructor(
     val state: StateFlow<RepoIssueListUiState> = _state.asStateFlow()
     private var owner = ""
     private var name = ""
-    private var cursor: String? = null
     private var initialized = false
     private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
+    private var requestGeneration = 0L
+    private var searchPosition: SearchContinuation? = null
     private var suppressNextIssueCountRefresh = false
 
     fun init(owner: String, name: String, permission: RepoPermission? = null, viewerCanCreateIssues: Boolean? = null) {
@@ -83,27 +90,46 @@ class RepoIssueListViewModel @Inject constructor(
     }
 
     fun load() {
-        loadJob?.cancel(); cursor = null
+        val generation = ++requestGeneration
+        loadJob?.cancel()
+        loadMoreJob?.cancel()
+        searchPosition = null
+        val request = _state.value
+        _state.update { it.copy(isLoading = true, isLoadingMore = false, hasNextPage = false, nextCursor = null, loadFailed = false, loadMoreFailed = false, searchLimitReached = false) }
         loadJob = viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, loadFailed = false) }
-            when (val result = repository.getIssues(owner, name, _state.value.filter)) {
-                is ApiResult.Success -> _state.update { it.merge(result.data, false) }
-                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } }
+            val result = if (request.submittedQuery.isEmpty()) {
+                repository.getIssues(owner, name, request.filter)
+            } else {
+                repository.searchIssues(owner, name, request.submittedQuery, request.filter)
+            }
+            if (generation != requestGeneration) return@launch
+            when (result) {
+                is ApiResult.Success -> applyPage(result.data, append = false)
+                is ApiResult.Failure -> {
+                    _state.update { it.copy(isLoading = false, loadFailed = true) }
+                    errorEventBus.emit(result.error)
+                }
             }
         }
     }
 
+    fun submitSearch(value: String) {
+        val query = value.trim()
+        if (query == _state.value.submittedQuery) return
+        _state.update { it.copy(submittedQuery = query, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }
+        load()
+    }
+
     fun refresh() = load()
     fun retry() = load()
-    fun setFilter(filter: RepoIssueFilter) { if (filter != _state.value.filter) { _state.update { it.copy(filter = filter) }; load() } }
+    fun setFilter(filter: RepoIssueFilter) { if (filter != _state.value.filter) { _state.update { it.copy(filter = filter, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }; load() } }
     fun setState(value: RepoIssueStateFilter) = setFilter(_state.value.filter.copy(state = value))
     fun setSort(value: RepoIssueSort) = setFilter(_state.value.filter.copy(sort = value))
     fun setLabels(value: Set<String>) = setFilter(_state.value.filter.copy(labels = value))
     fun setAssignee(value: RepoAssigneeFilter) = setFilter(_state.value.filter.copy(assignee = value))
     fun setMilestone(value: RepoMilestoneFilter) = setFilter(_state.value.filter.copy(milestone = value))
     fun setAuthor(value: RepoAuthorFilter) = setFilter(_state.value.filter.copy(author = value))
-    fun setMentioned(value: Boolean) = setFilter(_state.value.filter.copy(mentioned = value))
-    fun setSubscribed(value: Boolean) = setFilter(_state.value.filter.copy(subscribed = value))
+    fun setMentionedMe(value: Boolean) = setFilter(_state.value.filter.copy(mentionedMe = value))
     fun setUpdatedSince(value: java.time.Instant?) = setFilter(_state.value.filter.copy(updatedSince = value))
 
     fun beginCreate() {
@@ -137,14 +163,47 @@ class RepoIssueListViewModel @Inject constructor(
     fun consumeBlankCreateRequest() = _state.update { it.copy(blankCreateRequested = false) }
 
     fun loadMore() {
-        val current = _state.value
-        if (current.isLoadingMore || !current.hasNextPage) return
-        viewModelScope.launch {
-            _state.update { it.copy(isLoadingMore = true) }
-            when (val result = repository.getIssues(owner, name, current.filter, cursor)) {
-                is ApiResult.Success -> { cursor = result.data.endCursor; _state.update { it.copy(items = it.items + result.data.items, totalCount = result.data.totalCount, hasNextPage = result.data.hasNextPage, isLoadingMore = false) } }
-                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoadingMore = false) } }
+        val request = _state.value
+        if (request.isLoading || request.isLoadingMore || !request.hasNextPage) return
+        val generation = requestGeneration
+        val after = request.nextCursor
+        val position = searchPosition
+        _state.update { it.copy(isLoadingMore = true, loadMoreFailed = false) }
+        loadMoreJob = viewModelScope.launch {
+            val result = if (request.submittedQuery.isEmpty()) {
+                repository.getIssues(owner, name, request.filter, after)
+            } else {
+                repository.searchIssues(owner, name, request.submittedQuery, request.filter, position)
             }
+            if (generation != requestGeneration) return@launch
+            when (result) {
+                is ApiResult.Success -> applyPage(result.data, append = true)
+                is ApiResult.Failure -> {
+                    _state.update { it.copy(isLoadingMore = false, loadMoreFailed = true) }
+                    errorEventBus.emit(result.error)
+                }
+            }
+        }
+    }
+
+    private fun applyPage(page: RepoIssuePage, append: Boolean) {
+        searchPosition = page.searchNext
+        _state.update {
+            it.copy(
+                items = if (append) (it.items + page.items).distinctBy { item -> item.id } else page.items,
+                totalCount = page.totalCount,
+                permission = page.permission,
+                capabilities = page.capabilities,
+                viewerCanCreateIssues = page.viewerCanCreateIssues,
+                hasIssuesEnabled = page.hasIssuesEnabled,
+                hasNextPage = page.hasNextPage,
+                searchLimitReached = page.searchLimitReached,
+                nextCursor = page.endCursor,
+                isLoading = false,
+                isLoadingMore = false,
+                loadFailed = false,
+                loadMoreFailed = false,
+            )
         }
     }
 
@@ -169,12 +228,6 @@ class RepoIssueListViewModel @Inject constructor(
         suppressNextIssueCountRefresh = suppressRefresh
         repoUpdateEventBus.emit(RepoUpdateEvent.IssueCountChanged(owner, name, count))
     }
-
-    private fun RepoIssueListUiState.merge(page: RepoIssuePage, loadingMore: Boolean) = copy(
-        items = if (loadingMore) items + page.items else page.items, totalCount = page.totalCount, permission = page.permission,
-        capabilities = page.capabilities, viewerCanCreateIssues = page.viewerCanCreateIssues, hasIssuesEnabled = page.hasIssuesEnabled,
-        hasNextPage = page.hasNextPage, isLoading = false, isLoadingMore = false, loadFailed = false,
-    ).also { cursor = page.endCursor }
 
     private suspend fun <T> ApiResult<T>.onSuccess(block: suspend (T) -> Unit) { if (this is ApiResult.Success) block(data) }
 }

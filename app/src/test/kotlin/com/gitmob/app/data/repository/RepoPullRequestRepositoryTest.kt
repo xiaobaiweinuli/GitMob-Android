@@ -10,6 +10,8 @@ import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.CommentAuthorAssociation
 import com.gitmob.app.data.model.CreateRepoPullRequestInput
 import com.gitmob.app.data.model.RepoPullRequestFilter
+import com.gitmob.app.data.model.RepoPullRequestState
+import com.gitmob.app.data.model.RepoPullRequestStateFilter
 import com.gitmob.app.data.model.RepoPullRequestMergeMethod
 import com.gitmob.app.data.model.UpdateRepoPullRequestInput
 import com.gitmob.app.testutil.AccountSessionRule
@@ -84,6 +86,17 @@ class RepoPullRequestRepositoryTest {
         assertEquals(JsonPrimitive(PageSize.REPO_ISSUES), variables["first"])
         assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
         assertEquals(JsonPrimitive("previous"), variables["after"])
+    }
+
+    @Test
+    fun `closed filter includes merged pull requests and preserves their state`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(pageJson(state = "MERGED")))
+
+        val result = repository.getPullRequests("octo", "repo", RepoPullRequestFilter(state = RepoPullRequestStateFilter.CLOSED))
+
+        assertTrue(result is ApiResult.Success)
+        assertEquals(RepoPullRequestState.MERGED, (result as ApiResult.Success).data.items.single().state)
+        assertEquals(JsonArray(listOf(JsonPrimitive("CLOSED"), JsonPrimitive("MERGED"))), takeVariables()["states"])
     }
 
     @Test
@@ -326,9 +339,9 @@ class RepoPullRequestRepositoryTest {
      * Apollo 对非空字段严格校验，PR 片段请求的全部 Boolean/Int/枚举字段都必须出现在 mock 里；
      * author/editor 是 Actor 接口，必须带 __typename。
      */
-    private fun prNodeJson(connections: String = "") = """{
+    private fun prNodeJson(connections: String = "", state: String = "OPEN") = """{
         "id":"PR1","url":"https://github.com/octo/repo/pull/1","number":1,"title":"Fix",
-        "body":"body","bodyHTML":"<p>body</p>","state":"OPEN","isDraft":false,"locked":false,
+        "body":"body","bodyHTML":"<p>body</p>","state":"$state","isDraft":false,"locked":false,
         "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z",
         "includesCreatedEdit":false,"lastEditedAt":null,"editor":null,
         "author":{"__typename":"User","login":"octo","avatarUrl":"https://example.com/octo.png"},
@@ -343,7 +356,23 @@ class RepoPullRequestRepositoryTest {
         "viewerCanDisableAutoMerge":false,"viewerCanUpdateBranch":false,"viewerSubscription":null$connections
     }""".trimIndent()
 
-    private fun pageJson() = """
+    @Test
+    fun `repo search includes merged PRs and retains creation policy and comment count`() = runTest(accounts.context) {
+        val node = prNodeJson(state = "MERGED").replaceFirst("{", "{\"__typename\":\"PullRequest\",")
+            .replace("\"totalCommentsCount\":0", "\"totalCommentsCount\":9")
+        val repo = json.parseToJsonElement(pageJson()).jsonObject.getValue("data").jsonObject.getValue("repository")
+        server.enqueue(MockResponse().setBody("""{"data":{"repository":$repo,"search":{"issueCount":1,"nodes":[$node],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
+        val filter = RepoPullRequestFilter(state = RepoPullRequestStateFilter.CLOSED, labels = linkedSetOf("bug", "help wanted"))
+        val result = (repository.searchPullRequests("o", "r", "fix", filter) as ApiResult.Success).data
+        assertEquals(RepoPullRequestState.MERGED, result.items.single().state)
+        assertEquals(9, result.items.single().commentCount)
+        assertEquals(com.gitmob.app.data.model.PullRequestCreationPolicy.ALL, result.creationPolicy)
+        assertFalse(result.hasNextPage)
+        assertFalse(result.searchLimitReached)
+        assertEquals(JsonPrimitive("repo:o/r is:pr \"fix\" is:closed label:\"bug\",\"help wanted\" sort:updated-desc"), takeVariables()["searchQuery"])
+    }
+
+    private fun pageJson(state: String = "OPEN") = """
         {
           "data": {
             "repository": {
@@ -357,7 +386,7 @@ class RepoPullRequestRepositoryTest {
               "rebaseMergeAllowed":true,
               "pullRequests": {
                 "totalCount":1,
-                "nodes":[${prNodeJson()}],
+                "nodes":[${prNodeJson(state = state)}],
                 "pageInfo":{"hasNextPage":false,"endCursor":null}
               }
             }

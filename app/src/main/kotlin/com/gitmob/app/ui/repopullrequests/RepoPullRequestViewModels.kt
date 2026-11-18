@@ -28,6 +28,11 @@ import javax.inject.Inject
 data class RepoPullRequestListUiState(
     val items: List<RepoPullRequest> = emptyList(),
     val filter: RepoPullRequestFilter = RepoPullRequestFilter(),
+    val submittedQuery: String = "",
+    val listRevision: Long = 0,
+    val nextCursor: String? = null,
+    val loadMoreFailed: Boolean = false,
+    val searchLimitReached: Boolean = false,
     val labels: List<IssueLabel> = emptyList(),
     val permission: RepoPermission = RepoPermission.NONE,
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
@@ -45,14 +50,17 @@ class RepoPullRequestListViewModel @Inject constructor(
     private val repository: RepoPullRequestRepository,
     private val errorEventBus: ErrorEventBus,
     session: AccountSession,
+    private val repoUpdateEventBus: RepoUpdateEventBus,
 ) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoPullRequestListUiState())
     val state: StateFlow<RepoPullRequestListUiState> = _state.asStateFlow()
     private var owner = ""
     private var name = ""
-    private var cursor: String? = null
     private var initialized = false
     private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
+    private var requestGeneration = 0L
+    private var searchPosition: SearchContinuation? = null
 
     fun init(owner: String, name: String, permission: RepoPermission?) {
         if (initialized) return
@@ -62,6 +70,11 @@ class RepoPullRequestListViewModel @Inject constructor(
         permission?.let { value -> _state.update { it.copy(permission = value, capabilities = value.toCapabilities()) } }
         load()
         viewModelScope.launch {
+            repoUpdateEventBus.eventsFor(accountEpoch).filterIsInstance<RepoUpdateEvent.PullRequestCountChanged>().collect { event ->
+                if (event.owner == owner && event.name == name) load()
+            }
+        }
+        viewModelScope.launch {
             when (val result = repository.getLabels(owner, name)) {
                 is ApiResult.Success -> _state.update { it.copy(labels = result.data) }
                 is ApiResult.Failure -> errorEventBus.emit(result.error)
@@ -70,33 +83,34 @@ class RepoPullRequestListViewModel @Inject constructor(
     }
 
     fun load() {
+        val generation = ++requestGeneration
         loadJob?.cancel()
-        cursor = null
+        loadMoreJob?.cancel()
+        searchPosition = null
+        val request = _state.value
+        _state.update { it.copy(isLoading = true, isLoadingMore = false, hasNextPage = false, nextCursor = null, loadFailed = false, loadMoreFailed = false, searchLimitReached = false) }
         loadJob = viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, loadFailed = false) }
-            when (val result = repository.getPullRequests(owner, name, _state.value.filter)) {
-                is ApiResult.Success -> {
-                    cursor = result.data.endCursor
-                    _state.update {
-                        it.copy(
-                            items = result.data.items,
-                            permission = result.data.permission,
-                            capabilities = result.data.capabilities,
-                            hasPullRequestsEnabled = result.data.hasPullRequestsEnabled,
-                            creationPolicy = result.data.creationPolicy,
-                            totalCount = result.data.totalCount,
-                            hasNextPage = result.data.hasNextPage,
-                            isLoading = false,
-                            loadFailed = false,
-                        )
-                    }
-                }
+            val result = if (request.submittedQuery.isEmpty()) {
+                repository.getPullRequests(owner, name, request.filter)
+            } else {
+                repository.searchPullRequests(owner, name, request.submittedQuery, request.filter)
+            }
+            if (generation != requestGeneration) return@launch
+            when (result) {
+                is ApiResult.Success -> applyPage(result.data, append = false)
                 is ApiResult.Failure -> {
-                    errorEventBus.emit(result.error)
                     _state.update { it.copy(isLoading = false, loadFailed = true) }
+                    errorEventBus.emit(result.error)
                 }
             }
         }
+    }
+
+    fun submitSearch(value: String) {
+        val query = value.trim()
+        if (query == _state.value.submittedQuery) return
+        _state.update { it.copy(submittedQuery = query, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }
+        load()
     }
 
     fun refresh() = load()
@@ -107,34 +121,55 @@ class RepoPullRequestListViewModel @Inject constructor(
 
     private fun setFilter(value: RepoPullRequestFilter) {
         if (value == _state.value.filter) return
-        _state.update { it.copy(filter = value) }
+        _state.update { it.copy(filter = value, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }
         load()
     }
 
     fun loadMore() {
-        val current = _state.value
-        if (current.isLoadingMore || !current.hasNextPage) return
-        viewModelScope.launch {
-            _state.update { it.copy(isLoadingMore = true) }
-            when (val result = repository.getPullRequests(owner, name, current.filter, cursor)) {
-                is ApiResult.Success -> {
-                    cursor = result.data.endCursor
-                    _state.update {
-                        it.copy(
-                            items = it.items + result.data.items,
-                            totalCount = result.data.totalCount,
-                            hasNextPage = result.data.hasNextPage,
-                            isLoadingMore = false,
-                        )
-                    }
-                }
+        val request = _state.value
+        if (request.isLoading || request.isLoadingMore || !request.hasNextPage) return
+        val generation = requestGeneration
+        val after = request.nextCursor
+        val position = searchPosition
+        _state.update { it.copy(isLoadingMore = true, loadMoreFailed = false) }
+        loadMoreJob = viewModelScope.launch {
+            val result = if (request.submittedQuery.isEmpty()) {
+                repository.getPullRequests(owner, name, request.filter, after)
+            } else {
+                repository.searchPullRequests(owner, name, request.submittedQuery, request.filter, position)
+            }
+            if (generation != requestGeneration) return@launch
+            when (result) {
+                is ApiResult.Success -> applyPage(result.data, append = true)
                 is ApiResult.Failure -> {
+                    _state.update { it.copy(isLoadingMore = false, loadMoreFailed = true) }
                     errorEventBus.emit(result.error)
-                    _state.update { it.copy(isLoadingMore = false) }
                 }
             }
         }
     }
+
+    private fun applyPage(page: RepoPullRequestPage, append: Boolean) {
+        searchPosition = page.searchNext
+        _state.update {
+            it.copy(
+                items = if (append) (it.items + page.items).distinctBy { item -> item.id } else page.items,
+                totalCount = page.totalCount,
+                permission = page.permission,
+                capabilities = page.capabilities,
+                hasPullRequestsEnabled = page.hasPullRequestsEnabled,
+                creationPolicy = page.creationPolicy,
+                hasNextPage = page.hasNextPage,
+                searchLimitReached = page.searchLimitReached,
+                nextCursor = page.endCursor,
+                isLoading = false,
+                isLoadingMore = false,
+                loadFailed = false,
+                loadMoreFailed = false,
+            )
+        }
+    }
+
 }
 
 data class RepoPullRequestDetailUiState(

@@ -5,6 +5,14 @@ import com.gitmob.app.ui.translation.TranslationMenuItem
 import com.gitmob.app.ui.translation.TranslationText
 import com.gitmob.app.data.translation.TranslationTarget
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.TextFieldValue
+import com.gitmob.app.ui.common.RepositorySearchField
+import com.gitmob.app.ui.common.RepositorySearchButton
+import com.gitmob.app.core.network.PageSize
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -49,9 +57,44 @@ import com.gitmob.app.ui.common.quoteMarkdown
 fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermission?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onDiscussionClick: (Int) -> Unit, onCreate: () -> Unit, viewModel: RepoDiscussionListViewModel = hiltViewModel()) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    var searchInput by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(state.submittedQuery)) }
+    val listState = rememberSaveable(state.listRevision, saver = LazyListState.Saver) { LazyListState() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    fun leaveList(action: () -> Unit) {
+        searchExpanded = false
+        keyboard?.hide()
+        focusManager.clearFocus()
+        action()
+    }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(R.string.common_discussions), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { if (state.hasDiscussionsEnabled && state.categories.isNotEmpty()) IconButton(onClick = onCreate) { Icon(Icons.Default.Add, stringResource(R.string.discussion_new)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
+        topBar = {
+            TopAppBar(
+                title = {
+                    if (searchExpanded) {
+                        RepositorySearchField(
+                            value = searchInput,
+                            onValueChange = { searchInput = it },
+                            placeholder = stringResource(R.string.repo_discussion_search_hint),
+                            hasSubmittedQuery = state.submittedQuery.isNotEmpty(),
+                            onSubmit = viewModel::submitSearch,
+                        )
+                    } else RepositoryContextTitle(
+                        owner, name, stringResource(R.string.common_discussions),
+                        { login -> leaveList { onOwnerClick(login) } },
+                        { repoOwner, repoName -> leaveList { onRepositoryClick(repoOwner, repoName) } },
+                    )
+                },
+                navigationIcon = { IconButton(onClick = { leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                actions = {
+                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { searchExpanded = true }
+                    if (state.hasDiscussionsEnabled && state.categories.isNotEmpty()) IconButton(onClick = { leaveList(onCreate) }) { Icon(Icons.Default.Add, stringResource(R.string.discussion_new)) }
+                },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+        },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -61,8 +104,25 @@ fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermis
                     state.isLoading && state.items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     state.loadFailed && state.items.isEmpty() -> DiscussionRetry(Modifier.fillMaxSize(), viewModel::retry)
                     !state.hasDiscussionsEnabled -> Text(stringResource(R.string.discussion_disabled), modifier = Modifier.align(Alignment.Center))
-                    state.items.isEmpty() -> Text(stringResource(R.string.discussion_empty), modifier = Modifier.align(Alignment.Center))
-                    else -> LazyColumn { items(state.items, key = { it.id }) { item -> DiscussionRow(item, state.capabilities.canManageIssuesAndPRs && item.viewerCanDelete, { viewModel.confirmDelete(item) }) { onDiscussionClick(item.number) }; HorizontalDivider() }; if (state.hasNextPage) item { LaunchedEffect(state.items.size) { viewModel.loadMore() }; Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp)) } } }
+                    state.items.isEmpty() && !state.hasNextPage && !state.searchLimitReached -> Text(stringResource(R.string.discussion_empty), modifier = Modifier.align(Alignment.Center))
+                    else -> LazyColumn(Modifier.fillMaxSize(), state = listState) {
+                        items(state.items, key = { it.id }) { item ->
+                            DiscussionRow(item, state.capabilities.canManageIssuesAndPRs && item.viewerCanDelete, { viewModel.confirmDelete(item) }) { leaveList { onDiscussionClick(item.number) } }
+                            HorizontalDivider()
+                        }
+                        if (state.hasNextPage) item(key = "more") {
+                            LaunchedEffect(state.nextCursor, state.listRevision) { if (!state.loadMoreFailed) viewModel.loadMore() }
+                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                if (state.loadMoreFailed) TextButton(onClick = viewModel::loadMore) { Text(stringResource(R.string.common_retry)) }
+                                else CircularProgressIndicator(Modifier.size(20.dp))
+                            }
+                        }
+                        if (state.searchLimitReached) item(key = "search-limit") {
+                            Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
+                                modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        item(key = "bottom") { Spacer(Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp)) }
+                    }
                 }
             }
         }
@@ -289,13 +349,13 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
                 filterLabel = stringResource(R.string.work_filter_sort),
             )
             FilterCapsuleMenu(
-                selected = state.categories.firstOrNull { it.id == state.filter.categoryId },
+                selected = state.filter.category,
                 options = buildList<RepoDiscussionCategory?> {
                     add(null)
                     addAll(state.categories)
                 },
                 optionLabel = { category -> category?.name ?: stringResource(R.string.common_all) },
-                onSelected = { category -> vm.setCategory(category?.id) },
+                onSelected = vm::setCategory,
                 filterLabel = stringResource(R.string.discussion_category),
                 neutralLabel = stringResource(R.string.discussion_category),
                 isNeutral = { it == null },

@@ -64,7 +64,7 @@ data class RepoDiscussionComment(
 data class RepoDiscussionFilter(
     val state: RepoDiscussionStateFilter = RepoDiscussionStateFilter.OPEN,
     val sort: RepoDiscussionSort = RepoDiscussionSort.UPDATED_DESC,
-    val categoryId: String? = null,
+    val category: RepoDiscussionCategory? = null,
     val answered: Boolean? = null,
 )
 
@@ -78,6 +78,8 @@ data class RepoDiscussionPage(
     val items: List<RepoDiscussion>,
     val hasNextPage: Boolean,
     val endCursor: String?,
+    val searchNext: SearchContinuation? = null,
+    val searchLimitReached: Boolean = false,
 )
 
 data class RepoDiscussionDetail(

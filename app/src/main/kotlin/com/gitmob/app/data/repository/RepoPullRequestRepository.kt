@@ -1,5 +1,7 @@
 package com.gitmob.app.data.repository
 
+import com.gitmob.app.data.model.SearchContinuation
+import com.gitmob.app.graphql.SearchRepoPullRequestsQuery
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.api.Operation
 import com.apollographql.apollo.api.Mutation
@@ -125,6 +127,54 @@ class RepoPullRequestRepository @Inject constructor(
             )
         }
     }
+
+    suspend fun searchPullRequests(
+        owner: String,
+        name: String,
+        keywords: String,
+        filter: RepoPullRequestFilter,
+        position: SearchContinuation? = null,
+    ): ApiResult<RepoPullRequestPage> =
+        when (val result = apolloClient.query(
+            SearchRepoPullRequestsQuery(
+                owner = owner,
+                name = name,
+                searchQuery = repoPullRequestSearchQuery(owner, name, keywords, filter),
+                after = Optional.presentIfNotNull(position?.cursor),
+                first = PageSize.REPO_ISSUES,
+                metadataFirst = PageSize.METADATA,
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repo = result.data.repository ?: error("Repository not found")
+                val permission = RepoIssueRepository.parsePermission(repo.viewerPermission?.rawValue)
+                val search = result.data.search
+                // Count raw positions, including unavailable nodes, toward GitHub's search limit.
+                val received = (position?.received ?: 0) + search.nodes.orEmpty().size
+                val endCursor = search.pageInfo.endCursor
+                val next = if (search.pageInfo.hasNextPage && !endCursor.isNullOrBlank() &&
+                    endCursor != position?.cursor && received < PageSize.SEARCH_ACCESSIBLE_LIMIT
+                ) SearchContinuation(cursor = endCursor, received = received) else null
+                RepoPullRequestPage(
+                    repositoryId = repo.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    hasPullRequestsEnabled = repo.hasPullRequestsEnabled,
+                    creationPolicy = parseCreationPolicy(repo.pullRequestCreationPolicy?.rawValue),
+                    defaultBranchName = repo.defaultBranchRef?.name,
+                    allowedMergeMethods = allowedMergeMethods(repo.mergeCommitAllowed, repo.squashMergeAllowed, repo.rebaseMergeAllowed),
+                    totalCount = search.issueCount,
+                    items = search.nodes.orEmpty().mapNotNull { it?.onPullRequest }
+                        .map { toPullRequest(it.pullRequestFields) },
+                    hasNextPage = next != null,
+                    endCursor = endCursor,
+                    searchNext = next,
+                    searchLimitReached = received >= PageSize.SEARCH_ACCESSIBLE_LIMIT &&
+                        (search.pageInfo.hasNextPage || search.issueCount > received),
+                )
+            }
+        }
 
     suspend fun getPullRequests(
         owner: String,
@@ -596,8 +646,10 @@ class RepoPullRequestRepository @Inject constructor(
 
     private fun states(value: RepoPullRequestStateFilter) = when (value) {
         RepoPullRequestStateFilter.OPEN -> listOf(com.gitmob.app.graphql.type.PullRequestState.OPEN)
-        RepoPullRequestStateFilter.CLOSED -> listOf(com.gitmob.app.graphql.type.PullRequestState.CLOSED)
-        RepoPullRequestStateFilter.MERGED -> listOf(com.gitmob.app.graphql.type.PullRequestState.MERGED)
+        RepoPullRequestStateFilter.CLOSED -> listOf(
+            com.gitmob.app.graphql.type.PullRequestState.CLOSED,
+            com.gitmob.app.graphql.type.PullRequestState.MERGED,
+        )
         RepoPullRequestStateFilter.ALL -> listOf(
             com.gitmob.app.graphql.type.PullRequestState.OPEN,
             com.gitmob.app.graphql.type.PullRequestState.CLOSED,

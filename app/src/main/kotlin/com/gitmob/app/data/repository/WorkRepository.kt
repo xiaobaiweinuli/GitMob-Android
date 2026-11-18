@@ -281,8 +281,8 @@ private fun UserDiscussionVisibilityFilter.toSearchQualifier() = when (this) {
 }
 
 private fun UserDiscussionSortFilter.toSearchQualifier() = when (this) {
-    UserDiscussionSortFilter.CREATED_DESC -> "created-desc"
-    UserDiscussionSortFilter.CREATED_ASC -> "created-asc"
+    UserDiscussionSortFilter.CREATED_DESC -> "date_created-desc"
+    UserDiscussionSortFilter.CREATED_ASC -> "date_created-asc"
     UserDiscussionSortFilter.UPDATED_DESC -> "updated-desc"
     UserDiscussionSortFilter.UPDATED_ASC -> "updated-asc"
 }

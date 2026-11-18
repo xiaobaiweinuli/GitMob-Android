@@ -41,3 +41,23 @@ query RepoIssueDetail($owner: String!, $name: String!, $number: Int!, $after: St
         }
     }
 }
+
+# 仓库内关键词搜索，复用列表字段及真实仓库权限。
+query SearchRepoIssues($owner: String!, $name: String!, $searchQuery: String!, $after: String, $first: Int!, $metadataFirst: Int!) {
+    repository(owner: $owner, name: $name) {
+        id
+        viewerPermission
+        viewerCanCreateIssues
+        hasIssuesEnabled
+    }
+    search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
+        issueCount
+        nodes {
+            ... on Issue {
+                ...IssueFields
+                comments(first: 0) { totalCount }
+            }
+        }
+        pageInfo { hasNextPage endCursor }
+    }
+}

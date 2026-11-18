@@ -11,7 +11,7 @@ enum class RepoIssueSort { UPDATED_DESC, UPDATED_ASC, CREATED_DESC, CREATED_ASC,
 sealed interface RepoMilestoneFilter {
     data object ALL : RepoMilestoneFilter
     data object NONE : RepoMilestoneFilter
-    data class Number(val value: Int) : RepoMilestoneFilter
+    data class Number(val value: Int, val title: String) : RepoMilestoneFilter
 }
 
 sealed interface RepoAssigneeFilter {
@@ -33,8 +33,7 @@ data class RepoIssueFilter(
     val milestone: RepoMilestoneFilter = RepoMilestoneFilter.ALL,
     val assignee: RepoAssigneeFilter = RepoAssigneeFilter.ALL,
     val author: RepoAuthorFilter = RepoAuthorFilter.ALL,
-    val mentioned: Boolean = false,
-    val subscribed: Boolean = false,
+    val mentionedMe: Boolean = false,
     val updatedSince: Instant? = null,
 )
 
@@ -169,6 +168,8 @@ data class RepoIssuePage(
     val items: List<RepoIssue>,
     val hasNextPage: Boolean,
     val endCursor: String?,
+    val searchNext: SearchContinuation? = null,
+    val searchLimitReached: Boolean = false,
 )
 
 data class IssueCommentPage(

@@ -12,6 +12,7 @@ import com.gitmob.app.data.model.RepoIssueStateFilter
 import com.gitmob.app.data.model.RepoIssueSort
 import com.gitmob.app.data.model.RepoAssigneeFilter
 import com.gitmob.app.data.model.RepoMilestoneFilter
+import com.gitmob.app.data.model.SearchContinuation
 import com.gitmob.app.data.model.CreateRepoIssueInput
 import com.gitmob.app.data.model.IssueStateReason
 import com.gitmob.app.data.model.UpdateRepoIssueInput
@@ -55,7 +56,7 @@ class RepoIssueRepositoryTest {
     @Test
     fun `issue filters and order are encoded in repository query`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(pageJson(cursor = "CURSOR", hasNext = true)))
-        val result = repository.getIssues("octo", "repo", RepoIssueFilter(state = RepoIssueStateFilter.ALL, sort = RepoIssueSort.COMMENTS_ASC, assignee = RepoAssigneeFilter.ANY, milestone = RepoMilestoneFilter.Number(7), subscribed = true))
+        val result = repository.getIssues("octo", "repo", RepoIssueFilter(state = RepoIssueStateFilter.ALL, sort = RepoIssueSort.COMMENTS_ASC, assignee = RepoAssigneeFilter.ANY, milestone = RepoMilestoneFilter.Number(7, "Release 7"), mentionedMe = true))
         assertTrue(result is ApiResult.Success)
         assertEquals(1, (result as ApiResult.Success).data.items.size)
         val body = server.takeRequest().body.readUtf8()
@@ -63,7 +64,8 @@ class RepoIssueRepositoryTest {
         assertTrue(body.contains("\"field\":\"COMMENTS\""))
         assertTrue(body.contains("\"assignee\":\"*\""))
         assertTrue(body.contains("\"milestoneNumber\":\"7\""))
-        assertTrue(body.contains("\"viewerSubscribed\":true"))
+        assertTrue(body.contains("\"mentioned\":\"viewer\""))
+        assertFalse(body.contains("\"viewerSubscribed\""))
         val variables = Json.parseToJsonElement(body).jsonObject.getValue("variables").jsonObject
         assertEquals(JsonPrimitive(PageSize.REPO_ISSUES), variables["first"])
         assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
@@ -217,6 +219,31 @@ class RepoIssueRepositoryTest {
         repeat(2) { server.enqueue(MockResponse().setBody("""{"data":{"repository":null}}""")) }
         assertTrue(repository.getIssues("o", "r", RepoIssueFilter()) is ApiResult.Failure)
         assertTrue(repository.getIssue("o", "r", 1) is ApiResult.Failure)
+    }
+
+    @Test
+    fun `repo search maps issue permissions and counts inaccessible nodes toward limit`() = runTest(accounts.context) {
+        val node = issueNodeJson(1).replaceFirst("{", "{\"__typename\":\"Issue\",")
+        val response = """{"data":{"repository":{"id":"R1","viewerPermission":"READ","viewerCanCreateIssues":false,"hasIssuesEnabled":true},"search":{"issueCount":1200,"nodes":[null,$node],"pageInfo":{"hasNextPage":true,"endCursor":"after2"}}}}"""
+        val filter = RepoIssueFilter(mentionedMe = true)
+        server.enqueue(MockResponse().setBody(response))
+        val page = (repository.searchIssues("o", "r", "bug", filter) as ApiResult.Success).data
+        assertEquals(1, page.items.single().number)
+        assertFalse(page.viewerCanCreateIssues)
+        assertEquals(1200, page.totalCount)
+        assertEquals(SearchContinuation(cursor = "after2", received = 2), page.searchNext)
+        val first = takeVariables()
+        assertEquals(JsonPrimitive("repo:o/r is:issue \"bug\" is:open mentions:\"viewer\" sort:updated-desc"), first["searchQuery"])
+        server.enqueue(MockResponse().setBody(response))
+        val last = (repository.searchIssues("o", "r", "bug", filter,
+            SearchContinuation(cursor = "prev", received = PageSize.SEARCH_ACCESSIBLE_LIMIT - 2)) as ApiResult.Success).data
+        val second = takeVariables()
+        assertEquals(first["searchQuery"], second["searchQuery"])
+        assertEquals(JsonPrimitive("prev"), second["after"])
+        assertEquals(1200, last.totalCount)
+        assertTrue(last.searchLimitReached)
+        assertFalse(last.hasNextPage)
+        assertEquals(null, last.searchNext)
     }
 
     private fun takeVariables() =

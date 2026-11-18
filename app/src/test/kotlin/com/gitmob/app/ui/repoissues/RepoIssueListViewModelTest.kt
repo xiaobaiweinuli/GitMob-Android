@@ -23,6 +23,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RepoIssueListViewModelTest {
@@ -113,6 +116,96 @@ class RepoIssueListViewModelTest {
         advanceUntilIdle()
         assertTrue(vm.state.value.templatePickerVisible)
         assertFalse(vm.state.value.blankCreateRequested)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `search retries an initial error and refreshes only on explicit refresh`() = runTest {
+        val repository = repositoryMock()
+        val filter = RepoIssueFilter()
+        coEvery { repository.getIssues("o", "r", filter, null) } returns ApiResult.Success(page())
+        coEvery { repository.searchIssues("o", "r", "fix", filter, null) } returnsMany listOf(
+            ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(page()), ApiResult.Success(page()),
+        )
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r")
+        vm.submitSearch("  fix ")
+        advanceUntilIdle()
+        assertTrue(vm.state.value.loadFailed)
+        assertTrue(vm.state.value.items.isEmpty())
+        vm.retry()
+        vm.submitSearch("fix  ")
+        advanceUntilIdle()
+        coVerify(exactly = 2) { repository.searchIssues("o", "r", "fix", filter, null) }
+        assertFalse(vm.state.value.loadFailed)
+        assertEquals(listOf(issue()), vm.state.value.items)
+        vm.refresh()
+        advanceUntilIdle()
+        coVerify(exactly = 3) { repository.searchIssues("o", "r", "fix", filter, null) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `search append error retains rows and retries the same cursor`() = runTest {
+        val repository = repositoryMock()
+        val next = SearchContinuation(cursor = "C1", received = 1)
+        val first = page().copy(totalCount = 2, hasNextPage = true, endCursor = next.cursor, searchNext = next)
+        val last = page().copy(totalCount = 2, items = listOf(issue().copy(id = "I2")))
+        coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
+        coEvery { repository.searchIssues("o", "r", "fix", any(), null) } returns ApiResult.Success(first)
+        coEvery { repository.searchIssues("o", "r", "fix", any(), next) } returnsMany listOf(ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(last))
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r")
+        vm.submitSearch("fix")
+        vm.loadMore()
+        advanceUntilIdle()
+        assertTrue(vm.state.value.loadMoreFailed)
+        assertEquals(first.items, vm.state.value.items)
+        assertEquals(next.cursor, vm.state.value.nextCursor)
+        vm.loadMore()
+        advanceUntilIdle()
+        assertEquals(listOf("I1", "I2"), vm.state.value.items.map { it.id })
+        assertFalse(vm.state.value.loadMoreFailed)
+        assertFalse(vm.state.value.hasNextPage)
+        coVerify(exactly = 2) { repository.searchIssues("o", "r", "fix", any(), next) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `late append cannot replace results after clearing changing keywords or changing filters`() = runTest {
+        val repository = repositoryMock()
+        val open = RepoIssueFilter(labels = setOf("bug"))
+        val closed = open.copy(state = RepoIssueStateFilter.CLOSED)
+        val next = SearchContinuation(cursor = "C1", received = 1)
+        val first = page().copy(hasNextPage = true, endCursor = next.cursor, searchNext = next)
+        fun result(id: String) = ApiResult.Success(page().copy(items = listOf(issue().copy(id = id))))
+        coEvery { repository.getIssues("o", "r", any(), null) } returns result("ordinary")
+        coEvery { repository.searchIssues("o", "r", "old", open, null) } returns ApiResult.Success(first)
+        coEvery { repository.searchIssues("o", "r", "new", open, null) } returns result("new")
+        coEvery { repository.searchIssues("o", "r", "old", closed, null) } returns result("closed")
+        lateinit var pending: Continuation<ApiResult<RepoIssuePage>>
+        coEvery { repository.searchIssues("o", "r", "old", open, next) } coAnswers { suspendCoroutine { pending = it } }
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r")
+        vm.setFilter(open)
+        fun checkChange(expectedId: String, change: () -> Unit) {
+            vm.submitSearch("old")
+            vm.loadMore()
+            assertTrue(vm.state.value.isLoadingMore)
+            change()
+            pending.resume(result("stale"))
+            assertEquals(listOf(expectedId), vm.state.value.items.map { it.id })
+            assertFalse(vm.state.value.isLoadingMore)
+            assertFalse(vm.state.value.hasNextPage)
+            assertEquals(null, vm.state.value.nextCursor)
+        }
+        checkChange("ordinary") { vm.submitSearch("   ") }
+        assertEquals(open, vm.state.value.filter)
+        coVerify(exactly = 2) { repository.getIssues("o", "r", open, null) }
+        checkChange("new") { vm.submitSearch("new") }
+        checkChange("closed") { vm.setFilter(closed) }
+        assertEquals(closed, vm.state.value.filter)
+        assertEquals("old", vm.state.value.submittedQuery)
         vm.viewModelScope.cancel()
     }
 

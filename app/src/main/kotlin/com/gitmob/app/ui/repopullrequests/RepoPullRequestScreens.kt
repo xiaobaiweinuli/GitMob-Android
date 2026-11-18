@@ -5,6 +5,13 @@ import com.gitmob.app.ui.translation.TranslationMenuItem
 import com.gitmob.app.ui.translation.TranslationText
 import com.gitmob.app.data.translation.TranslationTarget
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.TextFieldValue
+import com.gitmob.app.ui.common.RepositorySearchField
+import com.gitmob.app.ui.common.RepositorySearchButton
+import com.gitmob.app.core.network.PageSize
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -130,6 +137,17 @@ fun RepoPullRequestListScreen(
 ) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    var searchInput by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(state.submittedQuery)) }
+    val listState = rememberSaveable(state.listRevision, saver = LazyListState.Saver) { LazyListState() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    fun leaveList(action: () -> Unit) {
+        searchExpanded = false
+        keyboard?.hide()
+        focusManager.clearFocus()
+        action()
+    }
     val canCreate = state.hasPullRequestsEnabled &&
         (state.creationPolicy == PullRequestCreationPolicy.ALL || state.capabilities.canPush)
     var showCreateSheet by rememberSaveable { mutableStateOf(false) }
@@ -139,16 +157,27 @@ fun RepoPullRequestListScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    RepositoryContextTitle(
+                    if (searchExpanded) {
+                        RepositorySearchField(
+                            value = searchInput,
+                            onValueChange = { searchInput = it },
+                            placeholder = stringResource(R.string.repo_pr_search_hint),
+                            hasSubmittedQuery = state.submittedQuery.isNotEmpty(),
+                            onSubmit = viewModel::submitSearch,
+                        )
+                    } else RepositoryContextTitle(
                         owner = owner,
                         repository = name,
                         pageTitle = stringResource(R.string.common_pull_requests),
-                        onOwnerClick = onOwnerClick,
-                        onRepositoryClick = onRepositoryClick,
+                        onOwnerClick = { login -> leaveList { onOwnerClick(login) } },
+                        onRepositoryClick = { repoOwner, repoName -> leaveList { onRepositoryClick(repoOwner, repoName) } },
                     )
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
-                actions = { if (canCreate) IconButton(onClick = { showCreateSheet = true }) { Icon(Icons.Default.Add, stringResource(R.string.pr_new)) } },
+                navigationIcon = { IconButton(onClick = { leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                actions = {
+                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { searchExpanded = true }
+                    if (canCreate) IconButton(onClick = { keyboard?.hide(); focusManager.clearFocus(); showCreateSheet = true }) { Icon(Icons.Default.Add, stringResource(R.string.pr_new)) }
+                },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
         },
@@ -165,18 +194,25 @@ fun RepoPullRequestListScreen(
                     state.isLoading && state.items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     state.loadFailed && state.items.isEmpty() -> RetryContent(viewModel::retry)
                     !state.hasPullRequestsEnabled -> Text(stringResource(R.string.pr_disabled), modifier = Modifier.align(Alignment.Center))
-                    state.items.isEmpty() -> Text(stringResource(R.string.pr_empty), modifier = Modifier.align(Alignment.Center))
-                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                    state.items.isEmpty() && !state.hasNextPage && !state.searchLimitReached -> Text(stringResource(R.string.pr_empty), modifier = Modifier.align(Alignment.Center))
+                    else -> LazyColumn(Modifier.fillMaxSize(), state = listState) {
                         items(state.items, key = { it.id }) { pullRequest ->
                             PullRequestListItemRow(
                                 pullRequest = pullRequest.toListItem(),
-                                onClick = { onPullRequestClick(pullRequest.number) },
+                                onClick = { leaveList { onPullRequestClick(pullRequest.number) } },
                             )
                             HorizontalDivider()
                         }
-                        if (state.hasNextPage) item("more") {
-                            LaunchedEffect(state.items.size) { viewModel.loadMore() }
-                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp)) }
+                        if (state.hasNextPage) item(key = "more") {
+                            LaunchedEffect(state.nextCursor, state.listRevision) { if (!state.loadMoreFailed) viewModel.loadMore() }
+                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                if (state.loadMoreFailed) TextButton(onClick = viewModel::loadMore) { Text(stringResource(R.string.common_retry)) }
+                                else CircularProgressIndicator(Modifier.size(20.dp))
+                            }
+                        }
+                        if (state.searchLimitReached) item(key = "search-limit") {
+                            Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
+                                modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         item("bottom") { Spacer(Modifier.height(24.dp)) }
                     }
@@ -189,12 +225,12 @@ fun RepoPullRequestListScreen(
             owner = owner,
             name = name,
             onDismiss = { showCreateSheet = false },
-            onCreate = { selection -> showCreateSheet = false; onCreate(selection) },
-            onCommitClick = { commitOwner, commitName, ref, sha -> showCreateSheet = false; onCreateCommitClick(commitOwner, commitName, ref, sha) },
+            onCreate = { selection -> showCreateSheet = false; leaveList { onCreate(selection) } },
+            onCommitClick = { commitOwner, commitName, ref, sha -> showCreateSheet = false; leaveList { onCreateCommitClick(commitOwner, commitName, ref, sha) } },
             onUserClick = onUserClick,
             onExistingPullRequestClick = { existingOwner, existingName, number ->
                 showCreateSheet = false
-                onExistingPullRequestClick(existingOwner, existingName, number)
+                leaveList { onExistingPullRequestClick(existingOwner, existingName, number) }
             },
         )
     }
@@ -235,7 +271,7 @@ private fun PullRequestFilters(state: RepoPullRequestListUiState, viewModel: Rep
                 selectedCountRes = R.string.issue_filter_selected_count,
                 clearLabel = stringResource(R.string.issue_filter_clear_labels),
                 onSelect = viewModel::setLabels,
-                filterLabel = stringResource(R.string.issue_labels),
+                filterLabel = stringResource(R.string.repo_filter_any_label),
             )
         }
         Text(
@@ -639,7 +675,7 @@ private fun TextEditDialog(@StringRes title: Int, initial: String, onDismiss: ()
 @Composable
 private fun RetryContent(onRetry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = onRetry, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) } } }
 
-private val RepoPullRequestStateFilter.label: Int @StringRes get() = when (this) { RepoPullRequestStateFilter.OPEN -> R.string.work_filter_open; RepoPullRequestStateFilter.CLOSED -> R.string.common_state_closed; RepoPullRequestStateFilter.MERGED -> R.string.pr_merged; RepoPullRequestStateFilter.ALL -> R.string.common_all }
+private val RepoPullRequestStateFilter.label: Int @StringRes get() = when (this) { RepoPullRequestStateFilter.OPEN -> R.string.work_filter_open; RepoPullRequestStateFilter.CLOSED -> R.string.common_state_closed; RepoPullRequestStateFilter.ALL -> R.string.common_all }
 private val RepoPullRequestSort.label: Int @StringRes get() = when (this) { RepoPullRequestSort.UPDATED_DESC -> R.string.work_sort_updated_desc; RepoPullRequestSort.UPDATED_ASC -> R.string.work_sort_updated_asc; RepoPullRequestSort.CREATED_DESC -> R.string.work_sort_created_desc; RepoPullRequestSort.CREATED_ASC -> R.string.work_sort_created_asc; RepoPullRequestSort.COMMENTS_DESC -> R.string.work_sort_comments_desc; RepoPullRequestSort.COMMENTS_ASC -> R.string.work_sort_comments_asc }
 private val RepoPullRequestReviewEvent.label: Int @StringRes get() = when (this) { RepoPullRequestReviewEvent.COMMENT -> R.string.pr_review_comment; RepoPullRequestReviewEvent.APPROVE -> R.string.pr_review_approve; RepoPullRequestReviewEvent.REQUEST_CHANGES -> R.string.pr_review_request_changes }
 private fun RepoPullRequestState.toPullRequestState(): PullRequestState = when (this) {

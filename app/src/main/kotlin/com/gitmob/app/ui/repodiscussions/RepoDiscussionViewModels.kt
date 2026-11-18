@@ -29,6 +29,11 @@ data class RepoDiscussionListUiState(
     val items: List<RepoDiscussion> = emptyList(),
     val categories: List<RepoDiscussionCategory> = emptyList(),
     val filter: RepoDiscussionFilter = RepoDiscussionFilter(),
+    val submittedQuery: String = "",
+    val listRevision: Long = 0,
+    val nextCursor: String? = null,
+    val loadMoreFailed: Boolean = false,
+    val searchLimitReached: Boolean = false,
     val permission: RepoPermission = RepoPermission.NONE,
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
     val hasDiscussionsEnabled: Boolean = true,
@@ -51,27 +56,119 @@ class RepoDiscussionListViewModel @Inject constructor(
     val state: StateFlow<RepoDiscussionListUiState> = _state.asStateFlow()
     private var owner = ""
     private var name = ""
-    private var cursor: String? = null
     private var initialized = false
     private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
+    private var requestGeneration = 0L
+    private var searchPosition: SearchContinuation? = null
+    private var suppressNextCountRefresh = false
 
     fun init(owner: String, name: String, permission: RepoPermission?) {
         if (initialized) return
         initialized = true; this.owner = owner; this.name = name
         permission?.let { _state.update { state -> state.copy(permission = it, capabilities = it.toCapabilities()) } }
         load()
+        viewModelScope.launch {
+            repoUpdateEventBus.eventsFor(accountEpoch).filterIsInstance<RepoUpdateEvent.DiscussionCountChanged>().collect { event ->
+                if (event.owner == owner && event.name == name) {
+                    if (suppressNextCountRefresh) suppressNextCountRefresh = false else load()
+                }
+            }
+        }
     }
-    fun load() { loadJob?.cancel(); cursor = null; loadJob = viewModelScope.launch { _state.update { it.copy(isLoading = true, loadFailed = false) }; when (val result = repository.getDiscussions(owner, name, _state.value.filter)) { is ApiResult.Success -> { cursor = result.data.endCursor; _state.update { it.copy(repositoryId = result.data.repositoryId, items = result.data.items, categories = result.data.categories, permission = result.data.permission, capabilities = result.data.capabilities, hasDiscussionsEnabled = result.data.hasDiscussionsEnabled, totalCount = result.data.totalCount, hasNextPage = result.data.hasNextPage, isLoading = false) } }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } } } } }
+    fun load() {
+        val generation = ++requestGeneration
+        loadJob?.cancel()
+        loadMoreJob?.cancel()
+        searchPosition = null
+        val request = _state.value
+        _state.update { it.copy(isLoading = true, isLoadingMore = false, hasNextPage = false, nextCursor = null, loadFailed = false, loadMoreFailed = false, searchLimitReached = false) }
+        loadJob = viewModelScope.launch {
+            val result = if (request.submittedQuery.isEmpty()) {
+                repository.getDiscussions(owner, name, request.filter)
+            } else {
+                repository.searchDiscussions(owner, name, request.submittedQuery, request.filter)
+            }
+            if (generation != requestGeneration) return@launch
+            when (result) {
+                is ApiResult.Success -> applyPage(result.data, append = false)
+                is ApiResult.Failure -> {
+                    _state.update { it.copy(isLoading = false, loadFailed = true) }
+                    errorEventBus.emit(result.error)
+                }
+            }
+        }
+    }
+
+    fun submitSearch(value: String) {
+        val query = value.trim()
+        if (query == _state.value.submittedQuery) return
+        _state.update { it.copy(submittedQuery = query, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }
+        load()
+    }
+
     fun refresh() = load()
     fun retry() = load()
     fun setState(value: RepoDiscussionStateFilter) = setFilter(_state.value.filter.copy(state = value))
     fun setSort(value: RepoDiscussionSort) = setFilter(_state.value.filter.copy(sort = value))
-    fun setCategory(value: String?) = setFilter(_state.value.filter.copy(categoryId = value))
+    fun setCategory(value: RepoDiscussionCategory?) = setFilter(_state.value.filter.copy(category = value))
     fun setAnswered(value: Boolean?) = setFilter(_state.value.filter.copy(answered = value))
-    private fun setFilter(value: RepoDiscussionFilter) { if (value == _state.value.filter) return; _state.update { it.copy(filter = value) }; load() }
-    fun loadMore() { val state = _state.value; if (state.isLoadingMore || !state.hasNextPage) return; viewModelScope.launch { _state.update { it.copy(isLoadingMore = true) }; when (val result = repository.getDiscussions(owner, name, state.filter, cursor)) { is ApiResult.Success -> { cursor = result.data.endCursor; _state.update { it.copy(items = it.items + result.data.items, totalCount = result.data.totalCount, hasNextPage = result.data.hasNextPage, isLoadingMore = false) } }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoadingMore = false) } } } } }
+    private fun setFilter(value: RepoDiscussionFilter) { if (value == _state.value.filter) return; _state.update { it.copy(filter = value, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }; load() }
+    fun loadMore() {
+        val request = _state.value
+        if (request.isLoading || request.isLoadingMore || !request.hasNextPage) return
+        val generation = requestGeneration
+        val after = request.nextCursor
+        val position = searchPosition
+        _state.update { it.copy(isLoadingMore = true, loadMoreFailed = false) }
+        loadMoreJob = viewModelScope.launch {
+            val result = if (request.submittedQuery.isEmpty()) {
+                repository.getDiscussions(owner, name, request.filter, after)
+            } else {
+                repository.searchDiscussions(owner, name, request.submittedQuery, request.filter, position)
+            }
+            if (generation != requestGeneration) return@launch
+            when (result) {
+                is ApiResult.Success -> applyPage(result.data, append = true)
+                is ApiResult.Failure -> {
+                    _state.update { it.copy(isLoadingMore = false, loadMoreFailed = true) }
+                    errorEventBus.emit(result.error)
+                }
+            }
+        }
+    }
+
+    private fun applyPage(page: RepoDiscussionPage, append: Boolean) {
+        searchPosition = page.searchNext
+        _state.update {
+            it.copy(
+                items = if (append) (it.items + page.items).distinctBy { item -> item.id } else page.items,
+                totalCount = page.totalCount,
+                permission = page.permission,
+                capabilities = page.capabilities,
+                repositoryId = page.repositoryId,
+                categories = page.categories,
+                hasDiscussionsEnabled = page.hasDiscussionsEnabled,
+                hasNextPage = page.hasNextPage,
+                searchLimitReached = page.searchLimitReached,
+                nextCursor = page.endCursor,
+                isLoading = false,
+                isLoadingMore = false,
+                loadFailed = false,
+                loadMoreFailed = false,
+            )
+        }
+    }
+
     fun confirmDelete(item: RepoDiscussion?) = _state.update { it.copy(pendingDelete = item) }
-    fun deletePending() { val item = _state.value.pendingDelete ?: return; if (!item.viewerCanDelete || !_state.value.capabilities.canManageIssuesAndPRs) return; viewModelScope.launch { when (val result = repository.deleteDiscussion(item.id)) { is ApiResult.Success -> { _state.update { it.copy(items = it.items.filterNot { value -> value.id == item.id }, pendingDelete = null, totalCount = (it.totalCount - 1).coerceAtLeast(0)) }; repoUpdateEventBus.emit(RepoUpdateEvent.DiscussionCountChanged(owner, name, _state.value.totalCount)) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = null) } } } } }
+    fun deletePending() { val item = _state.value.pendingDelete ?: return; if (!item.viewerCanDelete || !_state.value.capabilities.canManageIssuesAndPRs) return; viewModelScope.launch { when (val result = repository.deleteDiscussion(item.id)) { is ApiResult.Success -> { _state.update { it.copy(items = it.items.filterNot { value -> value.id == item.id }, pendingDelete = null, totalCount = (it.totalCount - 1).coerceAtLeast(0)) }; emitCountAfterDelete() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = null) } } } } }
+
+    private suspend fun emitCountAfterDelete() {
+        val result = repository.getDiscussions(owner, name, RepoDiscussionFilter())
+        val count = (result as? ApiResult.Success)?.data?.totalCount ?: return
+        suppressNextCountRefresh = true
+        repoUpdateEventBus.emit(RepoUpdateEvent.DiscussionCountChanged(owner, name, count))
+    }
 }
 
 data class RepoDiscussionDetailUiState(

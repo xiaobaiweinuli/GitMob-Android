@@ -51,3 +51,25 @@ query RepoDiscussionDetail($owner: String!, $name: String!, $number: Int!, $afte
         }
     }
 }
+
+# 仓库内关键词搜索，复用列表字段及真实仓库权限。
+query SearchRepoDiscussions($owner: String!, $name: String!, $searchQuery: String!, $after: String, $first: Int!, $metadataFirst: Int!, $categoriesFirst: Int!) {
+    repository(owner: $owner, name: $name) {
+        id
+        viewerPermission
+        hasDiscussionsEnabled
+        categories: discussionCategories(first: $categoriesFirst) {
+            nodes { ...DiscussionCategoryFields }
+        }
+    }
+    search(query: $searchQuery, type: DISCUSSION, first: $first, after: $after) {
+        discussionCount
+        nodes {
+            ... on Discussion {
+                ...DiscussionFields
+                comments { totalCount }
+            }
+        }
+        pageInfo { hasNextPage endCursor }
+    }
+}

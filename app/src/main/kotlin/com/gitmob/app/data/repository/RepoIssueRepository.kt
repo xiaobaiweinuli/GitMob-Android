@@ -1,7 +1,10 @@
 package com.gitmob.app.data.repository
 
+import com.gitmob.app.data.model.SearchContinuation
+import com.gitmob.app.graphql.SearchRepoIssuesQuery
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.api.Optional
+import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
@@ -76,6 +79,52 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
         milestonesCache.invalidateAll()
         assigneesCache.invalidateAll()
     }
+
+    suspend fun searchIssues(
+        owner: String,
+        name: String,
+        keywords: String,
+        filter: RepoIssueFilter,
+        position: SearchContinuation? = null,
+    ): ApiResult<RepoIssuePage> =
+        when (val result = apolloClient.query(
+            SearchRepoIssuesQuery(
+                owner = owner,
+                name = name,
+                searchQuery = repoIssueSearchQuery(owner, name, keywords, filter, if (filter.mentionedMe) AccountContext.ensureCurrent().login else null),
+                after = Optional.presentIfNotNull(position?.cursor),
+                first = PageSize.REPO_ISSUES,
+                metadataFirst = PageSize.METADATA,
+            ),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                val repo = result.data.repository ?: error("Repository not found")
+                val permission = parsePermission(repo.viewerPermission?.rawValue)
+                val search = result.data.search
+                // Count raw positions, including unavailable nodes, toward GitHub's search limit.
+                val received = (position?.received ?: 0) + search.nodes.orEmpty().size
+                val endCursor = search.pageInfo.endCursor
+                val next = if (search.pageInfo.hasNextPage && !endCursor.isNullOrBlank() &&
+                    endCursor != position?.cursor && received < PageSize.SEARCH_ACCESSIBLE_LIMIT
+                ) SearchContinuation(cursor = endCursor, received = received) else null
+                RepoIssuePage(
+                    repositoryId = repo.id,
+                    permission = permission,
+                    capabilities = permission.toCapabilities(),
+                    viewerCanCreateIssues = repo.viewerCanCreateIssues,
+                    hasIssuesEnabled = repo.hasIssuesEnabled,
+                    totalCount = search.issueCount,
+                    items = search.nodes.orEmpty().mapNotNull { it?.onIssue }
+                        .map { toIssue(it.issueFields, it.comments.totalCount) },
+                    hasNextPage = next != null,
+                    endCursor = endCursor,
+                    searchNext = next,
+                    searchLimitReached = received >= PageSize.SEARCH_ACCESSIBLE_LIMIT &&
+                        (search.pageInfo.hasNextPage || search.issueCount > received),
+                )
+            }
+        }
 
     suspend fun getIssues(owner: String, name: String, filter: RepoIssueFilter, after: String? = null): ApiResult<RepoIssuePage> =
         when (val result = apolloClient.query(
@@ -423,8 +472,9 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
                 RepoAuthorFilter.ALL -> Optional.Absent
                 is RepoAuthorFilter.Login -> present(value.value)
             },
-            mentioned = if (filter.mentioned) present("*") else Optional.Absent,
-            viewerSubscribed = if (filter.subscribed) present(true) else Optional.Absent,
+            mentioned = if (filter.mentionedMe) {
+                present(checkNotNull(AccountContext.ensureCurrent().login) { "Active login is required" })
+            } else Optional.Absent,
             since = filter.updatedSince?.let { present(it.toString()) } ?: Optional.Absent,
         )
         return filters.takeIf { hasAny }

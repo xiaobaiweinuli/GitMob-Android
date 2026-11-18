@@ -5,6 +5,8 @@ import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.BannerEvent
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.permission.RepoCapabilities
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.IssueLabel
@@ -38,7 +40,7 @@ class RepoPullRequestListViewModelTest {
         val labels = listOf(IssueLabel("L1", "bug", "d73a4a", null))
         val repository = repositoryMock()
         coEvery { repository.getLabels("o", "r") } returns ApiResult.Success(labels)
-        val viewModel = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session)
+        val viewModel = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session, RepoUpdateEventBus())
 
         viewModel.init("o", "r", RepoPermission.READ)
         advanceUntilIdle()
@@ -54,7 +56,7 @@ class RepoPullRequestListViewModelTest {
         coEvery { repository.getLabels("o", "r") } returns ApiResult.Failure(ApiError.NetworkError)
         val errorEventBus = ErrorEventBus()
         val event = async(start = CoroutineStart.UNDISPATCHED) { errorEventBus.eventsFor(accounts.session.epoch).first() }
-        val viewModel = RepoPullRequestListViewModel(repository, errorEventBus, accounts.session)
+        val viewModel = RepoPullRequestListViewModel(repository, errorEventBus, accounts.session, RepoUpdateEventBus())
 
         viewModel.init("o", "r", RepoPermission.READ)
         advanceUntilIdle()
@@ -62,6 +64,25 @@ class RepoPullRequestListViewModelTest {
         assertEquals(BannerEvent.Error(ApiError.NetworkError), event.await())
         assertEquals(emptyList<IssueLabel>(), viewModel.state.value.labels)
         viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `repository change refreshes the active PR query and labels`() = runTest(accounts.context) {
+        val repository = repositoryMock()
+        val events = RepoUpdateEventBus()
+        coEvery { repository.searchPullRequests("o", "r", "fix", any(), null) } returns ApiResult.Success(emptyPage())
+        val vm = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session, events)
+        vm.init("o", "r", RepoPermission.READ)
+        vm.submitSearch("fix")
+        vm.setLabels(setOf("bug"))
+        advanceUntilIdle()
+        val filter = vm.state.value.filter
+        events.emit(RepoUpdateEvent.PullRequestCountChanged("o", "other", 5))
+        events.emit(RepoUpdateEvent.PullRequestCountChanged("o", "r", 7))
+        advanceUntilIdle()
+        coVerify(exactly = 2) { repository.searchPullRequests("o", "r", "fix", filter, null) }
+        assertEquals("fix", vm.state.value.submittedQuery)
+        vm.viewModelScope.cancel()
     }
 
     private fun repositoryMock(): RepoPullRequestRepository = mockk {

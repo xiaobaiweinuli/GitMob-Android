@@ -448,8 +448,7 @@
     <string name="issue_filter_assigned_any">已指派给任何人</string>
     <string name="issue_filter_assigned_none">无人指派</string>
     <string name="issue_filter_all_authors">全部创建者</string>
-    <string name="issue_filter_mentioned">被提及</string>
-    <string name="issue_filter_subscribed">已订阅</string>
+    <string name="issue_filter_mentioned_me">提及我</string>
     <string name="issue_filter_all_updated">全部更新时间</string>
     <string name="issue_filter_updated_7d">最近 7 天更新</string>
     <string name="issue_filter_updated_30d">最近 30 天更新</string>
@@ -1009,4 +1008,9 @@
     <string name="actions_rerun_failed_scope">将重新运行失败作业及依赖它们的作业。</string>
     <string name="actions_debug_logging">启用调试日志记录</string>
     <string name="actions_debug_logging_description">仅对本次重新运行启用运行器诊断日志和步骤调试日志。</string>
+    <string name="repo_list_search">搜索当前列表</string>
+    <string name="repo_issue_search_hint">搜索议题关键词</string>
+    <string name="repo_pr_search_hint">搜索拉取请求关键词</string>
+    <string name="repo_discussion_search_hint">搜索讨论关键词</string>
+    <string name="repo_filter_any_label">任一标签</string>
 </resources>

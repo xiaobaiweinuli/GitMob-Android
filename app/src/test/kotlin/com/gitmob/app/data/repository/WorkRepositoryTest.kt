@@ -204,7 +204,7 @@ class WorkRepositoryTest {
     @Test
     fun `discussion filter maps author answer visibility and ordering`() {
         assertEquals(
-            "author:@me is:open is:unanswered is:private sort:created-asc",
+            "author:@me is:open is:unanswered is:private sort:date_created-asc",
             buildUserDiscussionSearchQuery(
                 UserDiscussionFilter(
                     state = UserDiscussionStateFilter.OPEN,
