@@ -40,6 +40,11 @@ import com.gitmob.app.graphql.UpdateRepoTopicsMutation
 import com.gitmob.app.graphql.UpdateRepoSubscriptionMutation
 import com.gitmob.app.graphql.RepoManagementTopicsQuery
 import com.gitmob.app.graphql.RepoManagementIdentityQuery
+import com.gitmob.app.data.model.RepositoryFork
+import com.gitmob.app.data.model.RepositoryForkCheck
+import com.gitmob.app.graphql.RepoForkIdentityQuery
+import com.gitmob.app.graphql.RepoForkTargetQuery
+import com.gitmob.app.graphql.fragment.ForkIdentity
 import com.gitmob.app.graphql.RepoTransferTargetQuery
 import com.gitmob.app.graphql.type.UpdateRepositoryInput
 import com.gitmob.app.graphql.type.UpdateTopicsInput
@@ -138,6 +143,10 @@ class RepoDetailRepository @Inject constructor(
                     viewerCanSubscribe = node.viewerCanSubscribe,
                     ownerIsViewer = node.owner.onUser?.isViewer == true,
                     forkingAllowed = node.forkingAllowed,
+                    ownerId = node.owner.id,
+                    viewerId = result.data.viewer.id,
+                    viewerLogin = result.data.viewer.login,
+                    viewerFork = node.viewerForks.nodes.orEmpty().filterNotNull().firstOrNull()?.forkIdentity?.toFork(),
                 )
             }
         }
@@ -292,10 +301,139 @@ class RepoDetailRepository @Inject constructor(
             }
         }
 
-    suspend fun createFork(owner: String, name: String): ApiResult<Unit> = safeCall {
-        with(api.post<CreateForkResponse, CreateForkBody>("/repos/$owner/$name/forks", CreateForkBody())) { }
-        // GitHub responds with 202 while creating the fork asynchronously; no count or route update is valid yet.
+    /** A negative result is returned only after every visible owned fork page was checked. */
+    suspend fun checkForkTarget(
+        source: RepoDetail,
+        target: RepositoryCreateOwner,
+        requestedName: String,
+    ): ApiResult<RepositoryForkCheck> {
+        if (target.id == source.ownerId || target.login.equals(source.ownerLogin, true)) {
+            return ApiResult.Failure(com.gitmob.app.core.error.ApiError.UserVisible(R.string.repo_transfer_same_owner))
+        }
+        val root = when (val result = safeCall { readForkRepository(source.ownerLogin, source.name) }) {
+            is ApiResult.Failure -> return result
+            is ApiResult.Success -> result.data
+        }
+        if (root.nodeId != source.id) return forkCheckFailure()
+        val networkId = root.networkId ?: return forkCheckFailure()
+        val networkNodeId = root.source?.nodeId ?: root.nodeId
+        suspend fun matches(identity: ForkIdentity, isFork: Boolean, parentId: String?, parentIsFork: Boolean?): ApiResult<Boolean> {
+            if (!isFork || identity.owner.id != target.id) return ApiResult.Success(false)
+            if (parentId == source.id || parentId == networkNodeId) return ApiResult.Success(true)
+            if (parentIsFork == false) return ApiResult.Success(false)
+            return safeCall {
+                val candidate = readForkRepository(identity.owner.login, identity.name)
+                if (candidate.nodeId != identity.id || candidate.networkId == null) {
+                    throw UserVisibleException(R.string.repo_fork_check_failed)
+                }
+                candidate.fork && candidate.networkId == networkId
+            }
+        }
+        var after: String? = null
+        val cursors = mutableSetOf<String>()
+        val seen = mutableSetOf<String>()
+        var conflict = false
+        while (true) {
+            val result = try {
+                val epoch = AccountContext.ensureCurrent()
+                val response = apolloClient.query(RepoForkTargetQuery(target.login, requestedName, Optional.presentIfNotNull(after), PageSize.REPOS)).execute()
+                epoch.ensureCurrent()
+                val account = response.data?.repositoryOwner
+                val expectedMissing = account?.id == target.id && account.named == null &&
+                    response.errors.orEmpty().all { it.path == listOf("repositoryOwner", "named") && GraphQLErrorMapper.errorType(it) == "NOT_FOUND" }
+                GraphQLErrorMapper.toApiResult(response.data, if (expectedMissing) null else response.errors, response.exception)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                return ApiResult.Failure(GraphQLErrorMapper.toApiError(error))
+            }
+            when (result) {
+                is ApiResult.Failure -> return result
+                is ApiResult.Success -> {
+                    val account = result.data.repositoryOwner ?: return forkCheckFailure()
+                    if (account.id != target.id || (account.onUser?.isViewer != true && account.onOrganization == null)) return forkCheckFailure()
+                    // Existing forks remain openable even when the organization no longer permits creation.
+                    account.named?.let { candidate ->
+                        when (val match = matches(candidate.forkIdentity, candidate.isFork, candidate.parent?.id, candidate.parent?.isFork)) {
+                            is ApiResult.Failure -> return match
+                            is ApiResult.Success -> if (match.data) return ApiResult.Success(RepositoryForkCheck(candidate.forkIdentity.toFork(), false))
+                        }
+                        conflict = true
+                    }
+                    val connection = account.repositories
+                    val nodes = connection.nodes ?: return forkCheckFailure()
+                    if (nodes.any { it == null }) return forkCheckFailure()
+                    for (candidate in nodes.filterNotNull()) {
+                        if (!seen.add(candidate.forkIdentity.id)) continue
+                        when (val match = matches(candidate.forkIdentity, candidate.isFork, candidate.parent?.id, candidate.parent?.isFork)) {
+                            is ApiResult.Failure -> return match
+                            is ApiResult.Success -> if (match.data) return ApiResult.Success(RepositoryForkCheck(candidate.forkIdentity.toFork(), false))
+                        }
+                    }
+                    if (!connection.pageInfo.hasNextPage) {
+                        if (seen.size != connection.totalCount) return forkCheckFailure()
+                        if (account.onOrganization?.viewerCanCreateRepositories == false) {
+                            return ApiResult.Failure(com.gitmob.app.core.error.ApiError.Forbidden)
+                        }
+                        return ApiResult.Success(RepositoryForkCheck(null, conflict))
+                    }
+                    val next = connection.pageInfo.endCursor
+                    if (next.isNullOrBlank() || !cursors.add(next)) return forkCheckFailure()
+                    after = next
+                }
+            }
+        }
     }
+
+    suspend fun createFork(source: RepoDetail, target: RepositoryCreateOwner, requestedName: String): ApiResult<RepositoryFork> = safeCall {
+        if (!isValidRepositoryName(requestedName)) throw UserVisibleException(R.string.repo_manage_invalid_name)
+        require(target.canCreateRepository && !target.login.equals(source.ownerLogin, true))
+        val response = try {
+            api.post<RestForkRepository, CreateForkBody>(
+                "/repos/${encodePathSegment(source.ownerLogin)}/${encodePathSegment(source.name)}/forks",
+                CreateForkBody(organization = target.login.takeIf { target.type == RepositoryCreateOwnerType.ORGANIZATION }, name = requestedName),
+            )
+        } catch (error: HttpStatusException) {
+            if (error.code == 404 || error.code == 422) throw UserVisibleException(R.string.repo_fork_rejected)
+            throw error
+        }
+        if (!response.fork || response.owner.nodeId != target.id) throw UserVisibleException(R.string.repo_fork_check_failed)
+        response.toFork()
+    }
+
+    /** A 404 here means the accepted repository is not readable yet, never a new POST. */
+    suspend fun confirmFork(source: RepoDetail, target: RepositoryCreateOwner, accepted: RepositoryFork): ApiResult<RepositoryFork?> {
+        val verified = safeCall {
+            val actual = try { readForkRepository(accepted.owner, accepted.name) } catch (error: HttpStatusException) {
+                if (error.code == 404) return@safeCall null
+                throw error
+            }
+            val upstream = readForkRepository(source.ownerLogin, source.name)
+            if (upstream.nodeId != source.id || actual.nodeId != accepted.id || actual.owner.nodeId != target.id ||
+                !actual.fork || actual.networkId == null || actual.networkId != upstream.networkId
+            ) throw UserVisibleException(R.string.repo_fork_check_failed)
+            actual
+        }
+        val actual = when (verified) {
+            is ApiResult.Failure -> return verified
+            is ApiResult.Success -> verified.data ?: return ApiResult.Success(null)
+        }
+        // Confirm the repository node identity through GraphQL.
+        return when (val result = apolloClient.query(RepoForkIdentityQuery(actual.nodeId)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> {
+                val identity = result.data.node?.onRepository?.forkIdentity
+                if (identity == null || identity.id != actual.nodeId || identity.owner.id != target.id) forkCheckFailure()
+                else ApiResult.Success(identity.toFork())
+            }
+        }
+    }
+
+    private suspend fun readForkRepository(owner: String, name: String): RestForkRepository = api.get(
+        "/repos/${encodePathSegment(owner)}/${encodePathSegment(name)}",
+    )
+
+    private fun forkCheckFailure() = ApiResult.Failure(com.gitmob.app.core.error.ApiError.UserVisible(R.string.repo_fork_check_failed))
 
     /**
      * 删除分支：DeleteRefInput 只需要 refId（Ref 节点自己的 id，不是分支名），已用 introspection 核实。
@@ -567,10 +705,35 @@ private data class RepoTransferBody(
 )
 
 @kotlinx.serialization.Serializable
-private class CreateForkBody
+private data class CreateForkBody(val organization: String? = null, val name: String)
+
+private fun ForkIdentity.toFork() = RepositoryFork(
+    id, owner.id, owner.login, name,
+)
 
 @kotlinx.serialization.Serializable
-private data class CreateForkResponse(val name: String = "")
+private data class RestForkRepository(
+    val id: Long,
+    @kotlinx.serialization.SerialName("node_id") val nodeId: String,
+    @kotlinx.serialization.SerialName("full_name") val fullName: String,
+    val name: String,
+    val owner: RestForkOwner,
+    val fork: Boolean,
+    val source: RestForkSource? = null,
+) {
+    val networkId: Long? get() = if (fork) source?.id else id
+    fun toFork(): RepositoryFork {
+        require(nodeId.isNotBlank() && fullName == "${owner.login}/$name")
+        return RepositoryFork(nodeId, owner.nodeId, owner.login, name)
+    }
+}
+
+@kotlinx.serialization.Serializable
+private data class RestForkOwner(@kotlinx.serialization.SerialName("node_id") val nodeId: String, val login: String)
+
+@kotlinx.serialization.Serializable
+private data class RestForkSource(val id: Long, @kotlinx.serialization.SerialName("node_id") val nodeId: String)
+
 
 @kotlinx.serialization.Serializable
 private data class ManagedRepoResponse(val visibility: String? = null)

@@ -50,6 +50,10 @@ data class RepoDetail(
     val viewerCanSubscribe: Boolean = false,
     val ownerIsViewer: Boolean = false,
     val forkingAllowed: Boolean = false,
+    val ownerId: String = "",
+    val viewerId: String = "",
+    val viewerLogin: String = "",
+    val viewerFork: RepositoryFork? = null,
 )
 
 enum class IssueCreationPolicy { ALL, COLLABORATORS_ONLY, UNKNOWN }
@@ -84,3 +88,16 @@ data class PagedBranches(
     val hasNextPage: Boolean,
     val endCursor: String?,
 )
+
+/** Stable node identity and actual address; a fork may have a different name from its source. */
+@kotlinx.serialization.Serializable
+data class RepositoryFork(
+    val id: String,
+    val ownerId: String,
+    val owner: String,
+    val name: String,
+) {
+    val fullName: String get() = "$owner/$name"
+}
+
+data class RepositoryForkCheck(val existing: RepositoryFork?, val nameConflict: Boolean)

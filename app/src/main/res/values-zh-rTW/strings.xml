@@ -1013,4 +1013,23 @@
     <string name="repo_discussion_search_hint">搜尋討論關鍵字</string>
     <string name="repo_filter_any_label">任一標籤</string>
     <string name="code_search_on_web">網頁版</string>
+    <string name="repo_fork_close">關閉</string>
+    <string name="repo_fork_title">復刻儲存庫</string>
+    <string name="repo_fork_to">復刻至</string>
+    <string name="repo_fork_done">已復刻</string>
+    <string name="repo_fork_creating">建立中</string>
+    <string name="repo_fork_submit">建立復刻</string>
+    <string name="repo_fork_open">開啟已有復刻</string>
+    <string name="repo_fork_check">檢查狀態</string>
+    <string name="repo_fork_checking">正在檢查目標帳號…</string>
+    <string name="repo_fork_check_failed">未能完整核實目標，請重試後再建立</string>
+    <string name="repo_fork_no_targets">沒有其他可用帳號。可載入更多組織或稍後重試。</string>
+    <string name="repo_fork_user">個人</string>
+    <string name="repo_fork_organization">組織</string>
+    <string name="repo_fork_pending">申請已受理，正在確認實際儲存庫。可以關閉彈窗，稍後繼續檢查。</string>
+    <string name="repo_fork_uncertain">提交結果尚未確認。請檢查目標，避免重複建立。</string>
+    <string name="repo_fork_not_allowed">此儲存庫目前不允許建立復刻。</string>
+    <string name="repo_fork_rejected">GitHub 未接受建立請求，請重新檢查名稱、目標權限及復刻限制。</string>
+    <string name="repo_fork_submitting">正在提交建立請求，尚未確認是否受理…</string>
+    <string name="repo_fork_no_create_permission">你不能在此組織建立儲存庫，但可以尋找並開啟已有復刻。</string>
 </resources>

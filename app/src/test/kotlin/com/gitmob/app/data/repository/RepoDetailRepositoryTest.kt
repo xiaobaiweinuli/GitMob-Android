@@ -13,8 +13,15 @@ import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.data.model.RepoVisibility
+import com.gitmob.app.data.model.RepositoryCreateOwner
+import com.gitmob.app.data.model.RepositoryCreateOwnerType
+import com.gitmob.app.data.model.RepositoryFork
+import com.gitmob.app.data.model.RepoDetail
+import io.mockk.mockk
+import io.mockk.every
 import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -65,10 +72,10 @@ class RepoDetailRepositoryTest {
         server.enqueue(
             MockResponse().setBody(
                 """
-                {"data":{"repository":{
-                    "id":"R1","name":"GitMob-Android","description":"desc","homepageUrl":null,
+                {"data":{"viewer":{"id":"U1","login":"xiaobaiweinuli"},"repository":{
+                    "viewerForks":{"nodes":[]},"id":"R1","name":"GitMob-Android","description":"desc","homepageUrl":null,
                     "url":"https://github.com/xiaobaiweinuli/GitMob-Android","visibility":"PUBLIC",
-                    "owner":{"__typename":"User","login":"xiaobaiweinuli","avatarUrl":"https://avatars.example.com/u1","isViewer":true},
+                    "owner":{"__typename":"User","id":"U1","login":"xiaobaiweinuli","avatarUrl":"https://avatars.example.com/u1","isViewer":true},
                     "isPrivate":false,"isArchived":false,"isTemplate":true,"isFork":false,"parent":null,
                     "stargazerCount":20,"viewerHasStarred":false,"forkCount":2,"forkingAllowed":true,
                     "issues":{"totalCount":2},"pullRequests":{"totalCount":0},
@@ -177,17 +184,119 @@ class RepoDetailRepositoryTest {
         assertTrue(result.data.items.single().hasIssuesEnabled)
     }
 
-    @Test
-    fun `create fork accepts 202 with an empty JSON body`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(202).setBody("""{"name":"repo"}"""))
+    private fun forkSource() = mockk<RepoDetail> {
+        every { id } returns "SOURCE"
+        every { ownerId } returns "UPSTREAM"
+        every { ownerLogin } returns "octo"
+        every { name } returns "repo"
+    }
+    private val forkTarget = RepositoryCreateOwner("VIEWER", "viewer", null, null, RepositoryCreateOwnerType.USER, true)
+    private fun forkRest(id: Long = 2, node: String = "FORK", repoName: String = "renamed", owner: String = "viewer", ownerId: String = "VIEWER", fork: Boolean = true, root: Long = 1) =
+        """{"id":$id,"node_id":"$node","full_name":"$owner/$repoName","name":"$repoName","owner":{"node_id":"$ownerId","login":"$owner"},"fork":$fork,"source":{"id":$root,"node_id":"SOURCE"},"description":"old","permissions":{"admin":true}}"""
+    private fun enqueueSource() { server.enqueue(MockResponse().setBody(forkRest(1, "SOURCE", "repo", "octo", "UPSTREAM", false))) }
+    private fun forkNode(id: String = "FORK", name: String = "renamed", parent: String = "SOURCE", parentFork: Boolean = false) =
+        """{"id":"$id","name":"$name","owner":{"__typename":"User","id":"VIEWER","login":"viewer"},"description":"old","viewerPermission":"ADMIN","isArchived":false,"isFork":true,"parent":{"id":"$parent","isFork":$parentFork}}"""
+    private fun forkPage(nodes: String = "", named: String = "null", next: Boolean = false, cursor: String = "null", count: Int = if (nodes.isEmpty()) 0 else 1, errors: String = "") =
+        """{"data":{"repositoryOwner":{"__typename":"User","id":"VIEWER","login":"viewer","isViewer":true,"named":$named,"repositories":{"nodes":[$nodes],"totalCount":$count,"pageInfo":{"hasNextPage":$next,"endCursor":$cursor}}}}$errors}"""
 
-        val result = repository.createFork("octo", "repo")
-
-        assertTrue(result is ApiResult.Success)
+    @Test fun personalForkOmitsOrganizationAndPreservesAcceptedIdentity() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setResponseCode(202).setBody(forkRest()))
+        val result = repository.createFork(forkSource(), forkTarget, "renamed") as ApiResult.Success
+        assertEquals("FORK", result.data.id)
+        assertEquals("viewer/renamed", result.data.fullName)
         val request = server.takeRequest()
         assertEquals("POST", request.method)
         assertEquals("/repos/octo/repo/forks", request.path)
-        assertEquals("{}", request.body.readUtf8())
+        assertEquals("""{"name":"renamed"}""", request.body.readUtf8())
+    }
+
+    @Test fun organizationForkIncludesOrganizationButNeverDescription() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setResponseCode(202).setBody(forkRest()))
+        repository.createFork(forkSource(), forkTarget.copy(type = RepositoryCreateOwnerType.ORGANIZATION), "renamed")
+        assertEquals("""{"organization":"viewer","name":"renamed"}""", server.takeRequest().body.readUtf8())
+    }
+
+    @Test fun renamedDirectForkIsDetectedAfterPagination() = runTest(accounts.context) {
+        enqueueSource()
+        server.enqueue(MockResponse().setBody(forkPage(forkNode("OTHER", "other", "OTHER_ROOT"), next = true, cursor = "\"next\"", count = 2)))
+        server.enqueue(MockResponse().setBody(forkPage(forkNode(), count = 2)))
+        val result = repository.checkForkTarget(forkSource(), forkTarget, "repo") as ApiResult.Success
+        assertEquals("viewer/renamed", result.data.existing?.fullName)
+        assertEquals(3, server.requestCount)
+        server.takeRequest()
+        val firstRequest = Json.parseToJsonElement(server.takeRequest().body.readUtf8()) as JsonObject
+        val nextRequest = Json.parseToJsonElement(server.takeRequest().body.readUtf8()) as JsonObject
+        assertEquals(JsonPrimitive(PageSize.REPOS), (firstRequest["variables"] as JsonObject)["first"])
+        assertEquals(JsonPrimitive("next"), (nextRequest["variables"] as JsonObject)["after"])
+    }
+
+    @Test fun organizationWithoutCreatePermissionCanReadExistingFork() = runTest(accounts.context) {
+        val target = forkTarget.copy(type = RepositoryCreateOwnerType.ORGANIZATION, canCreateRepository = false)
+        enqueueSource()
+        server.enqueue(MockResponse().setBody(
+            """{"data":{"repositoryOwner":{"__typename":"Organization","id":"VIEWER","login":"viewer","viewerCanCreateRepositories":false,"named":null,"repositories":{"nodes":[{"id":"FORK","name":"renamed","owner":{"__typename":"Organization","id":"VIEWER","login":"viewer"},"isFork":true,"parent":{"id":"SOURCE","isFork":false}}],"totalCount":1,"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}""",
+        ))
+
+        val result = repository.checkForkTarget(forkSource(), target, "repo") as ApiResult.Success
+
+        assertEquals("viewer/renamed", result.data.existing?.fullName)
+        assertFalse(result.data.nameConflict)
+    }
+
+    @Test fun sameNetworkWithDifferentParentIsDetectedByRestSourceId() = runTest(accounts.context) {
+        enqueueSource()
+        server.enqueue(MockResponse().setBody(forkPage(forkNode(parent = "INTERMEDIATE", parentFork = true))))
+        server.enqueue(MockResponse().setBody(forkRest()))
+        val result = repository.checkForkTarget(forkSource(), forkTarget, "repo") as ApiResult.Success
+        assertEquals("FORK", result.data.existing?.id)
+    }
+
+    @Test fun completeEmptyScanDistinguishesNameConflict() = runTest(accounts.context) {
+        enqueueSource()
+        server.enqueue(MockResponse().setBody(forkPage(named = forkNode(parent = "OTHER_ROOT"))))
+        val result = repository.checkForkTarget(forkSource(), forkTarget, "repo") as ApiResult.Success
+        assertTrue(result.data.nameConflict)
+        assertEquals(null, result.data.existing)
+    }
+
+    @Test fun incompleteScanCannotBeReportedAsAvailable() = runTest(accounts.context) {
+        enqueueSource()
+        server.enqueue(MockResponse().setBody(forkPage(next = true)))
+        assertTrue(repository.checkForkTarget(forkSource(), forkTarget, "repo") is ApiResult.Failure)
+    }
+
+    @Test fun permissionErrorOnNamedRepositoryCannotBecomeAnEmptyResult() = runTest(accounts.context) {
+        enqueueSource()
+        server.enqueue(MockResponse().setBody(forkPage(errors = ""","errors":[{"message":"denied","type":"FORBIDDEN","path":["repositoryOwner","named"]}]""")))
+        assertTrue(repository.checkForkTarget(forkSource(), forkTarget, "repo") is ApiResult.Failure)
+    }
+
+    @Test fun expectedMissingNameStillAllowsCompleteForkScan() = runTest(accounts.context) {
+        enqueueSource()
+        server.enqueue(MockResponse().setBody(forkPage(errors = ""","errors":[{"message":"missing","type":"NOT_FOUND","path":["repositoryOwner","named"]}]""")))
+        val result = repository.checkForkTarget(forkSource(), forkTarget, "repo") as ApiResult.Success
+        assertEquals(null, result.data.existing)
+        assertFalse(result.data.nameConflict)
+    }
+
+    private fun forkIdentity() =
+        """{"data":{"node":{"__typename":"Repository","id":"FORK","name":"renamed","owner":{"__typename":"User","id":"VIEWER","login":"viewer"}}}}"""
+
+    @Test fun acceptedForkCanRemainUnreadableThenBeConfirmed() = runTest(accounts.context) {
+        val accepted = RepositoryFork("FORK", "VIEWER", "viewer", "renamed")
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertEquals(null, (repository.confirmFork(forkSource(), forkTarget, accepted) as ApiResult.Success).data)
+        server.enqueue(MockResponse().setBody(forkRest()))
+        enqueueSource()
+        server.enqueue(MockResponse().setBody(forkIdentity()))
+        val confirmed = (repository.confirmFork(forkSource(), forkTarget, accepted) as ApiResult.Success).data
+        assertEquals("FORK", confirmed?.id)
+    }
+
+    @Test fun replacedRepositoryIdentityCannotBeConfirmed() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(forkRest(node = "REPLACED")))
+        enqueueSource()
+        assertTrue(repository.confirmFork(forkSource(), forkTarget, RepositoryFork("FORK", "VIEWER", "viewer", "renamed")) is ApiResult.Failure)
     }
 
     @Test

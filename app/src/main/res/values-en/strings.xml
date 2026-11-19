@@ -1038,4 +1038,23 @@
     <string name="repo_discussion_search_hint">Search discussion keywords</string>
     <string name="repo_filter_any_label">Any label</string>
     <string name="code_search_on_web">Web search</string>
+    <string name="repo_fork_close">Close</string>
+    <string name="repo_fork_title">Fork repository</string>
+    <string name="repo_fork_to">Fork to</string>
+    <string name="repo_fork_done">Forked</string>
+    <string name="repo_fork_creating">Creating</string>
+    <string name="repo_fork_submit">Create fork</string>
+    <string name="repo_fork_open">Open fork</string>
+    <string name="repo_fork_check">Check status</string>
+    <string name="repo_fork_checking">Checking the target account…</string>
+    <string name="repo_fork_check_failed">Could not finish checking the target. Retry before creating.</string>
+    <string name="repo_fork_no_targets">No other eligible accounts. Load more organizations or try again later.</string>
+    <string name="repo_fork_user">Personal</string>
+    <string name="repo_fork_organization">Organization</string>
+    <string name="repo_fork_pending">Request accepted. Confirming the repository. You can close this dialog and check again later.</string>
+    <string name="repo_fork_uncertain">The submission result is unknown. Check the target before attempting another creation.</string>
+    <string name="repo_fork_not_allowed">This repository does not currently allow new forks.</string>
+    <string name="repo_fork_rejected">GitHub rejected the request. Check the name, target permissions and fork restrictions.</string>
+    <string name="repo_fork_submitting">Submitting the creation request. Acceptance has not been confirmed yet…</string>
+    <string name="repo_fork_no_create_permission">You cannot create repositories in this organization, but you can find and open existing forks.</string>
 </resources>

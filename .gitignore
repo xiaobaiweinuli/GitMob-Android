@@ -46,6 +46,7 @@ reference-github-projects
 *.temp
 *.zip
 *.log
+/.scratch
 /GitHub官方App
 /download-system-plan.md
 图片参考

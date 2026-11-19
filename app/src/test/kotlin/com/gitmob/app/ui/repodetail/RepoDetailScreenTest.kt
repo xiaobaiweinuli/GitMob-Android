@@ -41,6 +41,8 @@ import com.gitmob.app.core.event.RepoTransferPendingStore
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
+import com.gitmob.app.data.model.RepositoryFork
+import com.gitmob.app.data.model.RepositoryForkCheck
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.data.model.RepoStarState
 import com.gitmob.app.data.model.RepositoryCreateOwner
@@ -90,6 +92,7 @@ class RepoDetailScreenTest {
     private lateinit var viewModel: RepoDetailViewModel
     private lateinit var libraryViewModel: com.gitmob.app.ui.library.LibraryViewModel
     private var openedHomepage: String? = null
+    private var openedFork: Pair<String, String>? = null
     private var openedStargazers = 0
     private var addressChanges = 0
     private val target = RepositoryCreateOwner("O1", "target", "Target", null, RepositoryCreateOwnerType.ORGANIZATION, true)
@@ -209,10 +212,10 @@ class RepoDetailScreenTest {
     }
 
     @Test
-    fun `own repository hides fork while keeping the notifications button reachable`() {
+    fun `own repository keeps fork for organization targets and notifications`() {
         render(detail().copy(ownerIsViewer = true))
 
-        node(R.string.repo_fork).assertDoesNotExist()
+        node(R.string.repo_fork).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_notifications))
             .performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription(context.getString(R.string.common_open_homepage)).assertDoesNotExist()
@@ -383,7 +386,7 @@ class RepoDetailScreenTest {
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_more)).assertIsEnabled()
         coVerify(exactly = 0) { stars.unstarRepo(any()) }
         coVerify(exactly = 0) { stars.starRepo(any()) }
-        coVerify(exactly = 0) { repository.createFork(any(), any()) }
+        coVerify(exactly = 0) { repository.createFork(any(), any(), any()) }
     }
 
     @Test
@@ -417,6 +420,62 @@ class RepoDetailScreenTest {
         val modals = listOf(state.copy(managementAction = RepoManagementAction.NOTIFICATIONS),
             state.copy(showStarListSelector = true), state.copy(showCreateListDialog = true))
         assertTrue(modals.all { it.actionsEnabled })
+    }
+
+    @Test
+    fun viewerOwnedForkShowsDoneAndStillOffersOrganization() {
+        coEvery { repository.checkForkTarget(any(), target, any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        render(detail().copy(
+            isFork = true, ownerIsViewer = true, ownerId = "U1", viewerId = "U1", viewerLogin = "octo",
+            forkedFromOwner = "upstream", forkedFromName = "original",
+        ))
+        node(R.string.repo_fork_done).performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
+        node(R.string.repo_fork_title).assertIsDisplayed()
+        composeRule.onNodeWithText("Target").assertIsDisplayed()
+        composeRule.onNodeWithText("target/repo").assertIsDisplayed()
+        node(R.string.repo_fork_submit).assertIsEnabled()
+        assertEquals(listOf(target), viewModel.state.value.fork.targets)
+        assertEquals(target.id, viewModel.state.value.fork.selectedId)
+        coVerify(exactly = 0) { repository.createFork(any(), any(), any()) }
+    }
+
+    @Test
+    fun forkEntryOpensOrganizationFormWithoutCreatingRepository() {
+        coEvery { repository.checkForkTarget(any(), target, any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        render(detail().copy(ownerIsViewer = true))
+        node(R.string.repo_fork).performScrollTo().performClick()
+        node(R.string.repo_fork_title).assertIsDisplayed()
+        composeRule.onNodeWithText("Target").assertIsDisplayed()
+        composeRule.onNodeWithText("target/repo").assertIsDisplayed()
+        node(R.string.repo_fork_submit).assertIsEnabled()
+        node(R.string.repo_create_description).assertDoesNotExist()
+        coVerify(exactly = 0) { repository.createFork(any(), any(), any()) }
+    }
+
+    @Test
+    fun renamedExistingOrganizationForkOpensItsActualPath() {
+        val existing = RepositoryFork("F1", "O1", "target", "renamed-fork")
+        coEvery { repository.checkForkTarget(any(), target, any()) } returns ApiResult.Success(RepositoryForkCheck(existing, false))
+        render()
+        node(R.string.repo_fork).performScrollTo().performClick()
+        composeRule.onNodeWithText("target/renamed-fork").performScrollTo().assertIsDisplayed()
+        node(R.string.repo_fork_open).performClick()
+        assertEquals("target" to "renamed-fork", openedFork)
+        node(R.string.repo_fork_title).assertDoesNotExist()
+        coVerify(exactly = 0) { repository.createFork(any(), any(), any()) }
+    }
+
+    @Test
+    fun unknownForkStateOffersCheckRetryBeforeCreation() {
+        coEvery { repository.checkForkTarget(any(), target, any()) } returns ApiResult.Failure(ApiError.NetworkError)
+        render()
+        node(R.string.repo_fork).performScrollTo().performClick()
+        node(R.string.repo_fork_check_failed).performScrollTo().assertIsDisplayed()
+        node(R.string.repo_fork_submit).assertDoesNotExist()
+        coEvery { repository.checkForkTarget(any(), target, any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        node(R.string.repo_fork_check).performClick()
+        node(R.string.repo_fork_submit).assertIsEnabled()
+        coVerify(exactly = 0) { repository.createFork(any(), any(), any()) }
     }
 
     @Test
@@ -470,7 +529,7 @@ class RepoDetailScreenTest {
             MaterialTheme {
                 RepoDetailScreen(
                     accountLibrary = accountLibrary,
-                    owner = "octo", name = "repo", onBack = {}, onOwnerClick = {}, onForkSourceClick = { _, _ -> },
+                    owner = "octo", name = "repo", onBack = {}, onOwnerClick = {}, onForkSourceClick = { owner, name -> openedFork = owner to name },
                     onHomepageClick = { openedHomepage = it }, onNavigateBranches = { _, _, _ -> }, onNavigateCode = {},
                     onNavigateCommits = {}, onNavigateWatchers = {}, onNavigateStargazers = { openedStargazers++ }, onNavigateForks = {},
                     onNavigateIssues = { _, _ -> }, onNavigatePullRequests = {}, onNavigateDiscussions = {},

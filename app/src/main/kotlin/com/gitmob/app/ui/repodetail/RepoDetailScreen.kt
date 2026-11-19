@@ -88,6 +88,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil3.compose.AsyncImage
 import com.gitmob.app.core.error.displayMessageRes
 import com.gitmob.app.R
@@ -138,6 +139,10 @@ fun RepoDetailScreen(
     libraryViewModel: LibraryViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name) { viewModel.init(owner, name) }
+    LifecycleResumeEffect(viewModel) {
+        viewModel.onResume()
+        onPauseOrDispose { }
+    }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val translation = LocalTranslationController.current
     var readmeVisible by remember(state.readmeContext, state.readmeRevision) { mutableStateOf(false) }
@@ -266,6 +271,8 @@ fun RepoDetailScreen(
                             canStar = state.actionsEnabled,
                             canAct = state.actionsEnabled,
                             isForking = state.isForking,
+                            hasPersonalFork = state.fork.personalFork != null,
+                            personalForkPending = state.fork.drafts[detail.viewerId]?.phase in setOf(ForkPhase.CREATING, ForkPhase.PENDING, ForkPhase.UNCERTAIN),
                             selectedListIds = state.starListMembership,
                             lists = state.starLists,
                         )
@@ -356,6 +363,7 @@ fun RepoDetailScreen(
             groupsFailed = groups.failed, retryGroups = accountLibrary::retryGroups)
     }
     RepoManagementDialogs(state, viewModel)
+    RepoForkDialog(state, viewModel, onForkSourceClick)
     if (state.showStarListSelector) {
         AddToListBottomSheet(
             targetLabel = state.detail?.let { "${it.ownerLogin}/${it.name}" } ?: "$owner/$name",
@@ -393,6 +401,8 @@ private fun RepoHeader(
     canStar: Boolean,
     canAct: Boolean,
     isForking: Boolean,
+    hasPersonalFork: Boolean,
+    personalForkPending: Boolean,
     selectedListIds: Set<String>,
     lists: List<com.gitmob.app.data.model.UserListSummary>,
 ) {
@@ -531,15 +541,18 @@ private fun RepoHeader(
                 Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
                 Text(stringResource(R.string.repo_forks_count, detail.forkCount), modifier = Modifier.padding(start = 4.dp))
             }
-            if (!detail.ownerIsViewer) {
-                OutlinedButton(onClick = onForkClick, enabled = canAct && detail.forkingAllowed && !isForking, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
-                    if (isForking) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
-                    }
-                    Text(stringResource(R.string.repo_fork), modifier = Modifier.padding(start = 4.dp))
-                }
+            OutlinedButton(
+                onClick = onForkClick,
+                enabled = canAct || isForking,
+                colors = if (hasPersonalFork) ButtonDefaults.outlinedButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) else ButtonDefaults.outlinedButtonColors(),
+                border = if (hasPersonalFork) BorderStroke(0.dp, Color.Transparent) else ButtonDefaults.outlinedButtonBorder(enabled = canAct || isForking),
+                modifier = Modifier.minimumInteractiveComponentSize().height(40.dp),
+            ) {
+                Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(stringResource(when { personalForkPending -> R.string.repo_fork_creating; hasPersonalFork -> R.string.repo_fork_done; else -> R.string.repo_fork }), modifier = Modifier.padding(start = 4.dp))
             }
             OutlinedButton(
                 onClick = onNotificationsClick,

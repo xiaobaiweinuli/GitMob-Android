@@ -29,6 +29,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -286,4 +288,104 @@ private fun TransferAccountRow(account: RepositoryCreateOwner, selected: Boolean
             if (!account.canCreateRepository) Text(stringResource(R.string.repo_transfer_no_permission), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
     }
+}
+
+@Composable
+internal fun RepoForkDialog(state: RepoDetailUiState, viewModel: RepoDetailViewModel, onOpen: (String, String) -> Unit) {
+    val fork = state.fork
+    val detail = state.detail ?: return
+    if (!fork.visible) return
+    val draft = fork.draft
+    val target = fork.target
+    val phase = draft?.phase
+    val existing = draft?.repository
+    val interactive = !state.isForking && !state.isLoading
+    val editable = interactive && draft != null && !draft.submitted && phase != ForkPhase.EXISTING
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val focus = remember(fork.targets.map { it.id }) { fork.targets.map { FocusRequester() } }
+    fun open() { existing?.let { viewModel.dismissFork(); onOpen(it.owner, it.name) } }
+    AlertDialog(
+        onDismissRequest = viewModel::dismissFork,
+        modifier = Modifier.padding(horizontal = 24.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        title = { Text(stringResource(R.string.repo_fork_title)) },
+        text = {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp).selectableGroup(), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { Text("${detail.ownerLogin}/${detail.name}", style = MaterialTheme.typography.bodyMedium) }
+                item { Text(stringResource(R.string.repo_fork_to), style = MaterialTheme.typography.titleSmall) }
+                fork.targets.forEachIndexed { index, account ->
+                    item(key = account.id) {
+                        val selected = account.id == fork.selectedId
+                        val accountDraft = fork.drafts[account.id]
+                        val known = accountDraft?.repository != null
+                        val pending = accountDraft?.phase in setOf(ForkPhase.CREATING, ForkPhase.PENDING, ForkPhase.UNCERTAIN)
+                        Row(
+                            Modifier.fillMaxWidth().focusRequester(focus[index]).onPreviewKeyEvent { event ->
+                                if (event.type == KeyEventType.KeyDown && event.key in listOf(Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight) && interactive) {
+                                    val next = if (event.key in listOf(Key.DirectionDown, Key.DirectionRight)) (index + 1 until fork.targets.size) else (index - 1 downTo 0)
+                                    next.firstOrNull()?.let { position ->
+                                        viewModel.selectForkTarget(fork.targets[position].id)
+                                        scope.launch { listState.animateScrollToItem(position + 2); focus[position].requestFocus() }
+                                    }
+                                    true
+                                } else false
+                            }.selectable(selected, enabled = interactive, role = Role.RadioButton, onClick = { viewModel.selectForkTarget(account.id) })
+                                .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, MaterialTheme.shapes.medium).padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AsyncImage(account.avatarUrl, null, Modifier.size(40.dp).clip(CircleShape))
+                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                Text(account.name ?: account.login)
+                                Text("@${account.login} · " + stringResource(if (account.type == RepositoryCreateOwnerType.USER) R.string.repo_fork_user else R.string.repo_fork_organization), style = MaterialTheme.typography.bodySmall)
+                                if (known || pending) Text(stringResource(if (pending) R.string.repo_fork_creating else R.string.repo_fork_done), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                                if (!account.canCreateRepository) Text(stringResource(R.string.repo_fork_no_create_permission), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            }
+                            RadioButton(selected, onClick = null, enabled = interactive)
+                        }
+                    }
+                }
+                if (fork.loadingTargets) item {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(24.dp))
+                    }
+                }
+                else if (fork.hasNextPage || fork.targetsFailed) item {
+                    TextButton(onClick = viewModel::loadForkTargets) { Text(stringResource(if (fork.targetsFailed) R.string.common_retry else R.string.common_continue)) }
+                }
+                if (!fork.loadingTargets && fork.targets.isEmpty()) item { Text(stringResource(R.string.repo_fork_no_targets)) }
+                if (draft != null && target != null) {
+                    if (phase !in setOf(ForkPhase.EXISTING, ForkPhase.COMPLETE)) {
+                        item { RepositoryNameField(draft.name, editable, viewModel::editForkName) }
+                        item { Text("${target.login}/${draft.name}", style = MaterialTheme.typography.bodySmall) }
+                    }
+                    if (existing != null) item { Text(existing.fullName, color = MaterialTheme.colorScheme.primary) }
+                    item {
+                        when (phase) {
+                            ForkPhase.CHECKING -> Text(stringResource(R.string.repo_fork_checking))
+                            ForkPhase.CHECK_FAILED -> Text(stringResource(R.string.repo_fork_check_failed), color = MaterialTheme.colorScheme.error)
+                            ForkPhase.CONFLICT -> Text(stringResource(R.string.repo_transfer_name_conflict), color = MaterialTheme.colorScheme.error)
+                            ForkPhase.CREATING -> Text(stringResource(R.string.repo_fork_submitting))
+                            ForkPhase.PENDING -> Text(stringResource(R.string.repo_fork_pending))
+                            ForkPhase.UNCERTAIN -> Text(stringResource(R.string.repo_fork_uncertain))
+                            else -> Unit
+                        }
+                    }
+                    if (!detail.forkingAllowed && existing == null) item { Text(stringResource(R.string.repo_fork_not_allowed)) }
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = viewModel::dismissFork) {
+            Text(stringResource(if (phase == ForkPhase.EXISTING || draft?.submitted == true) R.string.repo_fork_close else R.string.common_cancel))
+        } },
+        confirmButton = {
+            when (phase) {
+                ForkPhase.EXISTING, ForkPhase.COMPLETE -> Button(onClick = ::open) { Text(stringResource(R.string.repo_fork_open)) }
+                ForkPhase.PENDING, ForkPhase.UNCERTAIN, ForkPhase.CHECK_FAILED, ForkPhase.UNCHECKED -> Button(onClick = viewModel::retryForkCheck, enabled = interactive && isValidRepositoryName(draft.name)) { Text(stringResource(R.string.repo_fork_check)) }
+                else -> Button(onClick = viewModel::submitFork, enabled = interactive && phase == ForkPhase.READY && detail.forkingAllowed && target?.canCreateRepository == true) {
+                    Text(stringResource(if (state.isForking) R.string.repo_fork_creating else R.string.repo_fork_submit))
+                }
+            }
+        },
+    )
 }

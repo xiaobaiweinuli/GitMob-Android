@@ -6,6 +6,14 @@ import com.gitmob.app.ui.common.RepoDocumentResources
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.SavedStateHandle
+import kotlinx.coroutines.delay
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import com.gitmob.app.data.model.RepositoryFork
+import com.gitmob.app.data.model.RepositoryForkCheck
+import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -59,6 +67,7 @@ data class RepoDetailUiState(
     val isManaging: Boolean = false,
     val isStarring: Boolean = false,
     val isForking: Boolean = false,
+    val fork: RepoForkUiState = RepoForkUiState(),
     val starLists: List<UserListSummary> = emptyList(),
     val starListMembership: Set<String> = emptySet(),
     val starListSelection: Set<String> = emptySet(),
@@ -91,9 +100,34 @@ data class RepoDetailUiState(
     val deleted: Boolean = false,
 ) {
     val actionsEnabled: Boolean
-        get() = !isLoading && !isManaging && !isStarring && !isForking &&
+        get() = !isLoading && !loadFailed && !isManaging && !isStarring && !isForking &&
             !isSavingStarLists && !isCreatingList &&
             !transferPending && !deleted
+}
+
+enum class ForkPhase { UNCHECKED, CHECKING, READY, CONFLICT, CHECK_FAILED, EXISTING, CREATING, PENDING, UNCERTAIN, COMPLETE }
+
+@Serializable
+data class ForkDraft(
+    val name: String,
+    val phase: ForkPhase = ForkPhase.UNCHECKED,
+    val repository: RepositoryFork? = null,
+) {
+    val submitted: Boolean get() = phase in setOf(ForkPhase.CREATING, ForkPhase.PENDING, ForkPhase.UNCERTAIN, ForkPhase.COMPLETE)
+}
+
+data class RepoForkUiState(
+    val visible: Boolean = false,
+    val targets: List<RepositoryCreateOwner> = emptyList(),
+    val loadingTargets: Boolean = false,
+    val targetsFailed: Boolean = false,
+    val hasNextPage: Boolean = false,
+    val selectedId: String? = null,
+    val drafts: Map<String, ForkDraft> = emptyMap(),
+    val personalFork: RepositoryFork? = null,
+) {
+    val target: RepositoryCreateOwner? get() = targets.firstOrNull { it.id == selectedId }
+    val draft: ForkDraft? get() = drafts[selectedId]
 }
 
 enum class RepoManagementAction { RENAME, INFORMATION, VISIBILITY, TRANSFER, ARCHIVE, NOTIFICATIONS, ISSUES, DISCUSSIONS, DELETE }
@@ -111,6 +145,7 @@ class RepoDetailViewModel @Inject constructor(
     session: AccountSession,
     private val library: LibraryRepository,
     private val documentRepository: RepoDocumentRepository,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
 ) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(RepoDetailUiState())
@@ -129,6 +164,11 @@ class RepoDetailViewModel @Inject constructor(
     private var transferCheckJob: Job? = null
     private var starListsJob: Job? = null
     private var transferCursor: String? = null
+    private var forkCursor: String? = null
+    private val forkCursors = mutableSetOf<String>()
+    private val forkChecks = mutableMapOf<String, Job>()
+    private var restoredForkDrafts = false
+    private var hasResumed = false
 
     fun init(owner: String, name: String) {
         if (initialized) return
@@ -140,11 +180,16 @@ class RepoDetailViewModel @Inject constructor(
         observeRepoUpdates()
     }
 
+    fun onResume() {
+        if (hasResumed && initialized) load()
+        hasResumed = true
+    }
+
     fun load() = load(refreshResources = true)
 
     private fun load(refreshResources: Boolean) {
         val state = _state.value
-        if (state.deleted || state.isManaging || state.isStarring || state.showStarListSelector ||
+        if (state.deleted || state.isManaging || state.isStarring || state.isForking || state.showStarListSelector ||
             state.showCreateListDialog || state.isSavingStarLists || state.isCreatingList
         ) return
         loadJob?.cancel()
@@ -160,6 +205,7 @@ class RepoDetailViewModel @Inject constructor(
                             transferPending = transferPendingStore.find(result.data.id, owner, name) != null,
                         )
                     }
+                    refreshForkState(result.data)
                     val card = result.data.cardData()
                     viewModelScope.launch {
                         when (val refresh = library.refreshFavorite(accountEpoch, result.data.id, card)) {
@@ -182,10 +228,25 @@ class RepoDetailViewModel @Inject constructor(
                 }
                 is ApiResult.Failure -> {
                     errorEventBus.emit(result.error)
-                    _state.update { it.copy(isLoading = false, loadFailed = true) }
+                    showRepositoryLoadFailure(result.error)
                 }
             }
         }
+    }
+
+    private fun showRepositoryLoadFailure(error: ApiError) {
+        // Transient refresh failures keep the last loaded content. Access failures remain blocking.
+        val accessUnavailable = when (error) {
+            ApiError.Unauthorized, ApiError.Forbidden -> true
+            is ApiError.UserVisible -> error.messageRes == R.string.error_repo_not_found
+            is ApiError.GraphQLError -> error.errors.any { it.type in setOf("NOT_FOUND", "FORBIDDEN", "UNAUTHORIZED") }
+            else -> false
+        }
+        _state.update { it.copy(
+            detail = if (accessUnavailable) null else it.detail,
+            isLoading = false,
+            loadFailed = it.detail == null || accessUnavailable,
+        ) }
     }
 
     fun retry() = load()
@@ -491,19 +552,241 @@ class RepoDetailViewModel @Inject constructor(
         }
     }
 
+    private fun forkSavedKey(sourceId: String) = "fork:${accountEpoch.accountKey}:$sourceId"
+
+    private fun updateForkDraft(id: String, transform: (ForkDraft) -> ForkDraft) {
+        accountEpoch.ensureCurrent()
+        _state.update { state ->
+            val draft = state.fork.drafts[id] ?: return@update state
+            state.copy(fork = state.fork.copy(drafts = state.fork.drafts + (id to transform(draft))))
+        }
+        val sourceId = _state.value.detail?.id ?: return
+        savedStateHandle[forkSavedKey(sourceId)] = Json.encodeToString(_state.value.fork.drafts.filterValues { it.submitted && it.phase != ForkPhase.COMPLETE })
+    }
+
+    private fun refreshForkState(detail: RepoDetail) {
+        forkChecks.values.forEach { it.cancel() }
+        forkChecks.clear()
+        var drafts = _state.value.fork.drafts.mapValues { (_, draft) ->
+            if (draft.submitted && draft.phase != ForkPhase.COMPLETE) draft else draft.copy(phase = ForkPhase.UNCHECKED, repository = null)
+        }
+        if (!restoredForkDrafts) {
+            restoredForkDrafts = true
+            val saved = savedStateHandle.get<String>(forkSavedKey(detail.id))
+            if (saved != null) {
+                val restored = Json.decodeFromString<Map<String, ForkDraft>>(saved).mapValues { (_, draft) ->
+                    when (draft.phase) {
+                        ForkPhase.CREATING -> draft.copy(phase = ForkPhase.UNCERTAIN)
+                        else -> draft
+                    }
+                }
+                drafts = drafts + restored
+            }
+        }
+        val viewer = RepositoryCreateOwner(detail.viewerId, detail.viewerLogin, null, null, RepositoryCreateOwnerType.USER, true)
+        if (viewer.id.isNotBlank() && !detail.ownerIsViewer && viewer.id !in drafts) {
+            drafts = drafts + (viewer.id to ForkDraft(detail.name))
+        }
+        val personalFork = if (detail.ownerIsViewer && detail.isFork) {
+            RepositoryFork(
+                id = detail.id,
+                ownerId = detail.ownerId,
+                owner = detail.ownerLogin,
+                name = detail.name,
+            )
+        } else {
+            detail.viewerFork
+        }
+
+        _state.update { it.copy(fork = it.fork.copy(drafts = drafts, personalFork = personalFork)) }
+        if (viewer.id.isNotBlank() && !detail.ownerIsViewer) {
+            val draft = _state.value.fork.drafts[viewer.id] ?: return
+            if (!draft.submitted) {
+                if (detail.viewerFork != null) updateForkDraft(viewer.id) { it.copy(phase = ForkPhase.EXISTING, repository = detail.viewerFork) }
+                else checkForkTarget(viewer)
+            }
+        }
+    }
+
+    /** Entry opens the reviewed target selector; it never performs a remote write. */
     fun createFork() {
         val state = _state.value
+        if (state.detail == null || (!state.actionsEnabled && !state.isForking)) return
+        _state.update { it.copy(fork = it.fork.copy(visible = true)) }
+        if (state.fork.targets.isEmpty()) loadForkTargets()
+        else state.fork.target?.let { if (state.fork.draft?.submitted == false) checkForkTarget(it) }
+    }
+
+    fun dismissFork() { _state.update { it.copy(fork = it.fork.copy(visible = false)) } }
+
+    fun loadForkTargets() {
+        val state = _state.value
         val detail = state.detail ?: return
-        if (!state.actionsEnabled || detail.ownerIsViewer || !detail.forkingAllowed) return
+        if (state.fork.loadingTargets || (state.fork.targets.isNotEmpty() && !state.fork.hasNextPage && !state.fork.targetsFailed)) return
+        _state.update { it.copy(fork = it.fork.copy(loadingTargets = true, targetsFailed = false)) }
+        viewModelScope.launch {
+            when (val result = repoRepository.getRepositoryCreateOwners(forkCursor)) {
+                is ApiResult.Failure -> {
+                    errorEventBus.emit(result.error)
+                    _state.update { it.copy(fork = it.fork.copy(loadingTargets = false, targetsFailed = true)) }
+                }
+                is ApiResult.Success -> {
+                    accountEpoch.ensureCurrent()
+                    val page = result.data
+                    if (page.hasNextPage && (page.endCursor.isNullOrBlank() || !forkCursors.add(page.endCursor))) {
+                        _state.update { it.copy(fork = it.fork.copy(loadingTargets = false, targetsFailed = true)) }
+                        errorEventBus.emit(ApiError.UserVisible(R.string.repo_fork_check_failed))
+                        return@launch
+                    }
+                    forkCursor = page.endCursor
+                    _state.update { current ->
+                        val targets = (current.fork.targets + page.viewer + page.organizations).distinctBy { it.id }
+                            .filterNot { it.id == detail.ownerId || it.login.equals(detail.ownerLogin, true) }
+                        val drafts = current.fork.drafts.toMutableMap()
+                        targets.forEach { drafts.putIfAbsent(it.id, ForkDraft(detail.name)) }
+                        val selected = current.fork.selectedId ?: targets.firstOrNull { it.canCreateRepository }?.id ?: targets.firstOrNull()?.id
+                        current.copy(fork = current.fork.copy(targets = targets, drafts = drafts, selectedId = selected,
+                            loadingTargets = false, targetsFailed = false, hasNextPage = page.hasNextPage))
+                    }
+                    _state.value.fork.target?.let { target ->
+                        val draft = _state.value.fork.drafts.getValue(target.id)
+                        if (!draft.submitted && draft.phase != ForkPhase.EXISTING) checkForkTarget(target)
+                    }
+                }
+            }
+        }
+    }
+
+    fun selectForkTarget(id: String) {
+        if (_state.value.isForking) return
+        val target = _state.value.fork.targets.firstOrNull { it.id == id } ?: return
+        _state.update { it.copy(fork = it.fork.copy(selectedId = id)) }
+        val draft = _state.value.fork.drafts.getValue(id)
+        if (draft.phase in setOf(ForkPhase.UNCHECKED, ForkPhase.CHECK_FAILED)) checkForkTarget(target)
+    }
+
+    fun editForkName(value: String) {
+        val state = _state.value
+        val target = state.fork.target ?: return
+        val draft = state.fork.draft ?: return
+        if (state.isForking || draft.submitted || draft.phase == ForkPhase.EXISTING) return
+        forkChecks.remove(target.id)?.cancel()
+        updateForkDraft(target.id) { it.copy(name = value, phase = ForkPhase.UNCHECKED, repository = null) }
+        if (isValidRepositoryName(value)) checkForkTarget(target, debounce = true)
+    }
+
+    private fun checkForkTarget(target: RepositoryCreateOwner, debounce: Boolean = false) {
+        val detail = _state.value.detail ?: return
+        val draft = _state.value.fork.drafts[target.id] ?: return
+        if (draft.submitted || !isValidRepositoryName(draft.name)) return
+        forkChecks.remove(target.id)?.cancel()
+        updateForkDraft(target.id) { it.copy(phase = ForkPhase.CHECKING) }
+        forkChecks[target.id] = viewModelScope.launch {
+            if (debounce) delay(350)
+            val result = repoDetailRepository.checkForkTarget(detail, target, draft.name)
+            coroutineContext.ensureActive()
+            accountEpoch.ensureCurrent()
+            when (result) {
+                is ApiResult.Failure -> {
+                    updateForkDraft(target.id) { it.copy(phase = ForkPhase.CHECK_FAILED) }
+                    if (_state.value.fork.visible) errorEventBus.emit(result.error)
+                }
+                is ApiResult.Success -> applyForkCheck(target, result.data)
+            }
+        }
+    }
+
+    private fun applyForkCheck(target: RepositoryCreateOwner, check: RepositoryForkCheck) {
+        updateForkDraft(target.id) { it.copy(repository = check.existing, phase = when {
+            check.existing != null -> ForkPhase.EXISTING
+            check.nameConflict -> ForkPhase.CONFLICT
+            else -> ForkPhase.READY
+        }) }
+        if (target.type == RepositoryCreateOwnerType.USER) {
+            _state.update { it.copy(fork = it.fork.copy(personalFork = check.existing)) }
+        }
+    }
+
+    fun retryForkCheck() {
+        val state = _state.value
+        val target = state.fork.target ?: return
+        if (state.isForking) return
+        if (state.fork.draft?.submitted == true) {
+            _state.update { it.copy(isForking = true) }
+            viewModelScope.launch {
+                try { confirmForkProgress(target) } finally { _state.update { it.copy(isForking = false) } }
+            }
+        } else checkForkTarget(target)
+    }
+
+    fun submitFork() {
+        val state = _state.value
+        val detail = state.detail ?: return
+        val target = state.fork.target ?: return
+        val draft = state.fork.draft ?: return
+        if (!state.actionsEnabled || !detail.forkingAllowed || !target.canCreateRepository ||
+            draft.phase != ForkPhase.READY || !isValidRepositoryName(draft.name)) return
+        forkChecks.remove(target.id)?.cancel()
         _state.update { it.copy(isForking = true) }
+        updateForkDraft(target.id) { it.copy(phase = ForkPhase.CHECKING) }
         viewModelScope.launch {
             try {
-                when (val result = repoDetailRepository.createFork(owner, name)) {
-                    is ApiResult.Success -> errorEventBus.emitNotice(R.string.repo_fork_accepted)
-                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                // Fresh preflight prevents stale UI state from submitting against a discovered existing fork.
+                when (val check = repoDetailRepository.checkForkTarget(detail, target, draft.name)) {
+                    is ApiResult.Failure -> {
+                        updateForkDraft(target.id) { it.copy(phase = ForkPhase.CHECK_FAILED) }
+                        errorEventBus.emit(check.error)
+                        return@launch
+                    }
+                    is ApiResult.Success -> if (check.data.existing != null || check.data.nameConflict) {
+                        applyForkCheck(target, check.data)
+                        return@launch
+                    }
                 }
-            } finally {
-                _state.update { it.copy(isForking = false) }
+                updateForkDraft(target.id) { it.copy(phase = ForkPhase.CREATING) }
+                when (val result = repoDetailRepository.createFork(detail, target, draft.name)) {
+                    is ApiResult.Success -> updateForkDraft(target.id) { it.copy(phase = ForkPhase.PENDING, repository = result.data) }
+                    is ApiResult.Failure -> {
+                        updateForkDraft(target.id) { it.copy(phase = if (result.error == ApiError.Forbidden || result.error == ApiError.Unauthorized || result.error == ApiError.UserVisible(R.string.repo_fork_rejected)) ForkPhase.CHECK_FAILED else ForkPhase.UNCERTAIN) }
+                        errorEventBus.emit(result.error)
+                        if (_state.value.fork.drafts[target.id]?.phase != ForkPhase.UNCERTAIN) return@launch
+                    }
+                }
+                confirmForkProgress(target, poll = true)
+            } finally { _state.update { it.copy(isForking = false) } }
+        }
+    }
+
+    private suspend fun confirmForkProgress(target: RepositoryCreateOwner, poll: Boolean = false) {
+        val detail = _state.value.detail ?: return
+        var draft = _state.value.fork.drafts.getValue(target.id)
+        if (draft.repository == null) {
+            when (val check = repoDetailRepository.checkForkTarget(detail, target, draft.name)) {
+                is ApiResult.Failure -> { errorEventBus.emit(check.error); return }
+                is ApiResult.Success -> {
+                    val found = check.data.existing ?: return
+                    updateForkDraft(target.id) { it.copy(repository = found, phase = ForkPhase.PENDING) }
+                    draft = _state.value.fork.drafts.getValue(target.id)
+                }
+            }
+        }
+        val accepted = draft.repository ?: return
+        val pauses = if (poll) listOf(0L, 1_000L, 2_000L, 4_000L) else listOf(0L)
+        for (pause in pauses) {
+            delay(pause)
+            when (val result = repoDetailRepository.confirmFork(detail, target, accepted)) {
+                is ApiResult.Failure -> { errorEventBus.emit(result.error); return }
+                is ApiResult.Success -> {
+                    val actual = result.data ?: continue
+                    accountEpoch.ensureCurrent()
+                    updateForkDraft(target.id) { it.copy(repository = actual, phase = ForkPhase.COMPLETE) }
+                    if (target.type == RepositoryCreateOwnerType.USER) _state.update { it.copy(fork = it.fork.copy(personalFork = actual)) }
+                    when (val refreshed = repoDetailRepository.getRepoDetail(owner, name)) {
+                        is ApiResult.Success -> _state.update { it.copy(detail = refreshed.data) }
+                        is ApiResult.Failure -> errorEventBus.emit(refreshed.error)
+                    }
+                    return
+                }
             }
         }
     }
@@ -763,7 +1046,7 @@ class RepoDetailViewModel @Inject constructor(
                 loadStarLists(refresh = true)
                 repoUpdateEventBus.emit(RepoUpdateEvent.RepositoryChanged(owner, name, result.data))
             }
-            is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(loadFailed = true) } }
+            is ApiResult.Failure -> { errorEventBus.emit(result.error); showRepositoryLoadFailure(result.error) }
         }
         errorEventBus.emitNotice(notice)
     }

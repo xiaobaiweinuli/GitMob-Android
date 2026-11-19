@@ -1,5 +1,6 @@
 # 仓库详情。first: 0 只取连接计数；releases first: 1 只取最新一条，不是列表分页。
 query RepoDetail($owner: String!, $name: String!, $topicsFirst: Int!) {
+  viewer { id login }
   repository(owner: $owner, name: $name) {
     id
     name
@@ -7,7 +8,7 @@ query RepoDetail($owner: String!, $name: String!, $topicsFirst: Int!) {
     homepageUrl
     url
     visibility
-    owner { login avatarUrl ... on User { isViewer } ... on Organization { id } }
+    owner { id login avatarUrl ... on User { isViewer } ... on Organization { id } }
     isPrivate
     isArchived
     isTemplate
@@ -17,6 +18,7 @@ query RepoDetail($owner: String!, $name: String!, $topicsFirst: Int!) {
     viewerHasStarred
     forkCount
     forkingAllowed
+    viewerForks: forks(first: 1, affiliations: [OWNER]) { nodes { ...ForkIdentity } }
     issues(states: [OPEN]) { totalCount }
     pullRequests(states: [OPEN]) { totalCount }
     watchers(first: 0) { totalCount }
@@ -65,4 +67,30 @@ query RepoTransferTarget($login: String!, $name: String!) {
     ... on Organization { name viewerCanCreateRepositories }
     repository(name: $name, followRenames: false) { id }
   }
+}
+
+# Owner-filtered forks only prove direct matches. The target scan also handles renamed/network forks.
+fragment ForkIdentity on Repository {
+  id name owner { id login }
+}
+
+query RepoForkTarget($login: String!, $name: String!, $after: String, $first: Int!) {
+  repositoryOwner(login: $login) {
+    id login
+    ... on User { isViewer }
+    ... on Organization { viewerCanCreateRepositories }
+    named: repository(name: $name, followRenames: false) {
+      ...ForkIdentity
+      isFork parent { id isFork }
+    }
+    repositories(first: $first, after: $after, isFork: true, ownerAffiliations: [OWNER]) {
+      nodes { ...ForkIdentity isFork parent { id isFork } }
+      totalCount
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+query RepoForkIdentity($id: ID!) {
+  node(id: $id) { ... on Repository { ...ForkIdentity } }
 }

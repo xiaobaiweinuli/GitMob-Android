@@ -16,6 +16,9 @@ import com.gitmob.app.core.markdown.MarkdownRenderer
 import com.gitmob.app.core.permission.RepoCapabilities
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
+import com.gitmob.app.data.model.RepositoryFork
+import com.gitmob.app.data.model.RepositoryForkCheck
+import androidx.lifecycle.SavedStateHandle
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.data.model.RepoStarState
 import com.gitmob.app.data.model.cardData
@@ -804,7 +807,6 @@ class RepoDetailViewModelTest {
         val details = mockk<RepoDetailRepository>(relaxed = true)
         val detail = fakeDetail(viewerHasStarred = true, capabilities = RepoPermission.ADMIN.toCapabilities())
         val vm = listViewModel(stars, details, detail)
-        coEvery { details.createFork("octo", "greetings") } returns ApiResult.Success(Unit)
         coEvery { details.setArchived("R_123", true) } returns ApiResult.Success(Unit)
         coEvery { details.getRepoDetail("octo", "greetings") } returns ApiResult.Success(detail.copy(isArchived = true))
 
@@ -814,7 +816,8 @@ class RepoDetailViewModelTest {
 
         assertTrue(vm.state.value.isLoadingStarLists)
         assertTrue(vm.state.value.detail!!.isArchived)
-        coVerify(exactly = 1) { details.createFork("octo", "greetings") }
+        assertTrue(vm.state.value.fork.visible)
+        coVerify(exactly = 0) { details.createFork(any(), any(), any()) }
         coVerify(exactly = 1) { details.setArchived("R_123", true) }
         pending.complete(ApiResult.Success(setOf("L1")))
         advanceUntilIdle()
@@ -842,7 +845,7 @@ class RepoDetailViewModelTest {
         assertFalse(vm.state.value.showStarListSelector)
         assertNull(vm.state.value.managementAction)
         coVerify(exactly = 1) { stars.unstarRepo("R_123") }
-        coVerify(exactly = 0) { details.createFork(any(), any()) }
+        coVerify(exactly = 0) { details.createFork(any(), any(), any()) }
         pending.complete(ApiResult.Success(RepoStarState(false, 0)))
         advanceUntilIdle()
         assertTrue(vm.state.value.actionsEnabled)
@@ -869,44 +872,248 @@ class RepoDetailViewModelTest {
         vm.viewModelScope.cancel()
     }
 
-    @Test
-    fun `accepted fork does not change fork count or navigate state`() = runTest {
-        val detailRepo = mockk<RepoDetailRepository>()
-        coEvery { detailRepo.getRepoDetail("octo", "greetings") } returns ApiResult.Success(fakeDetail())
-        coEvery { detailRepo.getReadme(any(), any(), any()) } returns ApiResult.Failure(ApiError.Unknown("no"))
-        coEvery { detailRepo.createFork("octo", "greetings") } returns ApiResult.Success(Unit)
-        val viewModel = RepoDetailViewModel(
-            detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true),
-        )
-        viewModel.init("octo", "greetings")
-        advanceUntilIdle()
+    private val personal = RepositoryCreateOwner("VIEWER", "viewer", null, null, RepositoryCreateOwnerType.USER, true)
+    private val organization = RepositoryCreateOwner("ORG", "organization", null, null, RepositoryCreateOwnerType.ORGANIZATION, true)
+    private val acceptedFork = RepositoryFork("FORK", "VIEWER", "viewer", "renamed")
 
-        viewModel.createFork()
-        advanceUntilIdle()
-
-        assertEquals(1, viewModel.state.value.detail?.forkCount)
-        assertFalse(viewModel.state.value.isForking)
-        coVerify(exactly = 1) { detailRepo.createFork("octo", "greetings") }
-        viewModel.viewModelScope.cancel()
+    private fun forkViewModel(
+        details: RepoDetailRepository,
+        source: RepoDetail = fakeDetail().copy(viewerId = "VIEWER", viewerLogin = "viewer", ownerId = "UPSTREAM", description = "upstream"),
+        saved: SavedStateHandle = SavedStateHandle(),
+        organizationTarget: RepositoryCreateOwner = organization,
+    ): RepoDetailViewModel {
+        val owners = mockk<RepoRepository>()
+        coEvery { owners.getRepositoryCreateOwners(null) } returns ApiResult.Success(RepositoryCreateOwnerPage(personal, listOf(organizationTarget), false, null))
+        coEvery { details.getRepoDetail(any(), any()) } returns ApiResult.Success(source)
+        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
+        return RepoDetailViewModel(details, owners, mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), saved).apply { init("octo", "greetings") }
     }
 
-    @Test
-    fun `viewer owned repository never submits a fork request`() = runTest {
-        val detailRepo = mockk<RepoDetailRepository>()
-        coEvery { detailRepo.getRepoDetail("octo", "greetings") } returns ApiResult.Success(
-            fakeDetail(ownerIsViewer = true),
+    @Test fun forkEntryOnlyOpensDialogAndPreservesPerTargetDrafts() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        val vm = forkViewModel(details)
+        vm.createFork()
+        vm.editForkName("personal-name")
+        vm.selectForkTarget("ORG")
+        assertEquals("greetings", vm.state.value.fork.draft?.name)
+        vm.editForkName("org-name")
+        vm.selectForkTarget("VIEWER")
+        assertEquals("personal-name", vm.state.value.fork.draft?.name)
+        coVerify(exactly = 0) { details.createFork(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun existingRenamedPersonalForkChangesEntryAndDoesNotSubmit() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(acceptedFork, false))
+        val vm = forkViewModel(details)
+        vm.createFork()
+        assertEquals("viewer/renamed", vm.state.value.fork.personalFork?.fullName)
+        assertEquals(ForkPhase.EXISTING, vm.state.value.fork.draft?.phase)
+        vm.submitFork()
+        coVerify(exactly = 0) { details.createFork(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun viewerOwnedForkIsRecognizedWithoutLookingForAnotherPersonalFork() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        val source = fakeDetail(ownerIsViewer = true).copy(
+            isFork = true, ownerId = "VIEWER", ownerLogin = "viewer",
+            viewerId = "VIEWER", viewerLogin = "viewer", name = "renamed",
+            description = "my fork", forkedFromOwner = "upstream", forkedFromName = "original",
+            capabilities = RepoPermission.ADMIN.toCapabilities(),
         )
-        coEvery { detailRepo.getReadme(any(), any(), any()) } returns ApiResult.Failure(ApiError.Unknown("no"))
-        val viewModel = RepoDetailViewModel(
-            detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true),
+        val vm = forkViewModel(details, source)
+        assertEquals(
+            RepositoryFork(source.id, "VIEWER", "viewer", "renamed"),
+            vm.state.value.fork.personalFork,
         )
-        viewModel.init("octo", "greetings")
+        coVerify(exactly = 0) { details.checkForkTarget(any(), any(), any()) }
+        coVerify(exactly = 0) { details.createFork(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun someoneElsesForkDoesNotImplyPersonalFork() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        val source = fakeDetail().copy(
+            isFork = true, ownerId = "OTHER", viewerId = "VIEWER", viewerLogin = "viewer",
+            forkedFromOwner = "upstream", forkedFromName = "original",
+        )
+        val vm = forkViewModel(details, source)
+        assertNull(vm.state.value.fork.personalFork)
+        coVerify(exactly = 1) { details.checkForkTarget(source, personal, source.name) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun sourceOwnedByViewerStillOffersOrganization() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        val vm = forkViewModel(details, fakeDetail(ownerIsViewer = true).copy(ownerId = "VIEWER", viewerId = "VIEWER", viewerLogin = "viewer"))
+        assertNull(vm.state.value.fork.personalFork)
+        vm.createFork()
+        assertEquals(listOf(organization), vm.state.value.fork.targets)
+        assertEquals("ORG", vm.state.value.fork.selectedId)
+        coVerify(exactly = 0) { details.createFork(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun acceptedForkStaysPendingWithoutLocalCountIncrementAndCannotPostTwice() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        coEvery { details.createFork(any(), personal, any()) } returns ApiResult.Success(acceptedFork)
+        coEvery { details.confirmFork(any(), personal, acceptedFork) } returns ApiResult.Success(null)
+        val vm = forkViewModel(details)
+        vm.createFork()
+        vm.submitFork()
+        vm.submitFork()
         advanceUntilIdle()
+        assertEquals(ForkPhase.PENDING, vm.state.value.fork.draft?.phase)
+        assertEquals(1, vm.state.value.detail?.forkCount)
+        vm.dismissFork()
+        vm.createFork()
+        vm.submitFork()
+        vm.retryForkCheck()
+        advanceUntilIdle()
+        coVerify(exactly = 1) { details.createFork(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
 
-        viewModel.createFork()
+    @Test fun confirmedForkCompletesWithoutUpdatingSettings() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        coEvery { details.createFork(any(), any(), any()) } returns ApiResult.Success(acceptedFork)
+        coEvery { details.confirmFork(any(), any(), any()) } returns ApiResult.Success(acceptedFork)
+        val vm = forkViewModel(details)
+        vm.createFork()
+        vm.submitFork()
+        advanceUntilIdle()
+        assertEquals(ForkPhase.COMPLETE, vm.state.value.fork.draft?.phase)
+        coVerify(exactly = 0) { details.updateSettings(any(), any(), any(), any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
 
-        coVerify(exactly = 0) { detailRepo.createFork(any(), any()) }
-        viewModel.viewModelScope.cancel()
+    @Test fun networkTimeoutChecksTargetWithoutRepeatingPost() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        coEvery { details.createFork(any(), any(), any()) } returns ApiResult.Failure(ApiError.NetworkError)
+        val vm = forkViewModel(details)
+        vm.createFork()
+        vm.submitFork()
+        assertEquals(ForkPhase.UNCERTAIN, vm.state.value.fork.draft?.phase)
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(acceptedFork, false))
+        coEvery { details.confirmFork(any(), any(), any()) } returns ApiResult.Success(acceptedFork)
+        vm.retryForkCheck()
+        assertEquals(ForkPhase.COMPLETE, vm.state.value.fork.draft?.phase)
+        coVerify(exactly = 1) { details.createFork(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun pendingTargetSurvivesViewModelRecreation() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        coEvery { details.createFork(any(), any(), any()) } returns ApiResult.Success(acceptedFork)
+        coEvery { details.confirmFork(any(), any(), any()) } returns ApiResult.Success(null)
+        val saved = SavedStateHandle()
+        val vm = forkViewModel(details, saved = saved)
+        vm.createFork(); vm.submitFork(); advanceUntilIdle()
+        vm.viewModelScope.cancel()
+        val recreated = forkViewModel(details, saved = saved)
+        recreated.createFork()
+        assertEquals(ForkPhase.PENDING, recreated.state.value.fork.draft?.phase)
+        assertEquals("FORK", recreated.state.value.fork.draft?.repository?.id)
+        recreated.submitFork()
+        coVerify(exactly = 1) { details.createFork(any(), any(), any()) }
+        recreated.viewModelScope.cancel()
+    }
+
+    @Test fun staleNameCheckDoesNotOverwriteNewDraft() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        val slow = CompletableDeferred<ApiResult<RepositoryForkCheck>>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } coAnswers { withContext(NonCancellable) { slow.await() } }
+        val vm = forkViewModel(details)
+        vm.createFork()
+        coEvery { details.checkForkTarget(any(), any(), "new-name") } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        vm.editForkName("new-name")
+        slow.complete(ApiResult.Success(RepositoryForkCheck(acceptedFork, false)))
+        advanceUntilIdle()
+        assertEquals("new-name", vm.state.value.fork.draft?.name)
+        assertEquals(ForkPhase.READY, vm.state.value.fork.draft?.phase)
+        assertNull(vm.state.value.fork.draft?.repository)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun organizationExistingForkDoesNotMarkPersonalEntry() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        coEvery { details.checkForkTarget(any(), organization, any()) } returns ApiResult.Success(RepositoryForkCheck(acceptedFork.copy(ownerId = "ORG", owner = "organization"), false))
+        val vm = forkViewModel(details)
+        vm.createFork(); vm.selectForkTarget("ORG")
+        assertEquals(ForkPhase.EXISTING, vm.state.value.fork.draft?.phase)
+        assertNull(vm.state.value.fork.personalFork)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun organizationWithoutCreatePermissionCanSelectAndOpenExistingFork() = runTest {
+        val target = organization.copy(canCreateRepository = false)
+        val existing = acceptedFork.copy(ownerId = target.id, owner = target.login)
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        coEvery { details.checkForkTarget(any(), target, any()) } returns ApiResult.Success(RepositoryForkCheck(existing, false))
+        val vm = forkViewModel(details, organizationTarget = target)
+
+        vm.createFork()
+        vm.selectForkTarget(target.id)
+        vm.submitFork()
+
+        assertEquals(target, vm.state.value.fork.target)
+        assertEquals(ForkPhase.EXISTING, vm.state.value.fork.draft?.phase)
+        assertEquals(existing, vm.state.value.fork.draft?.repository)
+        coVerify(exactly = 0) { details.createFork(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun unknownAndConflictingTargetsCannotSubmit() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Failure(ApiError.Forbidden)
+        val vm = forkViewModel(details)
+        vm.createFork()
+        assertEquals(ForkPhase.CHECK_FAILED, vm.state.value.fork.draft?.phase)
+        vm.submitFork()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, true))
+        vm.retryForkCheck()
+        assertEquals(ForkPhase.CONFLICT, vm.state.value.fork.draft?.phase)
+        vm.submitFork()
+        coVerify(exactly = 0) { details.createFork(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun returningToDetailRechecksDeletedPersonalFork() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(acceptedFork, false))
+        val vm = forkViewModel(details)
+        vm.onResume()
+        assertEquals(acceptedFork, vm.state.value.fork.personalFork)
+        coEvery { details.checkForkTarget(any(), any(), any()) } returns ApiResult.Success(RepositoryForkCheck(null, false))
+        vm.onResume()
+        assertNull(vm.state.value.fork.personalFork)
+        assertEquals(ForkPhase.READY, vm.state.value.fork.drafts["VIEWER"]?.phase)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun accountChangeRejectsLateForkCheck() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        val delayed = CompletableDeferred<ApiResult<RepositoryForkCheck>>()
+        coEvery { details.checkForkTarget(any(), any(), any()) } coAnswers { withContext(NonCancellable) { delayed.await() } }
+        val vm = forkViewModel(details)
+        vm.createFork()
+        accounts.session.replace(emptyList(), null)
+        delayed.complete(ApiResult.Success(RepositoryForkCheck(acceptedFork, false)))
+        advanceUntilIdle()
+        assertNull(vm.state.value.fork.personalFork)
+        coVerify(exactly = 0) { details.createFork(any(), any(), any()) }
+        vm.viewModelScope.cancel()
     }
 
     private val listFixtures = listOf(

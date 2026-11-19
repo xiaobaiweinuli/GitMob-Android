@@ -1018,4 +1018,23 @@
     <string name="repo_discussion_search_hint">搜索讨论关键词</string>
     <string name="repo_filter_any_label">任一标签</string>
     <string name="code_search_on_web">网页版</string>
+    <string name="repo_fork_close">关闭</string>
+    <string name="repo_fork_title">复刻仓库</string>
+    <string name="repo_fork_to">复刻到</string>
+    <string name="repo_fork_done">已复刻</string>
+    <string name="repo_fork_creating">创建中</string>
+    <string name="repo_fork_submit">创建复刻</string>
+    <string name="repo_fork_open">打开已有复刻</string>
+    <string name="repo_fork_check">检查状态</string>
+    <string name="repo_fork_checking">正在检查目标账号…</string>
+    <string name="repo_fork_check_failed">未能完整核实目标，请重试后再创建</string>
+    <string name="repo_fork_no_targets">没有其他可用账号。可加载更多组织或稍后重试。</string>
+    <string name="repo_fork_user">个人</string>
+    <string name="repo_fork_organization">组织</string>
+    <string name="repo_fork_pending">申请已受理，正在确认实际仓库。可以关闭弹窗，稍后继续检查。</string>
+    <string name="repo_fork_uncertain">提交结果尚未确认。请检查目标，避免重复创建。</string>
+    <string name="repo_fork_not_allowed">此仓库目前不允许创建复刻。</string>
+    <string name="repo_fork_rejected">GitHub 未接受创建请求，请重新检查名称、目标权限及复刻限制。</string>
+    <string name="repo_fork_submitting">正在提交创建请求，尚未确认是否受理…</string>
+    <string name="repo_fork_no_create_permission">你不能在此组织创建仓库，但可以查找并打开已有复刻。</string>
 </resources>
