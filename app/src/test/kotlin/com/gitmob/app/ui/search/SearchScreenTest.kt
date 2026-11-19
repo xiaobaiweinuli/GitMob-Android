@@ -66,8 +66,31 @@ class SearchScreenTest {
     private var viewModel: SearchViewModel? = null
     private fun model() = SearchViewModel(repository, history, ErrorEventBus(), accounts.session, SavedStateHandle()).also { viewModel = it }
     private fun actions(repo: (String, String) -> Unit = { _, _ -> }, file: (SearchItem.Code) -> Unit = {}) =
-        SearchResultActions(repo, {}, {}, file, {})
+        SearchResultActions(repo, {}, {}, file, {}, {})
     @After fun close() { viewModel?.viewModelScope?.cancel() }
+
+    @Test fun editingConflictingCodeLinkKeepsInputHintUntilValidQueryIsSubmitted() {
+        val vm = model()
+        compose.setContent { GitMobTheme {
+            RepoCodeSearchScreen("owner", "repo", "", false, {}, {}, vm, initialQuery = "repo:other/project test")
+        } }
+        compose.onNodeWithText(context.getString(R.string.repo_code_search_scope_conflict)).assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).performTextReplacement("test")
+        compose.onNodeWithText(context.getString(R.string.repo_code_search_scope_conflict)).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.repo_code_search_hint)).assertIsDisplayed()
+        coVerify(exactly = 0) { repository.search(any(), any(), any(), any()) }
+        coEvery { repository.search("repo:owner/repo test", SearchCategory.CODE, false, null) } returns ApiResult.Success(SearchPage(emptyList(), 0, null))
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.onNodeWithText(context.getString(R.string.search_empty)).assertIsDisplayed()
+    }
+
+    @Test fun globalCategoryAppliesRepositoryScopeToInitialQuery() {
+        val vm = model()
+        coEvery { repository.search("repo:o/r x", SearchCategory.USERS, false, null) } returns ApiResult.Success(SearchPage(emptyList(), 0, null))
+        compose.setContent { GitMobTheme { SearchCategoryScreen("x", SearchCategory.USERS, {}, actions(), vm, repositoryScope = "o/r") } }
+        compose.onNode(hasSetTextAction()).assertTextEquals("repo:o/r x")
+        coVerify(exactly = 1) { repository.search("repo:o/r x", SearchCategory.USERS, false, null) }
+    }
 
     @Test fun historyFillsInputAndCategoryClickOnlyNavigatesToChosenCategory() {
         var selected: Pair<String, SearchCategory>? = null
@@ -83,7 +106,7 @@ class SearchScreenTest {
         coVerify(exactly = 0) { repository.search(any(), any(), any(), any()) }
     }
 
-    @Test fun imeSearchSubmitsAllSixWithoutASeparateSubmitButton() {
+    @Test fun imeSearchSubmitsAllCategoriesWithoutASeparateSubmitButton() {
         coEvery { repository.search(any(), any(), true, null) } returns ApiResult.Success(SearchPage(emptyList(), 0, null))
         val vm = model()
         compose.setContent { GitMobTheme { contentView = LocalView.current; SearchScreen({}, { _, _ -> }, actions(), vm) } }
@@ -91,28 +114,54 @@ class SearchScreenTest {
         coVerify(exactly = 0) { repository.search(any(), any(), any(), any()) }
         compose.onNode(hasSetTextAction()).performImeAction()
         compose.waitForIdle()
-        coVerify(exactly = 6) { repository.search("compose", any(), true, null) }
+        coVerify(exactly = SearchCategory.entries.size) { repository.search("compose", any(), true, null) }
         assertEquals(SearchCategory.entries.toSet(), vm.state.value.sections.keys)
         compose.onNode(hasSetTextAction()).performTextInputSelection(TextRange(2))
         compose.onAllNodesWithText(context.getString(R.string.search_empty))[0].assertExists()
         screenshot("overview-empty.png")
     }
 
-    @Test fun categoryHasNoInputAndLoadsNextPageOnlyWhenTailIsVisible() {
+    @Test fun deepLinkQueryAppearsAndLoadsResultsWithoutManualSubmit() {
+        coEvery { repository.search(any(), any(), true, null) } returns ApiResult.Success(SearchPage(emptyList(), 0, null))
+        val vm = model()
+        compose.setContent { GitMobTheme {
+            SearchScreen({}, { _, _ -> }, actions(), vm, initialQuery = "repo:owner/repo is:issue")
+        } }
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).assertTextEquals("repo:owner/repo is:issue")
+        coVerify(exactly = SearchCategory.entries.size) { repository.search("repo:owner/repo is:issue", any(), true, null) }
+        compose.onAllNodesWithText(context.getString(R.string.search_empty))[0].assertExists()
+    }
+
+    @Test fun discussionResultOpensTheSelectedDiscussion() {
+        val discussion = WorkDiscussionItem("D_7", 7, "Discussion title", "owner", "repo", isAnswered = true, updatedAt = "2026-11-17T00:00:00Z")
+        var opened: WorkDiscussionItem? = null
+        compose.setContent { GitMobTheme {
+            SearchResult(SearchItem.Discussion(discussion), SearchResultActions({ _, _ -> }, {}, {}, {}, {}, { opened = it }))
+        } }
+        compose.onNodeWithText("Discussion title").performClick()
+        assertEquals(discussion, opened)
+    }
+
+    @Test fun categoryShowsEditableQueryAndLoadsNextPageOnlyWhenTailIsVisible() {
         val next = SearchContinuation(cursor = "next", received = 20)
         fun account(i: Int) = SearchItem.Account("id$i", "person$i", "Person $i", "", "Android developer", "Earth")
         coEvery { repository.search("compose", SearchCategory.USERS, false, null) } returns ApiResult.Success(SearchPage((1..20).map(::account), 21, next))
         coEvery { repository.search("compose", SearchCategory.USERS, false, next) } returns ApiResult.Success(SearchPage(listOf(account(21)), 21, null))
         val vm = model()
         compose.setContent { GitMobTheme { contentView = LocalView.current; SearchCategoryScreen("compose", SearchCategory.USERS, {}, actions(), vm) } }
-        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).assertTextEquals("compose")
         compose.waitForIdle()
         coVerify(exactly = 0) { repository.search("compose", SearchCategory.USERS, false, next) }
         screenshot("category-users.png")
-        compose.onNode(hasScrollAction()).performScrollToIndex(20)
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex)).performScrollToIndex(20)
         compose.waitForIdle()
         coVerify(exactly = 1) { repository.search("compose", SearchCategory.USERS, false, next) }
         assertEquals(21, vm.state.value.sections[SearchCategory.USERS]!!.page!!.items.size)
+        compose.onNodeWithContentDescription(context.getString(R.string.repos_clear_search)).performClick()
+        compose.waitForIdle()
+        assertTrue(vm.state.value.sections.isEmpty())
+        compose.onNodeWithText("person21").assertDoesNotExist()
         compose.onNodeWithText(context.getString(R.string.search_recent)).assertDoesNotExist()
     }
 

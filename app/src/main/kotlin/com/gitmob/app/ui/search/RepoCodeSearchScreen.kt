@@ -50,51 +50,55 @@ fun RepoCodeSearchScreen(
     owner: String,
     name: String,
     path: String,
-    isFork: Boolean,
+    includeForks: Boolean,
     onBack: () -> Unit,
     onFile: (SearchItem.Code) -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
+    initialQuery: String = "",
 ) {
-    val initialInput = remember(path) { repositoryCodeSearchInput(path) }
+    val initialInput = remember(path, initialQuery) { initialQuery.ifBlank { repositoryCodeSearchInput(path) } }
     var input by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(initialInput, TextRange(initialInput.length)))
     }
-    var submittedInput by rememberSaveable { mutableStateOf(initialInput) }
+    val initialScopeConflict = remember(initialInput, owner, name, includeForks) {
+        initialInput.isNotBlank() && repositoryCodeSearchQuery(initialInput, owner, name, includeForks) == null
+    }
+    var submittedInput by rememberSaveable { mutableStateOf(if (initialScopeConflict) "" else initialInput) }
     var initialFocusRequested by rememberSaveable { mutableStateOf(false) }
-    var scopeConflict by rememberSaveable { mutableStateOf(false) }
+    var scopeConflict by rememberSaveable { mutableStateOf(initialScopeConflict) }
     var focused by remember { mutableStateOf(false) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val section = state.sections[SearchCategory.CODE] ?: SearchSectionState(loading = submittedInput.isNotEmpty())
-    val page = section.page
+    val section = state.sections[SearchCategory.CODE]
+    val page = section?.page
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
-    val showingResults = submittedInput.isNotEmpty()
     val pathTerms = remember(submittedInput) { repoCodePathTerms(submittedInput) }
 
     LaunchedEffect(viewModel) {
-        viewModel.init(repositoryCodeSearchQuery(submittedInput, owner, name, isFork), SearchCategory.CODE)
+        val scoped = repositoryCodeSearchQuery(submittedInput, owner, name, includeForks)
+        viewModel.init(scoped, SearchCategory.CODE)
     }
     LaunchedEffect(Unit) {
-        if (!initialFocusRequested) {
+        if (!initialFocusRequested && initialQuery.isBlank()) {
             initialFocusRequested = true
             focusRequester.requestFocus()
             keyboard?.show()
         }
     }
     var lastAutoRequest by remember { mutableStateOf<String?>(null) }
-    val paginationKey = "repo-code-pagination:" + state.generation + ":" + section.completedPages
-    LaunchedEffect(listState, paginationKey, section.canLoadMore, showingResults) {
-        if (!showingResults || !section.canLoadMore || lastAutoRequest == paginationKey) return@LaunchedEffect
+    val paginationKey = "repo-code-pagination:" + state.generation + ":" + section?.completedPages
+    LaunchedEffect(listState, paginationKey, section?.canLoadMore) {
+        if (section?.canLoadMore != true || lastAutoRequest == paginationKey) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.any { it.key == paginationKey } }.first { it }
         lastAutoRequest = paginationKey
         viewModel.loadMore()
     }
     fun submit() {
         if (input.composition != null || input.text.isBlank()) return
-        val query = repositoryCodeSearchQuery(input.text, owner, name, isFork)
+        val query = repositoryCodeSearchQuery(input.text, owner, name, includeForks)
         scopeConflict = query == null
         if (query == null) return
         submittedInput = input.text.trim()
@@ -123,6 +127,7 @@ fun RepoCodeSearchScreen(
                             IconButton(onClick = {
                                 input = TextFieldValue()
                                 submittedInput = ""
+                                viewModel.clearQuery()
                                 scopeConflict = false
                                 focusRequester.requestFocus()
                                 keyboard?.show()
@@ -137,6 +142,11 @@ fun RepoCodeSearchScreen(
                                 } else false
                             },
                     )
+                },
+                actions = {
+                    if (input.text.isNotBlank() && repositoryCodeSearchQuery(input.text, owner, name, false) != null) {
+                        CodeSearchWebButton(input.text, viewModel, owner, name)
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -155,7 +165,7 @@ fun RepoCodeSearchScreen(
                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                 )
-                if (!showingResults) {
+                if (section == null) {
                     Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         Text(stringResource(R.string.repo_code_search), style = MaterialTheme.typography.headlineSmall)

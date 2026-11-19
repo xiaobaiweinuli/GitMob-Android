@@ -35,6 +35,23 @@ class RepoPullRequestListViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
+    @Test fun `PR link and submitted label and sort use native list while merged uses search`() = runTest {
+        val repository = repositoryMock()
+        coEvery { repository.searchPullRequests("o", "r", "is:merged", any(), null) } returns ApiResult.Success(emptyPage())
+        val vm = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session, RepoUpdateEventBus())
+        vm.init("o", "r", null, "is:pr state:open sort:created-asc")
+        advanceUntilIdle()
+        vm.submitSearch("label:bug sort:updated-asc")
+        advanceUntilIdle()
+        assertEquals("", vm.state.value.submittedQuery)
+        assertEquals(setOf("bug"), vm.state.value.filter.labels)
+        coVerify(exactly = 2) { repository.getPullRequests("o", "r", any(), null) }
+        vm.submitSearch("is:merged")
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.searchPullRequests("o", "r", "is:merged", any(), null) }
+        vm.viewModelScope.cancel()
+    }
+
     @Test
     fun `初始化成功加载仓库标签`() = runTest {
         val labels = listOf(IssueLabel("L1", "bug", "d73a4a", null))

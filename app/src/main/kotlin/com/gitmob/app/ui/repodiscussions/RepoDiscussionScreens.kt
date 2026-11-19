@@ -54,11 +54,19 @@ import com.gitmob.app.ui.common.quoteMarkdown
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermission?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onDiscussionClick: (Int) -> Unit, onCreate: () -> Unit, viewModel: RepoDiscussionListViewModel = hiltViewModel()) {
-    LaunchedEffect(owner, name) { viewModel.init(owner, name, permission) }
+fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermission?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onDiscussionClick: (Int) -> Unit, onCreate: () -> Unit, viewModel: RepoDiscussionListViewModel = hiltViewModel(), initialQuery: String = "") {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    var searchExpanded by rememberSaveable { mutableStateOf(initialQuery.isNotBlank()) }
+    var focusSearch by rememberSaveable { mutableStateOf(false) }
     var searchInput by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(state.submittedQuery)) }
+    var draftInitialized by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(owner, name, initialQuery) {
+        viewModel.init(owner, name, permission, initialQuery)
+        if (!draftInitialized) {
+            searchInput = TextFieldValue(viewModel.state.value.submittedQuery)
+            draftInitialized = true
+        }
+    }
     val listState = rememberSaveable(state.listRevision, saver = LazyListState.Saver) { LazyListState() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -79,7 +87,11 @@ fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermis
                             onValueChange = { searchInput = it },
                             placeholder = stringResource(R.string.repo_discussion_search_hint),
                             hasSubmittedQuery = state.submittedQuery.isNotEmpty(),
-                            onSubmit = viewModel::submitSearch,
+                            focusOnExpand = focusSearch,
+                            onSubmit = { value ->
+                                viewModel.submitSearch(value)
+                                searchInput = TextFieldValue(viewModel.state.value.submittedQuery)
+                            },
                         )
                     } else RepositoryContextTitle(
                         owner, name, stringResource(R.string.common_discussions),
@@ -89,7 +101,7 @@ fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermis
                 },
                 navigationIcon = { IconButton(onClick = { leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { searchExpanded = true }
+                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
                     if (state.hasDiscussionsEnabled && state.categories.isNotEmpty()) IconButton(onClick = { leaveList(onCreate) }) { Icon(Icons.Default.Add, stringResource(R.string.discussion_new)) }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -349,23 +361,23 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
                 filterLabel = stringResource(R.string.work_filter_sort),
             )
             FilterCapsuleMenu(
-                selected = state.filter.category,
-                options = buildList<RepoDiscussionCategory?> {
+                selected = state.filter.category?.name ?: state.filter.categoryTitle,
+                options = buildList<String?> {
                     add(null)
-                    addAll(state.categories)
+                    addAll(state.categories.map { it.name })
                 },
-                optionLabel = { category -> category?.name ?: stringResource(R.string.common_all) },
-                onSelected = vm::setCategory,
+                optionLabel = { category -> category ?: stringResource(R.string.common_all) },
+                onSelected = { title -> vm.setCategory(state.categories.find { it.name == title }) },
                 filterLabel = stringResource(R.string.discussion_category),
                 neutralLabel = stringResource(R.string.discussion_category),
                 isNeutral = { it == null },
                 optionContent = { category ->
                     if (category == null) Text(stringResource(R.string.common_all))
-                    else GitHubEmojiLabel(category.emoji, category.name)
+                    else GitHubEmojiLabel(state.categories.find { it.name == category }?.emoji.orEmpty(), category)
                 },
                 selectedContent = { category ->
                     if (category == null) Text(stringResource(R.string.discussion_category))
-                    else GitHubEmojiLabel(category.emoji, category.name, iconSize = 16.dp)
+                    else GitHubEmojiLabel(state.categories.find { it.name == category }?.emoji.orEmpty(), category, iconSize = 16.dp)
                 },
             )
             FilterCapsuleMenu(

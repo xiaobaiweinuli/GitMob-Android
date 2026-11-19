@@ -369,7 +369,7 @@ class RepoPullRequestRepositoryTest {
         assertEquals(com.gitmob.app.data.model.PullRequestCreationPolicy.ALL, result.creationPolicy)
         assertFalse(result.hasNextPage)
         assertFalse(result.searchLimitReached)
-        assertEquals(JsonPrimitive("repo:o/r is:pr \"fix\" is:closed label:\"bug\",\"help wanted\" sort:updated-desc"), takeVariables()["searchQuery"])
+        assertEquals(JsonPrimitive("repo:o/r is:pr fix is:closed label:\"bug\",\"help wanted\" sort:updated-desc"), takeVariables()["searchQuery"])
     }
 
     private fun pageJson(state: String = "OPEN") = """

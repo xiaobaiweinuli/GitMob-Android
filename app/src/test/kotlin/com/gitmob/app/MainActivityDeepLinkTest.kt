@@ -35,6 +35,17 @@ class MainActivityDeepLinkTest {
     }
 
     @Test
+    fun `cold and warm search links carry their query across recreation`() {
+        val cold = DeepLinkDestination.IssueList("o", "r", "state:open 发布")
+        val warm = DeepLinkDestination.PullRequestList("o", "r", "is:merged")
+        val controller = launch(intentFor(cold))
+        assertEquals(cold, controller.get().pendingState().value)
+        controller.newIntent(intentFor(warm))
+        val saved = saveAndDestroy(controller)
+        assertEquals(warm, launch(intentFor(cold), parcelCopy(saved)).get().pendingState().value)
+    }
+
+    @Test
     fun `first creation reads the incoming deep link`() {
         val activity = launch(intentFor(firstLink)).get()
 

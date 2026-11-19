@@ -3,7 +3,7 @@ package com.gitmob.app.data.model
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class SearchCategory { CODE, REPOSITORIES, ISSUES, PULL_REQUESTS, USERS, ORGANIZATIONS }
+enum class SearchCategory { CODE, REPOSITORIES, ISSUES, PULL_REQUESTS, DISCUSSIONS, USERS, ORGANIZATIONS }
 
 /** Continuation belongs to one query and one request capacity; preview and full pages never share it. */
 data class SearchContinuation(val cursor: String? = null, val page: Int = 1, val received: Int = 0)
@@ -20,6 +20,7 @@ sealed interface SearchItem {
     val key: String
     data class Repository(val repo: RepoListItem) : SearchItem { override val key get() = repo.key }
     data class Work(val item: WorkIssueItem) : SearchItem { override val key get() = item.id }
+    data class Discussion(val item: WorkDiscussionItem) : SearchItem { override val key get() = item.id }
     data class Account(
         val id: String, val login: String, val name: String?, val avatarUrl: String,
         val description: String?, val location: String?,

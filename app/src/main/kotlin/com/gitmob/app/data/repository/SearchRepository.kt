@@ -14,8 +14,10 @@ import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.*
 import com.gitmob.app.graphql.SearchAccountsQuery
 import com.gitmob.app.graphql.SearchRepositoriesQuery
+import com.gitmob.app.graphql.WorkDiscussionsQuery
 import com.gitmob.app.graphql.WorkIssuesQuery
 import com.gitmob.app.graphql.WorkPullRequestsQuery
+import com.gitmob.app.graphql.type.SearchType
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,6 +47,7 @@ class SearchRepository @Inject constructor(
                     connection.pageInfo.hasNextPage, connection.pageInfo.endCursor, position)
             }
             SearchCategory.ISSUES -> apollo.query(WorkIssuesQuery(
+                searchType = Optional.present(SearchType.ISSUE_ADVANCED),
                 searchQuery = scoped, first = size, after = Optional.presentIfNotNull(position.cursor),
             )).executeAsApiResult().mapped { data ->
                 val connection = data.search
@@ -59,6 +62,7 @@ class SearchRepository @Inject constructor(
                 }, connection.issueCount, connection.pageInfo.hasNextPage, connection.pageInfo.endCursor, position)
             }
             SearchCategory.PULL_REQUESTS -> apollo.query(WorkPullRequestsQuery(
+                searchType = Optional.present(SearchType.ISSUE_ADVANCED),
                 searchQuery = scoped, first = size, after = Optional.presentIfNotNull(position.cursor),
             )).executeAsApiResult().mapped { data ->
                 val connection = data.search
@@ -70,6 +74,19 @@ class SearchRepository @Inject constructor(
                         isDraft = it.isDraft, locked = it.locked, updatedAt = it.updatedAt,
                     ))
                 }, connection.issueCount, connection.pageInfo.hasNextPage, connection.pageInfo.endCursor, position)
+            }
+            SearchCategory.DISCUSSIONS -> apollo.query(WorkDiscussionsQuery(
+                searchQuery = scoped, first = size, after = Optional.presentIfNotNull(position.cursor),
+            )).executeAsApiResult().mapped { data ->
+                val connection = data.search
+                page(connection.nodes.orEmpty().mapNotNull { it?.onDiscussion }.map {
+                    SearchItem.Discussion(WorkDiscussionItem(
+                        id = it.id, number = it.number, title = it.title,
+                        repoOwner = it.repository.owner.login, repoName = it.repository.name,
+                        stateReason = it.stateReason?.rawValue?.let(DiscussionStateReason::valueOf),
+                        isAnswered = it.isAnswered == true, locked = it.locked, updatedAt = it.updatedAt,
+                    ))
+                }, connection.discussionCount, connection.pageInfo.hasNextPage, connection.pageInfo.endCursor, position)
             }
             SearchCategory.USERS, SearchCategory.ORGANIZATIONS -> apollo.query(SearchAccountsQuery(
                 query = scoped, first = size, after = Optional.presentIfNotNull(position.cursor),

@@ -97,7 +97,7 @@ query SearchRepoPullRequests($owner: String!, $name: String!, $searchQuery: Stri
         squashMergeAllowed
         rebaseMergeAllowed
     }
-    search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
+    search(query: $searchQuery, type: ISSUE_ADVANCED, first: $first, after: $after) {
         issueCount
         nodes {
             ... on PullRequest {

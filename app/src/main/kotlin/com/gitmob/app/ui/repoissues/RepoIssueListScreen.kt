@@ -56,12 +56,20 @@ fun RepoIssueListScreen(
     onRepositoryClick: (String, String) -> Unit,
     onIssueClick: (Int) -> Unit,
     onCreate: (String?) -> Unit,
-    viewModel: RepoIssueListViewModel = hiltViewModel(),
+    viewModel: RepoIssueListViewModel = hiltViewModel(), initialQuery: String = "",
 ) {
-    LaunchedEffect(owner, name) { viewModel.init(owner, name, permission, viewerCanCreateIssues) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    var searchExpanded by rememberSaveable { mutableStateOf(initialQuery.isNotBlank()) }
+    var focusSearch by rememberSaveable { mutableStateOf(false) }
     var searchInput by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(state.submittedQuery)) }
+    var draftInitialized by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(owner, name, initialQuery) {
+        viewModel.init(owner, name, permission, viewerCanCreateIssues, initialQuery)
+        if (!draftInitialized) {
+            searchInput = TextFieldValue(viewModel.state.value.submittedQuery)
+            draftInitialized = true
+        }
+    }
     val listState = rememberSaveable(state.listRevision, saver = LazyListState.Saver) { LazyListState() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -82,7 +90,11 @@ fun RepoIssueListScreen(
                             onValueChange = { searchInput = it },
                             placeholder = stringResource(R.string.repo_issue_search_hint),
                             hasSubmittedQuery = state.submittedQuery.isNotEmpty(),
-                            onSubmit = viewModel::submitSearch,
+                            focusOnExpand = focusSearch,
+                            onSubmit = { value ->
+                                viewModel.submitSearch(value)
+                                searchInput = TextFieldValue(viewModel.state.value.submittedQuery)
+                            },
                         )
                     } else RepositoryContextTitle(
                         owner = owner,
@@ -94,7 +106,7 @@ fun RepoIssueListScreen(
                 },
                 navigationIcon = { IconButton(onClick = { leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { searchExpanded = true }
+                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
                     if (state.viewerCanCreateIssues) {
                         IconButton(onClick = { keyboard?.hide(); focusManager.clearFocus(); viewModel.beginCreate() }) { Icon(Icons.Default.Add, stringResource(R.string.issue_new)) }
                     }
@@ -298,7 +310,9 @@ private fun RepoIssueListViewModel.setUpdatedWindow(window: UpdatedWindow) = set
 private fun milestoneOptions(state: RepoIssueListUiState): List<RepoMilestoneFilter> = buildList {
     add(RepoMilestoneFilter.ALL)
     add(RepoMilestoneFilter.NONE)
-    state.milestones.forEach { add(RepoMilestoneFilter.Number(it.number, it.title)) }
+    val selected = state.filter.milestone as? RepoMilestoneFilter.Title
+    if (selected != null && state.milestones.none { it.title == selected.title }) add(selected)
+    state.milestones.forEach { add(if (it.title == selected?.title) selected else RepoMilestoneFilter.Number(it.number, it.title)) }
 }
 
 private fun assigneeOptions(state: RepoIssueListUiState): List<RepoAssigneeFilter> = buildList {
@@ -318,6 +332,7 @@ private fun RepoMilestoneFilter.label(): String = when (this) {
     RepoMilestoneFilter.ALL -> stringResource(R.string.issue_filter_all_milestones)
     RepoMilestoneFilter.NONE -> stringResource(R.string.issue_no_milestone)
     is RepoMilestoneFilter.Number -> title
+    is RepoMilestoneFilter.Title -> title
 }
 
 @Composable

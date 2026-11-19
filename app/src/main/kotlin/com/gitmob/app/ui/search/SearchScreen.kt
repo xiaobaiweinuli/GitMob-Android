@@ -54,10 +54,11 @@ fun SearchScreen(
     onCategory: (String, SearchCategory) -> Unit,
     actions: SearchResultActions,
     viewModel: SearchViewModel = hiltViewModel(),
+    initialQuery: String = "",
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var input by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
-    var showingResults by rememberSaveable { mutableStateOf(false) }
+    var input by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(initialQuery)) }
+    var showingResults by rememberSaveable { mutableStateOf(initialQuery.isNotBlank()) }
     var initialFocusRequested by rememberSaveable { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
@@ -66,12 +67,14 @@ fun SearchScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    LaunchedEffect(viewModel) { viewModel.init() }
+    LaunchedEffect(viewModel) { viewModel.init(initialQuery) }
     LaunchedEffect(Unit) {
         if (!initialFocusRequested) {
             initialFocusRequested = true
-            focusRequester.requestFocus()
-            keyboard?.show()
+            if (!showingResults) {
+                focusRequester.requestFocus()
+                keyboard?.show()
+            }
         }
     }
     fun submit() {
@@ -106,7 +109,7 @@ fun SearchScreen(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { submit() }),
                         trailingIcon = if (input.text.isNotEmpty()) {{
-                            IconButton(onClick = { input = TextFieldValue(); showingResults = false; focusRequester.requestFocus(); keyboard?.show() }) {
+                            IconButton(onClick = { input = TextFieldValue(); showingResults = false; viewModel.clearQuery(); focusRequester.requestFocus(); keyboard?.show() }) {
                                 Icon(Icons.Default.Close, stringResource(R.string.repos_clear_search))
                             }
                         }} else null,

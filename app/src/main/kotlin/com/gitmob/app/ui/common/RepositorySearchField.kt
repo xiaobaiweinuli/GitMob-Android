@@ -28,11 +28,13 @@ fun RepositorySearchField(
     placeholder: String,
     hasSubmittedQuery: Boolean,
     onSubmit: (String) -> Unit,
+    focusOnExpand: Boolean = true,
 ) {
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
+        if (!focusOnExpand) return@LaunchedEffect
         focusRequester.requestFocus()
         keyboard?.show()
     }

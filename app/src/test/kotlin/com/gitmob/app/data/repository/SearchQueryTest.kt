@@ -7,21 +7,23 @@ import org.junit.Test
 class SearchQueryTest {
     @Test fun repositoryCodeQueryKeepsTheRepositoryHiddenAndPreservesSearchSyntax() {
         assertEquals("repo:owner/repo SearchSyntax path:app language:kotlin",
-            repositoryCodeSearchQuery(" SearchSyntax path:app language:kotlin ", "owner", "repo", isFork = false))
-        assertNull(repositoryCodeSearchQuery(" ", "owner", "repo", isFork = false))
-        assertEquals("repo:owner/repo \"repo:other/project\"", repositoryCodeSearchQuery("\"repo:other/project\"", "owner", "repo", isFork = false))
+            repositoryCodeSearchQuery(" SearchSyntax path:app language:kotlin ", "owner", "repo", includeForks = false))
+        assertNull(repositoryCodeSearchQuery(" ", "owner", "repo", includeForks = false))
+        assertEquals("repo:owner/repo \"repo:other/project\"", repositoryCodeSearchQuery("\"repo:other/project\"", "owner", "repo", includeForks = false))
         listOf("repo:other/project", "user:someone", "-org:team", "REPO:\"other/project\"").forEach {
-            assertNull(repositoryCodeSearchQuery("needle $it", "owner", "repo", isFork = false))
+            assertNull(repositoryCodeSearchQuery("needle $it", "owner", "repo", includeForks = false))
         }
     }
 
     @Test fun repositoryForkQueriesAppendTheQualifierAndStillRejectBlankOrChangedScope() {
+        assertEquals("repo:owner/repo needle fork:only",
+            repositoryCodeSearchQuery("repo:owner/repo needle fork:only", "owner", "repo", includeForks = true))
         assertEquals("repo:owner/repo path:app keyword fork:true",
-            repositoryCodeSearchQuery(" path:app keyword ", "owner", "repo", isFork = true))
+            repositoryCodeSearchQuery(" path:app keyword ", "owner", "repo", includeForks = true))
         assertEquals("repo:owner/repo path:app fork:true",
-            repositoryCodeSearchQuery("path:app", "owner", "repo", isFork = true))
-        assertNull(repositoryCodeSearchQuery(" ", "owner", "repo", isFork = true))
-        assertNull(repositoryCodeSearchQuery("needle repo:other/project", "owner", "repo", isFork = true))
+            repositoryCodeSearchQuery("path:app", "owner", "repo", includeForks = true))
+        assertNull(repositoryCodeSearchQuery(" ", "owner", "repo", includeForks = true))
+        assertNull(repositoryCodeSearchQuery("needle repo:other/project", "owner", "repo", includeForks = true))
     }
 
     @Test fun repositoryDirectoryInputPreservesTheActualPathAndQuotesSpaces() {
@@ -41,6 +43,17 @@ class SearchQueryTest {
         assertNull(scopedSearchQuery("octocat type:org", SearchCategory.USERS))
         assertEquals("github type:org", scopedSearchQuery("github", SearchCategory.ORGANIZATIONS))
         assertEquals("language:kotlin", scopedSearchQuery("language:kotlin", SearchCategory.CODE))
+    }
+
+    @Test fun advancedIssueQueriesKeepTheirGroupsAndDiscussionSyntaxIsSupported() {
+        assertEquals("(label:bug OR label:help) is:issue",
+            scopedSearchQuery("label:bug OR label:help", SearchCategory.ISSUES))
+        assertEquals("(repo:owner/repo (is:closed OR is:merged)) is:pr",
+            scopedSearchQuery("repo:owner/repo (is:closed OR is:merged)", SearchCategory.PULL_REQUESTS))
+        assertEquals("repo:owner/repo is:unanswered is:discussion",
+            scopedSearchQuery("repo:owner/repo is:unanswered", SearchCategory.DISCUSSIONS))
+        assertEquals("is:discussion author:octocat",
+            scopedSearchQuery("is:discussion author:octocat", SearchCategory.DISCUSSIONS))
     }
 
     @Test fun permalinkUsesKnownPathSuffixAndPreservesSlashRefs() {

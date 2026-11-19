@@ -132,6 +132,38 @@ class SearchRepositoryTest {
         assertEquals(1, server.requestCount)
     }
 
+    @Test fun discussionSearchMapsResultsAndKeepsQueryAcrossPages() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody("""{"data":{"search":{"discussionCount":2,"nodes":[{
+            "__typename":"Discussion","id":"D_1","number":7,"title":"Question","updatedAt":"2026-11-17T00:00:00Z",
+            "stateReason":null,"isAnswered":true,"locked":false,
+            "repository":{"name":"repo","owner":{"__typename":"User","login":"owner","avatarUrl":"https://example.com/a"}}
+        }],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}"""))
+        server.enqueue(MockResponse().setBody("""{"data":{"search":{"discussionCount":2,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
+        val query = "repo:owner/repo is:answered category:Q&A"
+        val page = (repository.search(query, SearchCategory.DISCUSSIONS, false) as ApiResult.Success).data
+        val item = (page.items.single() as SearchItem.Discussion).item
+        assertEquals("owner", item.repoOwner)
+        assertEquals(7, item.number)
+        assertTrue(item.isAnswered)
+        assertEquals(SearchContinuation(cursor = "next", received = 1), page.next)
+        assertTrue(repository.search(query, SearchCategory.DISCUSSIONS, false, page.next) is ApiResult.Success)
+        val first = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        val second = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        assertEquals("$query is:discussion", first.getValue("searchQuery").jsonPrimitive.content)
+        assertEquals(first.getValue("searchQuery"), second.getValue("searchQuery"))
+        assertEquals("next", second.getValue("after").jsonPrimitive.content)
+    }
+
+    @Test fun issueAndPullRequestSearchUseAdvancedSyntaxWithoutAddingOpenState() = runTest(accounts.context) {
+        listOf(SearchCategory.ISSUES to "is:issue", SearchCategory.PULL_REQUESTS to "is:pr").forEach { (category, qualifier) ->
+            server.enqueue(MockResponse().setBody("""{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
+            assertTrue(repository.search("repo:owner/repo (label:bug OR label:help)", category, false) is ApiResult.Success)
+            val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+            assertEquals("ISSUE_ADVANCED", variables.getValue("searchType").jsonPrimitive.content)
+            assertEquals("(repo:owner/repo (label:bug OR label:help)) $qualifier", variables.getValue("searchQuery").jsonPrimitive.content)
+        }
+    }
+
     @Test fun graphQlUsesAccountScopeAndCentralPageSize() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody("""{"data":{"search":{"userCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
         assertTrue(repository.search("github", SearchCategory.ORGANIZATIONS, false) is ApiResult.Success)

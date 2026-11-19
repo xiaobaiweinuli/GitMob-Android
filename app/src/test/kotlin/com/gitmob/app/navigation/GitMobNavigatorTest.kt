@@ -33,6 +33,21 @@ class GitMobNavigatorTest {
     }
 
     @Test
+    fun `opening the same search link again replaces its editable entry without stacking a duplicate`() {
+        val initial = RepoIssuesRoute("o", "r", initialQuery = "state:open 发布")
+        val first = initial.withSearchVisit("first")
+        val second = initial.withSearchVisit("second")
+        navigator.navigate(first, withoutAnimation = true)
+        navigator.navigate(first, withoutAnimation = true)
+        navigator.navigate(second, withoutAnimation = true)
+        assertEquals(listOf(HomeRoute, second), stack())
+        assertTrue(navigator.withoutForwardAnimation)
+        navigator.navigate(RepoPullRequestsRoute("o", "r", initialQuery = "is:merged").withSearchVisit("third"))
+        navigator.goBack()
+        assertEquals(listOf(HomeRoute, second), stack())
+    }
+
+    @Test
     fun `equal parameterized routes from separate instances only push once`() {
         repeat(3) { navigator.navigate(RepoDetailRoute("octo", "repo")) }
         assertEquals(listOf(HomeRoute, RepoDetailRoute("octo", "repo")), stack())

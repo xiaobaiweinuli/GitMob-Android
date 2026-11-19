@@ -945,7 +945,8 @@
         <item quantity="other">最多可查看前 %1$d 项，请增加条件</item>
     </plurals>
     <string name="search_end">已显示全部结果</string>
-    <string name="search_scope_conflict">搜索条件与此分类冲突，请返回调整条件</string>
+    <string name="repo_list_search_invalid">请检查查询语法，并使用当前仓库和列表类型支持的搜索条件</string>
+    <string name="search_scope_conflict">搜索条件与此分类冲突，请调整查询</string>
     <string name="search_invalid_query">搜索条件无效，请返回检查语法</string>
     <string name="search_open_file">打开文件 %1$s</string>
     <string name="search_open_repo">打开仓库 %1$s</string>
@@ -1013,4 +1014,5 @@
     <string name="repo_pr_search_hint">搜索拉取请求关键词</string>
     <string name="repo_discussion_search_hint">搜索讨论关键词</string>
     <string name="repo_filter_any_label">任一标签</string>
+    <string name="code_search_on_web">网页版</string>
 </resources>

@@ -267,12 +267,16 @@ private val UserDiscussionSortFilter.labelRes: Int
     }
 
 @Composable
-private fun WorkDiscussionRow(item: WorkDiscussionItem, onClick: () -> Unit) {
+internal fun WorkDiscussionRow(
+    item: WorkDiscussionItem,
+    onClick: () -> Unit,
+    horizontalPadding: androidx.compose.ui.unit.Dp = 16.dp,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = horizontalPadding, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DiscussionStateIcon(

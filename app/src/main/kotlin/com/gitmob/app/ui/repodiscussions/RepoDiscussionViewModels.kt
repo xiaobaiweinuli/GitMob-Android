@@ -2,6 +2,8 @@ package com.gitmob.app.ui.repodiscussions
 
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
+import androidx.lifecycle.SavedStateHandle
+import com.gitmob.app.data.repository.discussionListSearch
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -43,7 +45,9 @@ data class RepoDiscussionListUiState(
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
     val pendingDelete: RepoDiscussion? = null,
-)
+) {
+    val searchActive: Boolean get() = submittedQuery.isNotBlank() || filter.categoryTitle != null
+}
 
 @HiltViewModel
 class RepoDiscussionListViewModel @Inject constructor(
@@ -51,6 +55,7 @@ class RepoDiscussionListViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     session: AccountSession,
+    private val savedSearch: SavedStateHandle = SavedStateHandle(),
 ) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoDiscussionListUiState())
     val state: StateFlow<RepoDiscussionListUiState> = _state.asStateFlow()
@@ -63,10 +68,17 @@ class RepoDiscussionListViewModel @Inject constructor(
     private var searchPosition: SearchContinuation? = null
     private var suppressNextCountRefresh = false
 
-    fun init(owner: String, name: String, permission: RepoPermission?) {
+    fun init(owner: String, name: String, permission: RepoPermission?, initialQuery: String = "") {
         if (initialized) return
         initialized = true; this.owner = owner; this.name = name
         permission?.let { _state.update { state -> state.copy(permission = it, capabilities = it.toCapabilities()) } }
+        val savedFilter = savedSearch.get<RepoDiscussionFilter>("filter")
+        if (savedFilter != null) {
+            _state.update { it.copy(filter = savedFilter, submittedQuery = savedSearch["query"] ?: "") }
+        } else if (initialQuery.isNotBlank()) {
+            val parsed = discussionListSearch(initialQuery, owner, name, RepoDiscussionFilter(state = RepoDiscussionStateFilter.ALL))
+            _state.update { it.copy(filter = parsed.filter, submittedQuery = parsed.text) }
+        }
         load()
         viewModelScope.launch {
             repoUpdateEventBus.eventsFor(accountEpoch).filterIsInstance<RepoUpdateEvent.DiscussionCountChanged>().collect { event ->
@@ -82,9 +94,11 @@ class RepoDiscussionListViewModel @Inject constructor(
         loadMoreJob?.cancel()
         searchPosition = null
         val request = _state.value
+        savedSearch["filter"] = request.filter
+        savedSearch["query"] = request.submittedQuery
         _state.update { it.copy(isLoading = true, isLoadingMore = false, hasNextPage = false, nextCursor = null, loadFailed = false, loadMoreFailed = false, searchLimitReached = false) }
         loadJob = viewModelScope.launch {
-            val result = if (request.submittedQuery.isEmpty()) {
+            val result = if (!request.searchActive) {
                 repository.getDiscussions(owner, name, request.filter)
             } else {
                 repository.searchDiscussions(owner, name, request.submittedQuery, request.filter)
@@ -101,9 +115,10 @@ class RepoDiscussionListViewModel @Inject constructor(
     }
 
     fun submitSearch(value: String) {
-        val query = value.trim()
-        if (query == _state.value.submittedQuery) return
-        _state.update { it.copy(submittedQuery = query, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }
+        val current = _state.value
+        val parsed = discussionListSearch(value, owner, name, current.filter)
+        if (parsed.text == current.submittedQuery && parsed.filter == current.filter) return
+        _state.update { it.copy(submittedQuery = parsed.text, filter = parsed.filter, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }
         load()
     }
 
@@ -111,7 +126,7 @@ class RepoDiscussionListViewModel @Inject constructor(
     fun retry() = load()
     fun setState(value: RepoDiscussionStateFilter) = setFilter(_state.value.filter.copy(state = value))
     fun setSort(value: RepoDiscussionSort) = setFilter(_state.value.filter.copy(sort = value))
-    fun setCategory(value: RepoDiscussionCategory?) = setFilter(_state.value.filter.copy(category = value))
+    fun setCategory(value: RepoDiscussionCategory?) = setFilter(_state.value.filter.copy(category = value, categoryTitle = null))
     fun setAnswered(value: Boolean?) = setFilter(_state.value.filter.copy(answered = value))
     private fun setFilter(value: RepoDiscussionFilter) { if (value == _state.value.filter) return; _state.update { it.copy(filter = value, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }; load() }
     fun loadMore() {
@@ -122,7 +137,7 @@ class RepoDiscussionListViewModel @Inject constructor(
         val position = searchPosition
         _state.update { it.copy(isLoadingMore = true, loadMoreFailed = false) }
         loadMoreJob = viewModelScope.launch {
-            val result = if (request.submittedQuery.isEmpty()) {
+            val result = if (!request.searchActive) {
                 repository.getDiscussions(owner, name, request.filter, after)
             } else {
                 repository.searchDiscussions(owner, name, request.submittedQuery, request.filter, position)

@@ -1,5 +1,6 @@
 package com.gitmob.app.navigation
 
+import com.gitmob.app.data.model.SearchCategory
 import android.net.Uri
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -16,6 +17,36 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
 class DeepLinkRouterTest {
+
+    @Test fun repositoryLinksReachNativePagesWithOneDecodedQuery() {
+        fun route(path: String) = DeepLinkRouter.parse(Uri.parse("https://github.com/$path")).toRoute()
+        val owner = "xiaobaiweinuli"
+        val repo = "GitMob-Android"
+        assertEquals(RepoIssuesRoute(owner, repo, initialQuery = "is:issue state:open 发布"),
+            route("$owner/$repo/issues?q=is%3Aissue+state%3Aopen+%E5%8F%91%E5%B8%83"))
+        assertEquals(RepoIssuesRoute(owner, repo, initialQuery = "is:issue state:open 发布"), route("$owner/$repo/issues?q=is:issue state:open 发布"))
+        assertEquals(RepoPullRequestsRoute("o", "r", initialQuery = "is:merged"), route("o/r/pulls?q=is:merged"))
+        assertEquals(RepoDiscussionsRoute("o", "r", initialQuery = "category:Q&A"), route("o/r/discussions?discussions_q=category%3AQ%26A"))
+        assertEquals(RepoDiscussionsRoute("o", "r", initialQuery = "C++"), route("o/r/discussions?q=C%2B%2B"))
+        assertEquals(RepoCodeSearchRoute("o", "r", initialQuery = "C++"), route("o/r/search?q=C%2B%2B"))
+        assertEquals(RepoCodeSearchRoute("o", "r"), route("o/r/search"))
+        assertEquals(RepoIssueDetailRoute("o", "r", 12), route("o/r/issues/12?q=x"))
+        assertEquals(RepoIssuesRoute("o", "r", initialQuery = "x"), route("o/r/search?q=x&type=issues"))
+        assertEquals(RepoPullRequestsRoute("o", "r", initialQuery = "x"), route("o/r/search?q=x&type=pullrequests"))
+        assertEquals(RepoDiscussionsRoute("o", "r", initialQuery = "x"), route("o/r/search?q=x&type=discussions"))
+    }
+
+    @Test fun globalCategoryLinksPreserveScopeAndEmptyQuery() {
+        fun route(path: String) = DeepLinkRouter.parse(Uri.parse("https://github.com/$path")).toRoute()
+        assertEquals(SearchRoute(query = "label:bug x"), route("search?q=label%3Abug+x"))
+        for ((type, category) in listOf("users" to SearchCategory.USERS, "organizations" to SearchCategory.ORGANIZATIONS,
+            "repositories" to SearchCategory.REPOSITORIES)) {
+            assertEquals(SearchCategoryRoute("x", category, repositoryScope = "o/r"), route("o/r/search?type=$type&q=x"))
+            assertEquals(SearchCategoryRoute("", category), route("search?type=$type"))
+        }
+        assertEquals(SearchCategoryRoute("C%2B", SearchCategory.CODE), route("search?type=code&q=C%252B"))
+        assertEquals(null, route("search?type=topics&q=x"))
+    }
 
     @Test
     fun `设备授权地址交给浏览器普通仓库仍正常解析`() {

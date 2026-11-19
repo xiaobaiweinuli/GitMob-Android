@@ -940,7 +940,8 @@
         <item quantity="other">最多可查看前 %1$d 項，請增加條件</item>
     </plurals>
     <string name="search_end">已顯示全部結果</string>
-    <string name="search_scope_conflict">搜尋條件與此分類衝突，請返回調整條件</string>
+    <string name="repo_list_search_invalid">請檢查查詢語法，並使用目前儲存庫和清單類型支援的搜尋條件</string>
+    <string name="search_scope_conflict">搜尋條件與此分類衝突，請調整查詢</string>
     <string name="search_invalid_query">搜尋條件無效，請返回檢查語法</string>
     <string name="search_open_file">開啟檔案 %1$s</string>
     <string name="search_open_repo">開啟儲存庫 %1$s</string>
@@ -1008,4 +1009,5 @@
     <string name="repo_pr_search_hint">搜尋提取要求關鍵字</string>
     <string name="repo_discussion_search_hint">搜尋討論關鍵字</string>
     <string name="repo_filter_any_label">任一標籤</string>
+    <string name="code_search_on_web">網頁版</string>
 </resources>

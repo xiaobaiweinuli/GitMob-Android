@@ -13,7 +13,7 @@ data class RepoDiscussionCategory(
     val emoji: String,
     val description: String?,
     val isAnswerable: Boolean,
-)
+) : java.io.Serializable
 
 data class RepoDiscussion(
     val id: String,
@@ -66,7 +66,8 @@ data class RepoDiscussionFilter(
     val sort: RepoDiscussionSort = RepoDiscussionSort.UPDATED_DESC,
     val category: RepoDiscussionCategory? = null,
     val answered: Boolean? = null,
-)
+    val categoryTitle: String? = null,
+) : java.io.Serializable
 
 data class RepoDiscussionPage(
     val repositoryId: String,

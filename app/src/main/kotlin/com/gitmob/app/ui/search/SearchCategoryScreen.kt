@@ -8,6 +8,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.input.TextFieldValue
+import com.gitmob.app.ui.common.RepositorySearchField
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
@@ -28,12 +31,16 @@ fun SearchCategoryScreen(
     onBack: () -> Unit,
     actions: SearchResultActions,
     viewModel: SearchViewModel = hiltViewModel(),
+    repositoryScope: String? = null,
 ) {
-    LaunchedEffect(query, category) { viewModel.init(query, category) }
+    val initialQuery = repositoryScope?.let { "repo:$it $query".trimEnd() } ?: query
+    var submitted by rememberSaveable { mutableStateOf(initialQuery) }
+    var input by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(initialQuery)) }
+    LaunchedEffect(viewModel) { viewModel.init(submitted, category) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val section = state.sections[category] ?: SearchSectionState(loading = true)
-    val page = section.page
-    val listState = rememberLazyListState()
+    val section = state.sections[category] ?: SearchSectionState(loading = submitted.isNotBlank())
+    val page = section.page.takeIf { submitted.isNotBlank() }
+    val listState = key(submitted) { rememberLazyListState() }
     var lastAutoRequest by remember { mutableStateOf<String?>(null) }
     val paginationKey = "search-pagination:${state.generation}:${section.completedPages}"
     LaunchedEffect(listState, paginationKey, section.canLoadMore) {
@@ -45,8 +52,15 @@ fun SearchCategoryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(category.titleRes)) },
+                title = {
+                    RepositorySearchField(input, { input = it }, stringResource(category.titleRes), submitted.isNotEmpty(),
+                        onSubmit = { value ->
+                            submitted = value.trim()
+                            if (submitted.isEmpty()) viewModel.clearQuery() else viewModel.submit(submitted, category)
+                        }, focusOnExpand = initialQuery.isBlank())
+                },
                 actions = {
+                    if (category == SearchCategory.CODE && input.text.isNotBlank()) CodeSearchWebButton(input.text, viewModel)
                     page?.let { Text(java.text.NumberFormat.getIntegerInstance().format(it.totalCount),
                         Modifier.padding(end = 16.dp), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -69,6 +83,7 @@ fun SearchCategoryScreen(
                 Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     when {
+                        submitted.isBlank() -> Unit
                         section.error != null -> SearchFailure(section.error) { viewModel.retry(category) }
                         section.loading && page != null -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                         page?.limitReached == true -> Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT), style = MaterialTheme.typography.bodySmall)

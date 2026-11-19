@@ -2,10 +2,21 @@ package com.gitmob.app.ui.search
 
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import com.gitmob.app.data.model.SearchCategory
 import org.junit.Assert.*
 import org.junit.Test
 
 class SearchSyntaxTest {
+    @Test fun discussionSyntaxIsAvailableInGlobalSearchAndPreservesExampleSelection() {
+        listOf("is:discussion", "is:answered", "is:unanswered", "category:Q&A", "answered-by:octocat", "repo:owner/name").forEach { token ->
+            assertTrue(token, SearchCategory.DISCUSSIONS in searchSyntax.first { it.token == token }.categories)
+        }
+        val suggestion = searchSyntax.first { it.token == "category:Q&A" }
+        val result = insertSyntax(TextFieldValue("repo:owner/repo ", TextRange(16)), suggestion)
+        assertEquals("repo:owner/repo category:Q&A ", result.text)
+        assertEquals("Q&A", result.text.substring(result.selection.min, result.selection.max))
+    }
+
     private fun bare(token: String, text: String, selection: TextRange = TextRange(text.length)) =
         insertSyntax(TextFieldValue(text, selection), repoCodeSyntax.first { it.token == token }, bare = true)
 

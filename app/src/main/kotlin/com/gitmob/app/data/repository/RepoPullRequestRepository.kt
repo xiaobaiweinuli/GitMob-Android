@@ -135,7 +135,9 @@ class RepoPullRequestRepository @Inject constructor(
         filter: RepoPullRequestFilter,
         position: SearchContinuation? = null,
     ): ApiResult<RepoPullRequestPage> =
-        when (val result = apolloClient.query(
+        if (!validListSearch(keywords, owner, name, "pr")) ApiResult.Failure(
+            com.gitmob.app.core.error.ApiError.UserVisible(com.gitmob.app.R.string.repo_list_search_invalid),
+        ) else when (val result = apolloClient.query(
             SearchRepoPullRequestsQuery(
                 owner = owner,
                 name = name,

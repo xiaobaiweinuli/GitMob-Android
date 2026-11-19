@@ -37,7 +37,7 @@ class SearchViewModel @Inject constructor(
         initialized = true
         if (category == null) {
             observeHistory()
-            savedStateHandle.get<String>("submittedQuery")?.let { submit(it, recordHistory = false) }
+            (savedStateHandle.get<String>("submittedQuery") ?: query)?.let { submit(it, recordHistory = false) }
         }
         else if (query != null) submit(query, category, recordHistory = false)
     }
@@ -80,6 +80,17 @@ class SearchViewModel @Inject constructor(
         if (category == null) savedStateHandle["submittedQuery"] = normalized
         if (recordHistory) recordQuery(normalized)
         categories.forEach { request(it, append = false) }
+    }
+
+    fun browserUnavailable() {
+        viewModelScope.launch { errors.emit(com.gitmob.app.core.error.ApiError.UserVisible(com.gitmob.app.R.string.deep_link_browser_unavailable), accountEpoch) }
+    }
+
+    fun clearQuery() {
+        requests.values.forEach(Job::cancel)
+        requests.clear()
+        mutableState.update { it.copy(submittedQuery = "", sections = emptyMap(), generation = it.generation + 1) }
+        savedStateHandle["submittedQuery"] = ""
     }
 
     fun retry(category: SearchCategory) {

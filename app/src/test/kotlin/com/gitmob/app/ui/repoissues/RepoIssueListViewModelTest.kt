@@ -32,6 +32,63 @@ class RepoIssueListViewModelTest {
     @get:Rule val accounts = AccountSessionRule()
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
+    @Test fun `native filters paginate across link submit clear and restore`() = runTest {
+        val repository = repositoryMock()
+        val filter = RepoIssueFilter(author = RepoAuthorFilter.Login("@me"))
+        coEvery { repository.getIssues("o", "r", filter, null) } returns ApiResult.Success(page().copy(hasNextPage = true, endCursor = "after"))
+        coEvery { repository.getIssues("o", "r", filter, "after") } returns ApiResult.Success(page())
+        coEvery { repository.searchIssues("o", "r", any(), any(), null) } returns ApiResult.Success(page())
+        val saved = androidx.lifecycle.SavedStateHandle()
+        fun open() = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, saved).also {
+            it.init("o", "r", initialQuery = "is:issue state:open author:@me")
+        }
+        val vm = open()
+        advanceUntilIdle()
+        vm.loadMore()
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.getIssues("o", "r", filter, "after") }
+        vm.submitSearch("state:open release")
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.searchIssues("o", "r", "release", filter, null) }
+        vm.submitSearch("")
+        advanceUntilIdle()
+        vm.submitSearch("state:open")
+        advanceUntilIdle()
+        vm.viewModelScope.cancel()
+        val restored = open()
+        advanceUntilIdle()
+        coVerify(exactly = 3) { repository.getIssues("o", "r", filter, null) }
+        coVerify(exactly = 1) { repository.searchIssues("o", "r", any(), any(), null) }
+        restored.submitSearch("milestone:Release")
+        advanceUntilIdle()
+        assertTrue(restored.state.value.searchActive)
+        restored.setMilestone(RepoMilestoneFilter.ALL)
+        advanceUntilIdle()
+        coVerify(exactly = 4) { repository.getIssues("o", "r", filter, null) }
+        restored.viewModelScope.cancel()
+    }
+
+    @Test fun `first request uses link filters and restoration keeps later edits`() = runTest {
+        val repository = repositoryMock()
+        coEvery { repository.searchIssues("o", "r", any(), any(), null) } returns ApiResult.Success(page())
+        val saved = androidx.lifecycle.SavedStateHandle()
+        fun open() = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, saved).also {
+            it.init("o", "r", initialQuery = "is:issue state:open 发布")
+        }
+        val vm = open()
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.searchIssues("o", "r", "发布", RepoIssueFilter(), null) }
+        coVerify(exactly = 0) { repository.getIssues(any(), any(), any(), any()) }
+        vm.submitSearch("is:closed 修复")
+        advanceUntilIdle()
+        vm.viewModelScope.cancel()
+        val restored = open()
+        advanceUntilIdle()
+        assertEquals("修复", restored.state.value.submittedQuery)
+        assertEquals(RepoIssueStateFilter.CLOSED, restored.state.value.filter.state)
+        restored.viewModelScope.cancel()
+    }
+
     @Test
     fun `initial load and filter change request first page`() = runTest {
         val repository = repositoryMock()

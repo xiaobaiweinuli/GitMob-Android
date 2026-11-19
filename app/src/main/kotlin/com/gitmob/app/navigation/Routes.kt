@@ -17,9 +17,9 @@ sealed interface Route : NavKey
 @Serializable data object GistRoute : Route
 @Serializable data object SettingsRoute : Route
 
-@Serializable data class SearchRoute(val page: String = "search") : Route
-@Serializable data class SearchCategoryRoute(val query: String, val category: SearchCategory) : Route
-@Serializable data class RepoCodeSearchRoute(val owner: String, val name: String, val path: String = "", val isFork: Boolean = false) : Route
+@Serializable data class SearchRoute(val page: String = "search", val query: String = "", val searchVisit: String = "") : Route
+@Serializable data class SearchCategoryRoute(val query: String, val category: SearchCategory, val searchVisit: String = "", val repositoryScope: String? = null) : Route
+@Serializable data class RepoCodeSearchRoute(val owner: String, val name: String, val path: String = "", val isFork: Boolean? = null, val initialQuery: String = "", val searchVisit: String = "") : Route
 
 /** 关注者 / 关注列表，参数化路由（不是底部 Tab，从 HomeScreen 点击跳转进来） */
 @Serializable data class FollowersRoute(val login: String) : Route
@@ -87,10 +87,10 @@ data class RepoCreateRoute(
 
 /** 仓库详情及其子页面 */
 @Serializable data class RepoDetailRoute(val owner: String, val name: String) : Route
-@Serializable data class RepoIssuesRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val viewerCanCreateIssues: Boolean? = null) : Route
+@Serializable data class RepoIssuesRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val viewerCanCreateIssues: Boolean? = null, val initialQuery: String = "", val searchVisit: String = "") : Route
 @Serializable data class RepoIssueDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoIssueEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null, val templateFilename: String? = null) : Route
-@Serializable data class RepoPullRequestsRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoPullRequestsRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val initialQuery: String = "", val searchVisit: String = "") : Route
 @Serializable data class RepoPullRequestDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoPullRequestEditorRoute(
     val owner: String,
@@ -105,7 +105,7 @@ data class RepoCreateRoute(
     val headRef: String? = null,
     val headRepositoryId: String? = null,
 ) : Route
-@Serializable data class RepoDiscussionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoDiscussionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val initialQuery: String = "", val searchVisit: String = "") : Route
 @Serializable data class RepoDiscussionDetailRoute(val owner: String, val name: String, val number: Int, val permission: RepoPermission? = null) : Route
 @Serializable data class RepoDiscussionEditorRoute(val owner: String, val name: String, val number: Int? = null, val permission: RepoPermission? = null) : Route
 @Serializable
@@ -190,6 +190,17 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
 @Serializable data object WorkPullRequestsRoute : Route
 @Serializable data object WorkDiscussionsRoute : Route
 @Serializable data object InboxRoute : Route
+
+/** A deliberate search-link click opens the URL query, even when the existing page has been edited. */
+internal fun Route.withSearchVisit(visit: String): Route = when (this) {
+    is SearchRoute -> copy(searchVisit = visit)
+    is SearchCategoryRoute -> copy(searchVisit = visit)
+    is RepoCodeSearchRoute -> copy(searchVisit = visit)
+    is RepoIssuesRoute -> if (initialQuery.isBlank()) this else copy(searchVisit = visit)
+    is RepoPullRequestsRoute -> if (initialQuery.isBlank()) this else copy(searchVisit = visit)
+    is RepoDiscussionsRoute -> if (initialQuery.isBlank()) this else copy(searchVisit = visit)
+    else -> this
+}
 
 internal fun Route.replaceRepositoryAddress(owner: String, name: String, newOwner: String, newName: String): Route {
     fun matches(candidateOwner: String?, candidateName: String?) =

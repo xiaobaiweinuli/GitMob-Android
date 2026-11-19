@@ -1,6 +1,8 @@
 package com.gitmob.app.navigation
 
 import android.net.Uri
+import com.gitmob.app.data.model.SearchCategory
+import com.gitmob.app.data.repository.unquotedSearchTokens
 import java.io.Serializable
 
 /**
@@ -11,17 +13,19 @@ sealed class DeepLinkDestination : Serializable {
     data class GistDetail(val id: String) : DeepLinkDestination()
     data object BrowserUnavailable : DeepLinkDestination()
     data class Profile(val login: String) : DeepLinkDestination()
+    data class Search(val query: String, val category: SearchCategory? = null, val repositoryScope: String? = null) : DeepLinkDestination()
     data class RepoOverview(val owner: String, val repo: String) : DeepLinkDestination()
+    data class RepoCodeSearch(val owner: String, val repo: String, val query: String = "") : DeepLinkDestination()
     data class FileView(val owner: String, val repo: String, val ref: String, val path: String) : DeepLinkDestination()
     data class DirView(val owner: String, val repo: String, val ref: String, val path: String) : DeepLinkDestination()
     data class CommitDetail(val owner: String, val repo: String, val sha: String) : DeepLinkDestination()
     data class CommitList(val owner: String, val repo: String, val ref: String, val path: String?) : DeepLinkDestination()
     data class IssueDetail(val owner: String, val repo: String, val number: Int) : DeepLinkDestination()
-    data class IssueList(val owner: String, val repo: String) : DeepLinkDestination()
+    data class IssueList(val owner: String, val repo: String, val query: String = "") : DeepLinkDestination()
     data class PullRequestDetail(val owner: String, val repo: String, val number: Int) : DeepLinkDestination()
-    data class PullRequestList(val owner: String, val repo: String) : DeepLinkDestination()
+    data class PullRequestList(val owner: String, val repo: String, val query: String = "") : DeepLinkDestination()
     data class DiscussionDetail(val owner: String, val repo: String, val number: Int) : DeepLinkDestination()
-    data class DiscussionList(val owner: String, val repo: String) : DeepLinkDestination()
+    data class DiscussionList(val owner: String, val repo: String, val query: String = "") : DeepLinkDestination()
     data class Actions(val owner: String, val repo: String) : DeepLinkDestination()
     data class WorkflowRun(val owner: String, val repo: String, val runId: Long) : DeepLinkDestination()
     data class ReleaseList(val owner: String, val repo: String) : DeepLinkDestination()
@@ -53,6 +57,9 @@ object DeepLinkRouter {
             !uri.host.equals("github.com", ignoreCase = true) -> return DeepLinkDestination.Unsupported
         }
         if (segments.isEmpty()) return DeepLinkDestination.Unsupported
+        if (segments.first() == "search") {
+            return if (segments.size == 1) parseSearch(uri) else DeepLinkDestination.Unsupported
+        }
         // 设备授权属于浏览器流程，不能按 /{owner}/{repo} 解析。
         if (segments == listOf("login", "device")) return DeepLinkDestination.Unsupported
 
@@ -68,6 +75,16 @@ object DeepLinkRouter {
         val repo = segments.getOrNull(1) ?: return DeepLinkDestination.Unsupported
 
         if (segments.size == 2) return DeepLinkDestination.RepoOverview(owner, repo)
+
+        if (segments.size == 3) {
+            val query = uri.getQueryParameter("q").orEmpty()
+            when (segments[2]) {
+                "search" -> return parseSearch(uri, owner, repo)
+                "issues" -> return DeepLinkDestination.IssueList(owner, repo, query)
+                "pulls" -> return DeepLinkDestination.PullRequestList(owner, repo, query)
+                "discussions" -> return DeepLinkDestination.DiscussionList(owner, repo, uri.getQueryParameter("discussions_q") ?: query)
+            }
+        }
 
         return when (segments.getOrNull(2)) {
             "blob" -> {
@@ -120,6 +137,32 @@ object DeepLinkRouter {
                 DeepLinkDestination.Unsupported
             }
             else -> DeepLinkDestination.Unsupported
+        }
+    }
+
+    private fun parseSearch(uri: Uri, owner: String? = null, repo: String? = null): DeepLinkDestination {
+        val query = uri.getQueryParameter("q").orEmpty()
+        val qualifiers = unquotedSearchTokens(query).map { it.trim('(', ')').lowercase() }
+        val category = when (uri.getQueryParameter("type")?.lowercase()) {
+            null, "" -> if (owner == null) null else SearchCategory.CODE
+            "code", "codelegacy" -> SearchCategory.CODE
+            "repositories" -> SearchCategory.REPOSITORIES
+            // Older GitHub links use type=Issues for both issues and pull requests.
+            "issues" -> if (qualifiers.any { it == "is:pr" || it == "type:pr" })
+                SearchCategory.PULL_REQUESTS else SearchCategory.ISSUES
+            "pullrequests" -> SearchCategory.PULL_REQUESTS
+            "discussions" -> SearchCategory.DISCUSSIONS
+            "users" -> if ("type:org" in qualifiers) SearchCategory.ORGANIZATIONS else SearchCategory.USERS
+            "organizations" -> SearchCategory.ORGANIZATIONS
+            else -> return DeepLinkDestination.Unsupported
+        }
+        if (owner == null || repo == null) return DeepLinkDestination.Search(query, category)
+        return when (category) {
+            SearchCategory.ISSUES -> DeepLinkDestination.IssueList(owner, repo, query)
+            SearchCategory.PULL_REQUESTS -> DeepLinkDestination.PullRequestList(owner, repo, query)
+            SearchCategory.DISCUSSIONS -> DeepLinkDestination.DiscussionList(owner, repo, query)
+            SearchCategory.CODE -> DeepLinkDestination.RepoCodeSearch(owner, repo, query)
+            else -> DeepLinkDestination.Search(query, category, repositoryScope = "$owner/$repo")
         }
     }
 }

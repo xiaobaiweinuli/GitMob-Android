@@ -181,8 +181,12 @@ class GitMobNavigator(
         } else {
             val stack = state.backStacks[state.topLevelRoute] ?: return
             // Compare the complete route: distinct arguments and revisits deeper in history remain valid.
-            if (stack.lastOrNull() != route) {
-                withoutForwardAnimation = withoutAnimation
+            val previous = stack.lastOrNull() as? Route
+            if (previous == route) return
+            withoutForwardAnimation = withoutAnimation
+            if (previous != null && previous.withSearchVisit("") == route.withSearchVisit("")) {
+                stack[stack.lastIndex] = route
+            } else {
                 stack.add(route)
             }
         }

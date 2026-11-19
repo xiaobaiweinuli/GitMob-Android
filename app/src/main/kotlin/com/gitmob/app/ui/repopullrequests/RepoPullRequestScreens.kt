@@ -133,12 +133,20 @@ fun RepoPullRequestListScreen(
     onCreateCommitClick: (owner: String, name: String, ref: String, sha: String) -> Unit,
     onExistingPullRequestClick: (owner: String, name: String, number: Int) -> Unit,
     onUserClick: (String) -> Unit,
-    viewModel: RepoPullRequestListViewModel = hiltViewModel(),
+    viewModel: RepoPullRequestListViewModel = hiltViewModel(), initialQuery: String = "",
 ) {
-    LaunchedEffect(owner, name) { viewModel.init(owner, name, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    var searchExpanded by rememberSaveable { mutableStateOf(initialQuery.isNotBlank()) }
+    var focusSearch by rememberSaveable { mutableStateOf(false) }
     var searchInput by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(state.submittedQuery)) }
+    var draftInitialized by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(owner, name, initialQuery) {
+        viewModel.init(owner, name, permission, initialQuery)
+        if (!draftInitialized) {
+            searchInput = TextFieldValue(viewModel.state.value.submittedQuery)
+            draftInitialized = true
+        }
+    }
     val listState = rememberSaveable(state.listRevision, saver = LazyListState.Saver) { LazyListState() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -163,7 +171,11 @@ fun RepoPullRequestListScreen(
                             onValueChange = { searchInput = it },
                             placeholder = stringResource(R.string.repo_pr_search_hint),
                             hasSubmittedQuery = state.submittedQuery.isNotEmpty(),
-                            onSubmit = viewModel::submitSearch,
+                            focusOnExpand = focusSearch,
+                            onSubmit = { value ->
+                                viewModel.submitSearch(value)
+                                searchInput = TextFieldValue(viewModel.state.value.submittedQuery)
+                            },
                         )
                     } else RepositoryContextTitle(
                         owner = owner,
@@ -175,7 +187,7 @@ fun RepoPullRequestListScreen(
                 },
                 navigationIcon = { IconButton(onClick = { leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { searchExpanded = true }
+                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
                     if (canCreate) IconButton(onClick = { keyboard?.hide(); focusManager.clearFocus(); showCreateSheet = true }) { Icon(Icons.Default.Add, stringResource(R.string.pr_new)) }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),

@@ -53,6 +53,16 @@ class RepoIssueRepositoryTest {
     }
     @After fun tearDown() = server.shutdown()
 
+    @Test fun `native issue author and assignee resolve current login`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(pageJson(cursor = null, hasNext = false)))
+        val filter = issueListSearch("author:@me assignee:@me", "o", "r", RepoIssueFilter()).filter
+        assertTrue(repository.getIssues("o", "r", filter) is ApiResult.Success)
+        val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        val filterBy = variables.getValue("filterBy").jsonObject
+        assertEquals(JsonPrimitive("viewer"), filterBy["createdBy"])
+        assertEquals(JsonPrimitive("viewer"), filterBy["assignee"])
+    }
+
     @Test
     fun `issue filters and order are encoded in repository query`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(pageJson(cursor = "CURSOR", hasNext = true)))
@@ -233,7 +243,7 @@ class RepoIssueRepositoryTest {
         assertEquals(1200, page.totalCount)
         assertEquals(SearchContinuation(cursor = "after2", received = 2), page.searchNext)
         val first = takeVariables()
-        assertEquals(JsonPrimitive("repo:o/r is:issue \"bug\" is:open mentions:\"viewer\" sort:updated-desc"), first["searchQuery"])
+        assertEquals(JsonPrimitive("repo:o/r is:issue bug is:open mentions:\"viewer\" sort:updated-desc"), first["searchQuery"])
         server.enqueue(MockResponse().setBody(response))
         val last = (repository.searchIssues("o", "r", "bug", filter,
             SearchContinuation(cursor = "prev", received = PageSize.SEARCH_ACCESSIBLE_LIMIT - 2)) as ApiResult.Success).data

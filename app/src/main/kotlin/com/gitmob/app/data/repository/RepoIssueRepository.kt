@@ -87,7 +87,9 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
         filter: RepoIssueFilter,
         position: SearchContinuation? = null,
     ): ApiResult<RepoIssuePage> =
-        when (val result = apolloClient.query(
+        if (!validListSearch(keywords, owner, name, "issue")) ApiResult.Failure(
+            com.gitmob.app.core.error.ApiError.UserVisible(com.gitmob.app.R.string.repo_list_search_invalid),
+        ) else when (val result = apolloClient.query(
             SearchRepoIssuesQuery(
                 owner = owner,
                 name = name,
@@ -451,12 +453,14 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
     private fun issueFilters(filter: RepoIssueFilter): IssueFilters? {
         var hasAny = false
         fun <T> present(value: T): Optional<T> { hasAny = true; return Optional.present(value) }
+        fun currentLogin() = checkNotNull(AccountContext.ensureCurrent().login) { "Active login is required" }
+        fun resolveLogin(login: String) = if (login.equals("@me", ignoreCase = true)) currentLogin() else login
         val filters = IssueFilters(
             labels = if (filter.labels.isNotEmpty()) present(filter.labels.toList()) else Optional.Absent,
             milestone = when (val value = filter.milestone) {
                 RepoMilestoneFilter.ALL -> Optional.Absent
                 RepoMilestoneFilter.NONE -> present(null)
-                is RepoMilestoneFilter.Number -> Optional.Absent
+                is RepoMilestoneFilter.Number, is RepoMilestoneFilter.Title -> Optional.Absent
             },
             milestoneNumber = when (val value = filter.milestone) {
                 is RepoMilestoneFilter.Number -> present(value.value.toString())
@@ -466,14 +470,14 @@ class RepoIssueRepository @Inject constructor(private val apolloClient: ApolloCl
                 RepoAssigneeFilter.ALL -> Optional.Absent
                 RepoAssigneeFilter.ANY -> present("*")
                 RepoAssigneeFilter.NONE -> present(null)
-                is RepoAssigneeFilter.Login -> present(value.value)
+                is RepoAssigneeFilter.Login -> present(resolveLogin(value.value))
             },
             createdBy = when (val value = filter.author) {
                 RepoAuthorFilter.ALL -> Optional.Absent
-                is RepoAuthorFilter.Login -> present(value.value)
+                is RepoAuthorFilter.Login -> present(resolveLogin(value.value))
             },
             mentioned = if (filter.mentionedMe) {
-                present(checkNotNull(AccountContext.ensureCurrent().login) { "Active login is required" })
+                present(currentLogin())
             } else Optional.Absent,
             since = filter.updatedSince?.let { present(it.toString()) } ?: Optional.Absent,
         )

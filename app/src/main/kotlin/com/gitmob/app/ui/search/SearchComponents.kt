@@ -1,5 +1,8 @@
 package com.gitmob.app.ui.search
 
+import android.net.Uri
+import androidx.activity.compose.LocalActivity
+import com.gitmob.app.navigation.tryOpenBrowser
 import android.text.format.DateUtils
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -36,6 +39,7 @@ import com.gitmob.app.ui.common.issueStateVisual
 import com.gitmob.app.ui.common.pullRequestStateVisual
 import com.gitmob.app.ui.icons.Octicon
 import com.gitmob.app.ui.icons.OcticonName
+import com.gitmob.app.ui.work.WorkDiscussionRow
 import java.time.Instant
 import java.text.NumberFormat
 
@@ -45,6 +49,7 @@ class SearchResultActions(
     val account: (String) -> Unit,
     val file: (SearchItem.Code) -> Unit,
     val homepage: (String) -> Unit,
+    val discussion: (WorkDiscussionItem) -> Unit,
 )
 
 internal val SearchCategory.titleRes: Int
@@ -53,6 +58,7 @@ internal val SearchCategory.titleRes: Int
         SearchCategory.REPOSITORIES -> R.string.search_repositories
         SearchCategory.ISSUES -> R.string.search_issues
         SearchCategory.PULL_REQUESTS -> R.string.search_pull_requests
+        SearchCategory.DISCUSSIONS -> R.string.common_discussions
         SearchCategory.USERS -> R.string.search_users
         SearchCategory.ORGANIZATIONS -> R.string.search_organizations
     }
@@ -61,6 +67,7 @@ internal val SearchCategory.icon: OcticonName get() = when (this) {
     SearchCategory.REPOSITORIES -> OcticonName.REPO
     SearchCategory.ISSUES -> OcticonName.ISSUE_OPENED
     SearchCategory.PULL_REQUESTS -> OcticonName.PULL_REQUEST_OPENED
+    SearchCategory.DISCUSSIONS -> OcticonName.DISCUSSION_OPENED
     SearchCategory.USERS -> OcticonName.PERSON
     SearchCategory.ORGANIZATIONS -> OcticonName.ORGANIZATION
 }
@@ -101,6 +108,10 @@ internal fun SearchResult(item: SearchItem, actions: SearchResultActions) {
         is SearchItem.Code -> CodeResult(item, actions)
         is SearchItem.Work -> WorkResult(item.item) { actions.work(item.item) }
         is SearchItem.Account -> AccountResult(item) { actions.account(item.login) }
+        is SearchItem.Discussion -> {
+            WorkDiscussionRow(item.item, onClick = { actions.discussion(item.item) }, horizontalPadding = 0.dp)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
     }
 }
 
@@ -206,4 +217,15 @@ internal fun SearchFailure(error: ApiError, retry: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (error !is ApiError.UserVisible) TextButton(onClick = retry) { Text(stringResource(R.string.common_retry)) }
     }
+}
+
+@Composable
+internal fun CodeSearchWebButton(query: String, viewModel: SearchViewModel, owner: String? = null, name: String? = null) {
+    val activity = LocalActivity.current
+    TextButton(onClick = {
+        val url = Uri.Builder().scheme("https").authority("github.com").apply {
+            if (owner != null && name != null) appendPath(owner).appendPath(name)
+        }.appendPath("search").appendQueryParameter("q", query).appendQueryParameter("type", "code").build()
+        if (activity?.tryOpenBrowser(url) != true) viewModel.browserUnavailable()
+    }) { Text(stringResource(R.string.code_search_on_web)) }
 }

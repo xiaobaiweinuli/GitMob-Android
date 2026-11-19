@@ -34,10 +34,15 @@ internal fun scopedSearchQuery(query: String, category: SearchCategory): String?
     val (expected, opposite) = when (category) {
         SearchCategory.ISSUES -> setOf("is:issue", "type:issue") to setOf("is:pr", "type:pr")
         SearchCategory.PULL_REQUESTS -> setOf("is:pr", "type:pr") to setOf("is:issue", "type:issue")
+        SearchCategory.DISCUSSIONS -> setOf("is:discussion") to setOf("is:issue", "type:issue", "is:pr", "type:pr")
         SearchCategory.USERS -> setOf("type:user") to setOf("type:org")
         SearchCategory.ORGANIZATIONS -> setOf("type:org") to setOf("type:user")
         else -> return query
     }
+    // Advanced issue queries can contain OR/nested groups. Constrain the entire expression.
+    if (category in setOf(SearchCategory.ISSUES, SearchCategory.PULL_REQUESTS) &&
+        tokens.any { it == "or" || '(' in it || ')' in it }
+    ) return "($query) "+expected.first()
     if (tokens.any { it in opposite || (it.startsWith('-') && it.drop(1) in expected) }) return null
     return if (tokens.any { it in expected }) query else "$query "+expected.first()
 }
@@ -56,13 +61,26 @@ internal fun searchFileTarget(htmlUrl: String, owner: String, repository: String
 }
 
 /** The visible input never carries the repository scope. GitHub interprets the remaining syntax. */
-internal fun repositoryCodeSearchQuery(input: String, owner: String, name: String, isFork: Boolean): String? {
+internal fun repositoryCodeSearchQuery(input: String, owner: String, name: String, includeForks: Boolean): String? {
     val query = input.trim()
     if (query.isEmpty()) return null
-    val changesScope = unquotedSearchTokens(query, includeQuotedValues = true).any {
-        it.removePrefix("-").substringBefore(':').lowercase() in setOf("repo", "user", "org") && ':' in it
+    val qualifiers = unquotedSearchTokens(query, includeQuotedValues = true)
+    var hasRepo = false
+    for (token in qualifiers) {
+        if (':' !in token) continue
+        when (token.substringBefore(':').lowercase()) {
+            "repo" -> {
+                if (!token.substringAfter(':').removeSurrounding("\"").equals("$owner/$name", true)) return null
+                hasRepo = true
+            }
+            "-repo", "user", "-user", "org", "-org" -> return null
+        }
     }
-    return if (changesScope) null else "repo:$owner/$name $query" + if (isFork) " fork:true" else ""
+    return buildList {
+        if (!hasRepo) add("repo:$owner/$name")
+        add(query)
+        if (includeForks && qualifiers.none { it.startsWith("fork:", ignoreCase = true) }) add("fork:true")
+    }.joinToString(" ")
 }
 
 internal fun repositoryCodeSearchInput(path: String): String {

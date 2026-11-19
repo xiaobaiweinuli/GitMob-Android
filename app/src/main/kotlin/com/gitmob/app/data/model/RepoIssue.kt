@@ -8,20 +8,21 @@ enum class RepoIssueStateFilter { OPEN, CLOSED, ALL }
 
 enum class RepoIssueSort { UPDATED_DESC, UPDATED_ASC, CREATED_DESC, CREATED_ASC, COMMENTS_DESC, COMMENTS_ASC }
 
-sealed interface RepoMilestoneFilter {
+sealed interface RepoMilestoneFilter : java.io.Serializable {
     data object ALL : RepoMilestoneFilter
     data object NONE : RepoMilestoneFilter
+    data class Title(val title: String) : RepoMilestoneFilter
     data class Number(val value: Int, val title: String) : RepoMilestoneFilter
 }
 
-sealed interface RepoAssigneeFilter {
+sealed interface RepoAssigneeFilter : java.io.Serializable {
     data object ALL : RepoAssigneeFilter
     data object ANY : RepoAssigneeFilter
     data object NONE : RepoAssigneeFilter
     data class Login(val value: String) : RepoAssigneeFilter
 }
 
-sealed interface RepoAuthorFilter {
+sealed interface RepoAuthorFilter : java.io.Serializable {
     data object ALL : RepoAuthorFilter
     data class Login(val value: String) : RepoAuthorFilter
 }
@@ -35,7 +36,7 @@ data class RepoIssueFilter(
     val author: RepoAuthorFilter = RepoAuthorFilter.ALL,
     val mentionedMe: Boolean = false,
     val updatedSince: Instant? = null,
-)
+) : java.io.Serializable
 
 data class IssueLabel(val id: String, val name: String, val color: String, val description: String?)
 

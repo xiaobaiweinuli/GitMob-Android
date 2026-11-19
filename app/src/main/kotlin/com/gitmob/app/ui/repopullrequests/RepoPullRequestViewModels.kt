@@ -2,6 +2,8 @@ package com.gitmob.app.ui.repopullrequests
 
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
+import androidx.lifecycle.SavedStateHandle
+import com.gitmob.app.data.repository.pullListSearch
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -43,7 +45,9 @@ data class RepoPullRequestListUiState(
     val isLoadingMore: Boolean = false,
     val hasNextPage: Boolean = false,
     val loadFailed: Boolean = false,
-)
+) {
+    val searchActive: Boolean get() = submittedQuery.isNotBlank()
+}
 
 @HiltViewModel
 class RepoPullRequestListViewModel @Inject constructor(
@@ -51,6 +55,7 @@ class RepoPullRequestListViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     session: AccountSession,
     private val repoUpdateEventBus: RepoUpdateEventBus,
+    private val savedSearch: SavedStateHandle = SavedStateHandle(),
 ) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoPullRequestListUiState())
     val state: StateFlow<RepoPullRequestListUiState> = _state.asStateFlow()
@@ -62,12 +67,19 @@ class RepoPullRequestListViewModel @Inject constructor(
     private var requestGeneration = 0L
     private var searchPosition: SearchContinuation? = null
 
-    fun init(owner: String, name: String, permission: RepoPermission?) {
+    fun init(owner: String, name: String, permission: RepoPermission?, initialQuery: String = "") {
         if (initialized) return
         initialized = true
         this.owner = owner
         this.name = name
         permission?.let { value -> _state.update { it.copy(permission = value, capabilities = value.toCapabilities()) } }
+        val savedFilter = savedSearch.get<RepoPullRequestFilter>("filter")
+        if (savedFilter != null) {
+            _state.update { it.copy(filter = savedFilter, submittedQuery = savedSearch["query"] ?: "") }
+        } else if (initialQuery.isNotBlank()) {
+            val parsed = pullListSearch(initialQuery, owner, name, RepoPullRequestFilter(state = RepoPullRequestStateFilter.ALL))
+            _state.update { it.copy(filter = parsed.filter, submittedQuery = parsed.text) }
+        }
         load()
         viewModelScope.launch {
             repoUpdateEventBus.eventsFor(accountEpoch).filterIsInstance<RepoUpdateEvent.PullRequestCountChanged>().collect { event ->
@@ -88,9 +100,11 @@ class RepoPullRequestListViewModel @Inject constructor(
         loadMoreJob?.cancel()
         searchPosition = null
         val request = _state.value
+        savedSearch["filter"] = request.filter
+        savedSearch["query"] = request.submittedQuery
         _state.update { it.copy(isLoading = true, isLoadingMore = false, hasNextPage = false, nextCursor = null, loadFailed = false, loadMoreFailed = false, searchLimitReached = false) }
         loadJob = viewModelScope.launch {
-            val result = if (request.submittedQuery.isEmpty()) {
+            val result = if (!request.searchActive) {
                 repository.getPullRequests(owner, name, request.filter)
             } else {
                 repository.searchPullRequests(owner, name, request.submittedQuery, request.filter)
@@ -107,9 +121,10 @@ class RepoPullRequestListViewModel @Inject constructor(
     }
 
     fun submitSearch(value: String) {
-        val query = value.trim()
-        if (query == _state.value.submittedQuery) return
-        _state.update { it.copy(submittedQuery = query, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }
+        val current = _state.value
+        val parsed = pullListSearch(value, owner, name, current.filter)
+        if (parsed.text == current.submittedQuery && parsed.filter == current.filter) return
+        _state.update { it.copy(submittedQuery = parsed.text, filter = parsed.filter, items = emptyList(), totalCount = 0, listRevision = it.listRevision + 1) }
         load()
     }
 
@@ -133,7 +148,7 @@ class RepoPullRequestListViewModel @Inject constructor(
         val position = searchPosition
         _state.update { it.copy(isLoadingMore = true, loadMoreFailed = false) }
         loadMoreJob = viewModelScope.launch {
-            val result = if (request.submittedQuery.isEmpty()) {
+            val result = if (!request.searchActive) {
                 repository.getPullRequests(owner, name, request.filter, after)
             } else {
                 repository.searchPullRequests(owner, name, request.submittedQuery, request.filter, position)

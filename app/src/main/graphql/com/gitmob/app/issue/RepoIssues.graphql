@@ -50,7 +50,7 @@ query SearchRepoIssues($owner: String!, $name: String!, $searchQuery: String!, $
         viewerCanCreateIssues
         hasIssuesEnabled
     }
-    search(query: $searchQuery, type: ISSUE, first: $first, after: $after) {
+    search(query: $searchQuery, type: ISSUE_ADVANCED, first: $first, after: $after) {
         issueCount
         nodes {
             ... on Issue {

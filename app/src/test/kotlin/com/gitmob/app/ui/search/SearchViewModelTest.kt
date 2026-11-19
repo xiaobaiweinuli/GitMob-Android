@@ -38,7 +38,7 @@ class SearchViewModelTest {
         val vm = vm()
         vm.submit("kotlin")
         vm.submit("kotlin")
-        coVerify(exactly = 6) { repository.search(any(), any(), true, null) }
+        coVerify(exactly = SearchCategory.entries.size) { repository.search(any(), any(), true, null) }
         assertNotNull(vm.state.value.sections[SearchCategory.REPOSITORIES]!!.page)
         code.complete(ApiResult.Failure(ApiError.Forbidden))
         assertNotNull(vm.state.value.sections[SearchCategory.CODE]!!.error)
@@ -94,13 +94,28 @@ class SearchViewModelTest {
         assertNull(vm.state.value.sections[SearchCategory.CODE]!!.page)
     }
 
+    @Test fun deepLinkInitialQuerySubmitsOnceAndRestoredQueryTakesPrecedence() = runTest {
+        coEvery { repository.search(any(), any(), true, null) } returns ApiResult.Success(page("a"))
+        val first = vm()
+        first.init("repo:owner/repo language:kotlin")
+        first.init("ignored")
+        assertEquals("repo:owner/repo language:kotlin", first.state.value.submittedQuery)
+        coVerify(exactly = SearchCategory.entries.size) { repository.search("repo:owner/repo language:kotlin", any(), true, null) }
+        val restored = vm(SavedStateHandle(mapOf("submittedQuery" to "edited query")))
+        restored.init("original link")
+        assertEquals("edited query", restored.state.value.submittedQuery)
+        coVerify(exactly = 0) { history.record(any(), any()) }
+        first.viewModelScope.cancel()
+        restored.viewModelScope.cancel()
+    }
+
     @Test fun restoredOverviewReloadsWithoutRecordingAnotherHistoryEntry() = runTest {
         coEvery { repository.search("saved", any(), true, null) } returns ApiResult.Success(page("a"))
         val vm = vm(SavedStateHandle(mapOf("submittedQuery" to "saved")))
         vm.init()
         vm.init()
         assertEquals("saved", vm.state.value.submittedQuery)
-        coVerify(exactly = 6) { repository.search("saved", any(), true, null) }
+        coVerify(exactly = SearchCategory.entries.size) { repository.search("saved", any(), true, null) }
         coVerify(exactly = 0) { history.record(any(), any()) }
         vm.viewModelScope.cancel()
     }

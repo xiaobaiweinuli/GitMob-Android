@@ -1,5 +1,6 @@
 package com.gitmob.app.navigation
 
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -16,26 +17,11 @@ class DeepLinkActivity : ComponentActivity() {
         val uri = intent?.data
         val destination = uri?.let { DeepLinkRouter.parse(it) } ?: DeepLinkDestination.Unsupported
         if (destination == DeepLinkDestination.Unsupported) {
-            if (uri != null) openInBrowser(uri)
+            if (uri != null && !tryOpenBrowser(uri)) openMain(DeepLinkDestination.BrowserUnavailable)
         } else {
             openMain(destination)
         }
         finish()
-    }
-
-    private fun openInBrowser(uri: Uri) {
-        // 只按浏览器入口解析，避免 ACTION_VIEW 再次命中本 Activity 的域名过滤器。
-        val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
-            addCategory(Intent.CATEGORY_BROWSABLE)
-            selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER).selector
-        }
-        try {
-            startActivity(browserIntent)
-        } catch (_: ActivityNotFoundException) {
-            openMain(DeepLinkDestination.BrowserUnavailable)
-        } catch (_: SecurityException) {
-            openMain(DeepLinkDestination.BrowserUnavailable)
-        }
     }
 
     private fun openMain(destination: DeepLinkDestination) {
@@ -45,5 +31,21 @@ class DeepLinkActivity : ComponentActivity() {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             },
         )
+    }
+}
+
+/** Resolve a browser entry explicitly so a GitHub URL cannot reopen GitMob. */
+internal fun Activity.tryOpenBrowser(uri: Uri): Boolean {
+    val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
+        selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER).selector
+    }
+    return try {
+        startActivity(intent)
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    } catch (_: SecurityException) {
+        false
     }
 }

@@ -13,7 +13,7 @@ data class RepoPullRequestFilter(
     val state: RepoPullRequestStateFilter = RepoPullRequestStateFilter.OPEN,
     val sort: RepoPullRequestSort = RepoPullRequestSort.UPDATED_DESC,
     val labels: Set<String> = emptySet(),
-)
+) : java.io.Serializable
 
 data class RepoPullRequest(
     val id: String,

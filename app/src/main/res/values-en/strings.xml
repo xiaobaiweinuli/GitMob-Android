@@ -965,7 +965,8 @@
         <item quantity="other">Only the first %1$d results are accessible. Refine your query.</item>
     </plurals>
     <string name="search_end">All results shown</string>
-    <string name="search_scope_conflict">The query conflicts with this category. Go back to edit it.</string>
+    <string name="repo_list_search_invalid">Check the query syntax and use search conditions supported by this repository list.</string>
+    <string name="search_scope_conflict">The query conflicts with this category. Edit your search conditions.</string>
     <string name="search_invalid_query">Invalid query. Go back to check the syntax.</string>
     <string name="search_open_file">Open file %1$s</string>
     <string name="search_open_repo">Open repository %1$s</string>
@@ -1033,4 +1034,5 @@
     <string name="repo_pr_search_hint">Search pull request keywords</string>
     <string name="repo_discussion_search_hint">Search discussion keywords</string>
     <string name="repo_filter_any_label">Any label</string>
+    <string name="code_search_on_web">Web search</string>
 </resources>

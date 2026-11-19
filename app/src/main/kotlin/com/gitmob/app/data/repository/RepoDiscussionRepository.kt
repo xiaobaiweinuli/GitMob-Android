@@ -73,7 +73,9 @@ class RepoDiscussionRepository @Inject constructor(private val apolloClient: Apo
         filter: RepoDiscussionFilter,
         position: SearchContinuation? = null,
     ): ApiResult<RepoDiscussionPage> =
-        when (val result = apolloClient.query(
+        if (!validListSearch(keywords, owner, name, "discussion")) ApiResult.Failure(
+            com.gitmob.app.core.error.ApiError.UserVisible(com.gitmob.app.R.string.repo_list_search_invalid),
+        ) else when (val result = apolloClient.query(
             SearchRepoDiscussionsQuery(
                 owner = owner,
                 name = name,

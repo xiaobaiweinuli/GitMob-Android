@@ -142,7 +142,7 @@ class RepoDiscussionRepositoryTest {
         val page = (repository.searchDiscussions("o", "r", "help", filter) as ApiResult.Success).data
         assertEquals(7, page.items.single().number)
         assertTrue(page.categories.single().isAnswerable)
-        assertEquals(JsonPrimitive("repo:o/r \"help\" is:open category:\"General\" is:unanswered sort:date_created-desc"), takeVariables()["searchQuery"])
+        assertEquals(JsonPrimitive("repo:o/r help is:open category:\"General\" is:unanswered sort:date_created-desc"), takeVariables()["searchQuery"])
         server.enqueue(MockResponse().setBody("""{"data":{"repository":{$metadata,"discussions":{"totalCount":0,"nodes":[],$connection}}}}"""))
         repository.getDiscussions("o", "r", filter)
         assertEquals(JsonPrimitive("CAT1"), takeVariables()["categoryId"])

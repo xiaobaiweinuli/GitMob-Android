@@ -126,20 +126,23 @@ private fun RepositoryCreateOwner.toRepoCreateRoute() = RepoCreateRoute(
 )
 
 /** 外部 GitHub / Gist 链接目标 → 站内路由；浏览器分流与不支持的链接返回 null。 */
-private fun DeepLinkDestination.toRoute(): Route? = when (this) {
+internal fun DeepLinkDestination.toRoute(): Route? = when (this) {
     is DeepLinkDestination.GistDetail -> GistDetailRoute(id)
     is DeepLinkDestination.Profile -> ProfileRoute(login)
+    is DeepLinkDestination.Search -> if (category == null) SearchRoute(query = query)
+        else SearchCategoryRoute(query, category, repositoryScope = repositoryScope)
     is DeepLinkDestination.RepoOverview -> RepoDetailRoute(owner, repo)
-    is DeepLinkDestination.IssueList -> RepoIssuesRoute(owner, repo)
+    is DeepLinkDestination.RepoCodeSearch -> RepoCodeSearchRoute(owner, repo, initialQuery = query)
+    is DeepLinkDestination.IssueList -> RepoIssuesRoute(owner, repo, initialQuery = query)
     is DeepLinkDestination.IssueDetail -> RepoIssueDetailRoute(owner, repo, number)
     is DeepLinkDestination.FileView -> RepoFileDetailRoute(owner, repo, ref, path)
     is DeepLinkDestination.DirView -> RepoCodeRoute(owner, repo, ref, path)
     is DeepLinkDestination.CommitDetail -> RepoCommitDetailRoute(owner, repo, sha)
     is DeepLinkDestination.CommitList -> RepoCommitsRoute(owner, repo, ref, path)
     is DeepLinkDestination.PullRequestDetail -> RepoPullRequestDetailRoute(owner, repo, number)
-    is DeepLinkDestination.PullRequestList -> RepoPullRequestsRoute(owner, repo)
+    is DeepLinkDestination.PullRequestList -> RepoPullRequestsRoute(owner, repo, initialQuery = query)
     is DeepLinkDestination.DiscussionDetail -> RepoDiscussionDetailRoute(owner, repo, number)
-    is DeepLinkDestination.DiscussionList -> RepoDiscussionsRoute(owner, repo)
+    is DeepLinkDestination.DiscussionList -> RepoDiscussionsRoute(owner, repo, initialQuery = query)
     is DeepLinkDestination.Actions -> RepoActionsRoute(owner, repo)
     is DeepLinkDestination.WorkflowRun -> RepoWorkflowRunRoute(owner, repo, runId)
     is DeepLinkDestination.ReleaseList -> RepoReleasesRoute(owner, repo)
@@ -250,7 +253,10 @@ private fun LoggedInApp(
 ) {
     // Resolve before entryProvider installs each navigation entry's own store.
     val accountLibrary: AccountLibraryViewModel = hiltViewModel()
-    val externalRoute = deepLinkDestination?.toRoute()
+    val externalRoute = deepLinkDestination?.let { destination ->
+        val visit = rememberSaveable(destination) { java.util.UUID.randomUUID().toString() }
+        remember(destination, visit) { destination.toRoute()?.withSearchVisit(visit) }
+    }
     val navState = rememberGitMobNavState(startRoute = HomeRoute, initialRoute = externalRoute)
     val navigator = remember(navState, epoch) { GitMobNavigator(navState, epoch) }
     val activity = LocalActivity.current
@@ -286,13 +292,13 @@ private fun LoggedInApp(
     val openDocumentExternal: (String) -> Unit = { url ->
         val destination = DeepLinkRouter.parse(url.toUri())
         if (destination == DeepLinkDestination.Unsupported) openExternalUrl(url)
-        else destination.toRoute()?.let { navigator.navigate(it) }
+        else destination.toRoute()?.let { navigator.navigate(it.withSearchVisit(java.util.UUID.randomUUID().toString())) }
     }
     LaunchedEffect(deepLinkDestination) {
-        val destination = deepLinkDestination ?: return@LaunchedEffect
+        val route = externalRoute ?: return@LaunchedEffect
         if (!epoch.isCurrent) return@LaunchedEffect
         // 外部入口直接进入；重复目标保持本次转场模式，过期账号不能消费待处理入口。
-        destination.toRoute()?.let { navigator.navigate(it, withoutAnimation = true) }
+        navigator.navigate(route, withoutAnimation = true)
         onDeepLinkConsumed()
     }
 
@@ -302,6 +308,7 @@ private fun LoggedInApp(
             clicks.navigate(if (item.isPullRequest) RepoPullRequestDetailRoute(item.repoOwner, item.repoName, item.number)
                 else RepoIssueDetailRoute(item.repoOwner, item.repoName, item.number))
         },
+        discussion = { item -> clicks.navigate(RepoDiscussionDetailRoute(item.repoOwner, item.repoName, item.number)) },
         account = { clicks.navigate(ProfileRoute(it)) },
         file = { item ->
             val target = item.target
@@ -317,16 +324,17 @@ private fun LoggedInApp(
                 onBack = { clicks.goBack() },
                 onCategory = { query, category -> clicks.navigate(SearchCategoryRoute(query, category)) },
                 actions = searchActions(clicks),
+                initialQuery = route.query,
             )
         }
         entry<RepoCodeSearchRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
-            RepoCodeSearchScreen(route.owner, route.name, route.path, route.isFork,
+            RepoCodeSearchScreen(route.owner, route.name, route.path, includeForks = route.isFork != false, initialQuery = route.initialQuery,
                 onBack = { clicks.goBack() }, onFile = searchActions(clicks).file)
         }
         entry<SearchCategoryRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
-            SearchCategoryScreen(route.query, route.category, onBack = { clicks.goBack() }, actions = searchActions(clicks))
+            SearchCategoryScreen(route.query, route.category, repositoryScope = route.repositoryScope, onBack = { clicks.goBack() }, actions = searchActions(clicks))
         }
         // ──────────────────────────────────────────────────────────────
         // Tab 根路由（5 个）：各自独立 Screen，不再包 MainTabHost / HorizontalPager
@@ -591,6 +599,7 @@ private fun LoggedInApp(
         entry<RepoIssuesRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
             RepoIssueListScreen(
+                initialQuery = route.initialQuery,
                 owner = route.owner,
                 name = route.name,
                 permission = route.permission,
@@ -649,6 +658,7 @@ private fun LoggedInApp(
         entry<RepoPullRequestsRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
             RepoPullRequestListScreen(
+                initialQuery = route.initialQuery,
                 owner = route.owner,
                 name = route.name,
                 permission = route.permission,
@@ -733,6 +743,7 @@ private fun LoggedInApp(
         entry<RepoDiscussionsRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
             RepoDiscussionListScreen(
+                initialQuery = route.initialQuery,
                 owner = route.owner,
                 name = route.name,
                 permission = route.permission,

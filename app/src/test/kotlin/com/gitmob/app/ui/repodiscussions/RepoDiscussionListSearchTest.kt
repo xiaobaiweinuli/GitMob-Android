@@ -27,6 +27,26 @@ class RepoDiscussionListSearchTest {
     @get:Rule val accounts = AccountSessionRule()
     @get:Rule val dispatcher = MainDispatcherRule()
 
+    @Test fun `discussion category title uses search until a native category is selected`() = runTest(accounts.context) {
+        val category = RepoDiscussionCategory("C", "Help", "", null, true)
+        val filter = RepoDiscussionFilter(answered = true)
+        val page = RepoDiscussionPage("R", RepoPermission.READ, RepoCapabilities.NONE, true, listOf(category), 0, emptyList(), false, null)
+        val repository = mockk<RepoDiscussionRepository>()
+        coEvery { repository.getDiscussions("o", "r", any(), null) } returns ApiResult.Success(page)
+        coEvery { repository.searchDiscussions("o", "r", "", any(), null) } returns ApiResult.Success(page)
+        val vm = RepoDiscussionListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r", null, "state:open is:answered")
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.getDiscussions("o", "r", filter, null) }
+        vm.submitSearch("category:Help")
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.searchDiscussions("o", "r", "", filter.copy(categoryTitle = "Help"), null) }
+        vm.setCategory(category)
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.getDiscussions("o", "r", filter.copy(category = category), null) }
+        vm.viewModelScope.cancel()
+    }
+
     @Test
     fun `discussion change refreshes category search and clearing keeps the same category`() = runTest(accounts.context) {
         val category = RepoDiscussionCategory("C", "Help", "", null, true)
