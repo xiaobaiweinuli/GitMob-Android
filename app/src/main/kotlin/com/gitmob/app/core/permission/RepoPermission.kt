@@ -28,6 +28,8 @@ data class RepoCapabilities(
     val canToggleIssues: Boolean = canDeleteRepo,
     val canToggleDiscussions: Boolean = canManageSomeSettings,
     val canDeleteActionRuns: Boolean = canPush,
+    /** 入口资格；读取名单仍取决于当前凭据授权。公开仓库的 READ 不能证明协作者身份。 */
+    val canViewStargazers: Boolean = false,
 ) {
     companion object {
         val NONE = RepoCapabilities(
@@ -46,24 +48,28 @@ fun RepoPermission.toCapabilities(isArchived: Boolean = false): RepoCapabilities
         canDeleteIssues = true,
         canManageSomeSettings = true, canDeleteRepo = true,
         canManageCollaborators = true, canManageBranchProtection = true,
+        canViewStargazers = true,
     )
     RepoPermission.MAINTAIN -> RepoCapabilities(
         canPush = true, canPushToProtectedBranch = true, canManageIssuesAndPRs = true,
         canDeleteIssues = false,
         canManageSomeSettings = true, canDeleteRepo = false,
         canManageCollaborators = false, canManageBranchProtection = false,
+        canViewStargazers = true,
     )
     RepoPermission.WRITE -> RepoCapabilities(
         canPush = true, canPushToProtectedBranch = false, canManageIssuesAndPRs = true,
         canDeleteIssues = false,
         canManageSomeSettings = false, canDeleteRepo = false,
         canManageCollaborators = false, canManageBranchProtection = false,
+        canViewStargazers = true,
     )
     RepoPermission.TRIAGE -> RepoCapabilities(
         canPush = false, canPushToProtectedBranch = false, canManageIssuesAndPRs = true,
         canDeleteIssues = false,
         canManageSomeSettings = false, canDeleteRepo = false,
         canManageCollaborators = false, canManageBranchProtection = false,
+        canViewStargazers = true,
     )
     RepoPermission.READ, RepoPermission.NONE -> RepoCapabilities.NONE
     }

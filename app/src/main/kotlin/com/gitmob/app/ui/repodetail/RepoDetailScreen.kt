@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -82,6 +83,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -468,6 +471,8 @@ private fun RepoHeader(
             modifier = Modifier.padding(top = if (detail.languageName != null) 6.dp else 8.dp),
         )
 
+        val unstarLabel = stringResource(R.string.repo_unstar)
+        val manageListsLabel = stringResource(R.string.repo_manage_star_lists)
         val selectedLists = lists.filter { it.id in selectedListIds }
         val firstListName = selectedLists.firstOrNull()?.name?.take(4)
         val listLabel = when {
@@ -482,14 +487,6 @@ private fun RepoHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedButton(onClick = onStargazersClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
-                Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(stringResource(R.string.repo_stargazers_count, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
-            }
-            OutlinedButton(onClick = onForksClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
-                Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(stringResource(R.string.repo_forks_count, detail.forkCount), modifier = Modifier.padding(start = 4.dp))
-            }
             if (detail.viewerHasStarred) {
                 Surface(
                     modifier = Modifier.minimumInteractiveComponentSize().height(40.dp),
@@ -506,13 +503,14 @@ private fun RepoHeader(
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor = MaterialTheme.colorScheme.onPrimary,
                             ),
-                            modifier = Modifier.height(40.dp),
+                            modifier = Modifier.height(40.dp).semantics { onClick(label = unstarLabel, action = null) },
                         ) {
                             Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Text(stringResource(R.string.repo_starred), modifier = Modifier.padding(start = 4.dp))
+                            Text(stringResource(R.string.repo_starred, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
                         }
                         VerticalDivider(Modifier.fillMaxHeight())
-                        TextButton(onClick = onListsClick, enabled = canAct, shape = RectangleShape, modifier = Modifier.height(40.dp)) {
+                        TextButton(onClick = onListsClick, enabled = canAct, shape = RectangleShape,
+                            modifier = Modifier.height(40.dp).semantics { onClick(label = manageListsLabel, action = null) }) {
                             Text(listLabel)
                             Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
                         }
@@ -520,9 +518,18 @@ private fun RepoHeader(
                 }
             } else {
                 OutlinedButton(onClick = onStarClick, enabled = canStar, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
-                    Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(stringResource(R.string.repo_star), modifier = Modifier.padding(start = 4.dp))
+                    Icon(Icons.Outlined.StarBorder, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Text(stringResource(R.string.repo_star, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
                 }
+            }
+            if (detail.capabilities.canViewStargazers) {
+                OutlinedButton(onClick = onStargazersClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
+                    Text(stringResource(R.string.repo_stargazers))
+                }
+            }
+            OutlinedButton(onClick = onForksClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
+                Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(stringResource(R.string.repo_forks_count, detail.forkCount), modifier = Modifier.padding(start = 4.dp))
             }
             if (!detail.ownerIsViewer) {
                 OutlinedButton(onClick = onForkClick, enabled = canAct && detail.forkingAllowed && !isForking, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {

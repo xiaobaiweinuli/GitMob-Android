@@ -11,6 +11,7 @@ import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.data.model.PagedStarredRepos
+import com.gitmob.app.data.model.RepoStarState
 import com.gitmob.app.data.model.StarredRepo
 import com.gitmob.app.data.model.UserListSummary
 import com.gitmob.app.graphql.AddStarMutation
@@ -19,6 +20,7 @@ import com.gitmob.app.graphql.DeleteListMutation
 import com.gitmob.app.graphql.ListItemIdsQuery
 import com.gitmob.app.graphql.ListItemsQuery
 import com.gitmob.app.graphql.ListsContainingRepoQuery
+import com.gitmob.app.graphql.RepositoryStarStateQuery
 import com.gitmob.app.graphql.RemoveStarMutation
 import com.gitmob.app.graphql.UpdateListMutation
 import com.gitmob.app.graphql.UpdateListsForItemMutation
@@ -281,24 +283,41 @@ class StarRepository @Inject constructor(
             }
         }
 
-    /** 取消星标（不影响该仓库在已有列表里的归属，GitHub 服务端自己决定，客户端不用管） */
-    suspend fun unstarRepo(repoId: String): ApiResult<Unit> =
+    /** 返回服务端状态，星标数量由同一次 mutation 响应提供。 */
+    suspend fun unstarRepo(repoId: String): ApiResult<RepoStarState> =
         when (val result = apolloClient.mutation(RemoveStarMutation(repoId)).executeAsApiResult()) {
             is ApiResult.Failure -> result
-            is ApiResult.Success -> safeCall {
-                // 取消星标后，viewer.starredRepositories 的 totalCount 和节点列表都会变，失效缓存
-                viewerStarredCache.invalidate(Unit)
-            }
+            is ApiResult.Success -> resolveStarState(
+                repoId,
+                result.data.removeStar?.starrable?.let { RepoStarState(it.viewerHasStarred, it.stargazerCount) },
+            )
         }
 
-    suspend fun starRepo(repoId: String): ApiResult<Unit> =
+    suspend fun starRepo(repoId: String): ApiResult<RepoStarState> =
         when (val result = apolloClient.mutation(AddStarMutation(repoId)).executeAsApiResult()) {
             is ApiResult.Failure -> result
-            is ApiResult.Success -> safeCall {
-                // 加星标后失效缓存
-                viewerStarredCache.invalidate(Unit)
+            is ApiResult.Success -> resolveStarState(
+                repoId,
+                result.data.addStar?.starrable?.let { RepoStarState(it.viewerHasStarred, it.stargazerCount) },
+            )
+        }
+
+    private suspend fun resolveStarState(repoId: String, state: RepoStarState?): ApiResult<RepoStarState> {
+        // 写请求已经完成，即使后续状态核对失败，也不能继续使用旧星标缓存。
+        viewerStarredCache.invalidate(Unit)
+        if (state != null) return ApiResult.Success(state)
+        return when (val result = apolloClient.query(RepositoryStarStateQuery(repoId)).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> {
+                val repository = result.data.node?.onRepository
+                if (repository == null) {
+                    ApiResult.Failure(ApiError.UserVisible(R.string.error_repo_star_state_refresh))
+                } else {
+                    ApiResult.Success(RepoStarState(repository.viewerHasStarred, repository.stargazerCount))
+                }
             }
         }
+    }
 
     private fun ViewerListsQuery.Node.toSummary() = UserListSummary(
         id = id, name = name, slug = slug, description = description,

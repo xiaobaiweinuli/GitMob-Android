@@ -239,12 +239,15 @@
     <!-- Repository detail -->
     <string name="repo_forked_from">" Forked from %1$s/%2$s"</string>
     <string name="repo_template">Template</string>
-    <string name="repo_stargazers">Stargazers</string>
     <string name="repo_forks">Direct forks</string>
-    <string name="repo_stargazers_count">Stars %1$d</string>
     <string name="repo_forks_count">Forks %1$d</string>
-    <string name="repo_star">Star</string>
-    <string name="repo_starred">Starred</string>
+    <string name="repo_stargazers">Stargazers</string>
+    <string name="repo_stargazers_unavailable">Stargazers are currently unavailable</string>
+    <string name="repo_star">Star %1$d</string>
+    <string name="repo_starred">Starred %1$d</string>
+    <string name="repo_unstar">Unstar</string>
+    <string name="repo_manage_star_lists">Manage star lists</string>
+    <string name="error_repo_star_state_refresh">Could not confirm star status. Refresh before trying again.</string>
     <string name="repo_star_lists">Lists</string>
     <string name="repo_star_lists_summary">%1$s +%2$d</string>
     <string name="repo_star_lists_saved">Star lists saved</string>

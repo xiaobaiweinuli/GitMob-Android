@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.data.model.RepoStarState
 import com.gitmob.app.core.error.BannerEvent
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
@@ -294,13 +295,13 @@ class StarsViewModelTest {
         val bus = RepoUpdateEventBus()
         coEvery { starRepo.getLists() } returns ApiResult.Success(emptyList())
         coEvery { starRepo.getViewerStarred(after = null) } returns ApiResult.Success(fakeStarred("u", 3))
-        coEvery { starRepo.unstarRepo(any()) } returns ApiResult.Success(Unit)
+        coEvery { starRepo.unstarRepo(any()) } returns ApiResult.Success(RepoStarState(false, 24))
 
         val vm = StarsViewModel(starRepo, bus, ErrorEventBus(), accounts.session)
         vm.loadIfNeeded()
         val beforeSize = vm.state.value.repos.size // 3
         val target = vm.state.value.repos[1] // id=u-2, name=repo2, ownerLogin=u
-        val expectedCountAfter = (target.stargazerCount - 1).coerceAtLeast(0)
+        val expectedCountAfter = 24
 
         bus.eventsFor(accounts.session.epoch).test {
             vm.unstarRepo(target)
@@ -324,6 +325,25 @@ class StarsViewModelTest {
                 assertFalse(evt.isStarred)
                 assertEquals(expectedCountAfter, evt.stargazerCount)
             }
+            cancelAndIgnoreRemainingEvents()
+        }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `取消后服务器仍已星标时保留仓库并同步服务器数量`() = runTest {
+        val starRepo = mockk<StarRepository>()
+        coEvery { starRepo.getLists() } returns ApiResult.Success(emptyList())
+        coEvery { starRepo.getViewerStarred(after = null) } returns ApiResult.Success(fakeStarred("u", 1))
+        coEvery { starRepo.unstarRepo(any()) } returns ApiResult.Success(RepoStarState(true, 15))
+        val bus = RepoUpdateEventBus()
+        val vm = StarsViewModel(starRepo, bus, ErrorEventBus(), accounts.session)
+        vm.loadIfNeeded()
+
+        bus.eventsFor(accounts.session.epoch).test {
+            vm.unstarRepo(vm.state.value.repos.single())
+            assertEquals(15, vm.state.value.repos.single().stargazerCount)
+            assertEquals(RepoUpdateEvent.StarChanged("u", "repo1", true, 15), awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
         vm.viewModelScope.cancel()

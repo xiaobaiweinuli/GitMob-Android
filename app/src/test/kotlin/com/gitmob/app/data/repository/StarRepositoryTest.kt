@@ -5,6 +5,7 @@ import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.data.model.RepoStarState
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.testutil.AccountSessionRule
@@ -322,12 +323,83 @@ class StarRepositoryTest {
     }
 
     @Test
-    fun `unstarRepo成功时返回Unit`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"removeStar":{"clientMutationId":null}}}"""))
+    fun `标星直接返回服务器状态和数量不额外查询`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody("""{"data":{"addStar":{"starrable":{"__typename":"Repository","viewerHasStarred":true,"stargazerCount":910}}}}"""))
 
-        val result = repository.unstarRepo("R1")
+        assertEquals(ApiResult.Success(RepoStarState(true, 910)), repository.starRepo("R1"))
+        assertEquals(1, server.requestCount)
+        assertStarRequest("AddStar", "starrableId")
+    }
 
-        assertTrue(result is ApiResult.Success)
+    @Test
+    fun `取消最后一颗星返回false和零`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody("""{"data":{"removeStar":{"starrable":{"__typename":"Repository","viewerHasStarred":false,"stargazerCount":0}}}}"""))
+
+        assertEquals(ApiResult.Success(RepoStarState(false, 0)), repository.unstarRepo("R1"))
+        assertEquals(1, server.requestCount)
+        assertStarRequest("RemoveStar", "starrableId")
+    }
+
+    @Test
+    fun `标星响应缺少对象时只按ID读回一次且不重复写入`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody("""{"data":{"addStar":{"starrable":null}}}"""))
+        server.enqueue(MockResponse().setBody("""{"data":{"node":{"__typename":"Repository","viewerHasStarred":true,"stargazerCount":912}}}"""))
+
+        assertEquals(ApiResult.Success(RepoStarState(true, 912)), repository.starRepo("R1"))
+        assertEquals(2, server.requestCount)
+        assertStarRequest("AddStar", "starrableId")
+        assertStarRequest("RepositoryStarState", "id")
+    }
+
+    @Test
+    fun `取消响应缺少对象时使用读回的状态而不假定取消成功`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody("""{"data":{"removeStar":null}}"""))
+        server.enqueue(MockResponse().setBody("""{"data":{"node":{"__typename":"Repository","viewerHasStarred":true,"stargazerCount":913}}}"""))
+
+        assertEquals(ApiResult.Success(RepoStarState(true, 913)), repository.unstarRepo("R1"))
+        assertEquals(2, server.requestCount)
+        assertStarRequest("RemoveStar", "starrableId")
+        assertStarRequest("RepositoryStarState", "id")
+    }
+
+    @Test
+    fun `读回仓库不可见时提示刷新且不伪造零计数`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody("""{"data":{"removeStar":{"starrable":null}}}"""))
+        server.enqueue(MockResponse().setBody("""{"data":{"node":null}}"""))
+
+        assertEquals(
+            ApiResult.Failure(ApiError.UserVisible(com.gitmob.app.R.string.error_repo_star_state_refresh)),
+            repository.unstarRepo("R1"),
+        )
+        assertEquals(2, server.requestCount)
+        assertStarRequest("RemoveStar", "starrableId")
+        assertStarRequest("RepositoryStarState", "id")
+    }
+
+    @Test
+    fun `写入失败不读回也不重试`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setResponseCode(403))
+
+        assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.starRepo("R1"))
+        assertEquals(1, server.requestCount)
+        assertStarRequest("AddStar", "starrableId")
+    }
+
+    @Test
+    fun `只读核对失败不重新发送写请求`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody("""{"data":{"addStar":{"starrable":null}}}"""))
+        server.enqueue(MockResponse().setResponseCode(403))
+
+        assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.starRepo("R1"))
+        assertEquals(2, server.requestCount)
+        assertStarRequest("AddStar", "starrableId")
+        assertStarRequest("RepositoryStarState", "id")
+    }
+
+    private fun assertStarRequest(operation: String, idVariable: String) {
+        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        assertEquals(JsonPrimitive(operation), body["operationName"])
+        assertEquals(JsonPrimitive("R1"), body.getValue("variables").jsonObject[idVariable])
     }
 
     private fun membershipItems(

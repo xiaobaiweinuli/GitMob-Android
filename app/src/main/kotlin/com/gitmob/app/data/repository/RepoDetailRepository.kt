@@ -251,13 +251,18 @@ class RepoDetailRepository @Inject constructor(
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
-                val connection = result.data.repository?.stargazers
+                val repository = result.data.repository
                     ?: throw UserVisibleException(R.string.error_repo_not_found)
+                val connection = repository.stargazers
+                val users = connection.nodes.orEmpty().filterNotNull().map {
+                    SimpleUser(it.login, it.name, it.avatarUrl, it.bio)
+                }
+                if (after == null && repository.stargazerCount > 0 && users.isEmpty()) {
+                    throw UserVisibleException(R.string.repo_stargazers_unavailable)
+                }
                 PagedUsers(
-                    totalCount = connection.totalCount,
-                    users = connection.nodes.orEmpty().filterNotNull().map {
-                        SimpleUser(it.login, it.name, it.avatarUrl, it.bio)
-                    },
+                    totalCount = repository.stargazerCount,
+                    users = users,
                     hasNextPage = connection.pageInfo.hasNextPage,
                     endCursor = connection.pageInfo.endCursor,
                 )

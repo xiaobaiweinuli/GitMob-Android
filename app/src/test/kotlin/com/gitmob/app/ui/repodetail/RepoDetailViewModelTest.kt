@@ -17,6 +17,7 @@ import com.gitmob.app.core.permission.RepoCapabilities
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.RepoDetail
+import com.gitmob.app.data.model.RepoStarState
 import com.gitmob.app.data.model.cardData
 import com.gitmob.app.data.model.RepoReadme
 import com.gitmob.app.data.model.CreatedRepository
@@ -65,7 +66,7 @@ import org.junit.Test
  *   - init + load 成功：detail 填充 + README render 后成 HTML，currentRef 用默认分支
  *   - README 缺失：readmeHtml 为 null，不算整页失败
  *   - detail 加载失败时 loadFailed 为 true，retry 成功
- *   - toggleStar 未星标转已星标：stargazerCount 加 1 且广播 StarChanged 事件
+ *   - toggleStar 未星标转已星标：使用服务端 stargazerCount 且广播 StarChanged 事件
  *   - toggleStar 失败：不改任何状态
  *   - 跨 VM 事件：BranchSwitched 触发 currentRef 更新并重新加载 README
  *   - 并发：refresh + toggleStar 顺序执行不崩溃
@@ -222,15 +223,15 @@ class RepoDetailViewModelTest {
     }
 
     @Test
-    fun `toggleStar未星标转已星标 stargazerCount加1并广播StarChanged事件`() = runTest {
+    fun `toggleStar使用服务端数量而非本地加1并广播StarChanged事件`() = runTest {
         val detailRepo = mockk<RepoDetailRepository>()
         coEvery { detailRepo.getRepoDetail("o", "n") } returns ApiResult.Success(
-            fakeDetail(viewerHasStarred = false, stargazerCount = 9),
+            fakeDetail(viewerHasStarred = false, stargazerCount = 907),
         )
         coEvery { detailRepo.getReadme(any(), any(), any()) } returns
                 ApiResult.Failure(ApiError.Unknown("no"))
         val starRepo = mockk<StarRepository>()
-        coEvery { starRepo.starRepo(any()) } returns ApiResult.Success(Unit)
+        coEvery { starRepo.starRepo(any()) } returns ApiResult.Success(RepoStarState(true, 910))
         coEvery { starRepo.getLists() } returns ApiResult.Success(emptyList())
         coEvery { starRepo.getListsContaining(any()) } returns ApiResult.Success(emptySet())
         val bus = RepoUpdateEventBus()
@@ -238,17 +239,49 @@ class RepoDetailViewModelTest {
         val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
         vm.init("o", "n")
         assertFalse(vm.state.value.detail!!.viewerHasStarred)
-        assertEquals(9, vm.state.value.detail!!.stargazerCount)
+        assertEquals(907, vm.state.value.detail!!.stargazerCount)
 
         bus.eventsFor(accounts.session.epoch).test {
             vm.toggleStar()
             assertTrue(vm.state.value.detail!!.viewerHasStarred)
-            assertEquals(10, vm.state.value.detail!!.stargazerCount)
+            assertEquals(910, vm.state.value.detail!!.stargazerCount)
             val evt = awaitItem() as RepoUpdateEvent.StarChanged
             assertEquals(true, evt.isStarred)
-            assertEquals(10, evt.stargazerCount)
+            assertEquals(910, evt.stargazerCount)
             cancelAndIgnoreRemainingEvents()
         }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `取消最后一颗星使用服务端零计数`() = runTest {
+        val stars = listRepository()
+        coEvery { stars.unstarRepo("R_123") } returns ApiResult.Success(RepoStarState(false, 0))
+        val vm = listViewModel(stars, detail = fakeDetail(viewerHasStarred = true, stargazerCount = 1))
+
+        vm.toggleStar()
+
+        assertFalse(vm.state.value.detail!!.viewerHasStarred)
+        assertEquals(0, vm.state.value.detail!!.stargazerCount)
+        assertFalse(vm.state.value.isStarring)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `详情同步其他页面的星标状态并忽略其他仓库`() = runTest(accounts.context) {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.getRepoDetail("o", "n") } returns ApiResult.Success(fakeDetail(viewerHasStarred = true))
+        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
+        val bus = RepoUpdateEventBus()
+        val vm = RepoDetailViewModel(details, mockk(), listRepository(), makeFakeRenderer(), bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        vm.init("o", "n")
+
+        bus.emit(RepoUpdateEvent.StarChanged("other", "n", false, 999))
+        assertEquals(42, vm.state.value.detail!!.stargazerCount)
+        assertTrue(vm.state.value.detail!!.viewerHasStarred)
+        bus.emit(RepoUpdateEvent.StarChanged("o", "n", false, 24))
+        assertEquals(24, vm.state.value.detail!!.stargazerCount)
+        assertFalse(vm.state.value.detail!!.viewerHasStarred)
         vm.viewModelScope.cancel()
     }
 
@@ -309,8 +342,8 @@ class RepoDetailViewModelTest {
         coEvery { detailRepo.getReadme(any(), any(), any()) } returns
                 ApiResult.Failure(ApiError.Unknown("no"))
         val starRepo = mockk<StarRepository>()
-        coEvery { starRepo.starRepo(any()) } returns ApiResult.Success(Unit)
-        coEvery { starRepo.unstarRepo(any()) } returns ApiResult.Success(Unit)
+        coEvery { starRepo.starRepo(any()) } returns ApiResult.Success(RepoStarState(true, 910))
+        coEvery { starRepo.unstarRepo(any()) } returns ApiResult.Success(RepoStarState(false, 41))
         coEvery { starRepo.getLists() } returns ApiResult.Success(emptyList())
         coEvery { starRepo.getListsContaining(any()) } returns ApiResult.Success(emptySet())
 
@@ -718,8 +751,8 @@ class RepoDetailViewModelTest {
         val stars = listRepository()
         val pending = CompletableDeferred<ApiResult<Set<String>>>()
         coEvery { stars.getListsContaining("R_123") } coAnswers { withContext(NonCancellable) { pending.await() } }
-        coEvery { stars.unstarRepo("R_123") } returns ApiResult.Success(Unit)
-        coEvery { stars.starRepo("R_123") } returns ApiResult.Success(Unit)
+        coEvery { stars.unstarRepo("R_123") } returns ApiResult.Success(RepoStarState(false, 41))
+        coEvery { stars.starRepo("R_123") } returns ApiResult.Success(RepoStarState(true, 42))
         coEvery { stars.updateListsForItem("R_123", setOf("L1", "L2")) } returns ApiResult.Success(Unit)
         val vm = listViewModel(stars)
 
@@ -793,13 +826,14 @@ class RepoDetailViewModelTest {
     fun `in flight star request blocks all action entries`() = runTest {
         val stars = listRepository()
         val details = mockk<RepoDetailRepository>()
-        val pending = CompletableDeferred<ApiResult<Unit>>()
+        val pending = CompletableDeferred<ApiResult<RepoStarState>>()
         coEvery { stars.unstarRepo("R_123") } coAnswers { pending.await() }
         val vm = listViewModel(stars, details, fakeDetail(viewerHasStarred = true, capabilities = RepoPermission.ADMIN.toCapabilities()))
 
         vm.toggleStar()
         assertTrue(vm.state.value.isStarring)
         assertFalse(vm.state.value.actionsEnabled)
+        vm.toggleStar()
         vm.toggleStar()
         vm.createFork()
         vm.openStarListSelector()
@@ -809,7 +843,7 @@ class RepoDetailViewModelTest {
         assertNull(vm.state.value.managementAction)
         coVerify(exactly = 1) { stars.unstarRepo("R_123") }
         coVerify(exactly = 0) { details.createFork(any(), any()) }
-        pending.complete(ApiResult.Success(Unit))
+        pending.complete(ApiResult.Success(RepoStarState(false, 0)))
         advanceUntilIdle()
         assertTrue(vm.state.value.actionsEnabled)
         vm.viewModelScope.cancel()

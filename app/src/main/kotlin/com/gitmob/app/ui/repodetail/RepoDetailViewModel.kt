@@ -204,6 +204,9 @@ class RepoDetailViewModel @Inject constructor(
                     is RepoUpdateEvent.WatchStateChanged -> _state.update {
                         it.copy(detail = it.detail?.copy(viewerSubscription = event.viewerSubscription, watcherCount = event.watcherCount))
                     }
+                    is RepoUpdateEvent.StarChanged -> _state.update {
+                        it.copy(detail = it.detail?.copy(viewerHasStarred = event.isStarred, stargazerCount = event.stargazerCount))
+                    }
                     is RepoUpdateEvent.RepositoryChanged -> _state.update { it.copy(detail = event.detail) }
                     is RepoUpdateEvent.BranchSynced -> if (event.ref == _state.value.currentRef) loadReadme(refreshResources = true)
                     is RepoUpdateEvent.CodeChanged -> if (event.ref == _state.value.currentRef) loadReadme(refreshResources = true)
@@ -327,25 +330,25 @@ class RepoDetailViewModel @Inject constructor(
         _state.update { it.copy(isStarring = true, isLoadingStarLists = false, starListsLoaded = false) }
         viewModelScope.launch {
             try {
-            val result = if (detail.viewerHasStarred) {
-                starRepository.unstarRepo(detail.id)
-            } else {
-                starRepository.starRepo(detail.id)
-            }
-            when (result) {
-                is ApiResult.Success -> {
-                    val newStarred = !detail.viewerHasStarred
-                    val newCount = detail.stargazerCount + if (detail.viewerHasStarred) -1 else 1
-                    _state.update { state ->
-                        state.copy(
-                            detail = state.detail?.copy(viewerHasStarred = newStarred, stargazerCount = newCount),
-                        )
-                    }
-                    // 广播给"仓库"/"星标"两个 Tab 的卡片列表，让它们同步更新，不用各自重新拉取
-                    repoUpdateEventBus.emit(RepoUpdateEvent.StarChanged(owner, name, newStarred, newCount))
+                val result = if (detail.viewerHasStarred) {
+                    starRepository.unstarRepo(detail.id)
+                } else {
+                    starRepository.starRepo(detail.id)
                 }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
-            }
+                when (result) {
+                    is ApiResult.Success -> {
+                        val newStarred = result.data.viewerHasStarred
+                        val newCount = result.data.stargazerCount
+                        _state.update { state ->
+                            state.copy(
+                                detail = state.detail?.copy(viewerHasStarred = newStarred, stargazerCount = newCount),
+                            )
+                        }
+                        // 广播给"仓库"/"星标"两个 Tab 的卡片列表，让它们同步更新，不用各自重新拉取
+                        repoUpdateEventBus.emit(RepoUpdateEvent.StarChanged(owner, name, newStarred, newCount))
+                    }
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                }
             } finally {
                 _state.update { it.copy(isStarring = false) }
                 loadStarLists()

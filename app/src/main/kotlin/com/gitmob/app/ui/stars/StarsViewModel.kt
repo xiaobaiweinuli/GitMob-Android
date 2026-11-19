@@ -218,14 +218,18 @@ class StarsViewModel @Inject constructor(
             when (val result = starRepository.unstarRepo(repo.id)) {
                 is ApiResult.Success -> {
                     _state.update { state ->
-                        state.copy(repos = state.repos.filterNot { it.id == repo.id })
+                        state.copy(repos = if (result.data.viewerHasStarred) {
+                            state.repos.map { if (it.id == repo.id) it.copy(stargazerCount = result.data.stargazerCount) else it }
+                        } else {
+                            state.repos.filterNot { it.id == repo.id }
+                        })
                     }
                     repoUpdateEventBus.emit(
                         RepoUpdateEvent.StarChanged(
                             owner = repo.ownerLogin,
                             name = repo.name,
-                            isStarred = false,
-                            stargazerCount = (repo.stargazerCount - 1).coerceAtLeast(0),
+                            isStarred = result.data.viewerHasStarred,
+                            stargazerCount = result.data.stargazerCount,
                         ),
                     )
                 }

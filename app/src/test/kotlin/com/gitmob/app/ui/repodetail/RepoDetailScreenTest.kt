@@ -42,6 +42,7 @@ import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.RepoDetail
+import com.gitmob.app.data.model.RepoStarState
 import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.data.model.RepositoryCreateOwnerPage
 import com.gitmob.app.data.model.RepositoryCreateOwnerType
@@ -89,6 +90,7 @@ class RepoDetailScreenTest {
     private lateinit var viewModel: RepoDetailViewModel
     private lateinit var libraryViewModel: com.gitmob.app.ui.library.LibraryViewModel
     private var openedHomepage: String? = null
+    private var openedStargazers = 0
     private var addressChanges = 0
     private val target = RepositoryCreateOwner("O1", "target", "Target", null, RepositoryCreateOwnerType.ORGANIZATION, true)
 
@@ -157,27 +159,53 @@ class RepoDetailScreenTest {
     fun `action strip preserves order and joins star and lists without a gap`() {
         render()
         val actionNodes = listOf(
-            composeRule.onNodeWithText(context.getString(R.string.repo_stargazers_count, 42)),
-            composeRule.onNodeWithText(context.getString(R.string.repo_forks_count, 7)),
-            node(R.string.repo_starred),
+            node(R.string.repo_starred, 42),
             node(R.string.repo_star_lists),
+            node(R.string.repo_forks_count, 7),
             node(R.string.repo_fork),
             composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_notifications)),
         ).map { it.fetchSemanticsNode() }
 
         assertTrue(actionNodes.zipWithNext().all { (first, second) -> first.positionInRoot.x < second.positionInRoot.x })
-        val star = actionNodes[2]
-        val lists = actionNodes[3]
+        val star = actionNodes[0]
+        val lists = actionNodes[1]
         val gap = lists.positionInRoot.x - star.positionInRoot.x - star.size.width
         assertTrue("Joined segments must share a divider, actual gap: $gap", gap in 0f..3f)
         assertEquals(star.size.height, lists.size.height)
-        node(R.string.repo_starred).assertHeightIsEqualTo(40.dp)
+        node(R.string.repo_starred, 42).assertHeightIsEqualTo(40.dp)
         node(R.string.repo_star_lists).assertHeightIsEqualTo(40.dp)
-        composeRule.onNodeWithText(context.getString(R.string.repo_stargazers_count, 42)).assertHeightIsEqualTo(40.dp)
         coVerify(exactly = 1) { stars.getLists() }
         node(R.string.repo_fork).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_notifications))
             .performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `star button displays server counts and disables repeat clicks while pending`() {
+        val pending = CompletableDeferred<ApiResult<RepoStarState>>()
+        coEvery { stars.starRepo("R1") } coAnswers { pending.await() }
+        coEvery { stars.unstarRepo("R1") } returns ApiResult.Success(RepoStarState(false, 0))
+        render(detail().copy(viewerHasStarred = false, stargazerCount = 907))
+
+        node(R.string.repo_star, 907).performClick().assertIsNotEnabled()
+        composeRule.runOnIdle { pending.complete(ApiResult.Success(RepoStarState(true, 910))) }
+        node(R.string.repo_starred, 910).assertIsDisplayed().assertIsEnabled()
+        node(R.string.repo_star_lists).assertIsDisplayed()
+        node(R.string.repo_starred, 910).performClick()
+        node(R.string.repo_star, 0).assertIsDisplayed().assertIsEnabled()
+        node(R.string.repo_star_lists).assertDoesNotExist()
+        coVerify(exactly = 1) { stars.starRepo("R1") }
+        coVerify(exactly = 1) { stars.unstarRepo("R1") }
+    }
+
+    @Test
+    fun `star request failure keeps the count and restores the action`() {
+        coEvery { stars.starRepo("R1") } returns ApiResult.Failure(ApiError.Forbidden)
+        render(detail().copy(viewerHasStarred = false, stargazerCount = 907))
+
+        node(R.string.repo_star, 907).performClick().assertIsEnabled()
+        node(R.string.repo_star, 907).assertIsDisplayed()
+        node(R.string.repo_star_lists).assertDoesNotExist()
     }
 
     @Test
@@ -240,7 +268,7 @@ class RepoDetailScreenTest {
         coEvery { stars.getListsContaining("R1") } coAnswers { pending.await() }
         render()
 
-        node(R.string.repo_starred).assertIsEnabled()
+        node(R.string.repo_starred, 42).assertIsEnabled()
         node(R.string.repo_fork).performScrollTo().assertIsEnabled()
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_more)).assertIsEnabled()
         node(R.string.repo_star_lists).performScrollTo().assertIsEnabled().performClick()
@@ -350,7 +378,7 @@ class RepoDetailScreenTest {
         render()
         composeRule.runOnIdle { viewModel.openManagement(RepoManagementAction.NOTIFICATIONS) }
         assertTrue(viewModel.state.value.actionsEnabled)
-        node(R.string.repo_starred).assertIsEnabled()
+        node(R.string.repo_starred, 42).assertIsEnabled()
         node(R.string.repo_star_lists).assertIsEnabled()
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_more)).assertIsEnabled()
         coVerify(exactly = 0) { stars.unstarRepo(any()) }
@@ -391,7 +419,36 @@ class RepoDetailScreenTest {
         assertTrue(modals.all { it.actionsEnabled })
     }
 
-    private fun node(resource: Int) = composeRule.onNodeWithText(context.getString(resource))
+    @Test
+    fun stargazerEntryOpensListWithoutChangingStarState() {
+        render()
+        node(R.string.repo_stargazers).performScrollTo().performClick()
+        assertEquals(1, openedStargazers)
+        assertTrue(viewModel.state.value.detail!!.viewerHasStarred)
+        assertEquals(42, viewModel.state.value.detail!!.stargazerCount)
+        coVerify(exactly = 0) { stars.starRepo(any()) }
+        coVerify(exactly = 0) { stars.unstarRepo(any()) }
+        coVerify(exactly = 0) { repository.getStargazers(any(), any(), any()) }
+    }
+
+    @Test
+    fun publicReadPermissionHidesStargazerEntryButKeepsStarCount() {
+        render(detail().copy(permission = RepoPermission.READ, capabilities = RepoPermission.READ.toCapabilities()))
+        node(R.string.repo_stargazers).assertDoesNotExist()
+        node(R.string.repo_starred, 42).assertIsDisplayed()
+    }
+
+    @Test
+    fun triagePermissionShowsStargazersForUnstarredArchivedRepository() {
+        render(detail().copy(
+            viewerHasStarred = false, isArchived = true, permission = RepoPermission.TRIAGE,
+            capabilities = RepoPermission.TRIAGE.toCapabilities(isArchived = true),
+        ))
+        node(R.string.repo_stargazers).performScrollTo().performClick()
+        assertEquals(1, openedStargazers)
+    }
+
+    private fun node(resource: Int, vararg args: Any) = composeRule.onNodeWithText(context.getString(resource, *args))
 
     private fun openMenu() {
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_more)).performClick()
@@ -415,7 +472,7 @@ class RepoDetailScreenTest {
                     accountLibrary = accountLibrary,
                     owner = "octo", name = "repo", onBack = {}, onOwnerClick = {}, onForkSourceClick = { _, _ -> },
                     onHomepageClick = { openedHomepage = it }, onNavigateBranches = { _, _, _ -> }, onNavigateCode = {},
-                    onNavigateCommits = {}, onNavigateWatchers = {}, onNavigateStargazers = {}, onNavigateForks = {},
+                    onNavigateCommits = {}, onNavigateWatchers = {}, onNavigateStargazers = { openedStargazers++ }, onNavigateForks = {},
                     onNavigateIssues = { _, _ -> }, onNavigatePullRequests = {}, onNavigateDiscussions = {},
                     onNavigateActions = { _, _ -> }, onNavigateReleases = {}, onNavigateContributors = {},
                     onNavigateLicense = {}, onNavigatePlaceholder = {}, onRepositoryAddressChanged = { _, _ -> addressChanges++ },

@@ -108,14 +108,59 @@ class RepoDetailRepositoryTest {
     @Test
     fun `stargazers are mapped with cursor pagination`() = runTest(accounts.context) {
         server.enqueue(MockResponse().setBody(
-            """{"data":{"repository":{"stargazers":{"totalCount":2,"nodes":[{"login":"octocat","name":"Octo Cat","avatarUrl":"https://avatars.example.com/octocat","bio":"Hi"}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}""",
+            """{"data":{"repository":{"stargazerCount":2,"stargazers":{"nodes":[{"login":"octocat","name":"Octo Cat","avatarUrl":"https://avatars.example.com/octocat","bio":"Hi"}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}""",
         ))
 
-        val result = repository.getStargazers("octo", "repo") as ApiResult.Success
+        val result = repository.getStargazers("octo", "repo", "previous") as ApiResult.Success
+
+        assertEquals(2, result.data.totalCount)
+        val request = server.takeRequest().body.readUtf8()
+        assertTrue(request.contains("\"after\":\"previous\""))
 
         assertEquals("octocat", result.data.users.single().login)
         assertEquals("next", result.data.endCursor)
         assertTrue(result.data.hasNextPage)
+    }
+
+    @Test
+    fun `empty stargazers with a positive independent count report unavailable`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(
+            """{"data":{"repository":{"stargazerCount":12,"stargazers":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}""",
+        ))
+        val result = repository.getStargazers("octo", "repo") as ApiResult.Failure
+        assertEquals(ApiError.UserVisible(R.string.repo_stargazers_unavailable), result.error)
+    }
+
+    @Test
+    fun `zero stargazers is a valid empty list`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(
+            """{"data":{"repository":{"stargazerCount":0,"stargazers":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}""",
+        ))
+        val result = repository.getStargazers("octo", "repo") as ApiResult.Success
+        assertEquals(0, result.data.totalCount)
+        assertTrue(result.data.users.isEmpty())
+        assertFalse(result.data.hasNextPage)
+    }
+
+    @Test
+    fun `empty final stargazer page is allowed after a cursor`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(
+            """{"data":{"repository":{"stargazerCount":12,"stargazers":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}""",
+        ))
+        val result = repository.getStargazers("octo", "repo", "last") as ApiResult.Success
+        assertTrue(result.data.users.isEmpty())
+        assertFalse(result.data.hasNextPage)
+    }
+
+    @Test
+    fun `stargazer permission failures propagate without a fallback request`() = runTest(accounts.context) {
+        server.enqueue(MockResponse().setBody(
+            """{"data":{"repository":null},"errors":[{"type":"FORBIDDEN","path":["repository","stargazers"],"message":"Resource not accessible by personal access token"}]}""",
+        ))
+        val result = repository.getStargazers("octo", "repo") as ApiResult.Failure
+        val error = result.error as ApiError.GraphQLError
+        assertEquals("FORBIDDEN", error.errors.single().type)
+        assertEquals(1, server.requestCount)
     }
 
     @Test

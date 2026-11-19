@@ -236,12 +236,15 @@
     <!-- 儲存庫詳情 -->
     <string name="repo_forked_from">" 復刻自 %1$s/%2$s"</string>
     <string name="repo_template">範本</string>
-    <string name="repo_stargazers">加星號的使用者</string>
     <string name="repo_forks">直接復刻</string>
-    <string name="repo_stargazers_count">星標 %1$d</string>
     <string name="repo_forks_count">復刻 %1$d</string>
-    <string name="repo_star">加星號</string>
-    <string name="repo_starred">已加星號</string>
+    <string name="repo_stargazers">標星使用者</string>
+    <string name="repo_stargazers_unavailable">暫時無法取得標星使用者</string>
+    <string name="repo_star">加星號 %1$d</string>
+    <string name="repo_starred">已加星號 %1$d</string>
+    <string name="repo_unstar">取消星標</string>
+    <string name="repo_manage_star_lists">管理星標收藏分組</string>
+    <string name="error_repo_star_state_refresh">無法確認星標狀態，請重新整理後再試</string>
     <string name="repo_star_lists">清單</string>
     <string name="repo_star_lists_summary">%1$s +%2$d</string>
     <string name="repo_star_lists_saved">星標清單已儲存</string>

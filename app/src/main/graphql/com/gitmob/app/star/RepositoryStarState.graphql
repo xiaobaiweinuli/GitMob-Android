@@ -1,0 +1,6 @@
+# Mutation 未返回对象时只读核对状态，不重复发送写请求。
+query RepositoryStarState($id: ID!) {
+    node(id: $id) {
+        ... on Repository { viewerHasStarred stargazerCount }
+    }
+}

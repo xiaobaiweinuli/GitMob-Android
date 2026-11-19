@@ -1,8 +1,8 @@
 # 仓库标星用户；分页容量由 PageSize.USER_LIST 传入。
 query RepoStargazers($owner: String!, $name: String!, $after: String, $first: Int!) {
   repository(owner: $owner, name: $name) {
+    stargazerCount
     stargazers(first: $first, after: $after) {
-      totalCount
       nodes { login name avatarUrl bio }
       pageInfo { hasNextPage endCursor }
     }

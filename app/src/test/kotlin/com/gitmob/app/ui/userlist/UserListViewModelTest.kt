@@ -88,6 +88,28 @@ class UserListViewModelTest {
     }
 
     @Test
+    fun `repository stargazers retry a denied request and append the next page`() = runTest {
+        val detailRepository = mockk<RepoDetailRepository>()
+        coEvery { detailRepository.getStargazers("octo", "repo", null) } returnsMany listOf(
+            ApiResult.Failure(ApiError.Forbidden),
+            ApiResult.Success(PagedUsers(2, listOf(SimpleUser("first", null, null, null)), true, "next")),
+        )
+        coEvery { detailRepository.getStargazers("octo", "repo", "next") } returns ApiResult.Success(
+            PagedUsers(2, listOf(SimpleUser("second", null, null, null)), false, null),
+        )
+        val viewModel = viewModel(repoDetailRepository = detailRepository)
+        viewModel.initForRepoStargazers("octo", "repo")
+        assertEquals(true, viewModel.state.value.loadFailed)
+        coVerify(exactly = 1) { detailRepository.getStargazers("octo", "repo", null) }
+
+        viewModel.retry()
+        assertFalse(viewModel.state.value.loadFailed)
+        viewModel.loadMore()
+        assertEquals(listOf("first", "second"), viewModel.state.value.users.map { it.login })
+        assertFalse(viewModel.state.value.hasNextPage)
+    }
+
+    @Test
     fun `Gist stargazers use the shared paged user state`() = runTest {
         val gistRepository = mockk<GistRepository>()
         coEvery { gistRepository.getStargazers("node-id", null) } returns ApiResult.Success(

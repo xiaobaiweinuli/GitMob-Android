@@ -67,6 +67,18 @@ class RepoCapabilitiesTest {
     }
 
     @Test
+    fun `stargazer entry requires an unambiguous collaborator role and stays available when archived`() {
+        for (permission in listOf(RepoPermission.ADMIN, RepoPermission.MAINTAIN, RepoPermission.WRITE, RepoPermission.TRIAGE)) {
+            assertTrue(permission.toCapabilities().canViewStargazers)
+            assertTrue(permission.toCapabilities(isArchived = true).canViewStargazers)
+        }
+        for (permission in listOf(RepoPermission.READ, RepoPermission.NONE)) {
+            assertFalse(permission.toCapabilities().canViewStargazers)
+            assertFalse(permission.toCapabilities(isArchived = true).canViewStargazers)
+        }
+    }
+
+    @Test
     fun `action run deletion follows push permission and archived lock`() {
         assertTrue(RepoPermission.ADMIN.toCapabilities().canDeleteActionRuns)
         assertTrue(RepoPermission.MAINTAIN.toCapabilities().canDeleteActionRuns)
