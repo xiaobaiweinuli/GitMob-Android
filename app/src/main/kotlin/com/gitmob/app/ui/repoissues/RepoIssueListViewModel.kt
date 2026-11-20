@@ -42,7 +42,6 @@ data class RepoIssueListUiState(
     val assignableUsers: List<SimpleUser> = emptyList(),
     val templatePickerVisible: Boolean = false,
     val templatePickerLoading: Boolean = false,
-    val templateLoadFailed: Boolean = false,
     val templates: List<IssueTemplate> = emptyList(),
     val blankIssuesEnabled: Boolean = true,
     val invalidTemplateCount: Int = 0,
@@ -150,8 +149,8 @@ class RepoIssueListViewModel @Inject constructor(
     fun beginCreate() {
         val current = _state.value
         if (!current.viewerCanCreateIssues || current.templatePickerLoading) return
+        _state.update { it.copy(templatePickerLoading = true, templatePickerVisible = false, blankCreateRequested = false) }
         viewModelScope.launch {
-            _state.update { it.copy(templatePickerLoading = true, templateLoadFailed = false, templatePickerVisible = false, blankCreateRequested = false) }
             when (val result = repository.getIssueTemplates(owner, name)) {
                 is ApiResult.Success -> {
                     val templates = result.data
@@ -167,14 +166,14 @@ class RepoIssueListViewModel @Inject constructor(
                     }
                 }
                 is ApiResult.Failure -> {
+                    _state.update { it.copy(templatePickerLoading = false) }
                     errorEventBus.emit(result.error)
-                    _state.update { it.copy(templatePickerLoading = false, templateLoadFailed = true) }
                 }
             }
         }
     }
 
-    fun dismissTemplatePicker() = _state.update { it.copy(templatePickerVisible = false, templateLoadFailed = false) }
+    fun dismissTemplatePicker() = _state.update { it.copy(templatePickerVisible = false) }
     fun consumeBlankCreateRequest() = _state.update { it.copy(blankCreateRequested = false) }
 
     fun loadMore() {

@@ -12,6 +12,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
 import android.webkit.WebView
 import android.widget.FrameLayout
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +24,8 @@ import com.gitmob.app.data.model.DocumentImage
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import com.gitmob.app.core.markdown.baseUrl
@@ -65,6 +68,8 @@ fun MarkdownWebView(
     displayAttempt: Int = 0,
     onTranslationDisplayError: () -> Unit = {},
     navigationDocument: NavigationDocument? = null,
+    linkColor: Color? = null,
+    contentPadding: PaddingValues = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
 ) {
     val cssFileName = if (backgroundColor.luminance() < 0.5f) {
         "github-markdown-dark.css"
@@ -72,6 +77,11 @@ fun MarkdownWebView(
         "github-markdown-light.css"
     }
     val backgroundCss = backgroundColor.toCssHex()
+    val linkCss = linkColor?.toCssHex()
+    val layoutDirection = LocalLayoutDirection.current
+    val contentPaddingCss = listOf(contentPadding.calculateTopPadding(),
+        contentPadding.calculateRightPadding(layoutDirection), contentPadding.calculateBottomPadding(),
+        contentPadding.calculateLeftPadding(layoutDirection)).joinToString(" ") { "${it.value}px" }
     val context = LocalContext.current
     val stylesheet = remember(context, cssFileName) {
         context.assets.open(cssFileName).bufferedReader().use { it.readText() }
@@ -100,10 +110,11 @@ fun MarkdownWebView(
     val borderCss = MaterialTheme.colorScheme.outlineVariant.toCssHex()
     // Results and progress never participate in the HTML loading identity.
     val page = viewState.pageFor(listOf(bodyHtml, translation?.document, cssFileName,
-        backgroundCss, sourceCss, borderCss, displayAttempt))
+        backgroundCss, sourceCss, borderCss, displayAttempt, linkCss, contentPaddingCss))
     val fullHtml = remember(page) {
         buildMarkdownDocument(translation?.document?.safeHtml ?: bodyHtml, stylesheet, backgroundCss,
-            script = script, nonce = page.nonce, documentId = page.documentId, sourceCss = sourceCss, borderCss = borderCss)
+            script = script, nonce = page.nonce, documentId = page.documentId, sourceCss = sourceCss, borderCss = borderCss,
+            linkCss = linkCss, contentPaddingCss = contentPaddingCss)
     }
 
     // Raw and script-controlled documents always use separate WebView instances.
@@ -438,7 +449,10 @@ internal fun buildMarkdownDocument(
     documentId: String = "",
     sourceCss: String = "#656d76",
     borderCss: String = "#d0d7de",
+    linkCss: String? = null,
+    contentPaddingCss: String = "0 16px 16px",
 ): String {
+    val linkStyle = linkCss?.let { ".markdown-body a { color: $it; text-decoration: underline; }" }.orEmpty()
     val policy = if (script == null) "" else """
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-$nonce'; style-src 'unsafe-inline'; img-src https: http: data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
     """.trimIndent()
@@ -459,7 +473,8 @@ internal fun buildMarkdownDocument(
             <style>
                 html, body, .markdown-body { background-color: $backgroundCss !important; }
                 body { margin: 0; }
-                .markdown-body { padding: 0 16px 16px; box-sizing: border-box; }
+                .markdown-body { padding: $contentPaddingCss; box-sizing: border-box; }
+                $linkStyle
                 .markdown-body img { max-width: 100%; }
                 $translationStyle
             </style>

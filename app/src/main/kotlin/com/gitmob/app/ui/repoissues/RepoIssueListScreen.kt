@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -108,7 +110,18 @@ fun RepoIssueListScreen(
                 actions = {
                     if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
                     if (state.viewerCanCreateIssues) {
-                        IconButton(onClick = { keyboard?.hide(); focusManager.clearFocus(); viewModel.beginCreate() }) { Icon(Icons.Default.Add, stringResource(R.string.issue_new)) }
+                        val createDescription = stringResource(R.string.issue_new)
+                        IconButton(
+                            onClick = { keyboard?.hide(); focusManager.clearFocus(); viewModel.beginCreate() },
+                            enabled = !state.templatePickerLoading,
+                            modifier = Modifier.semantics { contentDescription = createDescription },
+                        ) {
+                            if (state.templatePickerLoading) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                            }
+                        }
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -167,38 +180,46 @@ fun RepoIssueListScreen(
             leaveList { onCreate(null) }
         }
     }
-    if (state.templatePickerLoading || state.templatePickerVisible || state.templateLoadFailed) {
+    if (state.templatePickerVisible) {
         AlertDialog(
-            onDismissRequest = { if (!state.templatePickerLoading) viewModel.dismissTemplatePicker() },
+            onDismissRequest = viewModel::dismissTemplatePicker,
             title = { Text(stringResource(R.string.issue_template_picker_title)) },
             text = {
-                when {
-                    state.templatePickerLoading -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                    state.templateLoadFailed -> Text(stringResource(R.string.common_load_failed))
-                    else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (state.blankIssuesEnabled) {
-                            TextButton(onClick = { viewModel.dismissTemplatePicker(); leaveList { onCreate(null) } }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.issue_template_blank)) }
-                        }
-                        state.templates.forEach { template ->
-                            TextButton(onClick = { viewModel.dismissTemplatePicker(); leaveList { onCreate(template.filename) } }, modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
-                                    Text(template.name)
-                                    template.about?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                                }
-                            }
-                        }
-                        if (!state.blankIssuesEnabled && state.templates.isEmpty()) Text(stringResource(R.string.issue_template_none_available), color = MaterialTheme.colorScheme.error)
-                        if (state.invalidTemplateCount > 0) Text(pluralStringResource(R.plurals.issue_template_invalid_count, state.invalidTemplateCount, state.invalidTemplateCount), color = MaterialTheme.colorScheme.error)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (state.blankIssuesEnabled) {
+                        IssueTemplateOption(
+                            title = stringResource(R.string.issue_template_blank),
+                            onClick = { viewModel.dismissTemplatePicker(); leaveList { onCreate(null) } },
+                        )
                     }
+                    state.templates.forEach { template ->
+                        IssueTemplateOption(
+                            title = template.name,
+                            description = template.about,
+                            onClick = { viewModel.dismissTemplatePicker(); leaveList { onCreate(template.filename) } },
+                        )
+                    }
+                    if (!state.blankIssuesEnabled && state.templates.isEmpty()) Text(stringResource(R.string.issue_template_none_available), color = MaterialTheme.colorScheme.error)
+                    if (state.invalidTemplateCount > 0) Text(pluralStringResource(R.plurals.issue_template_invalid_count, state.invalidTemplateCount, state.invalidTemplateCount), color = MaterialTheme.colorScheme.error)
                 }
             },
             confirmButton = {
-                if (state.templateLoadFailed) TextButton(onClick = viewModel::beginCreate) { Text(stringResource(R.string.common_retry)) }
-                else if (!state.templatePickerLoading) TextButton(onClick = viewModel::dismissTemplatePicker) { Text(stringResource(R.string.common_cancel)) }
+                TextButton(onClick = viewModel::dismissTemplatePicker) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
+}
 
+@Composable
+private fun IssueTemplateOption(title: String, description: String? = null, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+            Text(title)
+            description?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }
 
 @Composable

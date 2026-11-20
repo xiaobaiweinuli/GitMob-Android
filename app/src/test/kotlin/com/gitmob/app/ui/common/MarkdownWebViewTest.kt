@@ -4,6 +4,9 @@ import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.CompositionLocalProvider
@@ -91,6 +94,49 @@ class MarkdownWebViewTest {
         }
     }
 
+
+    @Test fun embeddedMarkdownUpdatesLinkThemeAndPaddingWithoutReplacingWebView() {
+        val linkColor = mutableStateOf(Color(0xFF123456))
+        val padding = mutableStateOf(PaddingValues(0.dp))
+        lateinit var root: View
+        composeRule.setContent {
+            val view = LocalView.current
+            SideEffect { root = view.rootView }
+            MaterialTheme {
+                MarkdownWebView("<a href='https://example.com'>Guide</a>",
+                    linkColor = linkColor.value, contentPadding = padding.value)
+            }
+        }
+        fun findWebView(view: View): WebView? {
+            if (view is WebView) return view
+            if (view is ViewGroup) for (index in 0 until view.childCount) {
+                findWebView(view.getChildAt(index))?.let { return it }
+            }
+            return null
+        }
+        lateinit var original: WebView
+        lateinit var originalPage: Any
+        composeRule.runOnIdle {
+            original = requireNotNull(findWebView(root))
+            originalPage = original.tag
+            val html = shadowOf(original).lastLoadDataWithBaseURL.data
+            assertTrue(html.contains("color: #123456; text-decoration: underline;"))
+            assertTrue(html.contains("padding: 0.0px 0.0px 0.0px 0.0px"))
+            linkColor.value = Color(0xFF876543)
+        }
+        composeRule.runOnIdle {
+            assertSame(original, findWebView(root))
+            assertTrue(originalPage !== original.tag)
+            assertTrue(shadowOf(original).lastLoadDataWithBaseURL.data.contains("color: #876543;"))
+            originalPage = original.tag
+            padding.value = PaddingValues(start = 3.dp, top = 1.dp, end = 4.dp, bottom = 2.dp)
+        }
+        composeRule.runOnIdle {
+            assertSame(original, findWebView(root))
+            assertTrue(originalPage !== original.tag)
+            assertTrue(shadowOf(original).lastLoadDataWithBaseURL.data.contains("padding: 1.0px 4.0px 2.0px 3.0px"))
+        }
+    }
 
     @Test fun genericMarkdownDelegatesEmailLinksThroughBothCallbacks() {
         val webView = mockk<WebView> { every { url } returns "file:///android_asset/" }

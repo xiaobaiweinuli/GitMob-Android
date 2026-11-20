@@ -25,6 +25,7 @@ data class RepoIssueEditorUiState(
     val viewerCanCreateIssues: Boolean = false,
     val existing: RepoIssue? = null,
     val templates: List<IssueTemplate> = emptyList(),
+    val templateHtml: Map<String, String> = emptyMap(),
     val blankIssuesEnabled: Boolean = true,
     val invalidTemplateCount: Int = 0,
     val labels: List<IssueLabel> = emptyList(),
@@ -80,12 +81,14 @@ class RepoIssueEditorViewModel @Inject constructor(
             val assignees = repository.getAssignableUsers(owner, name)
             if (assignees is ApiResult.Failure) return@launch failLoad(assignees)
             val templateData = (templates as ApiResult.Success).data
+            val templateHtml = renderTemplate(templateData.templates.firstOrNull { it.filename == templateFilename })
             _state.update {
                 it.copy(
                     repositoryId = page.repositoryId,
                     viewerCanCreateIssues = page.viewerCanCreateIssues,
                     existing = (existing as? ApiResult.Success)?.data?.issue,
                     templates = templateData.templates,
+                    templateHtml = templateHtml,
                     blankIssuesEnabled = templateData.blankIssuesEnabled,
                     invalidTemplateCount = templateData.invalidTemplateCount,
                     labels = (labels as ApiResult.Success).data,
@@ -98,6 +101,19 @@ class RepoIssueEditorViewModel @Inject constructor(
             }
         }
     }
+
+    // Only explanatory content and checkbox option labels have Markdown semantics.
+    // Keep the original template strings for editing and submission.
+    private fun renderTemplate(template: IssueTemplate?): Map<String, String> =
+        template?.fields.orEmpty().flatMap { field ->
+            when (field) {
+                is IssueFormField.Markdown -> listOf(field.value)
+                is IssueFormField.Input -> listOf(field.description)
+                is IssueFormField.Textarea -> listOf(field.description)
+                is IssueFormField.Dropdown -> listOf(field.description)
+                is IssueFormField.Checkboxes -> listOf(field.description) + field.options.map { it.label }
+            }
+        }.filterNotNull().filter(String::isNotBlank).distinct().associateWith(markdownRenderer::renderToHtml)
 
     fun selectBodyEditorTab(tab: MarkdownEditorTab, markdown: String = "") {
         _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, previewFailed = false)) }

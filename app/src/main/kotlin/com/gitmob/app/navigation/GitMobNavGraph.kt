@@ -653,6 +653,7 @@ private fun LoggedInApp(
                 onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
                 onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
                 onSaved = { number -> navigator.goBack(); navigator.navigate(RepoIssueDetailRoute(route.owner, route.name, number, route.permission)) },
+                onLinkClick = { url -> clicks.run { openDocumentExternal(url) } },
             )
         }
         entry<RepoPullRequestsRoute> { route ->

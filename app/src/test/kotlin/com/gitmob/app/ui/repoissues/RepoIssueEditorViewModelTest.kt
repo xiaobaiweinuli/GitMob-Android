@@ -1,6 +1,9 @@
 package com.gitmob.app.ui.repoissues
 
 import androidx.lifecycle.viewModelScope
+import com.gitmob.app.core.markdown.CommonMarkRenderer
+import com.gitmob.app.data.model.IssueFormCheckboxOption
+import com.gitmob.app.data.repository.IssueFormSubmissionBuilder
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -79,6 +82,66 @@ class RepoIssueEditorViewModelTest {
         coVerify(exactly = 1) {
             repository.createIssue(match { it.title == "Title" && it.body == "### Version\n\n1.0" })
         }
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `renders only selected template markdown fields and keeps source for submission`() = runTest {
+        val repository = repositoryMock()
+        val template = IssueTemplate(
+            "**Name**", "**About**", "**Title**", "bug.yml", emptyList(), emptyList(),
+            listOf(
+                IssueFormField.Markdown(value = "# Instructions"),
+                IssueFormField.Input("version", "**Version**", "[Help](https://example.com/input)", "**Hint**", "**Initial**"),
+                IssueFormField.Textarea("logs", "Logs", "- **System**\n- _Version_", render = "shell"),
+                IssueFormField.Dropdown("os", "OS", "Choose _one_", listOf("**Linux**")),
+                IssueFormField.Checkboxes("terms", "Checklist", "Read **carefully**",
+                    listOf(IssueFormCheckboxOption("Accept [terms](https://example.com/terms)", required = true))),
+                IssueFormField.Input("optional", "Optional", "  "),
+            ),
+        )
+        coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(
+            IssueTemplateLoadResult(true, listOf(template, template.copy(filename = "other.yml",
+                fields = listOf(IssueFormField.Markdown(value = "Unselected")))))
+        )
+        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), CommonMarkRenderer(), accounts.session)
+
+        viewModel.init("o", "r", null, "bug.yml")
+        advanceUntilIdle()
+
+        val state = viewModel.state.value
+        val html = state.templateHtml
+        assertEquals(setOf("# Instructions", "[Help](https://example.com/input)", "- **System**\n- _Version_",
+            "Choose _one_", "Read **carefully**", "Accept [terms](https://example.com/terms)"), html.keys)
+        assertTrue(html.getValue("# Instructions").contains("<h1>Instructions</h1>"))
+        assertTrue(html.getValue("[Help](https://example.com/input)").contains("<a href=\"https://example.com/input\">Help</a>"))
+        assertTrue(html.getValue("- **System**\n- _Version_").contains("<ul>"))
+        assertTrue(html.getValue("- **System**\n- _Version_").contains("<strong>System</strong>"))
+        assertTrue(html.getValue("Choose _one_").contains("<em>one</em>"))
+        assertEquals(template, state.templates.first())
+        val submitted = IssueFormSubmissionBuilder.build(state.templates.first(),
+            mapOf("version" to "1.0", "logs" to "echo ok"), mapOf("os" to setOf(0), "terms" to setOf(0)))
+        assertTrue(submitted.contains("- [x] Accept [terms](https://example.com/terms)"))
+        assertTrue(submitted.contains("```shell\necho ok\n```"))
+        assertTrue(submitted.contains("**Linux**"))
+        assertFalse(submitted.contains("Instructions"))
+        assertFalse(submitted.contains("Read **carefully**"))
+        assertFalse(submitted.contains("<a"))
+        assertFalse(submitted.contains("terms) *"))
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `blank editor does not render templates that were not selected`() = runTest {
+        val repository = repositoryMock()
+        coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(IssueTemplateLoadResult(true,
+            listOf(IssueTemplate("Bug", null, null, "bug.yml", emptyList(), emptyList(),
+                listOf(IssueFormField.Markdown(value = "**Instructions**"))))))
+        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
+        viewModel.init("o", "r", null)
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.templateHtml.isEmpty())
+        assertFalse(viewModel.state.value.loadFailed)
         viewModel.viewModelScope.cancel()
     }
 

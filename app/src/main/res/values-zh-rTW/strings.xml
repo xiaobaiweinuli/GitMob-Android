@@ -452,7 +452,7 @@
     <string name="issue_filter_updated_30d">最近 30 天更新</string>
     <string name="issue_meta_milestone">里程碑 %1$s</string>
     <string name="issue_editor_title_label">標題</string>
-    <string name="issue_form_required_label">%1$s *</string>
+    <string name="issue_form_required_marker">*</string>
     <string name="common_refresh">重新整理</string>
     <string name="issue_title_number">議題 #%1$d</string>
     <string name="issue_subscribe">訂閱</string>

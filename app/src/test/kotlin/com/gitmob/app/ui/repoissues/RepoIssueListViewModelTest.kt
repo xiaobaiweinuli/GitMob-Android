@@ -3,6 +3,7 @@ package com.gitmob.app.ui.repoissues
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.error.BannerEvent
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoPermission
@@ -14,8 +15,11 @@ import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -125,6 +129,65 @@ class RepoIssueListViewModelTest {
         vm.confirmDelete(vm.state.value.items.single()); vm.deletePending(); advanceUntilIdle()
         assertEquals(1, vm.state.value.items.size)
         assertFalse(vm.state.value.pendingDelete != null)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `template loading keeps picker hidden and ignores repeated create requests`() = runTest {
+        val repository = repositoryMock()
+        val pending = CompletableDeferred<ApiResult<IssueTemplateLoadResult>>()
+        coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
+        coEvery { repository.getIssueTemplates("o", "r") } coAnswers { pending.await() }
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r", RepoPermission.ADMIN, true)
+        advanceUntilIdle()
+
+        vm.beginCreate()
+        vm.beginCreate()
+        advanceUntilIdle()
+        assertTrue(vm.state.value.templatePickerLoading)
+        assertFalse(vm.state.value.templatePickerVisible)
+        assertFalse(vm.state.value.blankCreateRequested)
+        coVerify(exactly = 1) { repository.getIssueTemplates("o", "r") }
+
+        pending.complete(ApiResult.Success(IssueTemplateLoadResult(true, emptyList())))
+        advanceUntilIdle()
+        assertFalse(vm.state.value.templatePickerLoading)
+        assertFalse(vm.state.value.templatePickerVisible)
+        assertTrue(vm.state.value.blankCreateRequested)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `template failure emits banner and allows retry without opening picker`() = runTest {
+        val repository = repositoryMock()
+        val errors = ErrorEventBus()
+        val events = mutableListOf<BannerEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            errors.eventsFor(accounts.session.epoch).collect { events += it }
+        }
+        coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
+        coEvery { repository.getIssueTemplates("o", "r") } returnsMany listOf(
+            ApiResult.Failure(ApiError.NetworkError),
+            ApiResult.Success(IssueTemplateLoadResult(true, emptyList())),
+        )
+        val vm = RepoIssueListViewModel(repository, errors, RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r", RepoPermission.ADMIN, true)
+        advanceUntilIdle()
+
+        vm.beginCreate()
+        advanceUntilIdle()
+        assertFalse(vm.state.value.templatePickerLoading)
+        assertFalse(vm.state.value.templatePickerVisible)
+        assertFalse(vm.state.value.blankCreateRequested)
+        assertEquals(listOf(BannerEvent.Error(ApiError.NetworkError)), events)
+
+        vm.beginCreate()
+        advanceUntilIdle()
+        assertFalse(vm.state.value.templatePickerLoading)
+        assertFalse(vm.state.value.templatePickerVisible)
+        assertTrue(vm.state.value.blankCreateRequested)
+        coVerify(exactly = 2) { repository.getIssueTemplates("o", "r") }
         vm.viewModelScope.cancel()
     }
 

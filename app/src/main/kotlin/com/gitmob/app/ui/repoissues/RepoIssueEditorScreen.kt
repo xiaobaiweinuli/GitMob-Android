@@ -5,6 +5,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.fitInside
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -15,6 +16,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.fromHtml
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.core.net.toUri
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -25,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.*
 import com.gitmob.app.data.repository.IssueFormSubmissionBuilder
+import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.common.MarkdownBodyEditor
 import com.gitmob.app.ui.common.MarkdownEditorTab
 import com.gitmob.app.ui.common.MarkdownEditorUiState
@@ -43,6 +54,7 @@ fun RepoIssueEditorScreen(
     onOwnerClick: (String) -> Unit,
     onRepositoryClick: (String, String) -> Unit,
     onSaved: (Int) -> Unit,
+    onLinkClick: (String) -> Unit,
     viewModel: RepoIssueEditorViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(owner, name, number, templateFilename) { viewModel.init(owner, name, number, templateFilename) }
@@ -81,6 +93,8 @@ fun RepoIssueEditorScreen(
             state.loadFailed -> EditorRetry(contentModifier, viewModel::load)
             else -> IssueEditor(
                 template = state.templates.firstOrNull { it.filename == templateFilename },
+                templateHtml = state.templateHtml,
+                onLinkClick = onLinkClick,
                 existing = state.existing,
                 labels = state.labels,
                 milestones = state.milestones,
@@ -100,6 +114,8 @@ fun RepoIssueEditorScreen(
 @Composable
 private fun IssueEditor(
     template: IssueTemplate?,
+    templateHtml: Map<String, String>,
+    onLinkClick: (String) -> Unit,
     existing: RepoIssue?,
     labels: List<IssueLabel>,
     milestones: List<IssueMilestone>,
@@ -170,14 +186,16 @@ private fun IssueEditor(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            items(template.fields, key = { "form-${it.id ?: template.fields.indexOf(it)}" }) { field ->
-                when (field) {
-                    is IssueFormField.Markdown -> Text(field.value)
-                    is IssueFormField.Input -> IssueFormTextField(field.label, field.description, field.placeholder, field.required, textValues[field.id].orEmpty(), true) { textValues = textValues + (field.id to it) }
-                    is IssueFormField.Textarea -> IssueFormTextField(field.label, field.description, field.placeholder, field.required, textValues[field.id].orEmpty(), false) { textValues = textValues + (field.id to it) }
-                    is IssueFormField.Dropdown -> IssueFormDropdown(field, selections[field.id].orEmpty()) { selections = selections + (field.id to it) }
-                    is IssueFormField.Checkboxes -> IssueFormCheckboxes(field, selections[field.id].orEmpty()) { selections = selections + (field.id to it) }
-                }
+            itemsIndexed(template.fields, key = { index, field -> issueFormFieldKey(index, field) }) { _, field ->
+                IssueFormFieldContent(
+                    field = field,
+                    templateHtml = templateHtml,
+                    value = textValues[field.id].orEmpty(),
+                    selected = selections[field.id].orEmpty(),
+                    onValueChange = { value -> field.id?.let { textValues = textValues + (it to value) } },
+                    onSelected = { selected -> field.id?.let { selections = selections + (it to selected) } },
+                    onLinkClick = onLinkClick,
+                )
             }
         }
     }
@@ -229,11 +247,152 @@ private fun IssueEditor(
     }
 }
 
-@Composable private fun IssueFormTextField(label: String, description: String?, placeholder: String?, required: Boolean, value: String, singleLine: Boolean, onValueChange: (String) -> Unit) { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { OutlinedTextField(value, onValueChange, label = { Text(if (required) stringResource(R.string.issue_form_required_label, label) else label) }, placeholder = placeholder?.let { { Text(it) } }, singleLine = singleLine, minLines = if (singleLine) 1 else 4, modifier = Modifier.fillMaxWidth()); description?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
-@Composable private fun IssueFormDropdown(field: IssueFormField.Dropdown, selected: Set<Int>, onSelected: (Set<Int>) -> Unit) { Column { Text(if (field.required) stringResource(R.string.issue_form_required_label, field.label) else field.label, fontWeight = FontWeight.SemiBold); field.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) }; field.options.forEachIndexed { index, option -> Row(verticalAlignment = Alignment.CenterVertically) { if (field.multiple) Checkbox(index in selected, { onSelected(if (it) selected + index else selected - index) }) else RadioButton(index in selected, { onSelected(setOf(index)) }); Text(option) } } } }
-@Composable private fun IssueFormCheckboxes(field: IssueFormField.Checkboxes, selected: Set<Int>, onSelected: (Set<Int>) -> Unit) { Column { Text(field.label, fontWeight = FontWeight.SemiBold); field.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) }; field.options.forEachIndexed { index, option -> Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(index in selected, { onSelected(if (it) selected + index else selected - index) }); Text(if (option.required) stringResource(R.string.issue_form_required_label, option.label) else option.label) } } } }
-@Composable private fun SelectionCheckbox(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked, onChecked); Text(label) } }
-@Composable private fun SectionTitle(id: Int) { Text(stringResource(id), fontWeight = FontWeight.SemiBold) }
+internal fun issueFormFieldKey(index: Int, field: IssueFormField): String =
+    if (field is IssueFormField.Markdown) "form-markdown-$index" else "form-field-${field.id}"
+
+@Composable
+internal fun IssueFormFieldContent(
+    field: IssueFormField,
+    templateHtml: Map<String, String>,
+    value: String,
+    selected: Set<Int>,
+    onValueChange: (String) -> Unit,
+    onSelected: (Set<Int>) -> Unit,
+    onLinkClick: (String) -> Unit,
+) {
+    val description = when (field) {
+        is IssueFormField.Markdown -> null
+        is IssueFormField.Input -> field.description
+        is IssueFormField.Textarea -> field.description
+        is IssueFormField.Dropdown -> field.description
+        is IssueFormField.Checkboxes -> field.description
+    }
+    val descriptionHtml = description?.takeIf(String::isNotBlank)?.let(templateHtml::getValue)
+    when (field) {
+        is IssueFormField.Markdown -> IssueFormMarkdown(templateHtml.getValue(field.value), onLinkClick)
+        is IssueFormField.Input -> IssueFormTextField(field.label, descriptionHtml, field.placeholder, field.required,
+            value, true, onLinkClick, onValueChange)
+        is IssueFormField.Textarea -> IssueFormTextField(field.label, descriptionHtml, field.placeholder, field.required,
+            value, false, onLinkClick, onValueChange)
+        is IssueFormField.Dropdown -> IssueFormDropdown(field, descriptionHtml, selected, onLinkClick, onSelected)
+        is IssueFormField.Checkboxes -> IssueFormCheckboxes(field, descriptionHtml, templateHtml, selected, onSelected, onLinkClick)
+    }
+}
+
+@Composable
+private fun IssueFormMarkdown(html: String?, onLinkClick: (String) -> Unit) {
+    if (html == null) return
+    MarkdownWebView(
+        bodyHtml = html,
+        linkColor = MaterialTheme.colorScheme.primary,
+        contentPadding = PaddingValues(0.dp),
+        onExternalLink = onLinkClick,
+    )
+}
+
+@Composable
+private fun IssueFormLabel(text: AnnotatedString, required: Boolean, fontWeight: FontWeight? = null) {
+    val marker = stringResource(R.string.issue_form_required_marker)
+    val primary = MaterialTheme.colorScheme.primary
+    Text(
+        text = buildAnnotatedString {
+            append(text)
+            if (required) {
+                append(' ')
+                withStyle(SpanStyle(color = primary)) { append(marker) }
+            }
+        },
+        fontWeight = fontWeight,
+    )
+}
+
+@Composable
+private fun IssueFormTextField(
+    label: String,
+    descriptionHtml: String?,
+    placeholder: String?,
+    required: Boolean,
+    value: String,
+    singleLine: Boolean,
+    onLinkClick: (String) -> Unit,
+    onValueChange: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { IssueFormLabel(AnnotatedString(label), required) },
+            placeholder = placeholder?.let { { Text(it) } },
+            singleLine = singleLine,
+            minLines = if (singleLine) 1 else 4,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        IssueFormMarkdown(descriptionHtml, onLinkClick)
+    }
+}
+
+@Composable
+private fun IssueFormDropdown(
+    field: IssueFormField.Dropdown,
+    descriptionHtml: String?,
+    selected: Set<Int>,
+    onLinkClick: (String) -> Unit,
+    onSelected: (Set<Int>) -> Unit,
+) {
+    Column {
+        IssueFormLabel(AnnotatedString(field.label), field.required, FontWeight.SemiBold)
+        IssueFormMarkdown(descriptionHtml, onLinkClick)
+        field.options.forEachIndexed { index, option ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (field.multiple) {
+                    Checkbox(index in selected, { onSelected(if (it) selected + index else selected - index) })
+                } else {
+                    RadioButton(index in selected, { onSelected(setOf(index)) })
+                }
+                Text(option)
+            }
+        }
+    }
+}
+
+@Composable
+private fun IssueFormCheckboxes(
+    field: IssueFormField.Checkboxes,
+    descriptionHtml: String?,
+    templateHtml: Map<String, String>,
+    selected: Set<Int>,
+    onSelected: (Set<Int>) -> Unit,
+    onLinkClick: (String) -> Unit,
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val currentLinkClick by rememberUpdatedState(onLinkClick)
+    Column {
+        Text(field.label, fontWeight = FontWeight.SemiBold)
+        IssueFormMarkdown(descriptionHtml, onLinkClick)
+        field.options.forEachIndexed { index, option ->
+            val html = templateHtml.getValue(option.label)
+            val label = remember(html, primary) {
+                AnnotatedString.fromHtml(
+                    htmlString = html,
+                    linkStyles = TextLinkStyles(SpanStyle(color = primary, textDecoration = TextDecoration.Underline)),
+                    linkInteractionListener = { link ->
+                        if (link is LinkAnnotation.Url) {
+                            val uri = link.url.toUri()
+                            if (uri.scheme in setOf("https", "http", "mailto") && uri.userInfo.isNullOrEmpty()) {
+                                currentLinkClick(link.url)
+                            }
+                        }
+                    },
+                ).let { it.subSequence(0, it.text.trimEnd().length) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(index in selected, { onSelected(if (it) selected + index else selected - index) })
+                IssueFormLabel(label, option.required)
+            }
+        }
+    }
+}
+
 @Composable private fun MetadataChip(label: String, count: Int? = null, value: String? = null, onClick: () -> Unit) {
     FilterChip(
         selected = false,
