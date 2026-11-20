@@ -2,7 +2,13 @@ package com.gitmob.app.ui.repoissues
 
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewmodel.compose.SavedStateHandleSaveableApi
+import androidx.lifecycle.viewmodel.compose.saveable
 import androidx.lifecycle.viewModelScope
+import java.io.Serializable
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
@@ -11,6 +17,7 @@ import com.gitmob.app.core.markdown.MarkdownRenderer
 import com.gitmob.app.ui.common.MarkdownEditorTab
 import com.gitmob.app.ui.common.MarkdownEditorUiState
 import com.gitmob.app.data.model.*
+import com.gitmob.app.data.repository.IssueFormSubmissionBuilder
 import com.gitmob.app.data.repository.RepoIssueRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +27,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class RepoIssueEditorDraft(
+    val title: String = "",
+    val textValues: Map<String, String> = emptyMap(),
+    val selections: Map<String, Set<Int>> = emptyMap(),
+    val labelIds: Set<String> = emptySet(),
+    val assigneeIds: Set<String> = emptySet(),
+    val milestoneId: String? = null,
+) : Serializable
+
 data class RepoIssueEditorUiState(
+    val draft: RepoIssueEditorDraft = RepoIssueEditorDraft(),
     val repositoryId: String? = null,
     val viewerCanCreateIssues: Boolean = false,
     val existing: RepoIssue? = null,
@@ -37,6 +54,7 @@ data class RepoIssueEditorUiState(
     val bodyEditor: MarkdownEditorUiState = MarkdownEditorUiState(),
 )
 
+@OptIn(SavedStateHandleSaveableApi::class)
 @HiltViewModel
 class RepoIssueEditorViewModel @Inject constructor(
     private val repository: RepoIssueRepository,
@@ -44,8 +62,13 @@ class RepoIssueEditorViewModel @Inject constructor(
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val markdownRenderer: MarkdownRenderer,
     session: AccountSession,
+    private val savedStateHandle: SavedStateHandle,
 ) : AccountViewModel(session) {
-    private val _state = MutableStateFlow(RepoIssueEditorUiState())
+    val bodyState = savedStateHandle.saveable(key = "editor.body", saver = TextFieldState.Saver) { TextFieldState() }
+    private var draftInitialized = savedStateHandle.contains("editor.draft")
+    private val _state = MutableStateFlow(RepoIssueEditorUiState(
+        draft = savedStateHandle["editor.draft"] ?: RepoIssueEditorDraft(),
+    ))
     val state: StateFlow<RepoIssueEditorUiState> = _state.asStateFlow()
     private var owner = ""
     private var name = ""
@@ -81,22 +104,46 @@ class RepoIssueEditorViewModel @Inject constructor(
             val assignees = repository.getAssignableUsers(owner, name)
             if (assignees is ApiResult.Failure) return@launch failLoad(assignees)
             val templateData = (templates as ApiResult.Success).data
-            val templateHtml = renderTemplate(templateData.templates.firstOrNull { it.filename == templateFilename })
+            val template = templateData.templates.firstOrNull { it.filename == templateFilename }
+            val issue = (existing as? ApiResult.Success)?.data?.issue
+            val availableLabels = (labels as ApiResult.Success).data
+            val availableAssignees = (assignees as ApiResult.Success).data
+            if (!draftInitialized) {
+                bodyState.setTextAndPlaceCursorAtEnd(issue?.body.orEmpty())
+                storeDraft(RepoIssueEditorDraft(
+                    title = issue?.title ?: template?.title.orEmpty(),
+                    textValues = template?.fields.orEmpty().mapNotNull { field ->
+                        when (field) {
+                            is IssueFormField.Input -> field.id to field.value.orEmpty()
+                            is IssueFormField.Textarea -> field.id to field.value.orEmpty()
+                            else -> null
+                        }
+                    }.toMap(),
+                    selections = template?.fields.orEmpty().mapNotNull { field ->
+                        (field as? IssueFormField.Dropdown)?.defaultIndex?.let { field.id to setOf(it) }
+                    }.toMap(),
+                    labelIds = issue?.labels?.map { it.id }?.toSet()
+                        ?: availableLabels.filter { it.name in template?.labels.orEmpty() }.map { it.id }.toSet(),
+                    assigneeIds = issue?.assignees?.mapNotNull { it.id }?.toSet()
+                        ?: availableAssignees.filter { it.login in template?.assignees.orEmpty() }.mapNotNull { it.id }.toSet(),
+                    milestoneId = issue?.milestone?.id,
+                ))
+            }
+            val templateHtml = renderTemplate(template)
             _state.update {
                 it.copy(
                     repositoryId = page.repositoryId,
                     viewerCanCreateIssues = page.viewerCanCreateIssues,
-                    existing = (existing as? ApiResult.Success)?.data?.issue,
+                    existing = issue,
                     templates = templateData.templates,
                     templateHtml = templateHtml,
                     blankIssuesEnabled = templateData.blankIssuesEnabled,
                     invalidTemplateCount = templateData.invalidTemplateCount,
-                    labels = (labels as ApiResult.Success).data,
+                    labels = availableLabels,
                     milestones = (milestones as ApiResult.Success).data,
-                    assignees = (assignees as ApiResult.Success).data,
+                    assignees = availableAssignees,
                     isLoading = false,
                     loadFailed = false,
-                    bodyEditor = MarkdownEditorUiState(),
                 )
             }
         }
@@ -115,12 +162,12 @@ class RepoIssueEditorViewModel @Inject constructor(
             }
         }.filterNotNull().filter(String::isNotBlank).distinct().associateWith(markdownRenderer::renderToHtml)
 
-    fun selectBodyEditorTab(tab: MarkdownEditorTab, markdown: String = "") {
+    fun selectBodyEditorTab(tab: MarkdownEditorTab) {
         _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, previewFailed = false)) }
-        if (tab == MarkdownEditorTab.PREVIEW) renderBodyPreview(markdown)
+        if (tab == MarkdownEditorTab.PREVIEW) renderBodyPreview(bodyState.text.toString())
     }
 
-    fun renderBodyPreview(markdown: String) {
+    private fun renderBodyPreview(markdown: String) {
         previewJob?.cancel()
         if (markdown.isBlank()) {
             _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = "", isRenderingPreview = false, previewFailed = false)) }
@@ -138,21 +185,38 @@ class RepoIssueEditorViewModel @Inject constructor(
         }
     }
 
-    fun save(
-        title: String,
-        body: String,
-        labelIds: List<String>,
-        assigneeIds: List<String>,
-        milestoneId: String?,
-        done: (RepoIssue) -> Unit,
-    ) {
+    private fun storeDraft(draft: RepoIssueEditorDraft) {
+        savedStateHandle["editor.draft"] = draft
+        draftInitialized = true
+        _state.update { it.copy(draft = draft) }
+    }
+
+    fun editTitle(title: String) = storeDraft(_state.value.draft.copy(title = title))
+    fun editText(id: String, value: String) = storeDraft(_state.value.draft.let {
+        it.copy(textValues = it.textValues + (id to value))
+    })
+    fun editSelection(id: String, selected: Set<Int>) = storeDraft(_state.value.draft.let {
+        it.copy(selections = it.selections + (id to selected))
+    })
+    fun confirmMetadata(labels: Set<String>, assignees: Set<String>, milestone: String?) =
+        storeDraft(_state.value.draft.copy(labelIds = labels, assigneeIds = assignees, milestoneId = milestone))
+
+    fun save(done: (RepoIssue) -> Unit) {
         val state = _state.value
-        if (title.isBlank() || state.isSaving) return
+        val draft = state.draft
+        val title = draft.title
+        if (!draftInitialized || state.isLoading || state.loadFailed || title.isBlank() || state.isSaving) return
+        val template = state.templates.firstOrNull { it.filename == templateFilename }.takeIf { state.existing == null }
+        val body = template?.let { IssueFormSubmissionBuilder.build(it, draft.textValues, draft.selections) }
+            ?: bodyState.text.toString()
+        val labelIds = draft.labelIds.toList()
+        val assigneeIds = draft.assigneeIds.toList()
+        val milestoneId = draft.milestoneId
         val existing = state.existing
         if (existing == null && (!state.viewerCanCreateIssues || state.repositoryId == null)) return
         if (existing != null && !existing.viewerCanUpdate) return
+        _state.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            _state.update { it.copy(isSaving = true) }
             val result = if (existing == null) {
                 repository.createIssue(CreateRepoIssueInput(state.repositoryId!!, title.trim(), body, labelIds, assigneeIds, milestoneId))
             } else {

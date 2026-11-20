@@ -25,6 +25,7 @@ data class RepoFileEditorUiState(
     val originalPath: String? = null,
     val path: String = "",
     val content: String = "",
+    val commitMessage: String = "",
     val headOid: String? = null,
     val permission: RepoPermission = RepoPermission.NONE,
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
@@ -44,6 +45,7 @@ class RepoFileEditorViewModel @Inject constructor(
     private val _state = MutableStateFlow(RepoFileEditorUiState())
     val state: StateFlow<RepoFileEditorUiState> = _state.asStateFlow()
     private var initialized = false
+    private var draftInitialized = false
     private var owner = ""
     private var name = ""
     private var ref = ""
@@ -51,29 +53,41 @@ class RepoFileEditorViewModel @Inject constructor(
     fun init(owner: String, name: String, ref: String, path: String?) {
         if (initialized) return
         initialized = true; this.owner = owner; this.name = name; this.ref = ref
-        _state.update { it.copy(originalPath = path, path = path.orEmpty(), isLoading = true) }
+        _state.update { it.copy(originalPath = path, path = path.orEmpty(), isLoading = true, loadFailed = false) }
         viewModelScope.launch {
             when (val tree = repository.getCodeTree(owner, name, ref, path?.substringBeforeLast('/', "").orEmpty())) {
                 is ApiResult.Success -> {
-                    _state.update { it.copy(permission = tree.data.permission, capabilities = tree.data.capabilities, isArchived = tree.data.isArchived, headOid = tree.data.headOid, isLoading = false) }
+                    _state.update { it.copy(permission = tree.data.permission, capabilities = tree.data.capabilities, isArchived = tree.data.isArchived, headOid = tree.data.headOid) }
                     if (!path.isNullOrBlank()) when (val file = repository.getFileContent(owner, name, ref, path)) {
                         is ApiResult.Success -> _state.update { it.copy(content = file.data.text.orEmpty()) }
-                        is ApiResult.Failure -> { errorEventBus.emit(file.error); _state.update { it.copy(loadFailed = true) } }
+                        is ApiResult.Failure -> { errorEventBus.emit(file.error); _state.update { it.copy(isLoading = false, loadFailed = true) }; return@launch }
                     }
+                    draftInitialized = true
+                    _state.update { it.copy(isLoading = false) }
                 }
                 is ApiResult.Failure -> { errorEventBus.emit(tree.error); _state.update { it.copy(isLoading = false, loadFailed = true) } }
             }
         }
     }
 
-    fun updatePath(value: String) = _state.update { it.copy(path = value) }
-    fun updateContent(value: String) = _state.update { it.copy(content = value) }
+    fun updatePath(value: String) {
+        if (editable()) _state.update { it.copy(path = value) }
+    }
+    fun updateContent(value: String) {
+        if (editable()) _state.update { it.copy(content = value) }
+    }
+    fun updateCommitMessage(value: String) {
+        if (editable()) _state.update { it.copy(commitMessage = value) }
+    }
 
-    fun save(message: String, onSaved: () -> Unit) {
+    private fun editable(): Boolean = draftInitialized && !_state.value.isLoading && !_state.value.loadFailed && !_state.value.isSaving
+
+    fun save(onSaved: () -> Unit) {
         val current = _state.value
-        if (current.isSaving || current.isArchived || !current.capabilities.canPush || !current.capabilities.canPushToProtectedBranch || current.path.isBlank() || message.isBlank() || current.headOid == null) return
+        val message = current.commitMessage
+        if (!editable() || current.isArchived || !current.capabilities.canPush || !current.capabilities.canPushToProtectedBranch || current.path.isBlank() || message.isBlank() || current.headOid == null) return
+        _state.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            _state.update { it.copy(isSaving = true) }
             val addition = RepoPendingFileChange.Addition(current.path, Base64.getEncoder().encodeToString(current.content.toByteArray(Charsets.UTF_8)))
             val deletions = current.originalPath?.takeIf { it != current.path }?.let { listOf(RepoPendingFileChange.Deletion(it)) }.orEmpty()
             when (val result = repository.createCommit(owner, name, ref, message, listOf(addition), deletions, current.headOid)) {
@@ -88,6 +102,7 @@ class RepoFileEditorViewModel @Inject constructor(
     }
 
     fun retry() {
+        if (!_state.value.loadFailed || _state.value.isLoading || draftInitialized) return
         initialized = false
         init(owner, name, ref, _state.value.originalPath)
     }

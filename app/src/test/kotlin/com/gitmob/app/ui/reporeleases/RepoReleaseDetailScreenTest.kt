@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.reporeleases
 
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
@@ -111,7 +112,7 @@ class RepoReleaseDetailRefreshTest {
             stored = stored.copy(name = title, body = body)
             ApiResult.Success(stored)
         }
-        val editor = RepoReleaseEditorViewModel(repository, errors, updates, accounts.session)
+        val editor = RepoReleaseEditorViewModel(repository, errors, updates, accounts.session, SavedStateHandle())
         editor.init("o", "r", 7, RepoPermission.WRITE)
         editor.editTitle(title)
         editor.editBody(body)

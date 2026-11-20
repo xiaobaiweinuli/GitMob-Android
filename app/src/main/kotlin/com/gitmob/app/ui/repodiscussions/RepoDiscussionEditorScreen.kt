@@ -14,14 +14,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextRange
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
-import com.gitmob.app.data.model.RepoDiscussion
 import com.gitmob.app.data.model.RepoDiscussionCategory
 import com.gitmob.app.ui.common.GitHubEmojiLabel
 import com.gitmob.app.ui.common.MarkdownBodyEditor
@@ -45,9 +43,8 @@ fun RepoDiscussionEditorScreen(
 ) {
     LaunchedEffect(owner, name, number) { viewModel.init(owner, name, number) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var saveAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     Scaffold(
-        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(if (number == null) R.string.discussion_new else R.string.discussion_edit), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { IconButton(onClick = { saveAction?.invoke() }, enabled = saveAction != null && !state.isSaving) { if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
+        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(if (number == null) R.string.discussion_new else R.string.discussion_edit), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { IconButton(onClick = { viewModel.save { onSaved(it.number) } }, enabled = state.repositoryId.isNotBlank() && !state.isLoading && !state.loadFailed && !state.isSaving) { if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { padding ->
         val contentModifier = Modifier
@@ -58,21 +55,37 @@ fun RepoDiscussionEditorScreen(
         when {
             state.isLoading -> Box(contentModifier, contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             state.loadFailed -> Column(contentModifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = viewModel::load) { Text(stringResource(R.string.common_retry)) } }
-            else -> DiscussionEditorContent(state.categories, state.labels, state.existing, state.bodyEditor, state.isSaving, contentModifier, viewModel::selectBodyEditorTab, { saveAction = it }) { title, body, category, labels -> viewModel.save(title, body, category, labels) { onSaved(it.number) } }
+            else -> DiscussionEditorContent(
+                categories = state.categories,
+                labels = state.labels,
+                draft = state.draft,
+                bodyState = viewModel.bodyState,
+                bodyEditorState = state.bodyEditor,
+                modifier = contentModifier,
+                onBodyTabSelected = viewModel::selectBodyEditorTab,
+                onTitleChange = viewModel::editTitle,
+                onMetadataConfirmed = viewModel::confirmMetadata,
+            )
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DiscussionEditorContent(categories: List<RepoDiscussionCategory>, labels: List<com.gitmob.app.data.model.IssueLabel>, existing: RepoDiscussion?, bodyEditorState: MarkdownEditorUiState, saving: Boolean, modifier: Modifier, onBodyTabSelected: (MarkdownEditorTab, String) -> Unit, onSaveActionReady: ((() -> Unit) -> Unit), onSave: (String, String, String, List<String>) -> Unit) {
-    var title by remember(existing) { mutableStateOf(existing?.title.orEmpty()) }
-    val bodyState = remember(existing) {
-        val initialBody = existing?.body.orEmpty()
-        TextFieldState(initialBody, TextRange(initialBody.length))
-    }
-    var category by remember(existing, categories) { mutableStateOf(existing?.category?.id ?: categories.firstOrNull()?.id.orEmpty()) }
-    var selectedLabels by remember(existing) { mutableStateOf(existing?.labels.orEmpty().map { it.id }.toSet()) }
+private fun DiscussionEditorContent(
+    categories: List<RepoDiscussionCategory>,
+    labels: List<com.gitmob.app.data.model.IssueLabel>,
+    draft: RepoDiscussionEditorDraft,
+    bodyState: TextFieldState,
+    bodyEditorState: MarkdownEditorUiState,
+    modifier: Modifier,
+    onBodyTabSelected: (MarkdownEditorTab) -> Unit,
+    onTitleChange: (String) -> Unit,
+    onMetadataConfirmed: (String, Set<String>) -> Unit,
+) {
+    val title = draft.title
+    val category = draft.categoryId
+    val selectedLabels = draft.labelIds
     var metadataSheet by remember { mutableStateOf<DiscussionMetadataSheet?>(null) }
     var draftCategory by remember { mutableStateOf(category) }
     var draftLabels by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -81,16 +94,15 @@ private fun DiscussionEditorContent(categories: List<RepoDiscussionCategory>, la
         draftLabels = selectedLabels
         metadataSheet = sheet
     }
-    SideEffect { onSaveActionReady { onSave(title, bodyState.text.toString(), category, selectedLabels.toList()) } }
     Column(
         modifier = modifier.padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+        OutlinedTextField(title, onTitleChange, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         MarkdownBodyEditor(
             textState = bodyState,
             state = bodyEditorState,
-            onTabSelected = { onBodyTabSelected(it, bodyState.text.toString()) },
+            onTabSelected = onBodyTabSelected,
             accessoryContent = {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = false, onClick = { openMetadata(DiscussionMetadataSheet.CATEGORY) }, label = { Text("${stringResource(R.string.discussion_category)} · ${categories.firstOrNull { it.id == category }?.name ?: "-"}") })
@@ -111,7 +123,7 @@ private fun DiscussionEditorContent(categories: List<RepoDiscussionCategory>, la
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Checkbox(label.id in draftLabels, { checked -> draftLabels = if (checked) draftLabels + label.id else draftLabels - label.id }); Text(label.name) }
                     }
                 }
-                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.End) { Button(onClick = { category = draftCategory; selectedLabels = draftLabels; metadataSheet = null }) { Text(stringResource(R.string.common_done)) } }
+                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.End) { Button(onClick = { onMetadataConfirmed(draftCategory, draftLabels); metadataSheet = null }) { Text(stringResource(R.string.common_done)) } }
             }
         }
     }

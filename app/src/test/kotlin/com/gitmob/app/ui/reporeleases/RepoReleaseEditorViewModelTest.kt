@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.reporeleases
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -24,9 +25,93 @@ class RepoReleaseEditorViewModelTest {
     private val repository = mockk<RepoReleaseRepository>()
     private val errors = mockk<ErrorEventBus>(relaxed = true)
     private val events = mockk<RepoUpdateEventBus>(relaxed = true)
-    private fun vm() = RepoReleaseEditorViewModel(repository, errors, events, accounts.session)
+    private fun vm(handle: SavedStateHandle = SavedStateHandle()) = RepoReleaseEditorViewModel(repository, errors, events, accounts.session, handle)
     private fun release() = RepoRelease(7, "R7", "v1", "main", "Server title", "Server notes", null, false, false, "", null, null, "", emptyList(), null, null)
     private fun create(vm: RepoReleaseEditorViewModel) { vm.init("o", "r", null, RepoPermission.WRITE); vm.editTag("v2") }
+
+    @Test fun restoredDraftKeepsClearedFieldsAndComparesAgainstFreshServerBaseline() = runTest {
+        coEvery { repository.getRelease("o", "r", 7) } returns ApiResult.Success(release())
+        val handle = SavedStateHandle()
+        val first = vm(handle)
+        first.init("o", "r", 7, RepoPermission.WRITE)
+        first.editTitle("")
+        first.editBody("")
+        first.editPrerelease(true)
+        val expected = first.state.value.draft
+        val restoredHandle = SavedStateHandle(mapOf("editor.draft" to handle.get<ReleaseEditorDraft>("editor.draft")))
+        val restored = vm(restoredHandle)
+        restored.init("o", "r", 7, RepoPermission.WRITE)
+        assertEquals(expected, restored.state.value.draft)
+        assertTrue(restored.state.value.isDirty)
+        restored.editTitle("Server title")
+        restored.editBody("Server notes")
+        restored.editPrerelease(false)
+        assertFalse(restored.state.value.isDirty)
+        assertFalse(restoredHandle.contains("editor.draft"))
+    }
+
+    @Test fun cleanReleaseRestoresLatestServerValuesWithoutCreatingDraft() = runTest {
+        coEvery { repository.getRelease("o", "r", 7) } returns ApiResult.Success(release())
+        val handle = SavedStateHandle()
+        val first = vm(handle)
+        first.init("o", "r", 7, RepoPermission.WRITE)
+        assertFalse(handle.contains("editor.draft"))
+        val latest = release().copy(name = "Remote title", body = "Remote notes")
+        coEvery { repository.getRelease("o", "r", 7) } returns ApiResult.Success(latest)
+        val restoredHandle = SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) })
+        val restored = vm(restoredHandle)
+        restored.init("o", "r", 7, RepoPermission.WRITE)
+        assertEquals("Remote title", restored.state.value.draft.title)
+        assertEquals("Remote notes", restored.state.value.draft.body)
+        assertFalse(restored.state.value.isDirty)
+        assertFalse(restoredHandle.contains("editor.draft"))
+    }
+
+    @Test fun newReleaseOnlyPersistsChangesAndClearsRevertedDraft() = runTest {
+        val handle = SavedStateHandle()
+        val vm = vm(handle)
+        vm.init("o", "r", null, RepoPermission.WRITE)
+        assertFalse(handle.contains("editor.draft"))
+        vm.editTitle("New release")
+        assertEquals(vm.state.value.draft, handle.get<ReleaseEditorDraft>("editor.draft"))
+        vm.editTitle("")
+        assertFalse(handle.contains("editor.draft"))
+        assertFalse(vm.state.value.isDirty)
+    }
+
+    @Test fun successfulReleaseSaveClearsDraftAndRestoresLatestServerValues() = runTest {
+        coEvery { repository.getRelease("o", "r", 7) } returns ApiResult.Success(release())
+        val saved = release().copy(name = "Saved title")
+        coEvery { repository.updateRelease("o", "r", 7, any()) } returns ApiResult.Success(saved)
+        val handle = SavedStateHandle()
+        val first = vm(handle)
+        first.init("o", "r", 7, RepoPermission.WRITE)
+        first.editTitle("Saved title")
+        assertTrue(handle.contains("editor.draft"))
+        first.save()
+        assertFalse(handle.contains("editor.draft"))
+        assertFalse(first.state.value.isDirty)
+        assertEquals(saved, first.state.value.savedRelease)
+        coEvery { repository.getRelease("o", "r", 7) } returns ApiResult.Success(saved.copy(body = "Remote notes"))
+        val restored = vm(SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) }))
+        restored.init("o", "r", 7, RepoPermission.WRITE)
+        assertEquals("Saved title", restored.state.value.draft.title)
+        assertEquals("Remote notes", restored.state.value.draft.body)
+        assertFalse(restored.state.value.isDirty)
+    }
+
+    @Test fun generatedReleaseNotesAreIncludedInRestoredDraft() = runTest {
+        coEvery { repository.generateNotes(any(), any(), any(), any(), any()) } returns ApiResult.Success(ReleaseNotes("Generated title", "Generated body"))
+        val handle = SavedStateHandle()
+        val first = vm(handle)
+        create(first)
+        first.generateNotes()
+        val restored = vm(SavedStateHandle(mapOf("editor.draft" to handle.get<ReleaseEditorDraft>("editor.draft"))))
+        restored.init("o", "r", null, RepoPermission.WRITE)
+        assertEquals(first.state.value.draft, restored.state.value.draft)
+        assertEquals("Generated body", restored.state.value.draft.body)
+        assertTrue(restored.state.value.isDirty)
+    }
 
     @Test fun successfulLoadInitializesCleanDraftOnceAndPreservesLaterEdits() = runTest {
         val response = CompletableDeferred<ApiResult<RepoRelease>>()
@@ -162,7 +247,8 @@ class RepoReleaseEditorViewModelTest {
     @Test fun failedSaveRetainsAllFieldsAndAllowsRetryWithNoPrematureCompletion() = runTest {
         val pending = CompletableDeferred<ApiResult<RepoRelease>>()
         coEvery { repository.createRelease(any(), any(), any()) } coAnswers { pending.await() }
-        val vm = vm(); create(vm)
+        val handle = SavedStateHandle()
+        val vm = vm(handle); create(vm)
         vm.editTarget("branch"); vm.editTitle("Title"); vm.editBody("Body"); vm.editDraft(false); vm.editPrerelease(true)
         val draft = vm.state.value.draft
         vm.save(); vm.save(); vm.editBody("Should be blocked")
@@ -170,6 +256,7 @@ class RepoReleaseEditorViewModelTest {
         assertEquals(draft, vm.state.value.draft)
         assertNull(vm.state.value.savedRelease)
         pending.complete(ApiResult.Failure(ApiError.NetworkError))
+        assertEquals(draft, handle.get<ReleaseEditorDraft>("editor.draft"))
         assertEquals(draft, vm.state.value.draft)
         assertTrue(vm.state.value.isDirty)
         assertEquals(ReleaseEditorPhase.EDITABLE, vm.state.value.phase)
@@ -177,6 +264,7 @@ class RepoReleaseEditorViewModelTest {
         coVerify(exactly = 1) { repository.createRelease("o", "r", draft.toInput()) }
         coEvery { repository.createRelease(any(), any(), any()) } returns ApiResult.Success(release().copy(tagName = "v2"))
         vm.save()
+        assertFalse(handle.contains("editor.draft"))
         assertEquals("v2", vm.state.value.savedRelease?.tagName)
         assertFalse(vm.state.value.isDirty)
         coVerify(exactly = 1) { events.emit(any()) }

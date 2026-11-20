@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.profile
 
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.semantics.Role
@@ -72,7 +73,7 @@ class ProfileEditorScreenTest {
 
     @Test
     fun `独立编辑页显示只读身份七个文本字段和可保存的工作机会开关`() {
-        val vm = ProfileEditorViewModel(repository(), ErrorEventBus(), accounts.session)
+        val vm = ProfileEditorViewModel(repository(), ErrorEventBus(), accounts.session, SavedStateHandle())
         setContent(vm)
 
         composeRule.onNodeWithText(text(R.string.profile_edit_title)).assertIsDisplayed()
@@ -89,7 +90,7 @@ class ProfileEditorScreenTest {
     @Test
     fun `未修改直接返回而未保存的顶部和系统返回都确认并保留或放弃输入`() {
         val repository = repository()
-        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session)
+        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, SavedStateHandle())
         var returns = 0
         setContent(vm) { returns++ }
         composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
@@ -117,7 +118,7 @@ class ProfileEditorScreenTest {
         val repository = repository()
         val response = CompletableDeferred<ApiResult<ProfileSaveResult>>()
         coEvery { repository.saveEditableProfile(any(), any()) } coAnswers { response.await() }
-        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session)
+        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, SavedStateHandle())
         var returns = 0
         try {
             setContent(vm) { returns++ }
@@ -157,7 +158,7 @@ class ProfileEditorScreenTest {
     @Test
     fun `保存无效资料显示字段错误并聚焦首个错误且不发送请求`() {
         val repository = repository()
-        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session)
+        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, SavedStateHandle())
         setContent(vm)
         field(R.string.profile_email).performScrollTo().performTextReplacement("broken")
         composeRule.onNodeWithText(text(R.string.common_save)).performClick()

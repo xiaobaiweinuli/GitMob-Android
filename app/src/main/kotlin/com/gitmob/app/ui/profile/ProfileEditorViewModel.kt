@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.profile
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.R
 import com.gitmob.app.core.auth.AccountSession
@@ -43,8 +44,11 @@ class ProfileEditorViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val errorEventBus: ErrorEventBus,
     session: AccountSession,
+    private val savedStateHandle: SavedStateHandle,
 ) : AccountViewModel(session) {
-    private val _state = MutableStateFlow(ProfileEditorUiState())
+    private val _state = MutableStateFlow(ProfileEditorUiState(
+        draft = savedStateHandle["editor.draft"] ?: ProfileDraft(),
+    ))
     val state: StateFlow<ProfileEditorUiState> = _state.asStateFlow()
 
     init { load() }
@@ -57,7 +61,11 @@ class ProfileEditorViewModel @Inject constructor(
             currentCoroutineContext().ensureActive()
             accountEpoch.ensureCurrent()
             when (result) {
-                is ApiResult.Success -> _state.value = ProfileEditorUiState(original = result.data, draft = result.data.values)
+                is ApiResult.Success -> {
+                    val draft = savedStateHandle.get<ProfileDraft>("editor.draft") ?: result.data.values
+                    persistDraft(draft, result.data.values)
+                    _state.value = ProfileEditorUiState(original = result.data, draft = draft)
+                }
                 is ApiResult.Failure -> {
                     _state.update { it.copy(isLoading = false, loadFailed = true) }
                     errorEventBus.emit(result.error)
@@ -68,12 +76,22 @@ class ProfileEditorViewModel @Inject constructor(
 
     fun update(field: ProfileField, value: String) {
         if (!editable()) return
-        _state.update { it.copy(draft = it.draft.withValue(field, value), saveErrorRes = null, saveStatusRes = null) }
+        storeDraft(_state.value.draft.withValue(field, value))
     }
 
     fun setHireable(value: Boolean) {
         if (!editable()) return
-        _state.update { it.copy(draft = it.draft.copy(hireable = value), saveErrorRes = null, saveStatusRes = null) }
+        storeDraft(_state.value.draft.copy(hireable = value))
+    }
+
+    private fun storeDraft(draft: ProfileDraft) {
+        persistDraft(draft, checkNotNull(_state.value.original).values)
+        _state.update { it.copy(draft = draft, saveErrorRes = null, saveStatusRes = null) }
+    }
+
+    private fun persistDraft(draft: ProfileDraft, baseline: ProfileDraft) {
+        if (draft == baseline) savedStateHandle.remove<ProfileDraft>("editor.draft")
+        else savedStateHandle["editor.draft"] = draft
     }
 
     fun validate(field: ProfileField) {
@@ -102,6 +120,7 @@ class ProfileEditorViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     val status = if (result.data.localSyncFailed) R.string.profile_local_sync_failed else R.string.profile_saved
                     // GitHub 响应才是新基线，不能把用户输入假装成服务器已经保存的值。
+                    savedStateHandle.remove<ProfileDraft>("editor.draft")
                     _state.value = ProfileEditorUiState(original = result.data.profile, draft = result.data.profile.values, saveStatusRes = status)
                     errorEventBus.emitNotice(status)
                 }

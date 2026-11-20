@@ -2,6 +2,7 @@ package com.gitmob.app.data.model
 
 import com.gitmob.app.R
 import java.net.URI
+import java.io.Serializable
 
 enum class ProfileField { NAME, BIO, COMPANY, LOCATION, BLOG, EMAIL, TWITTER_USERNAME }
 
@@ -15,7 +16,7 @@ data class ProfileDraft(
     val email: String = "",
     val twitterUsername: String = "",
     val hireable: Boolean = false,
-) {
+) : Serializable {
     // shortcut: 简介按 Unicode code point 计数，实测 GitHub 采用其他计数规则时再调整。
     val bioLength: Int get() = bio.codePointCount(0, bio.length)
 

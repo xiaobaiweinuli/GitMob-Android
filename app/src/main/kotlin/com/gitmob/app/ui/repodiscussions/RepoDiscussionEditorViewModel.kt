@@ -2,7 +2,13 @@ package com.gitmob.app.ui.repodiscussions
 
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewmodel.compose.SavedStateHandleSaveableApi
+import androidx.lifecycle.viewmodel.compose.saveable
 import androidx.lifecycle.viewModelScope
+import java.io.Serializable
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
@@ -20,7 +26,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class RepoDiscussionEditorDraft(
+    val title: String = "",
+    val categoryId: String = "",
+    val labelIds: Set<String> = emptySet(),
+) : Serializable
+
 data class RepoDiscussionEditorUiState(
+    val draft: RepoDiscussionEditorDraft = RepoDiscussionEditorDraft(),
     val repositoryId: String = "",
     val categories: List<RepoDiscussionCategory> = emptyList(),
     val labels: List<IssueLabel> = emptyList(),
@@ -31,6 +44,7 @@ data class RepoDiscussionEditorUiState(
     val bodyEditor: MarkdownEditorUiState = MarkdownEditorUiState(),
 )
 
+@OptIn(SavedStateHandleSaveableApi::class)
 @HiltViewModel
 class RepoDiscussionEditorViewModel @Inject constructor(
     private val repository: RepoDiscussionRepository,
@@ -38,8 +52,13 @@ class RepoDiscussionEditorViewModel @Inject constructor(
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val markdownRenderer: MarkdownRenderer,
     session: AccountSession,
+    private val savedStateHandle: SavedStateHandle,
 ) : AccountViewModel(session) {
-    private val _state = MutableStateFlow(RepoDiscussionEditorUiState())
+    val bodyState = savedStateHandle.saveable(key = "editor.body", saver = TextFieldState.Saver) { TextFieldState() }
+    private var draftInitialized = savedStateHandle.contains("editor.draft")
+    private val _state = MutableStateFlow(RepoDiscussionEditorUiState(
+        draft = savedStateHandle["editor.draft"] ?: RepoDiscussionEditorDraft(),
+    ))
     val state: StateFlow<RepoDiscussionEditorUiState> = _state.asStateFlow()
     private var owner = ""
     private var name = ""
@@ -66,16 +85,25 @@ class RepoDiscussionEditorViewModel @Inject constructor(
             val labels = repository.getLabels(owner, name)
             if (labels is ApiResult.Failure) return@launch failLoad(labels)
             val pageData = (page as ApiResult.Success).data
-            _state.update { it.copy(repositoryId = pageData.repositoryId, categories = pageData.categories, labels = (labels as ApiResult.Success).data, existing = (detail as? ApiResult.Success)?.data?.discussion, isLoading = false, bodyEditor = MarkdownEditorUiState()) }
+            val discussion = (detail as? ApiResult.Success)?.data?.discussion
+            if (!draftInitialized) {
+                bodyState.setTextAndPlaceCursorAtEnd(discussion?.body.orEmpty())
+                storeDraft(RepoDiscussionEditorDraft(
+                    title = discussion?.title.orEmpty(),
+                    categoryId = discussion?.category?.id ?: pageData.categories.firstOrNull()?.id.orEmpty(),
+                    labelIds = discussion?.labels.orEmpty().map { it.id }.toSet(),
+                ))
+            }
+            _state.update { it.copy(repositoryId = pageData.repositoryId, categories = pageData.categories, labels = (labels as ApiResult.Success).data, existing = discussion, isLoading = false) }
         }
     }
 
-    fun selectBodyEditorTab(tab: MarkdownEditorTab, markdown: String = "") {
+    fun selectBodyEditorTab(tab: MarkdownEditorTab) {
         _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, previewFailed = false)) }
-        if (tab == MarkdownEditorTab.PREVIEW) renderBodyPreview(markdown)
+        if (tab == MarkdownEditorTab.PREVIEW) renderBodyPreview(bodyState.text.toString())
     }
 
-    fun renderBodyPreview(markdown: String) {
+    private fun renderBodyPreview(markdown: String) {
         previewJob?.cancel()
         if (markdown.isBlank()) {
             _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = "", isRenderingPreview = false, previewFailed = false)) }
@@ -93,16 +121,27 @@ class RepoDiscussionEditorViewModel @Inject constructor(
         }
     }
 
-    fun save(title: String, body: String, categoryId: String, done: (RepoDiscussion) -> Unit) {
-        save(title, body, categoryId, emptyList(), done)
+    private fun storeDraft(draft: RepoDiscussionEditorDraft) {
+        savedStateHandle["editor.draft"] = draft
+        draftInitialized = true
+        _state.update { it.copy(draft = draft) }
     }
 
-    fun save(title: String, body: String, categoryId: String, labelIds: List<String>, done: (RepoDiscussion) -> Unit) {
+    fun editTitle(title: String) = storeDraft(_state.value.draft.copy(title = title))
+    fun confirmMetadata(categoryId: String, labels: Set<String>) =
+        storeDraft(_state.value.draft.copy(categoryId = categoryId, labelIds = labels))
+
+    fun save(done: (RepoDiscussion) -> Unit) {
         val state = _state.value
-        if (title.isBlank() || categoryId.isBlank() || state.isSaving) return
+        val draft = state.draft
+        val title = draft.title
+        val categoryId = draft.categoryId
+        if (!draftInitialized || state.isLoading || state.loadFailed || title.isBlank() || categoryId.isBlank() || state.isSaving) return
+        val body = bodyState.text.toString()
+        val labelIds = draft.labelIds.toList()
         if (state.existing != null && !state.existing.viewerCanUpdate) return
+        _state.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            _state.update { it.copy(isSaving = true) }
             val existing = state.existing
             val result = if (existing == null) repository.createDiscussion(state.repositoryId, title.trim(), body, categoryId)
             else repository.updateDiscussion(existing.id, title.trim(), body, categoryId)

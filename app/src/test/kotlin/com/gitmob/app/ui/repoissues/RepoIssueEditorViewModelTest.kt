@@ -1,7 +1,12 @@
 package com.gitmob.app.ui.repoissues
 
+import androidx.compose.ui.text.TextRange
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.markdown.CommonMarkRenderer
+import com.gitmob.app.data.model.IssueLabel
+import com.gitmob.app.data.model.SimpleUser
+import com.gitmob.app.ui.common.MarkdownEditorTab
 import com.gitmob.app.data.model.IssueFormCheckboxOption
 import com.gitmob.app.data.repository.IssueFormSubmissionBuilder
 import com.gitmob.app.core.error.ApiError
@@ -23,6 +28,7 @@ import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -33,6 +39,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
+@org.junit.runner.RunWith(org.robolectric.RobolectricTestRunner::class)
+@org.robolectric.annotation.Config(sdk = [35])
 @OptIn(ExperimentalCoroutinesApi::class)
 class RepoIssueEditorViewModelTest {
     @get:Rule val accounts = AccountSessionRule()
@@ -55,7 +63,7 @@ class RepoIssueEditorViewModelTest {
             ApiResult.Failure(ApiError.NetworkError),
             ApiResult.Success(IssueTemplateLoadResult(true, listOf(template))),
         )
-        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
+        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session, SavedStateHandle())
 
         viewModel.init("o", "r", null)
         advanceUntilIdle()
@@ -72,11 +80,13 @@ class RepoIssueEditorViewModelTest {
     fun `creating issue forwards generated markdown from editor`() = runTest {
         val repository = repositoryMock()
         coEvery { repository.createIssue(any()) } returns ApiResult.Success(issue())
-        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
+        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session, SavedStateHandle())
 
         viewModel.init("o", "r", null)
         advanceUntilIdle()
-        viewModel.save("Title", "### Version\n\n1.0", emptyList(), emptyList(), null) {}
+        viewModel.editTitle("Title")
+        viewModel.bodyState.edit { replace(0, length, "### Version\n\n1.0") }
+        viewModel.save {}
         advanceUntilIdle()
 
         coVerify(exactly = 1) {
@@ -104,7 +114,7 @@ class RepoIssueEditorViewModelTest {
             IssueTemplateLoadResult(true, listOf(template, template.copy(filename = "other.yml",
                 fields = listOf(IssueFormField.Markdown(value = "Unselected")))))
         )
-        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), CommonMarkRenderer(), accounts.session)
+        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), CommonMarkRenderer(), accounts.session, SavedStateHandle())
 
         viewModel.init("o", "r", null, "bug.yml")
         advanceUntilIdle()
@@ -137,13 +147,126 @@ class RepoIssueEditorViewModelTest {
         coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(IssueTemplateLoadResult(true,
             listOf(IssueTemplate("Bug", null, null, "bug.yml", emptyList(), emptyList(),
                 listOf(IssueFormField.Markdown(value = "**Instructions**"))))))
-        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
+        val viewModel = RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session, SavedStateHandle())
         viewModel.init("o", "r", null)
         advanceUntilIdle()
         assertTrue(viewModel.state.value.templateHtml.isEmpty())
         assertFalse(viewModel.state.value.loadFailed)
         viewModel.viewModelScope.cancel()
     }
+
+    @Test
+    fun templateAnswersAndConfirmedMetadataRestoreIncludingClearedValues() = runTest {
+        val repository = repositoryMock()
+        val template = IssueTemplate("Bug", null, "Default title", "bug.yml", listOf("bug"), listOf("octo"), listOf(
+            IssueFormField.Input("version", "Version", value = "default"),
+            IssueFormField.Textarea("logs", "Logs", value = "default logs"),
+            IssueFormField.Dropdown("os", "OS", options = listOf("Linux", "Windows"), defaultIndex = 0),
+            IssueFormField.Checkboxes("terms", "Terms", options = listOf(IssueFormCheckboxOption("Accept"))),
+        ))
+        coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(IssueTemplateLoadResult(true, listOf(template)))
+        coEvery { repository.getLabels("o", "r") } returns ApiResult.Success(listOf(IssueLabel("L1", "bug", "ffffff", null)))
+        coEvery { repository.getAssignableUsers("o", "r") } returns ApiResult.Success(listOf(SimpleUser("octo", null, null, null, "U1")))
+        val handle = SavedStateHandle()
+        val original = editor(repository, handle)
+        original.init("o", "r", null, "bug.yml")
+        advanceUntilIdle()
+        assertEquals("Default title", original.state.value.draft.title)
+        assertEquals(setOf("L1"), original.state.value.draft.labelIds)
+        assertEquals(setOf("U1"), original.state.value.draft.assigneeIds)
+        assertEquals(setOf(0), original.state.value.draft.selections["os"])
+        original.editTitle("")
+        original.editText("version", "")
+        original.editText("logs", "user logs")
+        original.editSelection("os", emptySet())
+        original.editSelection("terms", setOf(0))
+        original.confirmMetadata(emptySet(), setOf("U2"), "M2")
+        val expected = original.state.value.draft
+        val saved = handle.savedStateProvider().saveState()
+        original.viewModelScope.cancel()
+        val restored = editor(repository, SavedStateHandle.createHandle(saved, null))
+        restored.init("o", "r", null, "bug.yml")
+        advanceUntilIdle()
+        assertEquals(expected, restored.state.value.draft)
+        restored.confirmMetadata(emptySet(), emptySet(), null)
+        restored.load()
+        advanceUntilIdle()
+        assertEquals(expected.copy(assigneeIds = emptySet(), milestoneId = null), restored.state.value.draft)
+        restored.viewModelScope.cancel()
+    }
+
+    @Test
+    fun savedBodyDuringLoadingStillReceivesDefaultsButUserClearedBodyDoesNot() = runTest {
+        val repository = repositoryMock()
+        val pending = CompletableDeferred<ApiResult<RepoIssuePage>>()
+        coEvery { repository.getIssues("o", "r", any<RepoIssueFilter>(), null) } coAnswers { pending.await() }
+        val handle = SavedStateHandle()
+        val original = editor(repository, handle)
+        original.init("o", "r", 1)
+        advanceUntilIdle()
+        assertTrue(original.state.value.isLoading)
+        val loadingSnapshot = handle.savedStateProvider().saveState()
+        original.viewModelScope.cancel()
+        coEvery { repository.getIssues("o", "r", any<RepoIssueFilter>(), null) } returns ApiResult.Success(page())
+        val serverIssue = issue()
+        coEvery { repository.getIssue("o", "r", 1) } returns ApiResult.Success(mockk { io.mockk.every { issue } returns serverIssue })
+        val restoredHandle = SavedStateHandle.createHandle(loadingSnapshot, null)
+        val initialized = editor(repository, restoredHandle)
+        initialized.init("o", "r", 1)
+        advanceUntilIdle()
+        assertEquals("body", initialized.bodyState.text.toString())
+        initialized.bodyState.edit { replace(0, length, "") }
+        initialized.editTitle("")
+        val clearedSnapshot = restoredHandle.savedStateProvider().saveState()
+        initialized.viewModelScope.cancel()
+        val cleared = editor(repository, SavedStateHandle.createHandle(clearedSnapshot, null))
+        cleared.init("o", "r", 1)
+        advanceUntilIdle()
+        assertEquals("", cleared.bodyState.text.toString())
+        assertEquals("", cleared.state.value.draft.title)
+        cleared.viewModelScope.cancel()
+    }
+
+    @Test
+    fun restoredBodySelectionAndImmediateSubmissionUseCurrentInputsAndKeepFailedDraft() = runTest {
+        val repository = repositoryMock()
+        val pending = CompletableDeferred<ApiResult<RepoIssue>>()
+        coEvery { repository.createIssue(any()) } coAnswers { pending.await() }
+        val handle = SavedStateHandle()
+        val original = editor(repository, handle)
+        original.init("o", "r", null)
+        advanceUntilIdle()
+        original.editTitle("My title")
+        original.bodyState.edit { replace(0, length, "unsent body"); selection = TextRange(2, 6) }
+        val saved = handle.savedStateProvider().saveState()
+        original.viewModelScope.cancel()
+        val restored = editor(repository, SavedStateHandle.createHandle(saved, null))
+        restored.init("o", "r", null)
+        advanceUntilIdle()
+        assertEquals("unsent body", restored.bodyState.text.toString())
+        assertEquals(TextRange(2, 6), restored.bodyState.selection)
+        val bodyState = restored.bodyState
+        restored.selectBodyEditorTab(MarkdownEditorTab.PREVIEW)
+        restored.load()
+        advanceUntilIdle()
+        assertEquals(MarkdownEditorTab.PREVIEW, restored.state.value.bodyEditor.selectedTab)
+        org.junit.Assert.assertSame(bodyState, restored.bodyState)
+        restored.bodyState.edit { replace(0, length, "latest input") }
+        restored.save {}
+        restored.editTitle("Edited while pending")
+        restored.bodyState.edit { replace(0, length, "keep after failure") }
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.createIssue(match { it.title == "My title" && it.body == "latest input" }) }
+        pending.complete(ApiResult.Failure(ApiError.NetworkError))
+        advanceUntilIdle()
+        assertEquals("Edited while pending", restored.state.value.draft.title)
+        assertEquals("keep after failure", restored.bodyState.text.toString())
+        assertFalse(restored.state.value.isSaving)
+        restored.viewModelScope.cancel()
+    }
+
+    private fun editor(repository: RepoIssueRepository, handle: SavedStateHandle) =
+        RepoIssueEditorViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), CommonMarkRenderer(), accounts.session, handle)
 
     private fun repositoryMock(): RepoIssueRepository = mockk {
         coEvery { getIssues("o", "r", any<RepoIssueFilter>(), null) } returns ApiResult.Success(page())

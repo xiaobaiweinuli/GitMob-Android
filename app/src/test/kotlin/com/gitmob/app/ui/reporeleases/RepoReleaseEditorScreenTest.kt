@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.reporeleases
 
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
@@ -167,7 +168,7 @@ class RepoReleaseEditorNavigationTest {
                             when (key) {
                                 editorRoute -> {
                                     val editor: RepoReleaseEditorViewModel = viewModel {
-                                        RepoReleaseEditorViewModel(repository, errors, updates, accounts.session)
+                                        RepoReleaseEditorViewModel(repository, errors, updates, accounts.session, SavedStateHandle())
                                     }
                                     SideEffect { latestEditor = editor }
                                     val clicks = rememberEntryNavigation(navigator, editorRoute)

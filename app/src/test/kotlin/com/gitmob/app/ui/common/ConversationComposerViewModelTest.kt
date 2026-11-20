@@ -179,14 +179,42 @@ class ConversationComposerViewModelTest {
         restored.viewModelScope.cancel()
     }
 
-    private fun init(viewModel: ConversationComposerViewModel) {
+    @Test
+    fun restoredEmptyDraftDoesNotReapplyRouteText() = runTest {
+        val handle = SavedStateHandle()
+        val original = viewModel(savedStateHandle = handle)
+        init(original, "Original comment")
+        original.state.value.textState.edit { replace(0, length, "") }
+        val saved = handle.savedStateProvider().saveState()
+        original.viewModelScope.cancel()
+        val restored = viewModel(savedStateHandle = SavedStateHandle.createHandle(saved, null))
+        init(restored, "Original comment")
+        assertEquals("", restored.state.value.text)
+        restored.viewModelScope.cancel()
+    }
+
+    @Test
+    fun immediateSubmitReadsTextFieldStateWithoutAnObserverRoundTrip() = runTest {
+        val repository = mockk<RepoIssueRepository>()
+        coEvery { repository.addComment("I1", "latest input") } returns ApiResult.Success(mockk())
+        val vm = viewModel(issueRepository = repository)
+        init(vm)
+        vm.state.value.textState.edit { replace(0, length, "latest input") }
+        vm.submit()
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.addComment("I1", "latest input") }
+        assertTrue(vm.state.value.submitted)
+        vm.viewModelScope.cancel()
+    }
+
+    private fun init(viewModel: ConversationComposerViewModel, initialText: String = "") {
         viewModel.init(
             owner = "owner",
             name = "repo",
             number = 7,
             target = ConversationComposerTarget.ISSUE_COMMENT,
             subjectId = "I1",
-            initialText = "",
+            initialText = initialText,
             commentId = null,
             replyToId = null,
             reviewEvent = null,

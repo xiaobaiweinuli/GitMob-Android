@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.profile
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
@@ -43,10 +44,79 @@ class ProfileEditorViewModelTest {
     private val original = EditableProfile(AuthenticatedUser(1, "U_1", "viewer", "Original", null), ProfileDraft(name = "Original"))
 
     @Test
+    fun restoredProfileKeepsClearedValuesAndClearsDraftAfterNormalizedSave() = runTest {
+        val repository = mockk<UserRepository>()
+        coEvery { repository.getEditableProfile() } returns ApiResult.Success(original)
+        val handle = SavedStateHandle()
+        val first = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, handle)
+        first.update(ProfileField.NAME, "")
+        first.setHireable(true)
+        val snapshot = handle.get<ProfileDraft>("editor.draft")
+        first.viewModelScope.cancel()
+        val restoredHandle = SavedStateHandle(mapOf("editor.draft" to snapshot))
+        val restored = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, restoredHandle)
+        assertEquals(snapshot, restored.state.value.draft)
+        assertTrue(restored.state.value.hasChanges)
+        restored.update(ProfileField.NAME, "  normalized  ")
+        val normalized = original.copy(values = restored.state.value.draft.copy(name = "normalized"))
+        coEvery { repository.saveEditableProfile(any(), any()) } returns ApiResult.Success(ProfileSaveResult(normalized))
+        restored.save()
+        runCurrent()
+        assertFalse(restoredHandle.contains("editor.draft"))
+        assertEquals(normalized.values, restored.state.value.draft)
+        assertFalse(restored.state.value.hasChanges)
+        restored.viewModelScope.cancel()
+        val latest = normalized.copy(values = normalized.values.copy(name = "Remote update"))
+        coEvery { repository.getEditableProfile() } returns ApiResult.Success(latest)
+        val nextHandle = SavedStateHandle(restoredHandle.keys().associateWith { restoredHandle.get<Any?>(it) })
+        val next = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, nextHandle)
+        assertEquals(latest.values, next.state.value.draft)
+        assertFalse(next.state.value.hasChanges)
+        next.viewModelScope.cancel()
+    }
+
+    @Test
+    fun cleanProfileRestoresLatestServerValuesWithoutCreatingDraft() = runTest {
+        val repository = mockk<UserRepository>()
+        coEvery { repository.getEditableProfile() } returns ApiResult.Success(original)
+        val handle = SavedStateHandle()
+        val first = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, handle)
+        assertEquals(original.values, first.state.value.draft)
+        assertFalse(handle.contains("editor.draft"))
+        first.viewModelScope.cancel()
+
+        val latest = original.copy(values = original.values.copy(name = "Remote update", bio = "New bio"))
+        coEvery { repository.getEditableProfile() } returns ApiResult.Success(latest)
+        val restoredHandle = SavedStateHandle(handle.keys().associateWith { handle.get<Any?>(it) })
+        val restored = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, restoredHandle)
+        assertEquals(latest.values, restored.state.value.draft)
+        assertFalse(restored.state.value.hasChanges)
+        assertFalse(restoredHandle.contains("editor.draft"))
+        restored.viewModelScope.cancel()
+    }
+
+    @Test
+    fun revertingProfileChangesRemovesSavedDraft() = runTest {
+        val repository = mockk<UserRepository>()
+        coEvery { repository.getEditableProfile() } returns ApiResult.Success(original)
+        val handle = SavedStateHandle()
+        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, handle)
+        vm.update(ProfileField.NAME, "Changed")
+        vm.setHireable(true)
+        vm.update(ProfileField.NAME, original.values.name)
+        assertEquals(vm.state.value.draft, handle.get<ProfileDraft>("editor.draft"))
+        assertTrue(vm.state.value.hasChanges)
+        vm.setHireable(original.values.hireable)
+        assertFalse(handle.contains("editor.draft"))
+        assertFalse(vm.state.value.hasChanges)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
     fun `加载失败可重试且资料成功后不重复加载覆盖草稿`() = runTest {
         val repository = mockk<UserRepository>()
         coEvery { repository.getEditableProfile() } returnsMany listOf(ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(original))
-        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session)
+        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, SavedStateHandle())
         try {
             assertTrue(vm.state.value.loadFailed)
             assertFalse(vm.state.value.isLoading)
@@ -71,7 +141,7 @@ class ProfileEditorViewModelTest {
     fun `校验按字段触发且保存定位首个错误不发请求`() = runTest {
         val repository = mockk<UserRepository>()
         coEvery { repository.getEditableProfile() } returns ApiResult.Success(original)
-        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session)
+        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, SavedStateHandle())
         try {
             vm.save()
             coVerify(exactly = 0) { repository.saveEditableProfile(any(), any()) }
@@ -104,7 +174,7 @@ class ProfileEditorViewModelTest {
         coEvery { repository.getEditableProfile() } returns ApiResult.Success(original)
         val response = CompletableDeferred<ApiResult<ProfileSaveResult>>()
         coEvery { repository.saveEditableProfile(any(), any()) } coAnswers { response.await() }
-        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session)
+        val vm = ProfileEditorViewModel(repository, ErrorEventBus(), accounts.session, SavedStateHandle())
         try {
             vm.update(ProfileField.NAME, "  draft  ")
             vm.setHireable(true)
@@ -154,7 +224,7 @@ class ProfileEditorViewModelTest {
         backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
             bus.eventsFor(accounts.session.epoch).collect { events += it }
         }
-        val vm = ProfileEditorViewModel(repository, bus, accounts.session)
+        val vm = ProfileEditorViewModel(repository, bus, accounts.session, SavedStateHandle())
         try {
             vm.update(ProfileField.NAME, "Saved")
             vm.save()
@@ -175,7 +245,7 @@ class ProfileEditorViewModelTest {
         val load = CompletableDeferred<ApiResult<EditableProfile>>()
         coEvery { repository.getEditableProfile() } coAnswers { withContext(NonCancellable) { load.await() } }
         val bus = ErrorEventBus()
-        val loading = ProfileEditorViewModel(repository, bus, accounts.session)
+        val loading = ProfileEditorViewModel(repository, bus, accounts.session, SavedStateHandle())
         try {
             accounts.session.replace(accounts.session.state.value.accounts, "1")
             load.complete(ApiResult.Success(original))
@@ -184,7 +254,7 @@ class ProfileEditorViewModelTest {
             coEvery { repository.getEditableProfile() } returns ApiResult.Success(original)
             val save = CompletableDeferred<ApiResult<ProfileSaveResult>>()
             coEvery { repository.saveEditableProfile(any(), any()) } coAnswers { withContext(NonCancellable) { save.await() } }
-            val saving = ProfileEditorViewModel(repository, bus, accounts.session)
+            val saving = ProfileEditorViewModel(repository, bus, accounts.session, SavedStateHandle())
             try {
                 saving.update(ProfileField.NAME, "draft")
                 saving.save()

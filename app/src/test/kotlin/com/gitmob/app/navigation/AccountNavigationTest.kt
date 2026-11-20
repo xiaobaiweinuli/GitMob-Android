@@ -29,6 +29,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,6 +38,20 @@ import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.R
 import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.core.markdown.CommonMarkRenderer
+import com.gitmob.app.core.permission.RepoPermission
+import com.gitmob.app.core.permission.toCapabilities
+import com.gitmob.app.data.model.IssueTemplate
+import com.gitmob.app.data.model.IssueTemplateLoadResult
+import com.gitmob.app.data.model.IssueFormField
+import com.gitmob.app.data.model.IssueFormCheckboxOption
+import com.gitmob.app.data.model.IssueLabel
+import com.gitmob.app.data.model.IssueMilestone
+import com.gitmob.app.data.model.SimpleUser
+import com.gitmob.app.data.model.RepoIssuePage
+import com.gitmob.app.data.repository.RepoIssueRepository
+import com.gitmob.app.ui.repoissues.RepoIssueEditorViewModel
+import com.gitmob.app.ui.repoissues.RepoIssueListViewModel
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.GistUpdateEventBus
@@ -590,6 +605,95 @@ class AccountNavigationTest {
         composeRule.mainClock.autoAdvance = true
     }
 
+    @Test
+    fun editorDraftSurvivesChildNavigationAndActivityRecreation() {
+        launch(DeepLinkDestination.IssueList("owner", "repo"))
+        openIssueEditor()
+        val vm = fixture.model<RepoIssueEditorViewModel>()
+        composeRule.runOnIdle {
+            vm.editTitle("Unsent title")
+            vm.bodyState.edit { replace(0, length, "Unsent body"); selection = TextRange(2, 5) }
+        }
+        composeRule.onNodeWithText("repo").performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+        assertSame(vm, fixture.model<RepoIssueEditorViewModel>())
+        composeRule.onNodeWithText("Unsent title").assertExists()
+        composeRule.onNodeWithText("Unsent body").assertExists()
+        composeRule.runOnUiThread { controller!!.recreate() }
+        composeRule.waitForIdle()
+        assertSame(vm, fixture.model<RepoIssueEditorViewModel>())
+        composeRule.onNodeWithText("Unsent title").assertExists()
+        composeRule.onNodeWithText("Unsent body").assertExists()
+        assertEquals(TextRange(2, 5), vm.bodyState.selection)
+    }
+
+    @Test
+    fun editorPoppedEntryStartsWithFreshDraft() {
+        launch(DeepLinkDestination.IssueList("owner", "repo"))
+        openIssueEditor()
+        val first = fixture.model<RepoIssueEditorViewModel>()
+        composeRule.runOnIdle {
+            first.editTitle("Discarded title")
+            first.bodyState.edit { replace(0, length, "Discarded body") }
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+        composeRule.waitForIdle()
+        assertTrue(fixture.creation(first).cleared)
+        openIssueEditor()
+        val second = fixture.model<RepoIssueEditorViewModel>()
+        assertNotSame(first, second)
+        assertEquals("", second.state.value.draft.title)
+        assertEquals("", second.bodyState.text.toString())
+        composeRule.onNodeWithText("Discarded title").assertDoesNotExist()
+    }
+
+    @Test
+    fun editorDraftRestoresThroughSavedStateAfterProcessRecreation() {
+        launch(DeepLinkDestination.IssueList("owner", "repo"))
+        openIssueEditor(template = true)
+        val first = fixture.model<RepoIssueEditorViewModel>()
+        composeRule.runOnIdle {
+            first.editTitle("Restored form")
+            first.editText("version", "")
+            first.editText("logs", "User logs")
+            first.editSelection("platform", setOf(1))
+            first.editSelection("terms", setOf(0))
+            first.confirmMetadata(setOf("L1"), emptySet(), "M1")
+        }
+        val expected = first.state.value.draft
+        val restored = restoreInNewProcess(fixture.alpha)
+        val second = restored.model<RepoIssueEditorViewModel>()
+        assertNotSame(first, second)
+        assertEquals(expected, second.state.value.draft)
+        composeRule.onNodeWithText("Restored form").assertExists()
+        composeRule.onNodeWithText("User logs").assertExists()
+        composeRule.onNodeWithText("Default version").assertDoesNotExist()
+    }
+
+    @Test
+    fun editorBodyAndSelectionRestoreInNewProcess() {
+        launch(DeepLinkDestination.IssueList("owner", "repo"))
+        openIssueEditor()
+        val first = fixture.model<RepoIssueEditorViewModel>()
+        composeRule.runOnIdle {
+            first.editTitle("Restored title")
+            first.bodyState.edit { replace(0, length, "Restored body"); selection = TextRange(1, 7) }
+        }
+        val restored = restoreInNewProcess(fixture.alpha)
+        val second = restored.model<RepoIssueEditorViewModel>()
+        assertNotSame(first, second)
+        assertEquals("Restored body", second.bodyState.text.toString())
+        assertEquals(TextRange(1, 7), second.bodyState.selection)
+        composeRule.onNodeWithText("Restored title").assertExists()
+        composeRule.onNodeWithText("Restored body").assertExists()
+    }
+
+    private fun openIssueEditor(template: Boolean = false) {
+        composeRule.onNodeWithContentDescription(text(R.string.issue_new)).performClick()
+        composeRule.onNodeWithText(if (template) "Editor test template" else text(R.string.issue_template_blank)).performClick()
+        composeRule.waitForIdle()
+    }
+
     private fun launch(destination: DeepLinkDestination? = null, loggedIn: Boolean = true) {
         fixture.deepLinkDestination = destination
         if (loggedIn) accounts.session.replace(listOf(fixture.alpha, fixture.beta), fixture.alpha.key)
@@ -671,6 +775,7 @@ internal class NavigationFixture(val session: AccountSession) {
     val beta = GitHubAccount("2", 2, "U_2", "beta", "Beta")
     val users = mockk<UserRepository>()
     private val repos = mockk<RepoRepository>(relaxUnitFun = true)
+    private val issues = mockk<RepoIssueRepository>()
     val repoDetails = mockk<RepoDetailRepository>()
     val gists = mockk<GistRepository>()
     val translations = mockk<TranslationRepository>()
@@ -686,6 +791,18 @@ internal class NavigationFixture(val session: AccountSession) {
     data class Creation(val model: AccountViewModel, val handle: SavedStateHandle, var cleared: Boolean = false)
 
     init {
+        val template = IssueTemplate("Editor test template", null, "Template title", "editor.yml", listOf("bug"), listOf("alpha"), listOf(
+            IssueFormField.Input("version", "Version", value = "Default version"),
+            IssueFormField.Textarea("logs", "Logs", value = "Default logs"),
+            IssueFormField.Dropdown("platform", "Platform", options = listOf("Linux", "Windows"), defaultIndex = 0),
+            IssueFormField.Checkboxes("terms", "Terms", options = listOf(IssueFormCheckboxOption("Accept"))),
+        ))
+        coEvery { issues.getIssues("owner", "repo", any(), any()) } returns ApiResult.Success(
+            RepoIssuePage("R1", RepoPermission.ADMIN, RepoPermission.ADMIN.toCapabilities(), true, true, 0, emptyList(), false, null))
+        coEvery { issues.getIssueTemplates("owner", "repo") } returns ApiResult.Success(IssueTemplateLoadResult(true, listOf(template)))
+        coEvery { issues.getLabels("owner", "repo") } returns ApiResult.Success(listOf(IssueLabel("L1", "bug", "ff0000", null)))
+        coEvery { issues.getMilestones("owner", "repo") } returns ApiResult.Success(listOf(IssueMilestone("M1", 1, "Milestone", "OPEN", null)))
+        coEvery { issues.getAssignableUsers("owner", "repo") } returns ApiResult.Success(listOf(SimpleUser("alpha", null, null, null, "U1")))
         // Keep the API pending: navigation must show the target independently of network latency.
         coEvery { repoDetails.getRepoDetail(any(), any()) } coAnswers { awaitCancellation() }
         every { translations.configuration } returns MutableStateFlow(TranslationConfiguration())
@@ -747,6 +864,8 @@ internal class NavigationFixture(val session: AccountSession) {
             RepoDetailViewModel(repoDetails, repos, stars, mockk(), repoEvents, errors, mockk(),
                 RepoTransferPendingStore(), session, libraryRepositoryStub(), mockk())
         },
+        RepoIssueListViewModel::class.java to { RepoIssueListViewModel(issues, errors, repoEvents, session, it) },
+        RepoIssueEditorViewModel::class.java to { RepoIssueEditorViewModel(issues, errors, repoEvents, CommonMarkRenderer(), session, it) },
         ReposViewModel::class.java to { ReposViewModel(repos, repoEvents, errors, it, session) },
         StarsViewModel::class.java to { StarsViewModel(stars, repoEvents, errors, session) },
         GistViewModel::class.java to { GistViewModel(gists, errors, it, gistEvents, session) },

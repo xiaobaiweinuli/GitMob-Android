@@ -26,7 +26,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.net.toUri
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextRange
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.unit.dp
@@ -34,7 +33,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.*
-import com.gitmob.app.data.repository.IssueFormSubmissionBuilder
 import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.common.MarkdownBodyEditor
 import com.gitmob.app.ui.common.MarkdownEditorTab
@@ -59,7 +57,6 @@ fun RepoIssueEditorScreen(
 ) {
     LaunchedEffect(owner, name, number, templateFilename) { viewModel.init(owner, name, number, templateFilename) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var saveAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -74,7 +71,7 @@ fun RepoIssueEditorScreen(
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    IconButton(onClick = { saveAction?.invoke() }, enabled = saveAction != null && !state.isSaving) {
+                    IconButton(onClick = { viewModel.save { onSaved(it.number) } }, enabled = state.repositoryId != null && !state.isLoading && !state.loadFailed && !state.isSaving) {
                         if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save))
                     }
                 },
@@ -100,11 +97,14 @@ fun RepoIssueEditorScreen(
                 milestones = state.milestones,
                 assignees = state.assignees,
                 bodyEditorState = state.bodyEditor,
-                saving = state.isSaving,
+                draft = state.draft,
+                bodyState = viewModel.bodyState,
                 modifier = contentModifier,
                 onBodyTabSelected = viewModel::selectBodyEditorTab,
-                onSave = { title, body, labels, assignees, milestone -> viewModel.save(title, body, labels, assignees, milestone) { onSaved(it.number) } },
-                onSaveActionReady = { saveAction = it },
+                onTitleChange = viewModel::editTitle,
+                onTextChange = viewModel::editText,
+                onSelectionChange = viewModel::editSelection,
+                onMetadataConfirmed = viewModel::confirmMetadata,
             )
         }
     }
@@ -121,22 +121,21 @@ private fun IssueEditor(
     milestones: List<IssueMilestone>,
     assignees: List<SimpleUser>,
     bodyEditorState: MarkdownEditorUiState,
-    saving: Boolean,
+    draft: RepoIssueEditorDraft,
+    bodyState: TextFieldState,
     modifier: Modifier,
-    onBodyTabSelected: (MarkdownEditorTab, String) -> Unit,
-    onSave: (String, String, List<String>, List<String>, String?) -> Unit,
-    onSaveActionReady: ((() -> Unit) -> Unit),
+    onBodyTabSelected: (MarkdownEditorTab) -> Unit,
+    onTitleChange: (String) -> Unit,
+    onTextChange: (String, String) -> Unit,
+    onSelectionChange: (String, Set<Int>) -> Unit,
+    onMetadataConfirmed: (Set<String>, Set<String>, String?) -> Unit,
 ) {
-    var title by remember(template, existing) { mutableStateOf(existing?.title ?: template?.title.orEmpty()) }
-    val bodyState = remember(template, existing) {
-        val initialBody = existing?.body.orEmpty()
-        TextFieldState(initialBody, TextRange(initialBody.length))
-    }
-    var textValues by remember(template) { mutableStateOf(template?.fields.orEmpty().mapNotNull { field -> when (field) { is IssueFormField.Input -> field.id to field.value.orEmpty(); is IssueFormField.Textarea -> field.id to field.value.orEmpty(); else -> null } }.toMap()) }
-    var selections by remember(template) { mutableStateOf(template?.fields.orEmpty().mapNotNull { field -> (field as? IssueFormField.Dropdown)?.defaultIndex?.let { field.id to setOf(it) } }.toMap()) }
-    var selectedLabels by remember(template, existing, labels) { mutableStateOf(existing?.labels?.map { it.id }?.toSet() ?: labels.filter { it.name in template?.labels.orEmpty() }.map { it.id }.toSet()) }
-    var selectedAssignees by remember(template, existing, assignees) { mutableStateOf(existing?.assignees?.mapNotNull { it.id }?.toSet() ?: assignees.filter { it.login in template?.assignees.orEmpty() }.mapNotNull { it.id }.toSet()) }
-    var selectedMilestone by remember(existing) { mutableStateOf(existing?.milestone?.id) }
+    val title = draft.title
+    val textValues = draft.textValues
+    val selections = draft.selections
+    val selectedLabels = draft.labelIds
+    val selectedAssignees = draft.assigneeIds
+    val selectedMilestone = draft.milestoneId
     var metadataSheet by remember { mutableStateOf<IssueMetadataSheet?>(null) }
     var draftLabels by remember { mutableStateOf<Set<String>>(emptySet()) }
     var draftAssignees by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -147,13 +146,6 @@ private fun IssueEditor(
         draftMilestone = selectedMilestone
         metadataSheet = sheet
     }
-    val complete = template?.let { IssueFormSubmissionBuilder.isComplete(it, textValues, selections) } ?: true
-    SideEffect {
-        onSaveActionReady {
-            onSave(title, template?.let { IssueFormSubmissionBuilder.build(it, textValues, selections) } ?: bodyState.text.toString(), selectedLabels.toList(), selectedAssignees.toList(), selectedMilestone)
-        }
-    }
-
     if (template == null || existing != null) {
         Column(
             modifier = modifier.padding(top = 16.dp),
@@ -161,7 +153,7 @@ private fun IssueEditor(
         ) {
             OutlinedTextField(
                 title,
-                { title = it },
+                onTitleChange,
                 label = { Text(stringResource(R.string.issue_editor_title_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -169,7 +161,7 @@ private fun IssueEditor(
             MarkdownBodyEditor(
                 textState = bodyState,
                 state = bodyEditorState,
-                onTabSelected = { onBodyTabSelected(it, bodyState.text.toString()) },
+                onTabSelected = onBodyTabSelected,
                 accessoryContent = {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MetadataChip(stringResource(R.string.issue_labels), selectedLabels.size) { openMetadata(IssueMetadataSheet.LABELS) }
@@ -186,15 +178,15 @@ private fun IssueEditor(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
+            item { OutlinedTextField(title, onTitleChange, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
             itemsIndexed(template.fields, key = { index, field -> issueFormFieldKey(index, field) }) { _, field ->
                 IssueFormFieldContent(
                     field = field,
                     templateHtml = templateHtml,
                     value = textValues[field.id].orEmpty(),
                     selected = selections[field.id].orEmpty(),
-                    onValueChange = { value -> field.id?.let { textValues = textValues + (it to value) } },
-                    onSelected = { selected -> field.id?.let { selections = selections + (it to selected) } },
+                    onValueChange = { value -> field.id?.let { onTextChange(it, value) } },
+                    onSelected = { selected -> field.id?.let { onSelectionChange(it, selected) } },
                     onLinkClick = onLinkClick,
                 )
             }
@@ -241,7 +233,7 @@ private fun IssueEditor(
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.End) {
-                    Button(onClick = { selectedLabels = draftLabels; selectedAssignees = draftAssignees; selectedMilestone = draftMilestone; metadataSheet = null }) { Text(stringResource(R.string.common_done)) }
+                    Button(onClick = { onMetadataConfirmed(draftLabels, draftAssignees, draftMilestone); metadataSheet = null }) { Text(stringResource(R.string.common_done)) }
                 }
             }
         }

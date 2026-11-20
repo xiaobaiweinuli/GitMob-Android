@@ -14,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextRange
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.unit.dp
@@ -53,9 +52,8 @@ fun RepoPullRequestEditorScreen(
         viewModel.init(owner, name, number, baseOwner, baseName, baseRef, headOwner, headName, headRef, headRepositoryId)
     }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var saveAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     Scaffold(
-        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(if (number == null) R.string.pr_new else R.string.pr_edit), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { IconButton(onClick = { saveAction?.invoke() }, enabled = saveAction != null && !state.isSaving) { if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
+        topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(if (number == null) R.string.pr_new else R.string.pr_edit), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, actions = { IconButton(onClick = { viewModel.save { onSaved(it.number) } }, enabled = state.metadata != null && !state.isLoading && !state.loadFailed && !state.isSaving) { if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { padding ->
         val contentModifier = Modifier
@@ -66,28 +64,46 @@ fun RepoPullRequestEditorScreen(
         when {
             state.isLoading -> Box(contentModifier, contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             state.loadFailed -> PullRequestEditorRetry(contentModifier, viewModel::load)
-            state.metadata != null -> PullRequestEditor(state.metadata!!, state.existing, baseOwner, baseName, baseRef, headOwner, headName, headRef, headRepositoryId, state.bodyEditor, contentModifier, viewModel::selectBodyEditorTab, { saveAction = it }) { title, body, base, repo, head, draft, labels, assignees, milestone, reviewers -> viewModel.save(title, body, base, repo, head, draft, labels, assignees, milestone, reviewers) { onSaved(it.number) } }
+            state.metadata != null -> PullRequestEditor(
+                metadata = state.metadata!!,
+                existing = state.existing,
+                draft = state.draft,
+                bodyState = viewModel.bodyState,
+                bodyEditorState = state.bodyEditor,
+                modifier = contentModifier,
+                onBodyTabSelected = viewModel::selectBodyEditorTab,
+                onTitleChange = viewModel::editTitle,
+                onBaseChange = viewModel::editBaseRef,
+                onDraftChange = viewModel::editDraft,
+                onMetadataConfirmed = viewModel::confirmMetadata,
+            )
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PullRequestEditor(metadata: RepoPullRequestCreateMetadata, existing: RepoPullRequest?, baseOwner: String?, baseName: String?, baseRefArg: String?, headOwner: String?, headName: String?, headRefArg: String?, headRepositoryIdArg: String?, bodyEditorState: MarkdownEditorUiState, modifier: Modifier, onBodyTabSelected: (MarkdownEditorTab, String) -> Unit, onSaveActionReady: ((() -> Unit) -> Unit), onSave: (String, String, String, String, String, Boolean, List<String>, List<String>, String?, List<String>) -> Unit) {
-    var title by remember(existing) { mutableStateOf(existing?.title.orEmpty()) }
-    val bodyState = remember(existing) {
-        val initialBody = existing?.body.orEmpty()
-        TextFieldState(initialBody, TextRange(initialBody.length))
-    }
+private fun PullRequestEditor(
+    metadata: RepoPullRequestCreateMetadata,
+    existing: RepoPullRequest?,
+    draft: RepoPullRequestEditorDraft,
+    bodyState: TextFieldState,
+    bodyEditorState: MarkdownEditorUiState,
+    modifier: Modifier,
+    onBodyTabSelected: (MarkdownEditorTab) -> Unit,
+    onTitleChange: (String) -> Unit,
+    onBaseChange: (String) -> Unit,
+    onDraftChange: (Boolean) -> Unit,
+    onMetadataConfirmed: (Set<String>, Set<String>, String?, Set<String>) -> Unit,
+) {
+    val title = draft.title
+    val base = draft.baseRef
+    val head = draft.headRef
     val createMode = existing == null
-    var base by remember(existing, metadata, baseRefArg) { mutableStateOf(existing?.baseRefName ?: baseRefArg ?: metadata.defaultBranchName.orEmpty()) }
-    var headRepo by remember(metadata, headRepositoryIdArg) { mutableStateOf(headRepositoryIdArg ?: metadata.repositories.firstOrNull()?.id.orEmpty()) }
-    var head by remember(existing, headRefArg) { mutableStateOf(existing?.headRefName.orEmpty().ifBlank { headRefArg.orEmpty() }) }
-    var draft by remember(existing) { mutableStateOf(existing?.isDraft ?: false) }
-    var selectedLabels by remember(existing) { mutableStateOf(existing?.labels.orEmpty().map { it.id }.toSet()) }
-    var selectedAssignees by remember(existing) { mutableStateOf(existing?.assignees.orEmpty().mapNotNull { it.id }.toSet()) }
-    var selectedMilestone by remember(existing) { mutableStateOf(existing?.milestone?.id) }
-    var selectedReviewers by remember { mutableStateOf(emptySet<String>()) }
+    val selectedLabels = draft.labelIds
+    val selectedAssignees = draft.assigneeIds
+    val selectedMilestone = draft.milestoneId
+    val selectedReviewers = draft.reviewerIds
     var metadataSheet by remember { mutableStateOf<PullRequestMetadataSheet?>(null) }
     var draftLabels by remember { mutableStateOf<Set<String>>(emptySet()) }
     var draftAssignees by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -100,27 +116,24 @@ private fun PullRequestEditor(metadata: RepoPullRequestCreateMetadata, existing:
         draftReviewers = selectedReviewers
         metadataSheet = sheet
     }
-    SideEffect {
-        onSaveActionReady { onSave(title, bodyState.text.toString(), base, headRepo, head, draft, selectedLabels.toList(), selectedAssignees.toList(), selectedMilestone, selectedReviewers.toList()) }
-    }
     Column(
         modifier = modifier.padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+        OutlinedTextField(title, onTitleChange, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         if (!createMode) {
-            OutlinedTextField(base, { base = it }, label = { Text(stringResource(R.string.pr_base_branch)) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            OutlinedTextField(base, onBaseChange, label = { Text(stringResource(R.string.pr_base_branch)) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Text(stringResource(R.string.pr_head_repository), fontWeight = FontWeight.SemiBold)
                 Text(existing.headRepositoryNameWithOwner ?: "-", style = MaterialTheme.typography.bodyLarge)
                 Text("${stringResource(R.string.pr_head_branch)} · $head", style = MaterialTheme.typography.bodyLarge)
             }
         }
-        if (createMode) Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(draft, { draft = it }); Text(stringResource(R.string.pr_create_draft)) }
+        if (createMode) Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.isDraft, onDraftChange); Text(stringResource(R.string.pr_create_draft)) }
         MarkdownBodyEditor(
             textState = bodyState,
             state = bodyEditorState,
-            onTabSelected = { onBodyTabSelected(it, bodyState.text.toString()) },
+            onTabSelected = onBodyTabSelected,
             accessoryContent = {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(false, { openMetadata(PullRequestMetadataSheet.LABELS) }, label = { Text("${stringResource(R.string.issue_labels)} · ${selectedLabels.size}") })
@@ -146,7 +159,7 @@ private fun PullRequestEditor(metadata: RepoPullRequestCreateMetadata, existing:
                 }
                 Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { metadataSheet = null }) { Text(stringResource(R.string.common_cancel)) }
-                    Button(onClick = { selectedLabels = draftLabels; selectedAssignees = draftAssignees; selectedMilestone = draftMilestone; selectedReviewers = draftReviewers; metadataSheet = null }) { Text(stringResource(R.string.common_done)) }
+                    Button(onClick = { onMetadataConfirmed(draftLabels, draftAssignees, draftMilestone, draftReviewers); metadataSheet = null }) { Text(stringResource(R.string.common_done)) }
                 }
             }
         }

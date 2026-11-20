@@ -6,9 +6,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -31,7 +28,6 @@ fun RepoFileEditorScreen(
 ) {
     LaunchedEffect(owner, name, ref, path) { viewModel.init(owner, name, ref, path) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var message by remember { mutableStateOf("") }
     FileEditorScaffold(
         title = {
             RepositoryContextTitle(
@@ -47,11 +43,11 @@ fun RepoFileEditorScreen(
         isSaving = state.isSaving,
         isLoading = state.isLoading,
         loadFailed = state.loadFailed,
-        canSave = state.capabilities.canPush && state.capabilities.canPushToProtectedBranch,
+        canSave = !state.isLoading && !state.loadFailed && state.capabilities.canPush && state.capabilities.canPushToProtectedBranch,
         middleContent = {
             OutlinedTextField(
-                message,
-                { message = it },
+                state.commitMessage,
+                viewModel::updateCommitMessage,
                 label = { Text(stringResource(R.string.repo_commit_message)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -60,6 +56,6 @@ fun RepoFileEditorScreen(
         onPathChange = viewModel::updatePath,
         onContentChange = viewModel::updateContent,
         onBack = onBack,
-        onSave = { viewModel.save(message, onSaved) },
+        onSave = { viewModel.save(onSaved) },
     )
 }
