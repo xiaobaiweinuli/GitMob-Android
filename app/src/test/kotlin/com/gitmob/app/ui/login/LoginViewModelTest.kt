@@ -87,10 +87,10 @@ class LoginViewModelTest {
             assertTrue(vm.state.value.isLoading)
             vm.login()
             vm.onTokenInputChange("other")
-            assertEquals("candidate", vm.state.value.tokenInput)
+            assertEquals("candidate", vm.state.value.tokenInput.text.toString())
             coVerify(exactly = 1) { auth.loginWithToken("candidate") }
             response.complete(ApiResult.Success(fakeViewerProfile()))
-            assertEquals("", vm.state.value.tokenInput)
+            assertEquals("", vm.state.value.tokenInput.text.toString())
             assertTrue(vm.state.value.loginSucceeded)
         } finally {
             vm.viewModelScope.cancel()
@@ -107,7 +107,7 @@ class LoginViewModelTest {
         vm.login()
 
         assertTrue(vm.state.value.loginSucceeded)
-        assertEquals("", vm.state.value.tokenInput)
+        assertEquals("", vm.state.value.tokenInput.text.toString())
         assertFalse(vm.state.value.isLoading)
         assertNull(vm.state.value.inlineErrorRes)
         vm.viewModelScope.cancel()
@@ -175,14 +175,17 @@ class LoginViewModelTest {
                 vm.onTokenInputChange("old-candidate")
                 vm.login()
                 vm.cancelAuthorization()
-                assertEquals(LoginUiState(), vm.state.value)
+                assertEquals("", vm.state.value.tokenInput.text.toString())
+                assertEquals(LoginUiState(tokenInput = vm.state.value.tokenInput), vm.state.value)
                 vm.openPat()
                 vm.onTokenInputChange("new-candidate")
 
                 response.complete(result)
                 runCurrent()
 
-                assertEquals(LoginUiState(tokenInput = "new-candidate", authSheet = AuthSheet.PAT), vm.state.value)
+                assertEquals("new-candidate", vm.state.value.tokenInput.text.toString())
+                assertEquals(AuthSheet.PAT, vm.state.value.authSheet)
+                assertFalse(vm.state.value.isLoading)
                 assertTrue(events.isEmpty())
             } finally {
                 response.complete(result)
@@ -230,7 +233,8 @@ class LoginViewModelTest {
             vm.cancelAuthorization()
 
             assertTrue(cancelled)
-            assertEquals(LoginUiState(), vm.state.value)
+            assertEquals("", vm.state.value.tokenInput.text.toString())
+            assertEquals(LoginUiState(tokenInput = vm.state.value.tokenInput), vm.state.value)
         } finally {
             vm.viewModelScope.cancel()
         }
@@ -387,12 +391,13 @@ class LoginViewModelTest {
                 assertNull(vm.state.value.inlineErrorRes)
                 assertEquals(messageRes, vm.state.value.operationErrorRes)
                 assertEquals(listOf(BannerEvent.Error(error)), events)
-                assertEquals("candidate", vm.state.value.tokenInput)
+                assertEquals("candidate", vm.state.value.tokenInput.text.toString())
                 assertFalse(vm.state.value.isLoading)
                 vm.onTokenInputChange("edited")
                 assertNull(vm.state.value.operationErrorRes)
                 vm.cancelAuthorization()
-                assertEquals(LoginUiState(), vm.state.value)
+                assertEquals("", vm.state.value.tokenInput.text.toString())
+                assertEquals(LoginUiState(tokenInput = vm.state.value.tokenInput), vm.state.value)
             } finally { collector.cancel(); vm.viewModelScope.cancel() }
         }
     }

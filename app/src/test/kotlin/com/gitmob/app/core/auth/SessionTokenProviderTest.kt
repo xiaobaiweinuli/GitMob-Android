@@ -25,8 +25,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -113,7 +113,7 @@ class SessionTokenProviderTest {
             coVerify(exactly = 0) { identity.verify(any()) }
             coVerify(exactly = 0) { storage.requireReauthentication(any()) }
         } finally {
-            server.shutdown()
+            server.close()
         }
     }
 
@@ -198,7 +198,7 @@ class SessionTokenProviderTest {
         coEvery { oauth.refresh("old-refresh") } returns rotatedResponse()
         val server = MockWebServer().apply { start() }
         try {
-            server.enqueue(MockResponse().setResponseCode(403))
+            server.enqueue(MockResponse(code = 403))
             val api = GHApiClient(OkHttpClient(), Json, provider, server.url("/").toString().removeSuffix("/"))
 
             assertEquals(ApiResult.Failure(ApiError.Forbidden), safeCall {
@@ -208,10 +208,10 @@ class SessionTokenProviderTest {
             assertEquals(1, server.requestCount)
             val request = server.takeRequest()
             assertEquals("PATCH", request.method)
-            assertEquals("Bearer new-access", request.getHeader("Authorization"))
+            assertEquals("Bearer new-access", request.headers["Authorization"])
             coVerify(exactly = 1) { oauth.refresh("old-refresh") }
         } finally {
-            server.shutdown()
+            server.close()
         }
     }
 

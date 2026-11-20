@@ -23,8 +23,8 @@ import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import okio.Buffer
 import org.junit.After
 import org.junit.Assert.*
@@ -47,31 +47,31 @@ class RepoDocumentRepositoryTest {
         }, server.url("/").toString().removeSuffix("/"))
         repository = RepoDocumentRepository(api, updates)
     }
-    @After fun cleanup() { server.shutdown() }
+    @After fun cleanup() { server.close() }
 
     @Test fun `loads raw binary using encoded repository path and ref with account credentials`() = runTest(accounts.context) {
         val bytes = byteArrayOf(0, -1, 10, 127, -128)
-        server.enqueue(MockResponse().setBody(Buffer().write(bytes)))
+        server.enqueue(MockResponse.Builder().body(Buffer().write(bytes)).build())
         val result = repository.load(document, "docs/图片 100%+.png") as ApiResult.Success
         assertArrayEquals(bytes, result.data.bytes)
         assertEquals("image/png", result.data.mimeType)
         val request = server.takeRequest()
-        assertEquals("Bearer test-token", request.getHeader("Authorization"))
-        assertEquals("application/vnd.github.raw+json", request.getHeader("Accept"))
-        assertEquals("2026-03-10", request.getHeader("X-GitHub-Api-Version"))
-        assertEquals(document.ref, request.requestUrl!!.queryParameter("ref"))
-        assertEquals(listOf("repos", "owner", "repo", "contents", "docs", "图片 100%+.png"), request.requestUrl!!.pathSegments)
+        assertEquals("Bearer test-token", request.headers["Authorization"])
+        assertEquals("application/vnd.github.raw+json", request.headers["Accept"])
+        assertEquals("2026-03-10", request.headers["X-GitHub-Api-Version"])
+        assertEquals(document.ref, request.url.queryParameter("ref"))
+        assertEquals(listOf("repos", "owner", "repo", "contents", "docs", "图片 100%+.png"), request.url.pathSegments)
     }
 
     @Test fun `SVG is served with an image MIME type and missing images fail normally`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("<svg/>"))
+        server.enqueue(MockResponse(body = "<svg/>"))
         assertEquals("image/svg+xml", (repository.load(document, "assets/logo.svg") as ApiResult.Success).data.mimeType)
-        server.enqueue(MockResponse().setResponseCode(404).setBody("missing"))
+        server.enqueue(MockResponse(code = 404, body = "missing"))
         assertTrue(repository.load(document, "missing.png") is ApiResult.Failure)
     }
 
     @Test fun `streaming byte limit rejects oversized chunked response before reading it all`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setChunkedBody("123456789", 2))
+        server.enqueue(MockResponse.Builder().chunkedBody("123456789", 2).build())
         var rejected = false
         try { api.getRawBytes("/large", "application/octet-stream", maxBytes = 4) }
         catch (_: java.io.IOException) { rejected = true }
@@ -79,26 +79,26 @@ class RepoDocumentRepositoryTest {
     }
 
     @Test fun publicImageRequestsNeverSendAccountHeadersIncludingRedirects() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", server.url("/actual.png")))
-        server.enqueue(MockResponse().setBody("image-bytes"))
+        server.enqueue(MockResponse.Builder().code(302).setHeader("Location", server.url("/actual.png")).build())
+        server.enqueue(MockResponse(body = "image-bytes"))
         val result = repository.loadImage(server.url("/redirect.png").toString(), document) as ApiResult.Success
         assertEquals("image-bytes", result.data.bytes.decodeToString())
         repeat(2) {
             val request = server.takeRequest()
-            assertNull(request.getHeader("Authorization"))
-            assertNull(request.getHeader("X-GitHub-Api-Version"))
-            assertEquals("image/*", request.getHeader("Accept"))
+            assertNull(request.headers["Authorization"])
+            assertNull(request.headers["X-GitHub-Api-Version"])
+            assertEquals("image/*", request.headers["Accept"])
         }
     }
 
     @Test fun relativeImageSourcesUseRepositoryContext() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("image"))
+        server.enqueue(MockResponse(body = "image"))
         val result = repository.loadImage("../images/photo.png", document.copy(filePath = "docs/guide.md"))
         assertTrue(result is ApiResult.Success)
         val request = server.takeRequest()
-        assertEquals("Bearer test-token", request.getHeader("Authorization"))
-        assertEquals("/repos/owner/repo/contents/images/photo.png", request.requestUrl!!.encodedPath)
-        assertEquals(document.ref, request.requestUrl!!.queryParameter("ref"))
+        assertEquals("Bearer test-token", request.headers["Authorization"])
+        assertEquals("/repos/owner/repo/contents/images/photo.png", request.url.encodedPath)
+        assertEquals(document.ref, request.url.queryParameter("ref"))
     }
 
     @Test fun dataImagesDecodeLocallyAndPreservePlusSigns() = runTest(accounts.context) {
@@ -204,13 +204,13 @@ class RepoDocumentRepositoryTest {
     }
 
     @Test fun serverDeclaredOversizeShowsLimitInsteadOfNetworkError() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("x").setHeader("Content-Length", MAX_DOCUMENT_RESOURCE_BYTES + 1))
+        server.enqueue(MockResponse.Builder().body("x").setHeader("Content-Length", MAX_DOCUMENT_RESOURCE_BYTES + 1).build())
         val result = repository.loadImage(server.url("/large.png").toString(), null) as ApiResult.Failure
         assertEquals(com.gitmob.app.core.error.ApiError.UserVisible(com.gitmob.app.R.string.image_preview_too_large), result.error)
     }
 
     @Test fun relativeRawAndFilePreviewShareCachedBytes() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("image"))
+        server.enqueue(MockResponse(body = "image"))
         val first = repository.loadImage("images/a.png", document) as ApiResult.Success
         val raw = "https://raw.githubusercontent.com/owner/repo/feature/%E4%B8%AD%E6%96%87%20docs/images/a.png"
         val qualified = repository.loadImage(raw.replace("/feature/", "/refs/heads/feature/"), document) as ApiResult.Success
@@ -223,7 +223,7 @@ class RepoDocumentRepositoryTest {
     }
 
     @Test fun repositoryAndRefArePartOfTheCacheIdentity() = runTest(accounts.context) {
-        repeat(4) { server.enqueue(MockResponse().setBody("image-$it")) }
+        repeat(4) { server.enqueue(MockResponse(body = "image-$it")) }
         val initial = repository.load(document, "a.png")
         assertEquals(initial, repository.load(document.copy(owner = "OWNER", name = "REPO"), "a.png"))
         repository.load(document.copy(ref = "other"), "a.png")
@@ -233,8 +233,8 @@ class RepoDocumentRepositoryTest {
     }
 
     @Test fun failuresAreNotCachedAndRetryCanRecover() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(404))
-        server.enqueue(MockResponse().setBody("recovered"))
+        server.enqueue(MockResponse(code = 404))
+        server.enqueue(MockResponse(body = "recovered"))
         assertTrue(repository.load(document, "a.png") is ApiResult.Failure)
         assertEquals("recovered", (repository.load(document, "a.png") as ApiResult.Success).data.bytes.decodeToString())
         assertEquals(2, server.requestCount)

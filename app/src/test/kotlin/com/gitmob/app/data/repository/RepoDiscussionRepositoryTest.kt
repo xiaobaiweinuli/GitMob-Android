@@ -16,8 +16,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,11 +45,11 @@ class RepoDiscussionRepositoryTest {
     }
 
     @After
-    fun tearDown() = server.shutdown()
+    fun tearDown() = server.close()
 
     @Test
     fun `detail uses closed and maps author metadata`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(detailJson()))
+        server.enqueue(MockResponse(body = detailJson()))
 
         val result = repository.getDiscussion("octo", "repo", 7, after = "comment-next")
 
@@ -60,7 +60,7 @@ class RepoDiscussionRepositoryTest {
         assertEquals(CommentAuthorAssociation.OWNER, detail.discussion.authorAssociation)
         assertEquals(CommentAuthorAssociation.CONTRIBUTOR, detail.comments.single().authorAssociation)
 
-        val requestBody = server.takeRequest().body.readUtf8()
+        val requestBody = requireNotNull(server.takeRequest().body).utf8()
         assertTrue(requestBody.contains("DiscussionFields"))
         assertTrue(requestBody.contains("stateReason"))
         assertTrue(requestBody.contains("comments(first: \$commentsFirst, after:"))
@@ -74,7 +74,7 @@ class RepoDiscussionRepositoryTest {
 
     @Test
     fun `讨论列表分类和标签容量来自PageSize`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"id":"R1","viewerPermission":"READ","hasDiscussionsEnabled":true,"categories":{"nodes":[]},"discussions":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"id":"R1","viewerPermission":"READ","hasDiscussionsEnabled":true,"categories":{"nodes":[]},"discussions":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
 
         val result = repository.getDiscussions("o", "r", RepoDiscussionFilter(), after = "start")
 
@@ -88,8 +88,8 @@ class RepoDiscussionRepositoryTest {
 
     @Test
     fun `讨论复用标签查询每页均传PageSize`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"labels":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"labels":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
 
         assertTrue(repository.getLabels("o", "r") is ApiResult.Success)
         val first = takeVariables()
@@ -111,7 +111,7 @@ class RepoDiscussionRepositoryTest {
             "reopenDiscussion" to suspend { repository.reopenDiscussion("D1") },
         )
         for ((field, mutate) in mutations) {
-            server.enqueue(MockResponse().setBody("""{"data":{"$field":{"discussion":$node}}}"""))
+            server.enqueue(MockResponse(body = """{"data":{"$field":{"discussion":$node}}}"""))
             assertTrue(mutate() is ApiResult.Success)
             val variables = takeVariables()
             assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
@@ -121,9 +121,9 @@ class RepoDiscussionRepositoryTest {
 
     @Test
     fun `缺失仓库与权限失败不伪造成空讨论`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":null}}"""))
         assertTrue(repository.getDiscussions("o", "r", RepoDiscussionFilter()) is ApiResult.Failure)
-        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse(code = 403))
         assertTrue(repository.getDiscussion("o", "r", 7) is ApiResult.Failure)
     }
 
@@ -134,22 +134,22 @@ class RepoDiscussionRepositoryTest {
         val node = detail.getValue("discussion").toString().replaceFirst("{", "{\"__typename\":\"Discussion\",")
         val metadata = """"id":"R1","viewerPermission":"READ","hasDiscussionsEnabled":true,"categories":$categoryNodes"""
         val connection = """"pageInfo":{"hasNextPage":false,"endCursor":null}"""
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{$metadata,"discussions":{"totalCount":0,"nodes":[],$connection}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{$metadata,"discussions":{"totalCount":0,"nodes":[],$connection}}}}"""))
         val categories = (repository.getDiscussions("o", "r", RepoDiscussionFilter()) as ApiResult.Success).data.categories
         takeVariables()
         val filter = RepoDiscussionFilter(category = categories.single(), sort = RepoDiscussionSort.CREATED_DESC, answered = false)
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{$metadata},"search":{"discussionCount":1,"nodes":[$node],$connection}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{$metadata},"search":{"discussionCount":1,"nodes":[$node],$connection}}}"""))
         val page = (repository.searchDiscussions("o", "r", "help", filter) as ApiResult.Success).data
         assertEquals(7, page.items.single().number)
         assertTrue(page.categories.single().isAnswerable)
         assertEquals(JsonPrimitive("repo:o/r help is:open category:\"General\" is:unanswered sort:date_created-desc"), takeVariables()["searchQuery"])
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{$metadata,"discussions":{"totalCount":0,"nodes":[],$connection}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{$metadata,"discussions":{"totalCount":0,"nodes":[],$connection}}}}"""))
         repository.getDiscussions("o", "r", filter)
         assertEquals(JsonPrimitive("CAT1"), takeVariables()["categoryId"])
     }
 
     private fun takeVariables() =
-        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
 
     private fun detailJson() = """
         {

@@ -52,6 +52,23 @@ class ThemePreferenceStoreTest {
     }
 
     @Test
+    fun `新版调色板风格保留第二种子色`() = runTest {
+        val style = PaletteStyle.Cmf(tertiarySeedColor = Color(0xFF1A73E8))
+        store.setPaletteStyle(style)
+        store.setColorSpec(ColorSpec.SpecVersion.SPEC_2026)
+
+        val preference = store.preference.first()
+        assertEquals(style, preference.paletteStyle)
+        assertEquals(ColorSpec.SpecVersion.SPEC_2026, preference.colorSpec)
+    }
+
+    @Test
+    fun `默认主题使用新版颜色规格`() = runTest {
+        assertEquals(ColorSpec.SpecVersion.Default, ThemePreference().colorSpec)
+        assertEquals(ColorSpec.SpecVersion.Default, store.preference.first().colorSpec)
+    }
+
+    @Test
     fun `isLoaded 区分构造默认值与 DataStore 真值`() = runTest {
         // 数据类默认值 = 未加载；启动门禁靠这个区分"默认主题"和"真实主题"
         assertFalse(ThemePreference().isLoaded)

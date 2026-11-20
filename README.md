@@ -17,7 +17,7 @@
   <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/Kotlin-2.4.10-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin 2.4.10" /></a>
   <a href="https://developer.android.com/compose"><img src="https://img.shields.io/badge/Jetpack_Compose-UI-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" /></a>
   <a href="https://m3.material.io"><img src="https://img.shields.io/badge/Material_3-Design-757575?style=flat-square&logo=materialdesign&logoColor=white" alt="Material 3" /></a>
-  <a href="https://www.apollographql.com/docs/kotlin"><img src="https://img.shields.io/badge/Apollo_Kotlin-4.4.3-311C87?style=flat-square&logo=apollographql&logoColor=white" alt="Apollo Kotlin 4.4.3" /></a>
+  <a href="https://www.apollographql.com/docs/kotlin"><img src="https://img.shields.io/badge/Apollo_Kotlin-5.2.0-311C87?style=flat-square&logo=apollographql&logoColor=white" alt="Apollo Kotlin 5.2.0" /></a>
   <a href="https://docs.github.com/en/graphql"><img src="https://img.shields.io/badge/GraphQL-API-E10098?style=flat-square&logo=graphql&logoColor=white" alt="GitHub GraphQL API" /></a>
 </p>
 
@@ -97,21 +97,23 @@ repo user gist read:org notifications delete_repo workflow
 | 语言          | Kotlin                                          | `2.4.10`               |
 | 构建          | Android Gradle Plugin / Gradle                  | `9.3.1` / `9.6.1`      |
 | 代码生成        | KSP                                             | `2.3.10`               |
-| Android SDK | 最低 / 目标 / 编译 API                                | `26` / `36` / `37`     |
+| Android SDK | 最低 / 目标 / 编译 API                                | `26` / `36` / `37.1`     |
 | Java        | JDK                                             | `21`                   |
-| 声明式 UI      | Jetpack Compose BOM                             | `2026.06.01`           |
-| 设计系统        | Material 3 / MaterialKolor                      | `1.4.0` / `4.0.0`      |
-| 导航          | Navigation 3                                    | `1.1.4`                |
+| 声明式 UI      | Jetpack Compose BOM                             | `2026.11.01`           |
+| 设计系统        | Material 3 / MaterialKolor                      | `1.5.0` / `6.0.0`      |
+| 导航          | Navigation 3                                    | `1.2.2`                |
+| 生命周期与状态     | Lifecycle                                       | `2.11.1`               |
 | 依赖注入        | Hilt                                            | `2.60.1`               |
 | 异步          | Kotlin Coroutines + Flow / StateFlow            | `1.11.0`               |
-| GraphQL     | Apollo Kotlin                                   | `4.4.3`                |
-| HTTP        | OkHttp                                          | `5.0.0`                |
-| REST JSON   | kotlinx.serialization                           | `1.11.0`               |
-| 本地数据库       | Room                                            | `2.7.0`                |
-| 偏好设置        | DataStore                                       | `1.1.2`                |
-| 图片加载        | Coil                                            | `3.4.0`                |
-| Markdown    | CommonMark + GFM 扩展                             | `0.29.0`               |
-| 辅助测试        | JUnit 4、MockK、Turbine、MockWebServer、Robolectric | 版本由 Version Catalog 管理 |
+| GraphQL     | Apollo Kotlin                                   | `5.2.0`                |
+| HTTP        | OkHttp                                          | `5.5.1`                |
+| REST JSON   | kotlinx.serialization                           | `1.13.0`               |
+| 本地数据库       | Room                                            | `2.8.5`                |
+| 偏好设置        | DataStore                                       | `1.3.0`                |
+| 图片加载        | Coil                                            | `3.6.3`                |
+| Markdown    | CommonMark + GFM 扩展                             | `0.33.0`               |
+| YAML        | kotaml（解析嵌套深度限制为 50）                       | `0.113.0`              |
+| 辅助测试        | JUnit 4、MockK、Turbine、MockWebServer3、Robolectric | 版本由 Version Catalog 管理 |
 
 <a id="architecture"></a>
 
@@ -195,7 +197,7 @@ GitMob-Android/
 
 - Git，并保留完整提交历史：`versionCode` 由 `git rev-list --count HEAD` 生成。
 - JDK 21。
-- Android SDK Platform 37，以及构建所需的 SDK 工具。
+- Android SDK Platform 37.1，以及构建所需的 SDK 工具。
 - 使用仓库自带的 Gradle Wrapper；也可以在支持当前 AGP 的 Android Studio 中打开根目录并同步。
 
 ### 获取源码与配置 SDK

@@ -47,7 +47,7 @@ import com.gitmob.app.core.markdown.resourcePath
 import com.gitmob.app.data.model.DocumentImage
 import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.repository.RepoDocumentResource
-import com.materialkolor.rememberDynamicColorScheme
+import com.materialkolor.material3.rememberDynamicColorScheme
 import kotlin.math.roundToInt
 
 @Composable

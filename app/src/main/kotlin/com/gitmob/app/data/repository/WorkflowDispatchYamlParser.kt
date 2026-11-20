@@ -17,6 +17,7 @@ object WorkflowDispatchYamlParser {
         configuration = YamlConfiguration(
             anchorsAndAliases = AnchorsAndAliases.Permitted(maxAliasCount = 50u),
             codePointLimit = MAX_WORKFLOW_YAML_BYTES,
+            maxNestingDepth = 50,
         ),
     )
 

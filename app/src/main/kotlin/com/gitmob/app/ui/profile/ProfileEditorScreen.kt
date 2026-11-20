@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
@@ -173,7 +174,7 @@ fun ProfileEditorScreen(onBack: () -> Unit, viewModel: ProfileEditorViewModel = 
             title = { Text(stringResource(R.string.profile_discard_title)) },
             text = { Text(stringResource(R.string.profile_discard_message)) },
             dismissButton = {
-                TextButton(onClick = { confirmDiscard = false }, modifier = Modifier.focusRequester(safeFocus)) { Text(stringResource(R.string.profile_keep_editing)) }
+                TextButton(onClick = { confirmDiscard = false }, modifier = Modifier.focusRequester(safeFocus).focusProperties { canFocus = true }) { Text(stringResource(R.string.profile_keep_editing)) }
                 LaunchedEffect(safeFocus) { safeFocus.requestFocus() }
             },
             confirmButton = {

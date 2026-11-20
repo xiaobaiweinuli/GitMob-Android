@@ -15,7 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -75,8 +75,10 @@ fun RepoPullRequestEditorScreen(
 @Composable
 private fun PullRequestEditor(metadata: RepoPullRequestCreateMetadata, existing: RepoPullRequest?, baseOwner: String?, baseName: String?, baseRefArg: String?, headOwner: String?, headName: String?, headRefArg: String?, headRepositoryIdArg: String?, bodyEditorState: MarkdownEditorUiState, modifier: Modifier, onBodyTabSelected: (MarkdownEditorTab, String) -> Unit, onSaveActionReady: ((() -> Unit) -> Unit), onSave: (String, String, String, String, String, Boolean, List<String>, List<String>, String?, List<String>) -> Unit) {
     var title by remember(existing) { mutableStateOf(existing?.title.orEmpty()) }
-    var body by remember(existing) { mutableStateOf(existing?.body.orEmpty()) }
-    var bodyValue by remember(existing) { mutableStateOf(TextFieldValue(body, TextRange(body.length))) }
+    val bodyState = remember(existing) {
+        val initialBody = existing?.body.orEmpty()
+        TextFieldState(initialBody, TextRange(initialBody.length))
+    }
     val createMode = existing == null
     var base by remember(existing, metadata, baseRefArg) { mutableStateOf(existing?.baseRefName ?: baseRefArg ?: metadata.defaultBranchName.orEmpty()) }
     var headRepo by remember(metadata, headRepositoryIdArg) { mutableStateOf(headRepositoryIdArg ?: metadata.repositories.firstOrNull()?.id.orEmpty()) }
@@ -99,7 +101,7 @@ private fun PullRequestEditor(metadata: RepoPullRequestCreateMetadata, existing:
         metadataSheet = sheet
     }
     SideEffect {
-        onSaveActionReady { onSave(title, body, base, headRepo, head, draft, selectedLabels.toList(), selectedAssignees.toList(), selectedMilestone, selectedReviewers.toList()) }
+        onSaveActionReady { onSave(title, bodyState.text.toString(), base, headRepo, head, draft, selectedLabels.toList(), selectedAssignees.toList(), selectedMilestone, selectedReviewers.toList()) }
     }
     Column(
         modifier = modifier.padding(top = 16.dp),
@@ -116,10 +118,9 @@ private fun PullRequestEditor(metadata: RepoPullRequestCreateMetadata, existing:
         }
         if (createMode) Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(draft, { draft = it }); Text(stringResource(R.string.pr_create_draft)) }
         MarkdownBodyEditor(
-            value = bodyValue,
+            textState = bodyState,
             state = bodyEditorState,
-            onValueChange = { bodyValue = it; body = it.text; if (bodyEditorState.selectedTab == MarkdownEditorTab.PREVIEW) onBodyTabSelected(MarkdownEditorTab.PREVIEW, it.text) },
-            onTabSelected = { onBodyTabSelected(it, bodyValue.text) },
+            onTabSelected = { onBodyTabSelected(it, bodyState.text.toString()) },
             accessoryContent = {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(false, { openMetadata(PullRequestMetadataSheet.LABELS) }, label = { Text("${stringResource(R.string.issue_labels)} · ${selectedLabels.size}") })
@@ -132,7 +133,7 @@ private fun PullRequestEditor(metadata: RepoPullRequestCreateMetadata, existing:
         )
     }
     metadataSheet?.let { sheet ->
-        ModalBottomSheet(onDismissRequest = { metadataSheet = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(onDismissRequest = { metadataSheet = null }, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Text(stringResource(when (sheet) { PullRequestMetadataSheet.LABELS -> R.string.issue_labels; PullRequestMetadataSheet.ASSIGNEES -> R.string.issue_assignees; PullRequestMetadataSheet.MILESTONE -> R.string.issue_milestone; PullRequestMetadataSheet.REVIEWERS -> R.string.pr_reviewers }), style = MaterialTheme.typography.titleLarge)
                 LazyColumn(Modifier.weight(1f, fill = false), contentPadding = PaddingValues(vertical = 12.dp)) {

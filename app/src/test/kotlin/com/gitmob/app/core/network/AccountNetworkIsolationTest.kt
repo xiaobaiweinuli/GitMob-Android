@@ -20,8 +20,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -49,7 +49,7 @@ class AccountNetworkIsolationTest {
     @After
     fun tearDown() {
         session.epoch.job.cancel()
-        server.shutdown()
+        server.close()
     }
 
     private fun api(tokens: TestAccessTokenProvider = provider) = GHApiClient(
@@ -104,7 +104,7 @@ class AccountNetworkIsolationTest {
                 return "token-1"
             }
         }
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"viewerPermission":"READ"}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"READ"}}}"""))
         apollo(tokens).use { graph ->
             val work = async(AccountContext(session.epoch)) {
                 graph.query(RepositoryPermissionQuery("owner", "repo")).executeAsApiResult()
@@ -129,7 +129,7 @@ class AccountNetworkIsolationTest {
                 return "token-${captured.accountKey}"
             }
         }
-        server.enqueue(MockResponse().setBody("""{"ref":"refs/heads/main","object":{"sha":"head"}}"""))
+        server.enqueue(MockResponse(body = """{"ref":"refs/heads/main","object":{"sha":"head"}}"""))
         apollo(tokens).use { graph ->
             val repository = RepoDetailRepository(api(tokens), graph)
             var cancelled = false
@@ -140,7 +140,7 @@ class AccountNetworkIsolationTest {
             } catch (_: CancellationException) { cancelled = true }
             assertTrue(cancelled)
             assertEquals(1, server.requestCount)
-            assertEquals("Bearer token-1", server.takeRequest().getHeader("Authorization"))
+            assertEquals("Bearer token-1", server.takeRequest().headers["Authorization"])
         }
     }
 }

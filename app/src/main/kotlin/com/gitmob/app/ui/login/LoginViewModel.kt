@@ -1,6 +1,8 @@
 package com.gitmob.app.ui.login
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
@@ -28,7 +30,7 @@ import javax.inject.Inject
 enum class AuthSheet { PAT, DEVICE_FLOW }
 
 data class LoginUiState(
-    val tokenInput: String = "",
+    val tokenInput: TextFieldState = TextFieldState(),
     val isLoading: Boolean = false,
     val loginSucceeded: Boolean = false,
     /** 仅空输入和无效 PAT 标记输入框。 */
@@ -74,13 +76,16 @@ class LoginViewModel @Inject constructor(
 
     fun onTokenInputChange(value: String) {
         if (_state.value.isLoading) return
-        _state.update { it.copy(tokenInput = value, inlineErrorRes = null, operationErrorRes = null) }
+        if (_state.value.tokenInput.text.toString() != value) {
+            _state.value.tokenInput.setTextAndPlaceCursorAtEnd(value)
+        }
+        _state.update { it.copy(inlineErrorRes = null, operationErrorRes = null) }
     }
 
     /** 用户点击"登录"按钮的入口。 */
     fun login() {
         if (_state.value.isLoading) return
-        val token = _state.value.tokenInput.trim()
+        val token = _state.value.tokenInput.text.toString().trim()
         if (token.isEmpty()) {
             _state.update { it.copy(inlineErrorRes = R.string.login_token_required, operationErrorRes = null) }
             return

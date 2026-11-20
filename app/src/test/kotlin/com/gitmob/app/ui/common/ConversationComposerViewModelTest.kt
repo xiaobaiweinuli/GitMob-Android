@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.common
 
+import androidx.lifecycle.SavedStateHandle
+import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
 import com.gitmob.app.core.error.ApiError
@@ -33,7 +35,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConversationComposerViewModelTest {
     @get:Rule val accounts = AccountSessionRule()
@@ -153,6 +160,25 @@ class ConversationComposerViewModelTest {
         viewModel.viewModelScope.cancel()
     }
 
+    @Test
+    fun `restored draft retains text and selection instead of route initial text`() = runTest {
+        val handle = SavedStateHandle()
+        val original = viewModel(savedStateHandle = handle)
+        init(original)
+        original.state.value.textState.edit {
+            replace(0, length, "unsent draft")
+            selection = TextRange(2, 6)
+        }
+        val saved = handle.savedStateProvider().saveState()
+        original.viewModelScope.cancel()
+
+        val restored = viewModel(savedStateHandle = SavedStateHandle.createHandle(saved, null))
+        init(restored)
+        assertEquals("unsent draft", restored.state.value.text)
+        assertEquals(TextRange(2, 6), restored.state.value.textState.selection)
+        restored.viewModelScope.cancel()
+    }
+
     private fun init(viewModel: ConversationComposerViewModel) {
         viewModel.init(
             owner = "owner",
@@ -177,6 +203,7 @@ class ConversationComposerViewModelTest {
         },
         eventBus: RepoUpdateEventBus = RepoUpdateEventBus(),
         gistEventBus: GistUpdateEventBus = GistUpdateEventBus(),
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ) = ConversationComposerViewModel(
         issueRepository = issueRepository,
         pullRequestRepository = pullRequestRepository,
@@ -187,5 +214,6 @@ class ConversationComposerViewModelTest {
         repoUpdateEventBus = eventBus,
         gistUpdateEventBus = gistEventBus,
         session = accounts.session,
+        savedStateHandle = savedStateHandle,
     )
 }

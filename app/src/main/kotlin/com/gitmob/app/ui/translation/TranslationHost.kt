@@ -40,7 +40,7 @@ fun TranslationHost(viewModel: TranslationViewModel = hiltViewModel(), content: 
     var hint by remember { mutableStateOf<Int?>(null) }
     var configure by remember { mutableStateOf<TranslationProvider?>(null) }
     CompositionLocalProvider(LocalTranslationController provides TranslationController(state, viewModel) { hint = it }) { content() }
-    if (state.optionsOpen && configure == null) ModalBottomSheet(onDismissRequest = viewModel::dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    if (state.optionsOpen && configure == null) ModalBottomSheet(onDismissRequest = viewModel::dismiss, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Text(stringResource(R.string.translation_options), style = MaterialTheme.typography.titleLarge)
             TranslationPreferencesEditor(state.options, viewModel::options) { configure = it }

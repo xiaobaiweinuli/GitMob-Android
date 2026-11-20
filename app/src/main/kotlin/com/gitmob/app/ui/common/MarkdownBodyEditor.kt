@@ -41,7 +41,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
 
@@ -69,9 +69,8 @@ internal enum class MarkdownEditAction {
 
 @Composable
 fun MarkdownBodyEditor(
-    value: TextFieldValue,
+    textState: TextFieldState,
     state: MarkdownEditorUiState,
-    onValueChange: (TextFieldValue) -> Unit,
     onTabSelected: (MarkdownEditorTab) -> Unit,
     modifier: Modifier = Modifier,
     accessoryContent: (@Composable () -> Unit)? = null,
@@ -91,12 +90,11 @@ fun MarkdownBodyEditor(
         }
         when (state.selectedTab) {
             MarkdownEditorTab.EDIT -> MarkdownEditPane(
-                value = value,
-                onValueChange = onValueChange,
+                textState = textState,
                 modifier = Modifier.weight(1f),
             )
             MarkdownEditorTab.PREVIEW -> MarkdownPreviewPane(
-                markdown = value.text,
+                markdown = textState.text.toString(),
                 state = state,
                 modifier = Modifier.weight(1f),
             )
@@ -108,28 +106,26 @@ fun MarkdownBodyEditor(
         }
         if (state.selectedTab == MarkdownEditorTab.EDIT) {
             HorizontalDivider()
-            MarkdownToolbar(onAction = { action -> onValueChange(applyMarkdownEdit(value, action)) })
+            MarkdownToolbar(onAction = { action -> applyMarkdownEdit(textState, action) })
         }
     }
 }
 
 @Composable
 private fun MarkdownEditPane(
-    value: TextFieldValue,
-    onValueChange: (TextFieldValue) -> Unit,
+    textState: TextFieldState,
     modifier: Modifier,
 ) {
     val requester = remember { FocusRequester() }
     Box(modifier.fillMaxWidth().padding(16.dp)) {
-        if (value.text.isEmpty()) {
+        if (textState.text.isEmpty()) {
             Text(
                 stringResource(R.string.conversation_markdown_placeholder),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
+            state = textState,
             modifier = Modifier.fillMaxSize().focusRequester(requester),
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -196,10 +192,10 @@ private fun MarkdownPreviewPane(
     }
 }
 
-internal fun applyMarkdownEdit(value: TextFieldValue, action: MarkdownEditAction): TextFieldValue {
-    val start = value.selection.min.coerceIn(0, value.text.length)
-    val end = value.selection.max.coerceIn(start, value.text.length)
-    val selected = value.text.substring(start, end)
+internal fun applyMarkdownEdit(textState: TextFieldState, action: MarkdownEditAction) = textState.edit {
+    val start = selection.min
+    val end = selection.max
+    val selected = asCharSequence().subSequence(start, end).toString()
     val replacement = when (action) {
         MarkdownEditAction.BOLD -> wrapMarkdown(selected, "**", "**", "bold")
         MarkdownEditAction.ITALIC -> wrapMarkdown(selected, "*", "*", "italic")
@@ -212,11 +208,8 @@ internal fun applyMarkdownEdit(value: TextFieldValue, action: MarkdownEditAction
         MarkdownEditAction.TASK -> prefixMarkdownLines(selected, "- [ ] ", "Task")
         MarkdownEditAction.QUOTE -> prefixMarkdownLines(selected, "> ", "Quote")
     }
-    val newText = value.text.replaceRange(start, end, replacement.text)
-    return value.copy(
-        text = newText,
-        selection = TextRange(start + replacement.selectionStart, start + replacement.selectionEnd),
-    )
+    replace(start, end, replacement.text)
+    selection = TextRange(start + replacement.selectionStart, start + replacement.selectionEnd)
 }
 
 private fun wrapMarkdown(selected: String, before: String, after: String, placeholder: String): MarkdownReplacement {

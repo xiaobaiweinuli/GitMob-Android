@@ -18,8 +18,8 @@ import com.gitmob.app.core.cache.MemoryCache
 import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
@@ -86,20 +86,20 @@ class AuthRepositoryTest {
         val server = MockWebServer().apply { start() }
         try {
             val storage = mockk<TokenStorage>(relaxed = true)
-            server.enqueue(MockResponse().setBody("""{"id":42,"node_id":"U_42","login":"candidate","name":null}"""))
+            server.enqueue(MockResponse(body = """{"id":42,"node_id":"U_42","login":"candidate","name":null}"""))
             val result = repository(storage, client(server)).loginWithToken(" candidate-token ") as ApiResult.Success
             assertEquals(42L, result.data.id)
             val request = server.takeRequest()
-            assertEquals("/user", request.path)
-            assertEquals("Bearer candidate-token", request.getHeader("Authorization"))
-            assertEquals("2026-03-10", request.getHeader("X-GitHub-Api-Version"))
+            assertEquals("/user", request.target)
+            assertEquals("Bearer candidate-token", request.headers["Authorization"])
+            assertEquals("2026-03-10", request.headers["X-GitHub-Api-Version"])
             coVerify(exactly = 1) {
                 storage.saveAccount(match { it.id == 42L && it.login == "candidate" },
                     match { it.accessToken == "candidate-token" }, null, true)
             }
             coVerify(exactly = 0) { storage.credentials(any()) }
         } finally {
-            server.shutdown()
+            server.close()
         }
     }
 
@@ -109,17 +109,17 @@ class AuthRepositoryTest {
         try {
             val storage = mockk<TokenStorage>(relaxed = true)
             val auth = repository(storage, client(server))
-            server.enqueue(MockResponse().setResponseCode(401))
+            server.enqueue(MockResponse(code = 401))
             assertEquals(ApiResult.Failure(ApiError.Unauthorized), auth.loginWithToken("candidate"))
-            server.enqueue(MockResponse().setResponseCode(403))
+            server.enqueue(MockResponse(code = 403))
             assertEquals(ApiResult.Failure(ApiError.Forbidden), auth.loginWithToken("candidate"))
-            server.enqueue(MockResponse().setBody("""{"login":"candidate"}"""))
+            server.enqueue(MockResponse(body = """{"login":"candidate"}"""))
             assertTrue(auth.loginWithToken("candidate") is ApiResult.Failure)
             coVerify(exactly = 0) { storage.saveAccount(any(), any(), any(), any()) }
             coVerify(exactly = 0) { storage.clearActiveAccount(any()) }
             coVerify(exactly = 0) { storage.requireReauthentication(any()) }
         } finally {
-            server.shutdown()
+            server.close()
         }
     }
 
@@ -134,7 +134,7 @@ class AuthRepositoryTest {
             val started = accounts.session.epoch
             val cache = MemoryCache<String, String>(60_000)
             val auth = repository(storage, client(server))
-            server.enqueue(MockResponse().setBody("""{"id":42,"node_id":"U_42","login":"candidate"}"""))
+            server.enqueue(MockResponse(body = """{"id":42,"node_id":"U_42","login":"candidate"}"""))
             kotlinx.coroutines.withContext(accounts.context) {
                 cache.set("viewer", "existing")
                 assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.auth_storage_write_failed)), auth.loginWithToken("candidate"))
@@ -144,7 +144,7 @@ class AuthRepositoryTest {
             assertEquals(account, auth.accountState.value.activeAccount)
             coVerify(exactly = 0) { storage.clearActiveAccount(any()) }
         } finally {
-            server.shutdown()
+            server.close()
         }
     }
 

@@ -28,10 +28,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +53,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.drop
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.core.net.toUri
@@ -92,7 +95,7 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
     }
     ModalBottomSheet(
         onDismissRequest = viewModel::cancelAuthorization,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         sheetGesturesEnabled = false,
         sheetMaxWidth = 640.dp,
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
@@ -116,15 +119,18 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
         ) {
             if (kind == AuthSheet.PAT) {
                 Text(stringResource(R.string.auth_pat_description))
-                OutlinedTextField(
-                    value = state.tokenInput,
-                    onValueChange = viewModel::onTokenInputChange,
+                LaunchedEffect(state.tokenInput) {
+                    snapshotFlow { state.tokenInput.text.toString() }
+                        .drop(1)
+                        .collect(viewModel::onTokenInputChange)
+                }
+                OutlinedSecureTextField(
+                    state = state.tokenInput,
                     label = { Text(stringResource(R.string.auth_pat_label)) },
                     supportingText = { Text(stringResource(state.inlineErrorRes ?: R.string.auth_pat_help)) },
                     isError = state.inlineErrorRes != null,
-                    visualTransformation = PasswordVisualTransformation(),
+                    textObfuscationMode = TextObfuscationMode.Hidden,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-                    singleLine = true,
                     enabled = !state.isLoading,
                     modifier = Modifier.fillMaxWidth(),
                 )

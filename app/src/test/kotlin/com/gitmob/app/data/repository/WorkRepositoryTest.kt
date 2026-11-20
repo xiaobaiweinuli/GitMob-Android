@@ -28,8 +28,8 @@ import com.gitmob.app.data.model.UserPullRequestVisibilityFilter
 import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -63,13 +63,13 @@ class WorkRepositoryTest {
 
     @After
     fun teardown() {
-        server.shutdown()
+        server.close()
     }
 
     @Test
     fun `getUserIssues解析search结果并标记isPullRequest为false`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"search":{
                     "issueCount":1,
@@ -102,7 +102,7 @@ class WorkRepositoryTest {
     @Test
     fun `getUserPullRequests解析草稿和锁定状态`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"search":{
                     "issueCount":1,
@@ -131,7 +131,7 @@ class WorkRepositoryTest {
     @Test
     fun `getUserDiscussions用discussionCount而不是issueCount`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"search":{
                     "discussionCount":2,

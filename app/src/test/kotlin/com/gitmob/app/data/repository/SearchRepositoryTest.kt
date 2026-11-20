@@ -13,8 +13,8 @@ import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -33,7 +33,7 @@ class SearchRepositoryTest {
         val tokens = object : TestAccessTokenProvider { override suspend fun getToken() = "token" }
         repository = SearchRepository(apollo, GHApiClient(client, Json { ignoreUnknownKeys = true }, tokens, server.url("/").toString().trimEnd('/')))
     }
-    @After fun close() { apollo.close(); server.shutdown() }
+    @After fun close() { apollo.close(); server.close() }
     private fun codeItem(index: Int, extraFields: String = "") = """
         {"name":"File$index.kt","path":"src/File$index.kt","sha":"blob-not-a-ref",
         "html_url":"https://github.com/owner/repo/blob/feature/search/src/File$index.kt",
@@ -43,8 +43,8 @@ class SearchRepositoryTest {
         """{"total_count":$count,"incomplete_results":$incomplete,"items":[$items]}"""
 
     @Test fun previewAndFullCategoryStartWithDifferentCapacitiesAtPageOne() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(codeResponse(100, (1..5).joinToString { codeItem(it) })))
-        server.enqueue(MockResponse().setBody(codeResponse(100, (1..20).joinToString { codeItem(it) })))
+        server.enqueue(MockResponse(body = codeResponse(100, (1..5).joinToString { codeItem(it) })))
+        server.enqueue(MockResponse(body = codeResponse(100, (1..20).joinToString { codeItem(it) })))
         val preview = (repository.search("a + b", SearchCategory.CODE, true) as ApiResult.Success).data
         val full = (repository.search("a + b", SearchCategory.CODE, false) as ApiResult.Success).data
         assertEquals(5, preview.items.size)
@@ -52,18 +52,18 @@ class SearchRepositoryTest {
         assertEquals("src/File6.kt", (full.items[5] as SearchItem.Code).path)
         val first = server.takeRequest()
         val second = server.takeRequest()
-        assertEquals("5", first.requestUrl!!.queryParameter("per_page"))
-        assertEquals("20", second.requestUrl!!.queryParameter("per_page"))
-        assertEquals("1", second.requestUrl!!.queryParameter("page"))
-        assertEquals("a + b", second.requestUrl!!.queryParameter("q"))
-        assertEquals("application/vnd.github.text-match+json", first.getHeader("Accept"))
+        assertEquals("5", first.url.queryParameter("per_page"))
+        assertEquals("20", second.url.queryParameter("per_page"))
+        assertEquals("1", second.url.queryParameter("page"))
+        assertEquals("a + b", second.url.queryParameter("q"))
+        assertEquals("application/vnd.github.text-match+json", first.headers["Accept"])
         assertEquals(2, full.next!!.page)
     }
 
     @Test fun snippetsValidateHighlightRangesAndPreserveFileTarget() = runTest(accounts.context) {
         val items = listOf(codeItem(1),
             codeItem(2, """, "text_matches":[{"property":"content","fragment":"fun main","matches":[{"text":"main","indices":[4,8]},{"indices":[-1,2]},{"indices":[0,99]}]}]"""))
-        server.enqueue(MockResponse().setBody(codeResponse(items.size, items.joinToString())))
+        server.enqueue(MockResponse(body = codeResponse(items.size, items.joinToString())))
         val page = (repository.search("main", SearchCategory.CODE, true) as ApiResult.Success).data
         val files = page.items.map { it as SearchItem.Code }
         assertEquals(listOf(SearchMatch(4, 8)), files[1].snippets.single().matches)
@@ -76,7 +76,7 @@ class SearchRepositoryTest {
             "property":"content","fragment":"```py\n# 查看前五个测试 Y 值\nlist(y_test)[0:5]",
             "matches":[{"text":"测试","indices":[23,29]}]
         }]""")
-        server.enqueue(MockResponse().setBody(codeResponse(1, item)))
+        server.enqueue(MockResponse(body = codeResponse(1, item)))
         val page = (repository.search("测试", SearchCategory.CODE, true) as ApiResult.Success).data
         val snippet = (page.items.single() as SearchItem.Code).snippets.single()
         assertEquals(listOf(SearchMatch(13, 15)), snippet.matches)
@@ -91,7 +91,7 @@ class SearchRepositoryTest {
             "property":"content","fragment":"第二段测试",
             "matches":[{"text":"测试","indices":[9,15]}]
         }]""")
-        server.enqueue(MockResponse().setBody(codeResponse(1, item)))
+        server.enqueue(MockResponse(body = codeResponse(1, item)))
         val page = (repository.search("测试 main", SearchCategory.CODE, true) as ApiResult.Success).data
         val snippets = (page.items.single() as SearchItem.Code).snippets
         assertEquals(listOf("🚀 测试 main 测试", "第二段测试"), snippets.map { it.text })
@@ -106,7 +106,7 @@ class SearchRepositoryTest {
                 {"text":"错误","indices":[3,9]},{"indices":[-1,3]},{"indices":[3,99]},
                 {"indices":[9,3]},{"indices":[3,3]},{"indices":[]}]
         }]""")
-        server.enqueue(MockResponse().setBody(codeResponse(1, item)))
+        server.enqueue(MockResponse(body = codeResponse(1, item)))
         val page = (repository.search("测试", SearchCategory.CODE, true) as ApiResult.Success).data
         val snippet = (page.items.single() as SearchItem.Code).snippets.single()
         assertEquals("中测试 tail", snippet.text)
@@ -115,7 +115,7 @@ class SearchRepositoryTest {
 
     @Test fun incompleteResultsRemainUsableAndThousandResultCapStopsContinuation() = runTest(accounts.context) {
         val items = (1..20).joinToString { codeItem(it) }
-        server.enqueue(MockResponse().setBody(codeResponse(1200, items, incomplete = true)))
+        server.enqueue(MockResponse(body = codeResponse(1200, items, incomplete = true)))
         val page = (repository.search("main", SearchCategory.CODE, false,
             SearchContinuation(page = 50, received = 980)) as ApiResult.Success).data
         assertEquals(20, page.items.size)
@@ -125,7 +125,7 @@ class SearchRepositoryTest {
     }
 
     @Test fun invalidCodeQueryIsLocalFailureAndScopeConflictDoesNotMakeRequest() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(422).setBody("invalid query"))
+        server.enqueue(MockResponse(code = 422, body = "invalid query"))
         val failure = repository.search("bad", SearchCategory.CODE, false) as ApiResult.Failure
         assertEquals(ApiError.UserVisible(R.string.search_invalid_query), failure.error)
         assertTrue(repository.search("is:pr", SearchCategory.ISSUES, false) is ApiResult.Failure)
@@ -133,12 +133,12 @@ class SearchRepositoryTest {
     }
 
     @Test fun discussionSearchMapsResultsAndKeepsQueryAcrossPages() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"search":{"discussionCount":2,"nodes":[{
+        server.enqueue(MockResponse(body = """{"data":{"search":{"discussionCount":2,"nodes":[{
             "__typename":"Discussion","id":"D_1","number":7,"title":"Question","updatedAt":"2026-11-17T00:00:00Z",
             "stateReason":null,"isAnswered":true,"locked":false,
             "repository":{"name":"repo","owner":{"__typename":"User","login":"owner","avatarUrl":"https://example.com/a"}}
         }],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}"""))
-        server.enqueue(MockResponse().setBody("""{"data":{"search":{"discussionCount":2,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"search":{"discussionCount":2,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
         val query = "repo:owner/repo is:answered category:Q&A"
         val page = (repository.search(query, SearchCategory.DISCUSSIONS, false) as ApiResult.Success).data
         val item = (page.items.single() as SearchItem.Discussion).item
@@ -147,8 +147,8 @@ class SearchRepositoryTest {
         assertTrue(item.isAnswered)
         assertEquals(SearchContinuation(cursor = "next", received = 1), page.next)
         assertTrue(repository.search(query, SearchCategory.DISCUSSIONS, false, page.next) is ApiResult.Success)
-        val first = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
-        val second = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        val first = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
+        val second = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
         assertEquals("$query is:discussion", first.getValue("searchQuery").jsonPrimitive.content)
         assertEquals(first.getValue("searchQuery"), second.getValue("searchQuery"))
         assertEquals("next", second.getValue("after").jsonPrimitive.content)
@@ -156,18 +156,18 @@ class SearchRepositoryTest {
 
     @Test fun issueAndPullRequestSearchUseAdvancedSyntaxWithoutAddingOpenState() = runTest(accounts.context) {
         listOf(SearchCategory.ISSUES to "is:issue", SearchCategory.PULL_REQUESTS to "is:pr").forEach { (category, qualifier) ->
-            server.enqueue(MockResponse().setBody("""{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
+            server.enqueue(MockResponse(body = """{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
             assertTrue(repository.search("repo:owner/repo (label:bug OR label:help)", category, false) is ApiResult.Success)
-            val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+            val variables = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
             assertEquals("ISSUE_ADVANCED", variables.getValue("searchType").jsonPrimitive.content)
             assertEquals("(repo:owner/repo (label:bug OR label:help)) $qualifier", variables.getValue("searchQuery").jsonPrimitive.content)
         }
     }
 
     @Test fun graphQlUsesAccountScopeAndCentralPageSize() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"search":{"userCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"search":{"userCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
         assertTrue(repository.search("github", SearchCategory.ORGANIZATIONS, false) is ApiResult.Success)
-        val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        val variables = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
         assertEquals("github type:org", variables.getValue("query").jsonPrimitive.content)
         assertEquals(PageSize.SEARCH_RESULTS, variables.getValue("first").jsonPrimitive.int)
     }

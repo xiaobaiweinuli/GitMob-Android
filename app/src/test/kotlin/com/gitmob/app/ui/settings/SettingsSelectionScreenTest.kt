@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasScrollToNodeAction
@@ -187,7 +188,8 @@ class SettingsSelectionScreenTest {
         setAppearanceContent(viewModel)
 
         clickSelection(R.string.settings_color_spec)
-        composeRule.onNodeWithText("Material 2025").assertIsDisplayed().performClick()
+        composeRule.onNode(hasText("Material 2026") and hasAnyAncestor(isPopup())).assertIsDisplayed()
+        composeRule.onNode(hasText("Material 2025") and hasAnyAncestor(isPopup())).assertIsDisplayed().performClick()
 
         composeRule.onNode(isPopup()).assertDoesNotExist()
         verify(exactly = 1) { viewModel.setColorSpec(ColorSpec.SpecVersion.SPEC_2025) }

@@ -4,6 +4,8 @@ import com.gitmob.app.data.model.WorkflowDispatchInputType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
+import com.charleskorn.kaml.YamlException
 import org.junit.Test
 
 class WorkflowDispatchYamlParserTest {
@@ -111,4 +113,17 @@ class WorkflowDispatchYamlParserTest {
             """.trimIndent(),
         )
     }
+
+    @Test
+    fun `accepts nested workflow jobs within the depth limit`() {
+        val source = "on: [push]\njobs: " + "[".repeat(10) + "job" + "]".repeat(10)
+        assertTrue(WorkflowDispatchYamlParser.parse(source).isEmpty())
+    }
+
+    @Test
+    fun `rejects deeply nested YAML before mapping dispatch inputs`() {
+        val source = "on: [push]\njobs: " + "[".repeat(60) + "job" + "]".repeat(60)
+        assertThrows(YamlException::class.java) { WorkflowDispatchYamlParser.parse(source) }
+    }
+
 }

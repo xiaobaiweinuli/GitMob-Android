@@ -39,7 +39,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -216,7 +217,7 @@ private fun OwnerPickerSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = viewModel::cancelPicker,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         contentWindowInsets = { WindowInsets(0) },
     ) {
         PickerScaffold(
@@ -244,7 +245,7 @@ private fun LicensePickerSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = viewModel::cancelPicker,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         contentWindowInsets = { WindowInsets(0) },
     ) {
         PickerScaffold(
@@ -272,7 +273,7 @@ private fun GitignorePickerSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = viewModel::cancelPicker,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         contentWindowInsets = { WindowInsets(0) },
     ) {
         PickerScaffold(

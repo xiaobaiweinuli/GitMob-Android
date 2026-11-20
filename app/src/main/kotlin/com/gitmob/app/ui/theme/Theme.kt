@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Density
-import com.materialkolor.rememberDynamicColorScheme
+import com.materialkolor.material3.rememberDynamicColorScheme
 
 /**
  * 设计参照 KernelSU 管理器真实实现（github.com/tiann/KernelSU，

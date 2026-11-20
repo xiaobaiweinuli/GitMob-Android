@@ -12,7 +12,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.Density
 import com.materialkolor.PaletteStyle
-import com.materialkolor.dynamicColorScheme
+import com.materialkolor.material3.dynamicColorScheme
 import com.materialkolor.dynamiccolor.ColorSpec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

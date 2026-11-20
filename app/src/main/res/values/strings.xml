@@ -154,8 +154,9 @@
 
     <!-- 设置 · 颜色规格 -->
     <string name="settings_color_spec">颜色规格</string>
-    <string name="settings_color_spec_2021_desc">成熟稳定，保持当前默认配色表现</string>
+    <string name="settings_color_spec_2021_desc">使用 2021 动态配色规范</string>
     <string name="settings_color_spec_2025_desc">使用新版动态颜色算法与色调关系</string>
+    <string name="settings_color_spec_2026_desc">使用 2026 动态颜色规范与色调关系</string>
 
     <!-- 设置 · 交互 -->
     <string name="settings_section_interaction">交互</string>

@@ -26,8 +26,8 @@ import com.gitmob.app.testutil.MainDispatcherRule
 import kotlinx.coroutines.cancel
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -68,7 +68,7 @@ class RepoContributorsScreenTest {
 
     @After fun teardown() {
         viewModel.viewModelScope.cancel()
-        server.shutdown()
+        server.close()
     }
 
     @Test fun sameNameAnonymousContributorsRenderAsSeparateRows() {
@@ -86,7 +86,7 @@ class RepoContributorsScreenTest {
         assertFalse(viewModel.state.value.hasNextPage)
         assertEquals(
             "/repos/xiaobaiweinuli/Telegram/contributors?per_page=${PageSize.CONTRIBUTORS}&page=1&anon=1",
-            server.takeRequest().path,
+            server.takeRequest().target,
         )
     }
 
@@ -128,7 +128,7 @@ class RepoContributorsScreenTest {
             }
         }.joinToString(prefix = "[", postfix = "]")
         showContributors(firstPage, PageSize.CONTRIBUTORS)
-        server.enqueue(MockResponse().setBody("""[
+        server.enqueue(MockResponse(body = """[
             {"name":"DrKLO","email":"author-b@example.com","type":"Anonymous","contributions":6},
             {"id":69369,"login":"DrKLO","html_url":"https://github.com/DrKLO","type":"User","contributions":1}
         ]"""))
@@ -147,13 +147,13 @@ class RepoContributorsScreenTest {
         server.takeRequest()
         assertEquals(
             "/repos/xiaobaiweinuli/Telegram/contributors?per_page=${PageSize.CONTRIBUTORS}&page=2&anon=1",
-            server.takeRequest().path,
+            server.takeRequest().target,
         )
         assertEquals(2, server.requestCount)
     }
 
     private fun showContributors(json: String, count: Int) {
-        server.enqueue(MockResponse().setBody(json))
+        server.enqueue(MockResponse(body = json))
         compose.setContent {
             MaterialTheme {
                 RepoContributorsScreen(

@@ -41,10 +41,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.Dispatcher
-import okhttp3.mockwebserver.RecordedRequest
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import mockwebserver3.Dispatcher
+import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -99,7 +99,7 @@ class UserRepositoryTest {
 
     @After
     fun teardown() {
-        server.shutdown()
+        server.close()
     }
 
     private val sampleNodeJson = """
@@ -128,7 +128,7 @@ class UserRepositoryTest {
     @Test
     fun `getViewerProfile 一次GraphQL请求拿全部数据`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{
                     "viewer":$sampleNodeJson,
@@ -171,7 +171,7 @@ class UserRepositoryTest {
         val othersJson = sampleNodeJson
             .replace("\"isViewer\":true", "\"isViewer\":false")
             .replace("\"viewerCanFollow\":false", "\"viewerCanFollow\":true")
-        server.enqueue(MockResponse().setBody("""{"data":{"user":$othersJson}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"user":$othersJson}}"""))
 
         val result = repository.getUserProfile("octocat")
 
@@ -187,7 +187,7 @@ class UserRepositoryTest {
 
     @Test
     fun `GraphQL返回401时映射为Unauthorized`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"message":"Bad credentials"}"""))
+        server.enqueue(MockResponse(code = 401, body = """{"message":"Bad credentials"}"""))
 
         val result = repository.getViewerProfile()
 
@@ -197,7 +197,7 @@ class UserRepositoryTest {
 
     @Test
     fun `独立用户仓库查询同步可见性日期议题开关及容量参数`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""
+        server.enqueue(MockResponse(body = """
             {"data":{"user":{"repositories":{"totalCount":1,"nodes":[{
                 "name":"repo","owner":{"__typename":"User","login":"octocat","avatarUrl":"https://x/a.png"},
                 "description":null,"homepageUrl":null,"visibility":"PRIVATE","isArchived":false,"isFork":false,
@@ -230,7 +230,7 @@ class UserRepositoryTest {
             Triple("organization", "membersWithRole", suspend { repository.getOrgMembers("github", "previous") }),
         )
         for ((root, field, load) in loaders) {
-            server.enqueue(MockResponse().setBody("""{"data":{"$root":{"$field":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+            server.enqueue(MockResponse(body = """{"data":{"$root":{"$field":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
 
             assertTrue(load() is ApiResult.Success)
             val variables = takeVariables()
@@ -244,7 +244,7 @@ class UserRepositoryTest {
     fun `viewer和user组织预览保持固定容量而不伪造分页`() = runTest(accounts.context) {
         for (login in listOf(null, "octocat")) {
             val root = if (login == null) "viewer" else "user"
-            server.enqueue(MockResponse().setBody("""{"data":{"$root":{"organizations":{"nodes":[]}}}}"""))
+            server.enqueue(MockResponse(body = """{"data":{"$root":{"organizations":{"nodes":[]}}}}"""))
 
             assertTrue((repository.getOrganizations(login) as ApiResult.Success).data.isEmpty())
             val variables = takeVariables()
@@ -256,7 +256,7 @@ class UserRepositoryTest {
 
     @Test
     fun `独立用户星标同时传入列表和话题容量`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"user":{"starredRepositories":{"totalCount":0,"edges":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"user":{"starredRepositories":{"totalCount":0,"edges":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
 
         val page = (repository.getUserStars("octocat", "previous") as ApiResult.Success).data
 
@@ -272,17 +272,17 @@ class UserRepositoryTest {
 
     @Test
     fun `缺失用户或组织根节点不伪造成空分页`() = runTest(accounts.context) {
-        repeat(3) { server.enqueue(MockResponse().setBody("""{"data":{"user":null}}""")) }
+        repeat(3) { server.enqueue(MockResponse(body = """{"data":{"user":null}}""")) }
         assertTrue(repository.getUserProfile("missing") is ApiResult.Failure)
         assertTrue(repository.getUserStars("missing") is ApiResult.Failure)
         assertTrue(repository.getUserOrgs("missing") is ApiResult.Failure)
-        server.enqueue(MockResponse().setBody("""{"data":{"organization":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"organization":null}}"""))
         assertTrue(repository.getOrgMembers("missing") is ApiResult.Failure)
     }
 
     @Test
     fun `编辑资料GET一次拿八字段且null映射为空文本和关闭开关`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{
+        server.enqueue(MockResponse(body = """{
             "id":1,"node_id":"U_kg1","login":"octocat","name":null,"avatar_url":null,
             "email":null,"blog":null,"twitter_username":null,"company":null,"location":null,"hireable":null,"bio":null
         }"""))
@@ -293,17 +293,17 @@ class UserRepositoryTest {
         assertEquals(AuthenticatedUser(1, "U_kg1", "octocat", null, null), profile.user)
         val request = server.takeRequest()
         assertEquals("GET", request.method)
-        assertEquals("/user", request.path)
-        assertEquals("Bearer fake-token", request.getHeader("Authorization"))
-        assertEquals("application/vnd.github+json", request.getHeader("Accept"))
-        assertEquals("2026-03-10", request.getHeader("X-GitHub-Api-Version"))
+        assertEquals("/user", request.target)
+        assertEquals("Bearer fake-token", request.headers["Authorization"])
+        assertEquals("application/vnd.github+json", request.headers["Accept"])
+        assertEquals("2026-03-10", request.headers["X-GitHub-Api-Version"])
         assertEquals(1, server.requestCount)
         coVerify(exactly = 0) { storage.updateIdentity(any()) }
     }
 
     @Test
     fun `八字段PATCH原样发送并采用服务端值同步账号缓存和事件`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(viewerResponse()))
+        server.enqueue(MockResponse(body = viewerResponse()))
         val before = (repository.getViewerProfile() as ApiResult.Success).data
         server.takeRequest()
         val original = editable(ProfileDraft(name = "Old"))
@@ -314,19 +314,19 @@ class UserRepositoryTest {
         backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
             repository.profileUpdatesFor(accounts.session.epoch).collect { events += it }
         }
-        server.enqueue(MockResponse().setBody(editableResponse(saved)))
+        server.enqueue(MockResponse(body = editableResponse(saved)))
 
         assertEquals(ApiResult.Success(ProfileSaveResult(saved)), repository.saveEditableProfile(original, draft))
         runCurrent()
 
         val request = server.takeRequest()
         assertEquals("PATCH", request.method)
-        assertEquals("/user", request.path)
-        assertEquals("application/json; charset=utf-8", request.getHeader("Content-Type"))
+        assertEquals("/user", request.target)
+        assertEquals("application/json; charset=utf-8", request.headers["Content-Type"])
         assertEquals(buildJsonObject {
             put("name", draft.name); put("bio", draft.bio); put("company", draft.company); put("location", draft.location)
             put("blog", draft.blog); put("email", draft.email); put("twitter_username", draft.twitterUsername); put("hireable", true)
-        }, Json.parseToJsonElement(request.body.readUtf8()))
+        }, Json.parseToJsonElement(requireNotNull(request.body).utf8()))
         assertEquals(listOf(saved), events)
         coVerify(exactly = 1) { storage.updateIdentity(saved.user) }
         val active = accounts.session.state.value.activeAccount!!
@@ -351,12 +351,12 @@ class UserRepositoryTest {
     @Test
     fun `清空明确发送空字符串false且仅Twitter发送null`() = runTest(accounts.context) {
         val original = editable(ProfileDraft("Name", "Bio", "Company", "Location", "https://example.test", "me@example.test", "Name_123", true))
-        server.enqueue(MockResponse().setBody(editableResponse(editable(ProfileDraft()))))
+        server.enqueue(MockResponse(body = editableResponse(editable(ProfileDraft()))))
 
         val result = repository.saveEditableProfile(original, ProfileDraft()) as ApiResult.Success
 
         assertEquals(ProfileDraft(), result.data.profile.values)
-        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        val body = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject
         assertEquals(setOf("name", "bio", "company", "location", "blog", "email", "twitter_username", "hireable"), body.keys)
         listOf("name", "bio", "company", "location", "blog", "email").forEach { assertEquals(JsonPrimitive(""), body[it]) }
         assertEquals(JsonNull, body["twitter_username"])
@@ -370,11 +370,11 @@ class UserRepositoryTest {
         assertEquals(0, server.requestCount)
         coVerify(exactly = 0) { storage.updateIdentity(any()) }
         val changed = original.values.copy(name = "  Exact input  ")
-        server.enqueue(MockResponse().setBody(editableResponse(editable(changed))))
+        server.enqueue(MockResponse(body = editableResponse(editable(changed))))
 
         assertTrue(repository.saveEditableProfile(original, changed) is ApiResult.Success)
 
-        assertEquals(JsonObject(mapOf("name" to JsonPrimitive(changed.name))), Json.parseToJsonElement(server.takeRequest().body.readUtf8()))
+        assertEquals(JsonObject(mapOf("name" to JsonPrimitive(changed.name))), Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()))
         assertEquals(1, server.requestCount)
     }
 
@@ -400,7 +400,7 @@ class UserRepositoryTest {
             "{}", valid.replace("\"id\":1", "\"id\":0"), valid.replace("\"id\":1", "\"id\":2"),
             valid.replace("\"node_id\":\"U_kg1\"", "\"node_id\":\"\""), valid.replace("\"login\":\"viewer\"", "\"login\":\"\""),
         )) {
-            server.enqueue(MockResponse().setBody(invalid))
+            server.enqueue(MockResponse(body = invalid))
             assertTrue(repository.getEditableProfile() is ApiResult.Failure)
         }
         assertSame(epoch, accounts.session.epoch)
@@ -409,7 +409,7 @@ class UserRepositoryTest {
 
     @Test
     fun `保存失败或返回另一身份不改元信息缓存或发保存事件`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(viewerResponse()))
+        server.enqueue(MockResponse(body = viewerResponse()))
         val before = repository.getViewerProfile()
         server.takeRequest()
         val epoch = accounts.session.epoch
@@ -419,10 +419,10 @@ class UserRepositoryTest {
         val original = editable(ProfileDraft(name = "Old"))
         val changed = original.values.copy(name = "Changed")
         for (failure in listOf(
-            MockResponse().setResponseCode(401), MockResponse().setResponseCode(403),
-            MockResponse().setResponseCode(422).setBody("""{"message":"Validation Failed"}"""),
-            MockResponse().setBody("{}"),
-            MockResponse().setBody(editableResponse(editable(changed).let { it.copy(user = it.user.copy(id = 2)) })),
+            MockResponse(code = 401), MockResponse(code = 403),
+            MockResponse(code = 422, body = """{"message":"Validation Failed"}"""),
+            MockResponse(body = "{}"),
+            MockResponse(body = editableResponse(editable(changed).let { it.copy(user = it.user.copy(id = 2)) })),
         )) {
             server.enqueue(failure)
             assertTrue(repository.saveEditableProfile(original, changed) is ApiResult.Failure)
@@ -438,7 +438,7 @@ class UserRepositoryTest {
 
     @Test
     fun `远端保存成功本地持久化失败仍同步当前资料并单独返回标记`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(viewerResponse()))
+        server.enqueue(MockResponse(body = viewerResponse()))
         repository.getViewerProfile()
         server.takeRequest()
         val original = editable(ProfileDraft(name = "Old"))
@@ -446,7 +446,7 @@ class UserRepositoryTest {
         coEvery { storage.updateIdentity(any()) } throws java.io.IOException("Storage unavailable")
         val events = mutableListOf<EditableProfile>()
         backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) { repository.profileUpdatesFor(accounts.session.epoch).collect { events += it } }
-        server.enqueue(MockResponse().setBody(editableResponse(saved)))
+        server.enqueue(MockResponse(body = editableResponse(saved)))
 
         assertEquals(ApiResult.Success(ProfileSaveResult(saved, localSyncFailed = true)), repository.saveEditableProfile(original, saved.values))
         runCurrent()
@@ -467,12 +467,12 @@ class UserRepositoryTest {
             val saved = editable(ProfileDraft(name = "Saved"))
             server.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
-                    if (request.path == "/graphql") {
+                    if (request.target == "/graphql") {
                         started.countDown()
                         check(release.await(10, TimeUnit.SECONDS))
-                        return MockResponse().setBody(if (owner) ownerResponse() else viewerResponse())
+                        return MockResponse(body = if (owner) ownerResponse() else viewerResponse())
                     }
-                    return MockResponse().setBody(editableResponse(saved))
+                    return MockResponse(body = editableResponse(saved))
                 }
             }
             val late = async(Dispatchers.IO) {
@@ -488,7 +488,7 @@ class UserRepositoryTest {
             if (owner) assertEquals("Saved", (result as ProfileOwner.Person).name)
             else assertEquals("Saved", (result as com.gitmob.app.data.model.ViewerProfile).user.name)
             server.dispatcher = object : Dispatcher() {
-                override fun dispatch(request: RecordedRequest) = MockResponse().setBody((if (owner) ownerResponse() else viewerResponse()).replace("The Octocat", "New remote value"))
+                override fun dispatch(request: RecordedRequest) = MockResponse(body = (if (owner) ownerResponse() else viewerResponse()).replace("The Octocat", "New remote value"))
             }
             val fresh = if (owner) repository.getProfileOwner("octocat") else repository.getViewerProfileFresh()
             val value = (fresh as ApiResult.Success).data
@@ -504,12 +504,12 @@ class UserRepositoryTest {
         val release = CountDownLatch(1)
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
-                if (request.path == "/user") {
+                if (request.target == "/user") {
                     started.countDown()
                     check(release.await(10, TimeUnit.SECONDS))
-                    return MockResponse().setBody(editableResponse(editable(ProfileDraft(name = "Late old"))))
+                    return MockResponse(body = editableResponse(editable(ProfileDraft(name = "Late old"))))
                 }
-                return MockResponse().setBody(viewerResponse().replace("The Octocat", "Second account"))
+                return MockResponse(body = viewerResponse().replace("The Octocat", "Second account"))
             }
         }
         val result = async(Dispatchers.IO + AccountContext(old)) {
@@ -554,7 +554,7 @@ class UserRepositoryTest {
     }
 
     private fun takeVariables() =
-        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
 }
 
 class UserRepositoryProfileOwnerTest {
@@ -571,13 +571,13 @@ class UserRepositoryProfileOwnerTest {
 
     @After
     fun teardown() {
-        server.shutdown()
+        server.close()
     }
 
     @Test
     fun `repositoryOwner返回User时分流为Person`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"viewer":{"login":"octocat","gists":{"totalCount":9}},"repositoryOwner":{
                     "__typename":"User","id":"U_kg1","login":"octocat","avatarUrl":"https://x/a.png","url":"https://github.com/octocat",
@@ -630,7 +630,7 @@ class UserRepositoryProfileOwnerTest {
     @Test
     fun `repositoryOwner是viewer时Gist数量使用viewer的ALL统计`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{
                     "viewer":{"login":"octocat","gists":{"totalCount":9}},
@@ -666,7 +666,7 @@ class UserRepositoryProfileOwnerTest {
     @Test
     fun `repositoryOwner返回Organization时分流为Org`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"viewer":{"login":"octocat","gists":{"totalCount":9}},"repositoryOwner":{
                     "__typename":"Organization","id":"O_kg1","login":"github","avatarUrl":"https://x/o.png","url":"https://github.com/github",
@@ -705,12 +705,12 @@ class UserRepositoryProfileOwnerTest {
 
     @Test
     fun `统一资料查询缺失owner时仍返回失败`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"login":"octocat","gists":{"totalCount":0}},"repositoryOwner":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"viewer":{"login":"octocat","gists":{"totalCount":0}},"repositoryOwner":null}}"""))
         assertTrue(repository.getProfileOwner("missing") is ApiResult.Failure)
     }
 
     private fun takeVariables() =
-        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
     private fun orgReadmeBody(
         text: String? = "# Organization\n![Logo](images/logo.png)",
         visibility: String = "PUBLIC",
@@ -726,13 +726,13 @@ class UserRepositoryProfileOwnerTest {
     """.trimIndent()
 
     @Test fun organizationReadmeUsesDefaultBranchCommitAndProfilePath() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(orgReadmeBody()))
+        server.enqueue(MockResponse(body = orgReadmeBody()))
         val result = repository.getOrgProfileReadme("github") as ApiResult.Success
         val readme = requireNotNull(result.data)
         assertEquals("# Organization\n![Logo](images/logo.png)", readme.markdown)
         assertEquals(RepoDocumentContext("github", ".github", "commit-123", "profile/README.md"), readme.context)
         assertFalse(readme.isTruncated)
-        val body = server.takeRequest().body.readUtf8()
+        val body = requireNotNull(server.takeRequest().body).utf8()
         assertTrue(body.contains("OrgProfileReadme"))
         assertTrue(body.contains("profile/README.md"))
         assertFalse(body.contains("main:README.md"))
@@ -749,27 +749,27 @@ class UserRepositoryProfileOwnerTest {
             """{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","message":"missing .github","path":["repository"]}]}""",
         )
         for (response in responses) {
-            server.enqueue(MockResponse().setBody(response))
+            server.enqueue(MockResponse(body = response))
             assertEquals(response, ApiResult.Success(null), repository.getOrgProfileReadme("github"))
         }
     }
 
     @Test fun organizationReadmeKeepsTruncationAndReportsInvalidContent() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(orgReadmeBody(truncated = true)))
+        server.enqueue(MockResponse(body = orgReadmeBody(truncated = true)))
         val partial = repository.getOrgProfileReadme("github") as ApiResult.Success
         assertTrue(partial.data!!.isTruncated)
-        server.enqueue(MockResponse().setBody(orgReadmeBody(binary = true)))
+        server.enqueue(MockResponse(body = orgReadmeBody(binary = true)))
         assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.repo_readme_unsupported)), repository.getOrgProfileReadme("github"))
-        server.enqueue(MockResponse().setBody(orgReadmeBody(text = null)))
+        server.enqueue(MockResponse(body = orgReadmeBody(text = null)))
         assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.repo_readme_invalid)), repository.getOrgProfileReadme("github"))
     }
 
     @Test fun optionalOrganizationReadmeDoesNotHidePermissionOrTransportErrors() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":null},"errors":[{"type":"FORBIDDEN","message":"denied","path":["repository"]}]}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":null},"errors":[{"type":"FORBIDDEN","message":"denied","path":["repository"]}]}"""))
         assertTrue(repository.getOrgProfileReadme("github") is ApiResult.Failure)
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","message":"missing"},{"type":"FORBIDDEN","message":"denied"}]}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","message":"missing"},{"type":"FORBIDDEN","message":"denied"}]}"""))
         assertTrue(repository.getOrgProfileReadme("github") is ApiResult.Failure)
-        server.enqueue(MockResponse().setResponseCode(500).setBody("{}"))
+        server.enqueue(MockResponse(code = 500, body = "{}"))
         assertTrue(repository.getOrgProfileReadme("github") is ApiResult.Failure)
     }
 

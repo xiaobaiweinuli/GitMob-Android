@@ -16,8 +16,8 @@ import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -52,11 +52,11 @@ class RepoGitCompareTest {
     }
 
     @After
-    fun tearDown() = server.shutdown()
+    fun tearDown() = server.close()
 
     @Test
     fun `same repository comparison encodes slashes in refs`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(compareJson()))
+        server.enqueue(MockResponse(body = compareJson()))
 
         val result = repository.compare("octo", "repo", "release/v2", "octo", "repo", "feature/login")
 
@@ -64,26 +64,26 @@ class RepoGitCompareTest {
         assertTrue((result as ApiResult.Success).data is RepoComparisonResult.Available)
         assertEquals(
             "/repos/octo/repo/compare/release%2Fv2...feature%2Flogin?page=1&per_page=${PageSize.COMPARE_COMMITS}",
-            server.takeRequest().path,
+            server.takeRequest().target,
         )
     }
 
     @Test
     fun `cross repository comparison namespaces both refs`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(compareJson()))
+        server.enqueue(MockResponse(body = compareJson()))
 
         repository.compare("upstream", "repo", "main", "viewer", "fork", "feature/login")
 
         assertEquals(
             "/repos/upstream/repo/compare/upstream:main...viewer:feature%2Flogin?page=1&per_page=${PageSize.COMPARE_COMMITS}",
-            server.takeRequest().path,
+            server.takeRequest().target,
         )
     }
 
     @Test
     fun `no common ancestor is a domain result`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setResponseCode(404).setBody(
+            MockResponse(code = 404, body =
                 """{"message":"No common ancestor between upstream:main and viewer:feature."}""",
             ),
         )
@@ -95,7 +95,7 @@ class RepoGitCompareTest {
 
     @Test
     fun `ordinary missing comparison remains a failure`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"message":"Not Found"}"""))
+        server.enqueue(MockResponse(code = 404, body = """{"message":"Not Found"}"""))
 
         val result = repository.compare("upstream", "repo", "main", "viewer", "fork", "feature")
 
@@ -104,8 +104,8 @@ class RepoGitCompareTest {
 
     @Test
     fun `fork sync compares captured upstream and fork SHAs with correct direction`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(forkGraphJson()))
-        server.enqueue(MockResponse().setBody(compareJson(ahead = 2, behind = 3)))
+        server.enqueue(MockResponse(body = forkGraphJson()))
+        server.enqueue(MockResponse(body = compareJson(ahead = 2, behind = 3)))
 
         val result = repository.getForkSync("viewer", "fork", "main")
 
@@ -113,17 +113,17 @@ class RepoGitCompareTest {
         assertEquals(RepoForkSyncStatus.READY, sync.status)
         assertEquals(2, sync.aheadBy)
         assertEquals(3, sync.behindBy)
-        assertEquals("/graphql", server.takeRequest().path)
+        assertEquals("/graphql", server.takeRequest().target)
         assertEquals(
             "/repos/upstream/repo/compare/upstream:upsha...viewer:forksha?page=1&per_page=${PageSize.COMPARE_COMMITS}",
-            server.takeRequest().path,
+            server.takeRequest().target,
         )
     }
 
     @Test
     fun `fork sync normalizes qualified branch before comparison`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(forkGraphJson()))
-        server.enqueue(MockResponse().setBody(compareJson()))
+        server.enqueue(MockResponse(body = forkGraphJson()))
+        server.enqueue(MockResponse(body = compareJson()))
 
         val result = repository.getForkSync("viewer", "fork", "refs/heads/main")
 
@@ -131,20 +131,20 @@ class RepoGitCompareTest {
         server.takeRequest()
         assertEquals(
             "/repos/upstream/repo/compare/upstream:upsha...viewer:forksha?page=1&per_page=${PageSize.COMPARE_COMMITS}",
-            server.takeRequest().path,
+            server.takeRequest().target,
         )
     }
 
     @Test
     fun `force align rechecks both heads and sends guarded ref update`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(forkGraphJson()))
-        server.enqueue(MockResponse().setBody("""{"data":{"updateRefs":{"clientMutationId":"gitmob"}}}"""))
+        server.enqueue(MockResponse(body = forkGraphJson()))
+        server.enqueue(MockResponse(body = """{"data":{"updateRefs":{"clientMutationId":"gitmob"}}}"""))
 
         val result = repository.forceAlignFork("viewer", "fork", syncInfo())
 
         assertTrue(result is ApiResult.Success)
         server.takeRequest()
-        val mutation = server.takeRequest().body.readUtf8()
+        val mutation = requireNotNull(server.takeRequest().body).utf8()
         assertTrue(mutation.contains("refs/heads/main"))
         assertTrue(mutation.contains("forksha"))
         assertTrue(mutation.contains("upsha"))
@@ -153,7 +153,7 @@ class RepoGitCompareTest {
 
     @Test
     fun `force align does not mutate when either head changed`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(forkGraphJson(currentOid = "new-forksha")))
+        server.enqueue(MockResponse(body = forkGraphJson(currentOid = "new-forksha")))
 
         val result = repository.forceAlignFork("viewer", "fork", syncInfo())
 
@@ -164,7 +164,7 @@ class RepoGitCompareTest {
 
     @Test
     fun `merge upstream does not mislabel validation failure as a conflict`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(422).setBody("""{"message":"Validation failed"}"""))
+        server.enqueue(MockResponse(code = 422, body = """{"message":"Validation failed"}"""))
 
         val result = repository.mergeUpstream("viewer", "fork", "main") as ApiResult.Failure
 
@@ -174,7 +174,7 @@ class RepoGitCompareTest {
 
     @Test
     fun `archived code tree has no write capabilities`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""
+        server.enqueue(MockResponse(body = """
             {"data":{"repository":{"id":"R1","isFork":true,"isArchived":true,"viewerPermission":"ADMIN",
             "ref":{"name":"main","target":{"__typename":"Commit","oid":"sha"}},
             "object":{"__typename":"Tree","entries":[]}}}}
@@ -189,7 +189,7 @@ class RepoGitCompareTest {
 
     @Test
     fun `force align also refuses a changed upstream SHA`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(forkGraphJson(upstreamOid = "new-upsha")))
+        server.enqueue(MockResponse(body = forkGraphJson(upstreamOid = "new-upsha")))
 
         val result = repository.forceAlignFork("viewer", "fork", syncInfo())
 
@@ -199,7 +199,7 @@ class RepoGitCompareTest {
 
     @Test
     fun `merge upstream maps conflict to user visible error`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(409).setBody("""{"message":"Conflict"}"""))
+        server.enqueue(MockResponse(code = 409, body = """{"message":"Conflict"}"""))
 
         val result = repository.mergeUpstream("viewer", "fork", "main")
 
@@ -207,8 +207,8 @@ class RepoGitCompareTest {
         assertEquals(ApiError.UserVisible(R.string.repo_sync_conflict), (result as ApiResult.Failure).error)
         val request = server.takeRequest()
         assertEquals("POST", request.method)
-        assertEquals("/repos/viewer/fork/merge-upstream", request.path)
-        assertTrue(request.body.readUtf8().contains("main"))
+        assertEquals("/repos/viewer/fork/merge-upstream", request.target)
+        assertTrue(requireNotNull(request.body).utf8().contains("main"))
     }
 
     @Test
@@ -216,7 +216,7 @@ class RepoGitCompareTest {
         val limit = PageSize.COMPARE_FILES_LIMIT
         for (count in listOf(limit - 1, limit, limit + 1)) {
             val files = (1..count).joinToString(",") { """{"filename":"file-$it.kt","status":"modified","additions":1,"deletions":2}""" }
-            server.enqueue(MockResponse().setBody(compareJson(ahead = PageSize.COMPARE_COMMITS * 2 + 1, files = files)))
+            server.enqueue(MockResponse(body = compareJson(ahead = PageSize.COMPARE_COMMITS * 2 + 1, files = files)))
 
             val result = repository.compare("octo", "repo", "main", "octo", "repo", "feature", page = 2) as ApiResult.Success
             val comparison = (result.data as RepoComparisonResult.Available).comparison
@@ -230,8 +230,8 @@ class RepoGitCompareTest {
             assertEquals(2, comparison.commitsPage)
             assertTrue(comparison.commitsHasNextPage)
             val request = server.takeRequest()
-            assertEquals(PageSize.COMPARE_COMMITS.toString(), request.requestUrl?.queryParameter("per_page"))
-            assertEquals("2", request.requestUrl?.queryParameter("page"))
+            assertEquals(PageSize.COMPARE_COMMITS.toString(), request.url.queryParameter("per_page"))
+            assertEquals("2", request.url.queryParameter("page"))
         }
     }
 

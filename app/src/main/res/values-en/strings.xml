@@ -151,8 +151,9 @@
 
     <!-- Settings · color spec -->
     <string name="settings_color_spec">Color spec</string>
-    <string name="settings_color_spec_2021_desc">Mature and stable, keeps the current default look</string>
+    <string name="settings_color_spec_2021_desc">Uses the 2021 dynamic color specification</string>
     <string name="settings_color_spec_2025_desc">Uses the new dynamic color algorithm and tonal relationships</string>
+    <string name="settings_color_spec_2026_desc">Uses the 2026 dynamic color specification and tonal relationships</string>
 
     <!-- Settings · interaction -->
     <string name="settings_section_interaction">Interaction</string>

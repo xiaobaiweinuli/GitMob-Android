@@ -7,8 +7,8 @@ import com.gitmob.app.core.error.safeCall
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -19,24 +19,24 @@ class GitHubIdentityClientTest {
         try {
             val client = GitHubIdentityClient(OkHttpClient(), Json { ignoreUnknownKeys = true }, server.url("/").toString().removeSuffix("/"))
             val cases = listOf(
-                MockResponse().setResponseCode(401) to ApiError.Unauthorized,
-                MockResponse().setResponseCode(403) to ApiError.Forbidden,
-                MockResponse().setResponseCode(403).setHeader("X-RateLimit-Remaining", "0") to ApiError.RateLimited,
-                MockResponse().setResponseCode(403).setHeader("Retry-After", "20") to ApiError.RateLimited,
-                MockResponse().setResponseCode(429) to ApiError.RateLimited,
-                MockResponse().setResponseCode(503) to ApiError.UserVisible(R.string.auth_service_unavailable),
-                MockResponse().setBody("{invalid secret-token") to ApiError.UserVisible(R.string.auth_response_invalid),
-                MockResponse().setBody("{}") to ApiError.UserVisible(R.string.auth_response_invalid),
-                MockResponse().setBody("null") to ApiError.UserVisible(R.string.auth_response_invalid),
-                MockResponse().setBody("""{"id":1,"login":"user"}""") to ApiError.UserVisible(R.string.auth_response_invalid),
-                MockResponse().setBody("""{"id":0,"node_id":"U_1","login":"user"}""") to ApiError.UserVisible(R.string.auth_response_invalid),
+                MockResponse(code = 401) to ApiError.Unauthorized,
+                MockResponse(code = 403) to ApiError.Forbidden,
+                MockResponse.Builder().code(403).setHeader("X-RateLimit-Remaining", "0").build() to ApiError.RateLimited,
+                MockResponse.Builder().code(403).setHeader("Retry-After", "20").build() to ApiError.RateLimited,
+                MockResponse(code = 429) to ApiError.RateLimited,
+                MockResponse(code = 503) to ApiError.UserVisible(R.string.auth_service_unavailable),
+                MockResponse(body = "{invalid secret-token") to ApiError.UserVisible(R.string.auth_response_invalid),
+                MockResponse(body = "{}") to ApiError.UserVisible(R.string.auth_response_invalid),
+                MockResponse(body = "null") to ApiError.UserVisible(R.string.auth_response_invalid),
+                MockResponse(body = """{"id":1,"login":"user"}""") to ApiError.UserVisible(R.string.auth_response_invalid),
+                MockResponse(body = """{"id":0,"node_id":"U_1","login":"user"}""") to ApiError.UserVisible(R.string.auth_response_invalid),
             )
             for ((response, expected) in cases) {
                 server.enqueue(response)
                 assertEquals(ApiResult.Failure(expected), safeCall { client.verify("candidate") })
             }
-            server.enqueue(MockResponse().setBody("""{"id":1,"node_id":"U_1","login":"user","extra":true}"""))
+            server.enqueue(MockResponse(body = """{"id":1,"node_id":"U_1","login":"user","extra":true}"""))
             assertEquals("user", client.verify("candidate").login)
-        } finally { server.shutdown() }
+        } finally { server.close() }
     }
 }

@@ -27,7 +27,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.net.toUri
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -128,8 +128,10 @@ private fun IssueEditor(
     onSaveActionReady: ((() -> Unit) -> Unit),
 ) {
     var title by remember(template, existing) { mutableStateOf(existing?.title ?: template?.title.orEmpty()) }
-    var body by remember(template, existing) { mutableStateOf(existing?.body.orEmpty()) }
-    var bodyValue by remember(template, existing) { mutableStateOf(TextFieldValue(body, TextRange(body.length))) }
+    val bodyState = remember(template, existing) {
+        val initialBody = existing?.body.orEmpty()
+        TextFieldState(initialBody, TextRange(initialBody.length))
+    }
     var textValues by remember(template) { mutableStateOf(template?.fields.orEmpty().mapNotNull { field -> when (field) { is IssueFormField.Input -> field.id to field.value.orEmpty(); is IssueFormField.Textarea -> field.id to field.value.orEmpty(); else -> null } }.toMap()) }
     var selections by remember(template) { mutableStateOf(template?.fields.orEmpty().mapNotNull { field -> (field as? IssueFormField.Dropdown)?.defaultIndex?.let { field.id to setOf(it) } }.toMap()) }
     var selectedLabels by remember(template, existing, labels) { mutableStateOf(existing?.labels?.map { it.id }?.toSet() ?: labels.filter { it.name in template?.labels.orEmpty() }.map { it.id }.toSet()) }
@@ -148,7 +150,7 @@ private fun IssueEditor(
     val complete = template?.let { IssueFormSubmissionBuilder.isComplete(it, textValues, selections) } ?: true
     SideEffect {
         onSaveActionReady {
-            onSave(title, template?.let { IssueFormSubmissionBuilder.build(it, textValues, selections) } ?: body, selectedLabels.toList(), selectedAssignees.toList(), selectedMilestone)
+            onSave(title, template?.let { IssueFormSubmissionBuilder.build(it, textValues, selections) } ?: bodyState.text.toString(), selectedLabels.toList(), selectedAssignees.toList(), selectedMilestone)
         }
     }
 
@@ -165,10 +167,9 @@ private fun IssueEditor(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             )
             MarkdownBodyEditor(
-                value = bodyValue,
+                textState = bodyState,
                 state = bodyEditorState,
-                onValueChange = { bodyValue = it; body = it.text; if (bodyEditorState.selectedTab == MarkdownEditorTab.PREVIEW) onBodyTabSelected(MarkdownEditorTab.PREVIEW, it.text) },
-                onTabSelected = { onBodyTabSelected(it, bodyValue.text) },
+                onTabSelected = { onBodyTabSelected(it, bodyState.text.toString()) },
                 accessoryContent = {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MetadataChip(stringResource(R.string.issue_labels), selectedLabels.size) { openMetadata(IssueMetadataSheet.LABELS) }
@@ -202,7 +203,7 @@ private fun IssueEditor(
     metadataSheet?.let { sheet ->
         ModalBottomSheet(
             onDismissRequest = { metadataSheet = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Text(

@@ -263,7 +263,7 @@ class AccountNavigationTest {
     }
 
     @Test
-    fun `switch discards every tab store saved state permission draft and old navigation callback`() {
+    fun `switch discards every tab store saved state permission draft and old controls`() {
         launch()
         visitAllTabs()
         val previous = fixture.creations.toList()
@@ -276,8 +276,6 @@ class AccountNavigationTest {
         tab(R.string.nav_tab_gist)
         val gist = fixture.model<GistViewModel>()
         composeRule.runOnIdle { gist.selectVisibility(GistVisibility.PRIVATE) }
-        val oldCreate = composeRule.onNodeWithContentDescription(text(R.string.gist_create_title))
-            .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         composeRule.onNodeWithContentDescription(text(R.string.gist_create_title)).performClick()
         composeRule.waitForIdle()
         val draft = fixture.model<GistCreateViewModel>()
@@ -289,7 +287,7 @@ class AccountNavigationTest {
         assertTrue((previous + fixture.creation(draft)).all { it.cleared })
         assertTrue((previous + fixture.creation(draft)).all { !it.model.viewModelScope.coroutineContext[kotlinx.coroutines.Job]!!.isActive })
         assertEquals("beta", fixture.model<HomeViewModel>().state.value.profile!!.user.login)
-        composeRule.runOnIdle { oldCreate() }
+        composeRule.onNodeWithContentDescription(text(R.string.gist_create_title)).assertDoesNotExist()
         composeRule.onNode(hasText(text(R.string.nav_tab_home)) and tabRole).assertExists()
         composeRule.onNode(hasSetTextAction()).assertDoesNotExist()
         composeRule.runOnIdle { draft.create() }

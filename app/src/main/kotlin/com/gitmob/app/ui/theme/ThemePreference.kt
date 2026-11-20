@@ -24,8 +24,8 @@ data class ThemePreference(
     val useAmoled: Boolean = false,
     /** MaterialKolor 生成调色板时使用的风格。 */
     val paletteStyle: PaletteStyle = PaletteStyle.TonalSpot,
-    /** Material Design 颜色算法规格，默认保持 MaterialKolor 的 2021 兼容行为。 */
-    val colorSpec: ColorSpec.SpecVersion = ColorSpec.SpecVersion.SPEC_2021,
+    /** Material Design 颜色算法规格，默认使用 MaterialKolor 当前规格。 */
+    val colorSpec: ColorSpec.SpecVersion = ColorSpec.SpecVersion.Default,
     /** 是否显示 Navigation3 的预测性返回目的页预览。 */
     val enablePredictiveBack: Boolean = true,
     /** App 内容缩放比例；限制在 80%～110%，不改变系统窗口与系统栏。 */

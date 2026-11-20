@@ -48,13 +48,14 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -79,7 +80,7 @@ import com.gitmob.app.ui.theme.ThemeMode
 import com.gitmob.app.ui.theme.ThemePreference
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
-import com.materialkolor.rememberDynamicColorScheme
+import com.materialkolor.material3.rememberDynamicColorScheme
 
 private data class SeedColorOption(
     @StringRes val nameRes: Int,
@@ -312,6 +313,16 @@ fun AppearanceScreen(
                             viewModel.setColorSpec(ColorSpec.SpecVersion.SPEC_2025)
                         },
                     )
+                    SelectionRow(
+                        title = "Material 2026",
+                        description = stringResource(R.string.settings_color_spec_2026_desc),
+                        selected = preference.colorSpec == ColorSpec.SpecVersion.SPEC_2026,
+                        onClick = {
+                            dismiss()
+                            haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                            viewModel.setColorSpec(ColorSpec.SpecVersion.SPEC_2026)
+                        },
+                    )
                 }
             }
 
@@ -352,7 +363,8 @@ private fun PageScaleRow(
     scale: Float,
     onScaleChangeFinished: (Float) -> Unit,
 ) {
-    var sliderValue by rememberSaveable(scale) { mutableFloatStateOf(scale.coerceIn(0.8f, 1.1f)) }
+    val sliderState = rememberSliderState(value = scale, steps = 5, trackRange = 0.8f..1.1f)
+    LaunchedEffect(scale) { sliderState.value = scale }
     val haptic = LocalHapticFeedback.current
     Column(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -374,20 +386,18 @@ private fun PageScaleRow(
                 )
             }
             Text(
-                text = "${(sliderValue * 100).toInt()}%",
+                text = "${(sliderState.value * 100).toInt()}%",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Slider(
-            value = sliderValue,
-            onValueChange = { sliderValue = it },
+            state = sliderState,
+            onValueChange = { sliderState.value = it },
             onValueChangeFinished = {
                 haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                onScaleChangeFinished(sliderValue)
+                onScaleChangeFinished(sliderState.value)
             },
-            valueRange = 0.8f..1.1f,
-            steps = 5,
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -440,6 +450,7 @@ private fun themeModeLabel(mode: ThemeMode): Int = when (mode) {
 private fun colorSpecLabel(spec: ColorSpec.SpecVersion): String = when (spec) {
     ColorSpec.SpecVersion.SPEC_2021 -> "Material 2021"
     ColorSpec.SpecVersion.SPEC_2025 -> "Material 2025"
+    ColorSpec.SpecVersion.SPEC_2026 -> "Material 2026"
 }
 
 @Composable

@@ -28,10 +28,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.Dispatcher
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.RecordedRequest
+import mockwebserver3.Dispatcher
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -71,13 +71,13 @@ class RepoRepositoryTest {
 
     @After
     fun teardown() {
-        server.shutdown()
+        server.close()
     }
 
     @Test
     fun `创建个人仓库使用user repos并显式发送false默认值`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"name":"new-repo","owner":{"login":"octocat"}}
                 """.trimIndent(),
@@ -98,8 +98,8 @@ class RepoRepositoryTest {
 
         assertTrue(result is ApiResult.Success)
         val request = server.takeRequest()
-        assertEquals("/user/repos", request.path)
-        val body = request.body.readUtf8()
+        assertEquals("/user/repos", request.target)
+        val body = requireNotNull(request.body).utf8()
         assertTrue(body.contains("\"private\":false"))
         assertTrue(body.contains("\"auto_init\":false"))
         assertTrue(!body.contains("license_template"))
@@ -108,7 +108,7 @@ class RepoRepositoryTest {
     @Test
     fun `创建组织仓库使用组织repos并映射owner`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"name":"org-repo","owner":{"login":"acme"}}
                 """.trimIndent(),
@@ -129,8 +129,8 @@ class RepoRepositoryTest {
 
         assertEquals("acme", (result as ApiResult.Success).data.owner)
         val request = server.takeRequest()
-        assertEquals("/orgs/acme/repos", request.path)
-        val body = request.body.readUtf8()
+        assertEquals("/orgs/acme/repos", request.target)
+        val body = requireNotNull(request.body).utf8()
         assertTrue(body.contains("\"private\":true"))
         assertTrue(body.contains("\"auto_init\":true"))
         assertTrue(body.contains("\"license_template\":\"mit\""))
@@ -139,29 +139,29 @@ class RepoRepositoryTest {
 
     @Test
     fun `license和gitignore模板路径正确映射`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("[{\"key\":\"mit\",\"name\":\"MIT License\"}]"))
-        server.enqueue(MockResponse().setBody("[\"Kotlin\",\"Android\"]"))
+        server.enqueue(MockResponse(body = "[{\"key\":\"mit\",\"name\":\"MIT License\"}]"))
+        server.enqueue(MockResponse(body = "[\"Kotlin\",\"Android\"]"))
 
         val licenses = repository.getLicenseTemplates()
         val gitignore = repository.getGitignoreTemplates()
 
         assertEquals("mit", (licenses as ApiResult.Success).data.single().key)
         assertEquals(listOf("Kotlin", "Android"), (gitignore as ApiResult.Success).data)
-        assertEquals("/licenses", server.takeRequest().path)
-        assertEquals("/gitignore/templates", server.takeRequest().path)
+        assertEquals("/licenses", server.takeRequest().target)
+        assertEquals("/gitignore/templates", server.takeRequest().target)
     }
 
     @Test
     fun `创建仓库所有者查询使用PageSize并传递下一页cursor`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"viewer":{"id":"u1","login":"octocat","name":"Octocat","avatarUrl":"https://avatars.example.com/octocat","organizations":{"nodes":[{"id":"o1","login":"acme","name":"Acme","avatarUrl":"https://avatars.example.com/acme","viewerCanCreateRepositories":true}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"}}}}}
                 """.trimIndent(),
             ),
         )
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"viewer":{"id":"u1","login":"octocat","name":"Octocat","avatarUrl":"https://avatars.example.com/octocat","organizations":{"nodes":[{"id":"o2","login":"beta","name":"Beta","avatarUrl":"https://avatars.example.com/beta","viewerCanCreateRepositories":false}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
                 """.trimIndent(),
@@ -173,8 +173,8 @@ class RepoRepositoryTest {
 
         assertEquals("cursor-1", (first as ApiResult.Success).data.endCursor)
         assertEquals("beta", (second as ApiResult.Success).data.organizations.single().login)
-        val firstBody = server.takeRequest().body.readUtf8()
-        val secondBody = server.takeRequest().body.readUtf8()
+        val firstBody = requireNotNull(server.takeRequest().body).utf8()
+        val secondBody = requireNotNull(server.takeRequest().body).utf8()
         assertEquals(JsonPrimitive(PageSize.ORGS), Json.parseToJsonElement(firstBody).jsonObject.getValue("variables").jsonObject["first"])
         assertTrue(!firstBody.contains("\"after\":\"cursor-1\""))
         assertTrue(secondBody.contains("\"after\":\"cursor-1\""))
@@ -183,7 +183,7 @@ class RepoRepositoryTest {
     @Test
     fun `解析搜索结果保留卡片字段和实际可见性`() = runTest(accounts.context) {
         enqueueOwner()
-        server.enqueue(MockResponse().setBody(response(RepoVisibility.entries.map { node(it.name, visibility = it.name) })))
+        server.enqueue(MockResponse(body = response(RepoVisibility.entries.map { node(it.name, visibility = it.name) })))
         val page = (repository.getRepos() as ApiResult.Success).data
         assertEquals(RepoVisibility.entries, page.items.map { it.visibility })
         assertTrue(page.items.all { it.hasIssuesEnabled && it.openIssueCount == 0 })
@@ -203,7 +203,7 @@ class RepoRepositoryTest {
     fun `viewer用户和组织在同一搜索中发送文字及筛选交集`() = runTest(accounts.context) {
         for (login in listOf(null, "other", "acme")) {
             enqueueOwner(login, organization = login == "acme", canCreate = login != "other")
-            server.enqueue(MockResponse().setBody(response(listOf(node("server-match")))))
+            server.enqueue(MockResponse(body = response(listOf(node("server-match")))))
             val filters = RepoFilters(query = "ANDROID", visibility = RepoVisibility.PRIVATE,
                 isArchived = false, isFork = true, sort = RepoSort.STARS_DESC)
             val page = (repository.getRepos(login, filters = filters) as ApiResult.Success).data
@@ -219,9 +219,9 @@ class RepoRepositoryTest {
 
     @Test
     fun `owner不存在或权限请求失败不发送无范围搜索`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"repositoryOwner":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repositoryOwner":null}}"""))
         assertTrue(repository.getRepos("missing") is ApiResult.Failure)
-        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
+        server.enqueue(MockResponse(code = 401, body = "{}"))
         assertTrue(repository.getRepos() is ApiResult.Failure)
         assertEquals(2, server.requestCount)
     }
@@ -229,7 +229,7 @@ class RepoRepositoryTest {
     @Test
     fun `组织无创建权限仍可读取仓库且保留权限上下文`() = runTest(accounts.context) {
         enqueueOwner("acme", organization = true, canCreate = false)
-        server.enqueue(MockResponse().setBody(response()))
+        server.enqueue(MockResponse(body = response()))
         val page = (repository.getRepos("acme") as ApiResult.Success).data
         assertEquals(RepositoryCreateOwnerType.ORGANIZATION, page.ownerContext?.owner?.type)
         assertFalse(page.ownerContext!!.owner.canCreateRepository)
@@ -238,9 +238,9 @@ class RepoRepositoryTest {
     @Test
     fun `游标分页只请求一页且owner元数据复用`() = runTest(accounts.context) {
         enqueueOwner()
-        server.enqueue(MockResponse().setBody(response(listOf(node("z"), node("a")), cursor = "c1", total = 40)))
+        server.enqueue(MockResponse(body = response(listOf(node("z"), node("a")), cursor = "c1", total = 40)))
         val first = (repository.getRepos(filters = RepoFilters(query = "text")) as ApiResult.Success).data
-        server.enqueue(MockResponse().setBody(response(listOf(node("a"), node("b")), total = 40)))
+        server.enqueue(MockResponse(body = response(listOf(node("a"), node("b")), total = 40)))
         val second = (repository.getRepos(after = first.endCursor, filters = RepoFilters(query = "text"), received = first.receivedCount) as ApiResult.Success).data
         assertEquals(listOf("z", "a"), first.items.map { it.name })
         assertEquals(4, second.receivedCount)
@@ -252,7 +252,7 @@ class RepoRepositoryTest {
     @Test
     fun `累计数量按原始节点而非去重数量计算并在一千条停止`() = runTest(accounts.context) {
         enqueueOwner()
-        server.enqueue(MockResponse().setBody(response(List(PageSize.REPOS) { node("same") }, cursor = "last", total = 1500)))
+        server.enqueue(MockResponse(body = response(List(PageSize.REPOS) { node("same") }, cursor = "last", total = 1500)))
         val page = (repository.getRepos(after = "previous", received = 980) as ApiResult.Success).data
         assertEquals(1000, page.receivedCount)
         assertEquals(1500, page.totalCount)
@@ -264,7 +264,7 @@ class RepoRepositoryTest {
     @Test
     fun `最后一次请求按剩余容量缩小且恰好一千条无截断提示`() = runTest(accounts.context) {
         enqueueOwner()
-        server.enqueue(MockResponse().setBody(response(List(5) { node("r$it") }, total = 1000)))
+        server.enqueue(MockResponse(body = response(List(5) { node("r$it") }, total = 1000)))
         val page = (repository.getRepos(after = "previous", received = 995) as ApiResult.Success).data
         takeRequest()
         assertEquals(JsonPrimitive(5), takeVariables()["first"])
@@ -276,7 +276,7 @@ class RepoRepositoryTest {
     fun `空页或游标不推进作为失败返回供重试而非自动循环`() = runTest(accounts.context) {
         enqueueOwner()
         for ((nodes, cursor) in listOf(emptyList<String>() to "next", listOf(node("r")) to "same", listOf(node("r")) to null)) {
-            server.enqueue(MockResponse().setBody(response(nodes, cursor = cursor, hasNext = true)))
+            server.enqueue(MockResponse(body = response(nodes, cursor = cursor, hasNext = true)))
             assertTrue(repository.getRepos(after = "same") is ApiResult.Failure)
         }
         assertEquals(4, server.requestCount)
@@ -285,28 +285,28 @@ class RepoRepositoryTest {
     @Test
     fun `搜索失败和缺失必需卡片字段返回失败`() = runTest(accounts.context) {
         enqueueOwner()
-        server.enqueue(MockResponse().setResponseCode(500).setBody("{}"))
+        server.enqueue(MockResponse(code = 500, body = "{}"))
         assertTrue(repository.getRepos() is ApiResult.Failure)
-        server.enqueue(MockResponse().setBody(response(listOf(node("bad").replace("\"hasIssuesEnabled\":true,", "")))))
+        server.enqueue(MockResponse(body = response(listOf(node("bad").replace("\"hasIssuesEnabled\":true,", "")))))
         assertTrue(repository.getRepos() is ApiResult.Failure)
     }
 
     @Test
     fun `仅viewer默认首页缓存且强制刷新替换owner和搜索缓存`() = runTest(accounts.context) {
         enqueueOwner()
-        server.enqueue(MockResponse().setBody(response(listOf(node("cached")))))
+        server.enqueue(MockResponse(body = response(listOf(node("cached")))))
         repository.getRepos()
         assertEquals("cached", (repository.getRepos() as ApiResult.Success).data.items.single().name)
         assertEquals(2, server.requestCount)
         for (filters in listOf(RepoFilters(query = "hit"), RepoFilters(isArchived = false), RepoFilters(sort = RepoSort.NAME_ASC))) {
             repeat(2) {
-                server.enqueue(MockResponse().setBody(response()))
+                server.enqueue(MockResponse(body = response()))
                 repository.getRepos(filters = filters)
             }
         }
         assertEquals(8, server.requestCount)
         enqueueOwner()
-        server.enqueue(MockResponse().setBody(response(listOf(node("fresh")))))
+        server.enqueue(MockResponse(body = response(listOf(node("fresh")))))
         repository.getRepos(forceRefresh = true)
         assertEquals("fresh", (repository.getRepos() as ApiResult.Success).data.items.single().name)
         assertEquals(10, server.requestCount)
@@ -324,14 +324,14 @@ class RepoRepositoryTest {
         val searches = AtomicInteger()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
-                val operation = Json.parseToJsonElement(request.body.readUtf8()).jsonObject["operationName"]?.jsonPrimitive?.content
-                if (operation == "ViewerRepos") return MockResponse().setBody(ownerResponse())
+                val operation = Json.parseToJsonElement(requireNotNull(request.body).utf8()).jsonObject["operationName"]?.jsonPrimitive?.content
+                if (operation == "ViewerRepos") return MockResponse(body = ownerResponse())
                 if (searches.incrementAndGet() == 1) {
                     started.countDown()
                     check(release.await(10, TimeUnit.SECONDS))
-                    return MockResponse().setBody(response(listOf(node("old"))))
+                    return MockResponse(body = response(listOf(node("old"))))
                 }
-                return MockResponse().setBody(response(listOf(node("new"))))
+                return MockResponse(body = response(listOf(node("new"))))
             }
         }
         val old = async(Dispatchers.IO) { repository.getRepos() }
@@ -346,11 +346,11 @@ class RepoRepositoryTest {
         assertEquals(2, searches.get())
     }
 
-    private fun takeRequest(): JsonObject = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+    private fun takeRequest(): JsonObject = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject
     private fun takeVariables(): JsonObject = takeRequest().getValue("variables").jsonObject
 
     private fun enqueueOwner(owner: String? = null, organization: Boolean = false, canCreate: Boolean = true) {
-        server.enqueue(MockResponse().setBody(ownerResponse(owner, organization, canCreate)))
+        server.enqueue(MockResponse(body = ownerResponse(owner, organization, canCreate)))
     }
 
     private fun ownerResponse(owner: String? = null, organization: Boolean = false, canCreate: Boolean = true): String {

@@ -24,8 +24,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -61,11 +61,11 @@ class RepoPullRequestRepositoryTest {
     }
 
     @After
-    fun tearDown() = server.shutdown()
+    fun tearDown() = server.close()
 
     @Test
     fun `default list filter omits optional empty variables`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(pageJson()))
+        server.enqueue(MockResponse(body = pageJson()))
 
         val result = repository.getPullRequests("octo", "repo", RepoPullRequestFilter(), after = "previous")
 
@@ -75,7 +75,7 @@ class RepoPullRequestRepositoryTest {
         assertEquals("https://github.com/octo/repo/pull/1", page.items.single().url)
         assertEquals(CommentAuthorAssociation.OWNER, page.items.single().authorAssociation)
 
-        val request = json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        val request = json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject
         val variables = request.getValue("variables").jsonObject
         assertFalse("labels" in variables)
         val query = request.getValue("query").jsonPrimitive.content
@@ -90,7 +90,7 @@ class RepoPullRequestRepositoryTest {
 
     @Test
     fun `closed filter includes merged pull requests and preserves their state`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(pageJson(state = "MERGED")))
+        server.enqueue(MockResponse(body = pageJson(state = "MERGED")))
 
         val result = repository.getPullRequests("octo", "repo", RepoPullRequestFilter(state = RepoPullRequestStateFilter.CLOSED))
 
@@ -101,7 +101,7 @@ class RepoPullRequestRepositoryTest {
 
     @Test
     fun `getLabels 解析仓库标签列表`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""
+        server.enqueue(MockResponse(body = """
             {
               "data": {
                 "repository": {
@@ -130,7 +130,7 @@ class RepoPullRequestRepositoryTest {
 
     @Test
     fun `getLabels 错误响应映射为失败`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"message":"boom"}"""))
+        server.enqueue(MockResponse(code = 500, body = """{"message":"boom"}"""))
 
         val result = repository.getLabels("octo", "repo")
 
@@ -139,14 +139,14 @@ class RepoPullRequestRepositoryTest {
 
     @Test
     fun `getLabels 在 Repository 内遍历 cursor`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[{"id":"L1","name":"one","color":"111111"}],"pageInfo":{"hasNextPage":true,"endCursor":"C1"}}}}}"""))
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[{"id":"L2","name":"two","color":"222222"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"labels":{"nodes":[{"id":"L1","name":"one","color":"111111"}],"pageInfo":{"hasNextPage":true,"endCursor":"C1"}}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"labels":{"nodes":[{"id":"L2","name":"two","color":"222222"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
 
         val result = repository.getLabels("octo", "repo")
 
         assertEquals(listOf("one", "two"), (result as ApiResult.Success).data.map { it.name })
-        val firstVariables = json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
-        val secondVariables = json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        val firstVariables = json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
+        val secondVariables = json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
         assertFalse("after" in firstVariables)
         assertEquals("C1", secondVariables.getValue("after").jsonPrimitive.content)
         assertEquals(JsonPrimitive(PageSize.METADATA), firstVariables["first"])
@@ -155,7 +155,7 @@ class RepoPullRequestRepositoryTest {
 
     @Test
     fun `cross repository create namespaces head ref and sends head repository id`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(createPullRequestJson()))
+        server.enqueue(MockResponse(body = createPullRequestJson()))
 
         val result = repository.createPullRequest(
             CreateRepoPullRequestInput(
@@ -171,7 +171,7 @@ class RepoPullRequestRepositoryTest {
         )
 
         assertTrue(result is ApiResult.Success)
-        val request = json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        val request = json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject
         val input = request.getValue("variables").jsonObject.getValue("input").jsonObject
         assertEquals("BASE", input.getValue("repositoryId").jsonPrimitive.content)
         assertEquals("HEAD", input.getValue("headRepositoryId").jsonPrimitive.content)
@@ -186,8 +186,8 @@ class RepoPullRequestRepositoryTest {
             "comments":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}},
             "reviews":{"nodes":[]},"reviewThreads":{"nodes":[]},"commits":{"nodes":[]}
         """.trimIndent()
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"id":"R1","viewerPermission":"READ","mergeCommitAllowed":true,"squashMergeAllowed":true,"rebaseMergeAllowed":true,"pullRequest":${prNodeJson(connections)}}}}"""))
-        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"id":"R1","viewerPermission":"READ","mergeCommitAllowed":true,"squashMergeAllowed":true,"rebaseMergeAllowed":true,"pullRequest":${prNodeJson(connections)}}}}"""))
+        server.enqueue(MockResponse(body = "[]"))
 
         val detail = (repository.getPullRequest("octo", "repo", 1, commentsAfter = "previous") as ApiResult.Success).data
 
@@ -202,19 +202,19 @@ class RepoPullRequestRepositoryTest {
         assertEquals(JsonPrimitive(PageSize.PULL_REQUEST_COMMITS), variables["commitsFirst"])
         assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
         assertEquals(JsonPrimitive("previous"), variables["after"])
-        assertEquals(PageSize.PULL_REQUEST_FILES.toString(), server.takeRequest().requestUrl?.queryParameter("per_page"))
+        assertEquals(PageSize.PULL_REQUEST_FILES.toString(), server.takeRequest().url.queryParameter("per_page"))
     }
 
     @Test
     fun `分支读取和创建元数据首续页使用对应容量`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(metadataPageJson("refs")))
+        server.enqueue(MockResponse(body = metadataPageJson("refs")))
         assertTrue(repository.getBranches("octo", "repo") is ApiResult.Success)
         val branches = takeVariables()
         assertEquals(JsonPrimitive(PageSize.BRANCHES), branches["first"])
         assertFalse("after" in branches)
 
-        server.enqueue(MockResponse().setBody(metadataJson()))
-        metadataFields.forEach { server.enqueue(MockResponse().setBody(metadataPageJson(it))) }
+        server.enqueue(MockResponse(body = metadataJson()))
+        metadataFields.forEach { server.enqueue(MockResponse(body = metadataPageJson(it))) }
         val metadata = (repository.getCreateMetadata("octo", "repo") as ApiResult.Success).data
 
         assertEquals("R1", metadata.repositoryId)
@@ -231,12 +231,12 @@ class RepoPullRequestRepositoryTest {
 
     @Test
     fun `元数据续页失败不返回部分成功且重试重读原始页`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(metadataJson()))
-        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse(body = metadataJson()))
+        server.enqueue(MockResponse(code = 403))
         assertTrue(repository.getCreateMetadata("octo", "repo") is ApiResult.Failure)
 
-        server.enqueue(MockResponse().setBody(metadataJson()))
-        metadataFields.forEach { server.enqueue(MockResponse().setBody(metadataPageJson(it))) }
+        server.enqueue(MockResponse(body = metadataJson()))
+        metadataFields.forEach { server.enqueue(MockResponse(body = metadataPageJson(it))) }
         assertTrue(repository.getCreateMetadata("octo", "repo") is ApiResult.Success)
         val requests = List(metadataFields.size + 3) { takeVariables() }
         assertEquals(listOf(null, JsonPrimitive("refs-next"), null) + metadataFields.map { JsonPrimitive("$it-next") }, requests.map { it["after"] })
@@ -257,7 +257,7 @@ class RepoPullRequestRepositoryTest {
             "disablePullRequestAutoMerge" to suspend { repository.setAutoMerge("PR1", false, RepoPullRequestMergeMethod.SQUASH) },
         )
         for ((field, mutate) in mutations) {
-            server.enqueue(MockResponse().setBody("""{"data":{"$field":{"pullRequest":${prNodeJson()}}}}"""))
+            server.enqueue(MockResponse(body = """{"data":{"$field":{"pullRequest":${prNodeJson()}}}}"""))
             assertTrue(mutate() is ApiResult.Success)
             val variables = takeVariables()
             assertEquals(JsonPrimitive(PageSize.METADATA), variables["metadataFirst"])
@@ -274,7 +274,7 @@ class RepoPullRequestRepositoryTest {
 
     @Test
     fun `PR列表详情和创建元数据缺失根节点时仍失败`() = runTest(accounts.context) {
-        repeat(3) { server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"login":"octo"},"repository":null}}""")) }
+        repeat(3) { server.enqueue(MockResponse(body = """{"data":{"viewer":{"login":"octo"},"repository":null}}""")) }
         assertTrue(repository.getPullRequests("octo", "repo", RepoPullRequestFilter()) is ApiResult.Failure)
         assertTrue(repository.getPullRequest("octo", "repo", 1) is ApiResult.Failure)
         assertTrue(repository.getCreateMetadata("octo", "repo") is ApiResult.Failure)
@@ -283,12 +283,12 @@ class RepoPullRequestRepositoryTest {
 
     @Test
     fun `requestReviews sends schema verified user id variables`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"requestReviews":{"clientMutationId":null}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"requestReviews":{"clientMutationId":null}}}"""))
 
         val result = repository.requestReviews("PR1", listOf("U1", "U2"))
 
         assertTrue(result is ApiResult.Success)
-        val request = json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        val request = json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject
         val input = request.getValue("variables").jsonObject.getValue("input").jsonObject
         assertEquals("PR1", input.getValue("pullRequestId").jsonPrimitive.content)
         assertEquals(listOf("U1", "U2"), input.getValue("userIds").jsonArray.map { it.jsonPrimitive.content })
@@ -299,7 +299,7 @@ class RepoPullRequestRepositoryTest {
 
     @Test
     fun `findOpenPullRequest maps summary fields and encodes fork head`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""
+        server.enqueue(MockResponse(body = """
             [{
               "number":7,
               "title":"Feature",
@@ -329,10 +329,10 @@ class RepoPullRequestRepositoryTest {
         assertEquals("bug", pullRequest?.labels?.single()?.name)
 
         val request = server.takeRequest()
-        assertEquals("open", request.requestUrl?.queryParameter("state"))
-        assertEquals("main", request.requestUrl?.queryParameter("base"))
-        assertEquals("viewer:feature/login", request.requestUrl?.queryParameter("head"))
-        assertEquals("1", request.requestUrl?.queryParameter("per_page"))
+        assertEquals("open", request.url.queryParameter("state"))
+        assertEquals("main", request.url.queryParameter("base"))
+        assertEquals("viewer:feature/login", request.url.queryParameter("head"))
+        assertEquals("1", request.url.queryParameter("per_page"))
     }
 
     /**
@@ -361,7 +361,7 @@ class RepoPullRequestRepositoryTest {
         val node = prNodeJson(state = "MERGED").replaceFirst("{", "{\"__typename\":\"PullRequest\",")
             .replace("\"totalCommentsCount\":0", "\"totalCommentsCount\":9")
         val repo = json.parseToJsonElement(pageJson()).jsonObject.getValue("data").jsonObject.getValue("repository")
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":$repo,"search":{"issueCount":1,"nodes":[$node],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":$repo,"search":{"issueCount":1,"nodes":[$node],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"""))
         val filter = RepoPullRequestFilter(state = RepoPullRequestStateFilter.CLOSED, labels = linkedSetOf("bug", "help wanted"))
         val result = (repository.searchPullRequests("o", "r", "fix", filter) as ApiResult.Success).data
         assertEquals(RepoPullRequestState.MERGED, result.items.single().state)
@@ -398,7 +398,7 @@ class RepoPullRequestRepositoryTest {
         """{"data":{"createPullRequest":{"pullRequest":${prNodeJson()}}}}"""
 
     private fun takeVariables() =
-        json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
 
     private fun metadataJson(): String {
         val fields = metadataFields.joinToString(",") { """"$it":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"$it-next"}}""" }

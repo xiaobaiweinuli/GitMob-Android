@@ -149,8 +149,9 @@
 
     <!-- 設定 · 顏色規格 -->
     <string name="settings_color_spec">顏色規格</string>
-    <string name="settings_color_spec_2021_desc">成熟穩定，保持目前預設配色表現</string>
+    <string name="settings_color_spec_2021_desc">使用 2021 動態配色規範</string>
     <string name="settings_color_spec_2025_desc">使用新版動態顏色演算法與色調關係</string>
+    <string name="settings_color_spec_2026_desc">使用 2026 動態顏色規範與色調關係</string>
 
     <!-- 設定 · 互動 -->
     <string name="settings_section_interaction">互動</string>

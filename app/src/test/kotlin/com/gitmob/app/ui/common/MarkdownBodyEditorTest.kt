@@ -8,7 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -16,6 +16,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.R
@@ -37,9 +39,8 @@ class MarkdownBodyEditorTest {
     fun `editor shows tabs and all markdown toolbar actions`() {
         composeRule.setContent {
             MarkdownBodyEditor(
-                value = TextFieldValue(""),
+                textState = TextFieldState(""),
                 state = MarkdownEditorUiState(),
-                onValueChange = {},
                 onTabSelected = {},
             )
         }
@@ -57,9 +58,8 @@ class MarkdownBodyEditorTest {
         val selectedTab = mutableStateOf(MarkdownEditorTab.EDIT)
         composeRule.setContent {
             MarkdownBodyEditor(
-                value = TextFieldValue(""),
+                textState = TextFieldState(""),
                 state = MarkdownEditorUiState(selectedTab = selectedTab.value),
-                onValueChange = {},
                 onTabSelected = { selectedTab.value = it },
             )
         }
@@ -70,10 +70,41 @@ class MarkdownBodyEditorTest {
 
     @Test
     fun `selected text is wrapped by markdown action`() {
-        val result = applyMarkdownEdit(TextFieldValue("hello", TextRange(0, 5)), MarkdownEditAction.BOLD)
+        val result = TextFieldState("hello", TextRange(0, 5))
+        applyMarkdownEdit(result, MarkdownEditAction.BOLD)
 
-        assertEquals("**hello**", result.text)
+        assertEquals("**hello**", result.text.toString())
         assertEquals(TextRange(2, 7), result.selection)
+    }
+
+    @Test
+    fun `typing and toolbar edits retain text and collapse selection when leaving edit tab`() {
+        val textState = TextFieldState()
+        val selectedTab = mutableStateOf(MarkdownEditorTab.EDIT)
+        composeRule.setContent {
+            Box(Modifier.size(width = 360.dp, height = 700.dp)) {
+                MarkdownBodyEditor(
+                    textState = textState,
+                    state = MarkdownEditorUiState(selectedTab = selectedTab.value),
+                    onTabSelected = { selectedTab.value = it },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        composeRule.onNode(hasSetTextAction()).performTextInput("hello")
+        composeRule.runOnIdle { textState.edit { selection = TextRange(0, 5) } }
+        composeRule.onNodeWithContentDescription(context.getString(R.string.conversation_tool_bold)).performClick()
+        composeRule.runOnIdle {
+            assertEquals("**hello**", textState.text.toString())
+            assertEquals(TextRange(2, 7), textState.selection)
+        }
+        composeRule.onNodeWithText(context.getString(R.string.conversation_preview_tab)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.conversation_edit_tab)).performClick()
+        composeRule.runOnIdle {
+            assertEquals("**hello**", textState.text.toString())
+            // TextFieldState collapses the selection to its end when the field loses focus.
+            assertEquals(TextRange(7), textState.selection)
+        }
     }
 
     @Test
@@ -81,9 +112,8 @@ class MarkdownBodyEditorTest {
         composeRule.setContent {
             Box(Modifier.size(width = 360.dp, height = 700.dp)) {
                 MarkdownBodyEditor(
-                    value = TextFieldValue("body"),
+                    textState = TextFieldState("body"),
                     state = MarkdownEditorUiState(),
-                    onValueChange = {},
                     onTabSelected = {},
                     modifier = Modifier.fillMaxSize(),
                     accessoryContent = { Text("metadata") },

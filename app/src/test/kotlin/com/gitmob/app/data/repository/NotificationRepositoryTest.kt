@@ -8,8 +8,8 @@ import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -39,12 +39,12 @@ class NotificationRepositoryTest {
 
     @After
     fun teardown() {
-        server.shutdown()
+        server.close()
     }
 
     @Test
     fun `getNotifications parses response and returns source page metadata`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(notificationArray(id = "1", unread = true)))
+        server.enqueue(MockResponse(body = notificationArray(id = "1", unread = true)))
 
         val result = repository.getNotifications()
 
@@ -54,13 +54,13 @@ class NotificationRepositoryTest {
         assertEquals("mention", page.items.first().reason)
         assertEquals(2, page.nextSourcePage)
         assertTrue(!page.hasNextPage)
-        assertEquals("/notifications?all=false&page=1&per_page=30", server.takeRequest().path)
+        assertEquals("/notifications?all=false&page=1&per_page=30", server.takeRequest().target)
     }
 
     @Test
     fun `READ filter scans full source pages until read items are collected`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(notificationArray(30, unread = true)))
-        server.enqueue(MockResponse().setBody(notificationArray(id = "read-1", unread = false)))
+        server.enqueue(MockResponse(body = notificationArray(30, unread = true)))
+        server.enqueue(MockResponse(body = notificationArray(id = "read-1", unread = false)))
 
         val result = repository.getNotifications(filter = InboxReadFilter.READ)
 
@@ -69,23 +69,23 @@ class NotificationRepositoryTest {
         assertEquals(listOf("read-1"), page.items.map { it.id })
         assertEquals(3, page.nextSourcePage)
         assertTrue(!page.hasNextPage)
-        assertEquals("/notifications?all=true&page=1&per_page=30", server.takeRequest().path)
-        assertEquals("/notifications?all=true&page=2&per_page=30", server.takeRequest().path)
+        assertEquals("/notifications?all=true&page=1&per_page=30", server.takeRequest().target)
+        assertEquals("/notifications?all=true&page=2&per_page=30", server.takeRequest().target)
     }
 
     @Test
     fun `ALL filter requests all notifications`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(notificationArray(id = "1", unread = false)))
+        server.enqueue(MockResponse(body = notificationArray(id = "1", unread = false)))
 
         val result = repository.getNotifications(filter = InboxReadFilter.ALL)
 
         assertTrue(result is ApiResult.Success)
-        assertEquals("/notifications?all=true&page=1&per_page=30", server.takeRequest().path)
+        assertEquals("/notifications?all=true&page=1&per_page=30", server.takeRequest().target)
     }
 
     @Test
     fun `markAsRead handles empty 205 response`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(205))
+        server.enqueue(MockResponse(code = 205))
 
         val result = repository.markAsRead("thread-1")
 
@@ -94,7 +94,7 @@ class NotificationRepositoryTest {
 
     @Test
     fun `markAllAsRead uses PUT without request body`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(202))
+        server.enqueue(MockResponse(code = 202))
 
         val result = repository.markAllAsRead()
 

@@ -1,7 +1,12 @@
 package com.gitmob.app.ui.common
 
 import com.gitmob.app.core.auth.AccountSession
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewmodel.compose.SavedStateHandleSaveableApi
+import androidx.lifecycle.viewmodel.compose.saveable
 import androidx.lifecycle.viewModelScope
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -28,12 +33,13 @@ import javax.inject.Inject
 typealias ComposerTab = MarkdownEditorTab
 
 data class ConversationComposerUiState(
-    val text: String = "",
+    val textState: TextFieldState = TextFieldState(),
     val bodyEditor: MarkdownEditorUiState = MarkdownEditorUiState(),
     val isSubmitting: Boolean = false,
     val submitted: Boolean = false,
     val allowsEmptySubmission: Boolean = false,
 ) {
+    val text: String get() = textState.text.toString()
     val selectedTab: MarkdownEditorTab get() = bodyEditor.selectedTab
     val previewHtml: String get() = bodyEditor.previewHtml
     val isRenderingPreview: Boolean get() = bodyEditor.isRenderingPreview
@@ -51,8 +57,13 @@ class ConversationComposerViewModel @Inject constructor(
     private val repoUpdateEventBus: RepoUpdateEventBus,
     private val gistUpdateEventBus: GistUpdateEventBus,
     session: AccountSession,
+    savedStateHandle: SavedStateHandle,
 ) : AccountViewModel(session) {
-    private val _state = MutableStateFlow(ConversationComposerUiState())
+    private val hasRestoredDraft = savedStateHandle.contains("draft")
+    @OptIn(SavedStateHandleSaveableApi::class)
+    private val _state = MutableStateFlow(ConversationComposerUiState(
+        textState = savedStateHandle.saveable(key = "draft", saver = TextFieldState.Saver) { TextFieldState() },
+    ))
     val state: StateFlow<ConversationComposerUiState> = _state.asStateFlow()
     private var previewJob: Job? = null
     private var initialized = false
@@ -86,16 +97,17 @@ class ConversationComposerViewModel @Inject constructor(
         this.commentId = commentId
         this.replyToId = replyToId
         this.reviewEvent = reviewEvent?.let { runCatching { RepoPullRequestReviewEvent.valueOf(it) }.getOrNull() }
+        if (!hasRestoredDraft) _state.value.textState.setTextAndPlaceCursorAtEnd(initialText)
         _state.update {
             it.copy(
-                text = initialText,
                 allowsEmptySubmission = target == ConversationComposerTarget.PULL_REQUEST_REVIEW,
             )
         }
     }
 
     fun updateText(value: String) {
-        _state.update { it.copy(text = value, bodyEditor = it.bodyEditor.copy(previewFailed = false)) }
+        if (_state.value.text != value) _state.value.textState.setTextAndPlaceCursorAtEnd(value)
+        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewFailed = false)) }
         if (_state.value.bodyEditor.selectedTab == MarkdownEditorTab.PREVIEW) renderPreview()
     }
 

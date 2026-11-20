@@ -4,9 +4,9 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import okhttp3.FormBody
 import okhttp3.Request
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.SocketPolicy
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import mockwebserver3.SocketEffect
 import okio.Buffer
 import org.junit.Assert.*
 import org.junit.Test
@@ -110,7 +110,8 @@ class TranslationClientTest {
 
     @Test fun transportDoesNotFollowRedirectWithCredentials() = runBlocking {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", server.url("/unexpected")))
+            server.start()
+            server.enqueue(MockResponse.Builder().code(302).setHeader("Location", server.url("/unexpected")).build())
             val error = try { client.execute(Request.Builder().url(server.url("/translate")).header("Authorization", "Bearer custom-key").build()); null } catch (e: TranslationException) { e }
             assertEquals(TranslationProblem.NETWORK, error?.problem)
             assertEquals(1, server.requestCount)
@@ -119,8 +120,9 @@ class TranslationClientTest {
 
     @Test fun transportLimitsResponseSizeAndMapsRateLimit() = runBlocking {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setResponseCode(429))
-            server.enqueue(MockResponse().setBody("x".repeat(2 * 1024 * 1024 + 1)))
+            server.start()
+            server.enqueue(MockResponse(code = 429))
+            server.enqueue(MockResponse(body = "x".repeat(2 * 1024 * 1024 + 1)))
             for (expected in listOf(TranslationProblem.LIMIT, TranslationProblem.TOO_LONG)) {
                 val error = try { client.execute(Request.Builder().url(server.url("/translate")).build()); null } catch (e: TranslationException) { e }
                 assertEquals(expected, error?.problem)
@@ -130,7 +132,8 @@ class TranslationClientTest {
 
     @Test fun transportCancellationDoesNotWaitForResponseTimeout() = runBlocking {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            server.start()
+            server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.Stall).build())
             val request = launch(Dispatchers.IO) { client.execute(Request.Builder().url(server.url("/translate")).build()) }
             assertNotNull(withContext(Dispatchers.IO) { server.takeRequest(5, TimeUnit.SECONDS) })
             withTimeout(2000) { request.cancelAndJoin() }

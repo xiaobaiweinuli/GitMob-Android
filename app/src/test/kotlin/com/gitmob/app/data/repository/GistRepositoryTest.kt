@@ -20,8 +20,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -66,8 +66,8 @@ class GistRepositoryTest {
 
     @After
     fun teardown() {
-        server.shutdown()
-        restServer.shutdown()
+        server.close()
+        restServer.close()
     }
 
     @Test
@@ -179,7 +179,7 @@ class GistRepositoryTest {
             repository.getGistsFresh(category = GistCategory.ORIGINAL, sort = it)
         }
 
-        val bodies = GistSort.entries.map { server.takeRequest().body.readUtf8() }
+        val bodies = GistSort.entries.map { requireNotNull(server.takeRequest().body).utf8() }
         assertTrue(bodies[0].contains("CREATED_AT"))
         assertTrue(bodies[0].contains("DESC"))
         assertTrue(bodies[1].contains("UPDATED_AT"))
@@ -230,7 +230,7 @@ class GistRepositoryTest {
 
         val item = (result as ApiResult.Success).data.items.single()
         assertFalse(item.isOwnedByViewer)
-        val body = server.takeRequest().body.readUtf8()
+        val body = requireNotNull(server.takeRequest().body).utf8()
         assertTrue(body.contains("user(login:"))
         assertTrue(body.contains("privacy: PUBLIC"))
         assertFalse(body.contains("privacy: ALL"))
@@ -270,7 +270,7 @@ class GistRepositoryTest {
     @Test
     fun `GraphQL权限错误映射到统一错误类型`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """{"errors":[{"message":"Resource not accessible","type":"FORBIDDEN"}]}""",
             ),
         )
@@ -334,7 +334,7 @@ class GistRepositoryTest {
         assertEquals("source-id", gist.sourceId)
         assertEquals("octocat", gist.sourceOwnerLogin)
         assertEquals("https://gist.github.com/octocat/source-id", gist.sourceUrl)
-        assertEquals("/gists/fork", restServer.takeRequest().path)
+        assertEquals("/gists/fork", restServer.takeRequest().target)
     }
 
     @Test
@@ -344,7 +344,7 @@ class GistRepositoryTest {
             hasNextPage = false,
             endCursor = "c1",
         )
-        restServer.enqueue(MockResponse().setResponseCode(500))
+        restServer.enqueue(MockResponse(code = 500))
 
         val result = repository.getGists(
             category = GistCategory.FORKED,
@@ -408,8 +408,8 @@ class GistRepositoryTest {
         assertEquals("c4", page.nextCursor)
         assertFalse(page.hasNextPage)
         server.takeRequest()
-        assertTrue(server.takeRequest().body.readUtf8().contains("\"after\":\"c2\""))
-        assertTrue(server.takeRequest().body.readUtf8().contains("\"after\":\"c3\""))
+        assertTrue(requireNotNull(server.takeRequest().body).utf8().contains("\"after\":\"c2\""))
+        assertTrue(requireNotNull(server.takeRequest().body).utf8().contains("\"after\":\"c3\""))
     }
 
     @Test
@@ -516,7 +516,7 @@ class GistRepositoryTest {
     @Test
     fun `扫描失败不提交半批结果且重试沿用原游标`() = runTest(accounts.context) {
         enqueuePage(listOf(edge("middle", gistNode("first", isFork = false))), true, "middle")
-        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse(code = 403))
         assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED, after = "start"))
 
         enqueuePage(listOf(edge("middle", gistNode("first", isFork = false))), true, "middle")
@@ -532,9 +532,9 @@ class GistRepositoryTest {
         enqueuePage(emptyList(), false, null)
         val empty = repository.getGistsFresh(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED) as ApiResult.Success
         assertTrue(empty.data.items.isEmpty())
-        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"login":"viewer"},"user":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"viewer":{"login":"viewer"},"user":null}}"""))
         assertTrue(repository.getGists(login = "missing", category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED) is ApiResult.Failure)
-        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"login":"viewer"}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"viewer":{"login":"viewer"}}}"""))
         assertTrue(repository.getGistsFresh(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED) is ApiResult.Failure)
     }
 
@@ -583,14 +583,14 @@ class GistRepositoryTest {
         ) as ApiResult.Success
         assertTrue(result.data.items.isEmpty())
         assertFalse(result.data.hasNextPage)
-        val body = server.takeRequest().body.readUtf8()
+        val body = requireNotNull(server.takeRequest().body).utf8()
         assertTrue(body.contains("privacy: PUBLIC"))
         assertFalse(body.contains("privacy: ALL"))
     }
 
     @Test
     fun `详情合并GraphQL社交数据`() = runTest(accounts.context) {
-        restServer.enqueue(MockResponse().setBody(detailJson(
+        restServer.enqueue(MockResponse(body = detailJson(
             forkOf = """{
                 "id":"source-id",
                 "html_url":"https://gist.github.com/octocat/source-id",
@@ -612,14 +612,14 @@ class GistRepositoryTest {
         assertEquals("octocat", detail.forkOf?.owner?.login)
         assertEquals("https://gist.github.com/octocat/source-id", detail.forkOf?.url)
         assertEquals("sha-new", detail.latestVersion)
-        assertEquals("/gists/abc", restServer.takeRequest().path)
+        assertEquals("/gists/abc", restServer.takeRequest().target)
         assertEquals(JsonPrimitive("node-abc"), takeVariables()["id"])
     }
 
     @Test
     fun `详情历史缺失时从文件原始地址获取当前版本`() = runTest(accounts.context) {
         val version = "0123456789abcdef0123456789abcdef01234567"
-        restServer.enqueue(MockResponse().setBody(detailJson(
+        restServer.enqueue(MockResponse(body = detailJson(
             history = "[]",
             files = """{"main.txt":{"filename":"main.txt","raw_url":"https://gist.githubusercontent.com/viewer/abc/raw/$version/main.txt","size":5,"content":"hello"}}""",
         )))
@@ -632,25 +632,25 @@ class GistRepositoryTest {
 
     @Test
     fun `编辑文件只读取详情REST并映射完整内容`() = runTest(accounts.context) {
-        restServer.enqueue(MockResponse().setBody(detailJson()))
+        restServer.enqueue(MockResponse(body = detailJson()))
 
         val file = (repository.getGistFile("abc", "main.txt") as ApiResult.Success).data
 
         assertEquals("main.txt", file.filename)
         assertEquals("hello", file.content)
-        assertEquals("/gists/abc", restServer.takeRequest().path)
+        assertEquals("/gists/abc", restServer.takeRequest().target)
         assertEquals(0, server.requestCount)
     }
 
     @Test
     fun `星标写操作使用无请求体PUT并接受204`() = runTest(accounts.context) {
-        restServer.enqueue(MockResponse().setResponseCode(204))
+        restServer.enqueue(MockResponse(code = 204))
 
         assertEquals(ApiResult.Success(true), repository.setStarred("abc", true))
 
         val request = restServer.takeRequest()
         assertEquals("PUT", request.method)
-        assertEquals("/gists/abc/star", request.path)
+        assertEquals("/gists/abc/star", request.target)
         assertEquals(0L, request.bodySize)
     }
 
@@ -658,7 +658,7 @@ class GistRepositoryTest {
     fun `创建Gist发送布尔公开值和两个字符串内容并使列表缓存失效`() = runTest(accounts.context) {
         enqueuePage(listOf(edge("old", gistNode("old", isFork = false))), false, "old")
         repository.getGists(category = GistCategory.ORIGINAL, sort = GistSort.RECENTLY_UPDATED)
-        restServer.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"created-id"}"""))
+        restServer.enqueue(MockResponse(code = 201, body = """{"id":"created-id"}"""))
 
         val result = repository.createGist(
             description = "sample",
@@ -669,8 +669,8 @@ class GistRepositoryTest {
         assertEquals(ApiResult.Success("created-id"), result)
         val request = restServer.takeRequest()
         assertEquals("POST", request.method)
-        assertEquals("/gists", request.path)
-        val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+        assertEquals("/gists", request.target)
+        val body = Json.parseToJsonElement(requireNotNull(request.body).utf8()).jsonObject
         assertEquals(JsonPrimitive("sample"), body["description"])
         assertEquals(JsonPrimitive(false), body["public"])
         val files = body.getValue("files").jsonObject
@@ -686,10 +686,10 @@ class GistRepositoryTest {
     @Test
     fun `复刻与评论写操作使用正确端点和正文`() = runTest(accounts.context) {
         val commentJson = """{"id":7,"node_id":"comment-node","html_url":"https://gist.github.com/viewer/abc#comment-7","body":"hello","body_html":"<p>hello</p>","user":{"login":"viewer"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","author_association":"OWNER"}"""
-        restServer.enqueue(MockResponse().setBody(detailJson()))
-        restServer.enqueue(MockResponse().setBody(commentJson))
-        restServer.enqueue(MockResponse().setBody(commentJson.replace("hello", "updated")))
-        restServer.enqueue(MockResponse().setResponseCode(204))
+        restServer.enqueue(MockResponse(body = detailJson()))
+        restServer.enqueue(MockResponse(body = commentJson))
+        restServer.enqueue(MockResponse(body = commentJson.replace("hello", "updated")))
+        restServer.enqueue(MockResponse(code = 204))
 
         assertTrue(repository.fork("abc") is ApiResult.Success)
         assertTrue(repository.createComment("abc", "hello") is ApiResult.Success)
@@ -698,63 +698,63 @@ class GistRepositoryTest {
 
         val fork = restServer.takeRequest()
         assertEquals("POST", fork.method)
-        assertEquals("/gists/abc/forks", fork.path)
+        assertEquals("/gists/abc/forks", fork.target)
         val create = restServer.takeRequest()
         assertEquals("POST", create.method)
-        assertEquals("/gists/abc/comments", create.path)
-        assertEquals("hello", Json.parseToJsonElement(create.body.readUtf8()).jsonObject.getValue("body").jsonPrimitive.content)
+        assertEquals("/gists/abc/comments", create.target)
+        assertEquals("hello", Json.parseToJsonElement(requireNotNull(create.body).utf8()).jsonObject.getValue("body").jsonPrimitive.content)
         val update = restServer.takeRequest()
         assertEquals("PATCH", update.method)
-        assertEquals("/gists/abc/comments/7", update.path)
-        assertEquals("updated", Json.parseToJsonElement(update.body.readUtf8()).jsonObject.getValue("body").jsonPrimitive.content)
+        assertEquals("/gists/abc/comments/7", update.target)
+        assertEquals("updated", Json.parseToJsonElement(requireNotNull(update.body).utf8()).jsonObject.getValue("body").jsonPrimitive.content)
         val delete = restServer.takeRequest()
         assertEquals("DELETE", delete.method)
-        assertEquals("/gists/abc/comments/7", delete.path)
+        assertEquals("/gists/abc/comments/7", delete.target)
     }
 
     @Test
     fun `更新文件只提交原文件键且删除提交null`() = runTest(accounts.context) {
-        restServer.enqueue(MockResponse().setBody("{}"))
-        restServer.enqueue(MockResponse().setBody("{}"))
+        restServer.enqueue(MockResponse(body = "{}"))
+        restServer.enqueue(MockResponse(body = "{}"))
 
         assertTrue(repository.updateFile("abc", "old.txt", "new.txt", "hello") is ApiResult.Success)
         assertTrue(repository.deleteFile("abc", "new.txt") is ApiResult.Success)
 
-        val update = Json.parseToJsonElement(restServer.takeRequest().body.readUtf8()).jsonObject
+        val update = Json.parseToJsonElement(requireNotNull(restServer.takeRequest().body).utf8()).jsonObject
         val updateFile = update.getValue("files").jsonObject.getValue("old.txt").jsonObject
         assertEquals("new.txt", updateFile.getValue("filename").jsonPrimitive.content)
         assertEquals("hello", updateFile.getValue("content").jsonPrimitive.content)
-        val deletion = restServer.takeRequest().body.readUtf8()
+        val deletion = requireNotNull(restServer.takeRequest().body).utf8()
         assertTrue(deletion.contains("\"new.txt\":null"))
     }
 
     @Test
     fun `修订复刻评论列表使用集中分页容量`() = runTest(accounts.context) {
-        restServer.enqueue(MockResponse().setBody("""[{"version":"sha","committed_at":"2026-01-01T00:00:00Z","change_status":{"total":2,"additions":1,"deletions":1}}]"""))
-        restServer.enqueue(MockResponse().setBody("""[{"id":"fork","owner":{"login":"octocat"},"created_at":"2026-01-01T00:00:00Z"}]"""))
-        restServer.enqueue(MockResponse().setBody("""[{"id":7,"node_id":"node","html_url":"https://gist.github.com/a/b#comment-7","body":"hello","body_html":"<p>hello</p>","user":{"login":"viewer"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","author_association":"OWNER"}]"""))
+        restServer.enqueue(MockResponse(body = """[{"version":"sha","committed_at":"2026-01-01T00:00:00Z","change_status":{"total":2,"additions":1,"deletions":1}}]"""))
+        restServer.enqueue(MockResponse(body = """[{"id":"fork","owner":{"login":"octocat"},"created_at":"2026-01-01T00:00:00Z"}]"""))
+        restServer.enqueue(MockResponse(body = """[{"id":7,"node_id":"node","html_url":"https://gist.github.com/a/b#comment-7","body":"hello","body_html":"<p>hello</p>","user":{"login":"viewer"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","author_association":"OWNER"}]"""))
 
         assertEquals("sha", (repository.getRevisions("abc", 2) as ApiResult.Success).data.items.single().version)
         assertEquals("fork", (repository.getForks("abc", 3) as ApiResult.Success).data.items.single().id)
         assertEquals(7L, (repository.getComments("abc", 4) as ApiResult.Success).data.items.single().id)
 
-        assertEquals("/gists/abc/commits?per_page=${PageSize.GIST_REVISIONS}&page=2", restServer.takeRequest().path)
-        assertEquals("/gists/abc/forks?per_page=${PageSize.GIST_FORKS}&page=3", restServer.takeRequest().path)
+        assertEquals("/gists/abc/commits?per_page=${PageSize.GIST_REVISIONS}&page=2", restServer.takeRequest().target)
+        assertEquals("/gists/abc/forks?per_page=${PageSize.GIST_FORKS}&page=3", restServer.takeRequest().target)
         val commentRequest = restServer.takeRequest()
-        assertEquals("/gists/abc/comments?per_page=${PageSize.GIST_COMMENTS}&page=4", commentRequest.path)
-        assertEquals("application/vnd.github.full+json", commentRequest.getHeader("Accept"))
+        assertEquals("/gists/abc/comments?per_page=${PageSize.GIST_COMMENTS}&page=4", commentRequest.target)
+        assertEquals("application/vnd.github.full+json", commentRequest.headers["Accept"])
     }
 
     @Test
     fun `相邻修订只比较完整文本并标记截断内容`() = runTest(accounts.context) {
-        restServer.enqueue(MockResponse().setBody(detailJson(
+        restServer.enqueue(MockResponse(body = detailJson(
             history = """[{"version":"older-than-selected","committed_at":"2026-01-15T00:00:00Z"}]""",
             files = """{
                 "main.txt":{"filename":"main.txt","raw_url":"https://example/main","size":5,"truncated":false,"content":"a\\nb"},
                 "large.txt":{"filename":"large.txt","raw_url":"https://example/large","size":20,"truncated":true}
             }""",
         )))
-        restServer.enqueue(MockResponse().setBody(detailJson(
+        restServer.enqueue(MockResponse(body = detailJson(
             history = """[{"version":"old","committed_at":"2026-01-01T00:00:00Z"}]""",
             files = """{
                 "main.txt":{"filename":"main.txt","raw_url":"https://example/main","size":1,"truncated":false,"content":"a"},
@@ -776,36 +776,36 @@ class GistRepositoryTest {
         val firstPage = (1..PageSize.GIST_REVISION_SCAN).joinToString(",") { index ->
             """{"version":"sha-$index","committed_at":"2026-01-01T00:00:00Z","change_status":{}}"""
         }
-        restServer.enqueue(MockResponse().setBody("[$firstPage]"))
-        restServer.enqueue(MockResponse().setBody(
+        restServer.enqueue(MockResponse(body = "[$firstPage]"))
+        restServer.enqueue(MockResponse(body =
             """[{"version":"oldest","committed_at":"2020-01-01T00:00:00Z","change_status":{}}]""",
         ))
 
         assertEquals("oldest", (repository.getOldestVersion("abc") as ApiResult.Success).data)
         assertEquals(
             "/gists/abc/commits?per_page=${PageSize.GIST_REVISION_SCAN}&page=1",
-            restServer.takeRequest().path,
+            restServer.takeRequest().target,
         )
         assertEquals(
             "/gists/abc/commits?per_page=${PageSize.GIST_REVISION_SCAN}&page=2",
-            restServer.takeRequest().path,
+            restServer.takeRequest().target,
         )
     }
 
     @Test
     fun `添加文件先拒绝同名再只提交新文件`() = runTest(accounts.context) {
-        restServer.enqueue(MockResponse().setBody(detailJson()))
+        restServer.enqueue(MockResponse(body = detailJson()))
         assertTrue(repository.addFile("abc", "main.txt", "new") is ApiResult.Failure)
         assertEquals("GET", restServer.takeRequest().method)
 
-        restServer.enqueue(MockResponse().setBody(detailJson()))
-        restServer.enqueue(MockResponse().setBody("{}"))
+        restServer.enqueue(MockResponse(body = detailJson()))
+        restServer.enqueue(MockResponse(body = "{}"))
         assertTrue(repository.addFile("abc", "extra.txt", "hello") is ApiResult.Success)
 
         assertEquals("GET", restServer.takeRequest().method)
         val patch = restServer.takeRequest()
         assertEquals("PATCH", patch.method)
-        val file = Json.parseToJsonElement(patch.body.readUtf8()).jsonObject
+        val file = Json.parseToJsonElement(requireNotNull(patch.body).utf8()).jsonObject
             .getValue("files").jsonObject.getValue("extra.txt").jsonObject
         assertEquals("extra.txt", file.getValue("filename").jsonPrimitive.content)
         assertEquals("hello", file.getValue("content").jsonPrimitive.content)
@@ -813,7 +813,7 @@ class GistRepositoryTest {
 
     @Test
     fun `Gist标星用户使用GraphQL游标分页`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(
+        server.enqueue(MockResponse(body =
             """
             {
               "data": {
@@ -840,7 +840,7 @@ class GistRepositoryTest {
     }
 
     private fun takeVariables() =
-        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
 
     private fun detailJson(
         history: String = """[{"version":"sha-new","committed_at":"2026-02-01T00:00:00Z"}]""",
@@ -870,7 +870,7 @@ class GistRepositoryTest {
     ) {
         val cursorJson = endCursor?.let { "\"$it\"" } ?: "null"
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {
                   "data": {
@@ -899,7 +899,7 @@ class GistRepositoryTest {
     ) {
         val cursorJson = endCursor?.let { "\"$it\"" } ?: "null"
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {
                   "data": {
@@ -927,7 +927,7 @@ class GistRepositoryTest {
         sourceOwner: String = "source-owner",
     ) {
         restServer.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {
                   "id": "$gistId",
@@ -945,7 +945,7 @@ class GistRepositoryTest {
 
     private fun enqueueGistSocial(starred: Boolean, stars: Int, forks: Int) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {
                   "data": {

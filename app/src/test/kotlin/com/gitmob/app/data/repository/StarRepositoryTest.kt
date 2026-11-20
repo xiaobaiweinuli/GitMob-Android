@@ -18,8 +18,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -61,13 +61,13 @@ class StarRepositoryTest {
 
     @After
     fun teardown() {
-        server.shutdown()
+        server.close()
     }
 
     @Test
     fun `getLists解析列表摘要`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"viewer":{"lists":{"nodes":[
                     {"id":"L1","name":"博客","slug":"blog","description":null,"isPrivate":false,"items":{"totalCount":1}},
@@ -92,7 +92,7 @@ class StarRepositoryTest {
     @Test
     fun `getListsContaining通过反向索引算出仓库所属列表`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"viewer":{"lists":{"nodes":[
                     {"id":"L1","items":{"nodes":[
@@ -120,7 +120,7 @@ class StarRepositoryTest {
         val lists = (1..32).joinToString(",") { index ->
             """{"id":"L$index","name":"List $index","slug":"list-$index","description":null,"isPrivate":false,"items":{"totalCount":1}}"""
         }
-        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"lists":{"nodes":[$lists]}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"viewer":{"lists":{"nodes":[$lists]}}}}"""))
         val summaries = repository.getLists() as ApiResult.Success
         assertEquals(32, summaries.data.size)
         assertEquals("L32", summaries.data.last().id)
@@ -173,7 +173,7 @@ class StarRepositoryTest {
             "L2" to membershipItems(emptyList(), true, "next"),
         )
         enqueueMembershipLists(*lists)
-        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse(code = 403))
         assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getListsContaining("target"))
 
         enqueueMembershipLists(*lists)
@@ -185,7 +185,7 @@ class StarRepositoryTest {
     @Test
     fun `续页分组消失不伪造成未归属`() = runTest(accounts.context) {
         enqueueMembershipLists("L1" to membershipItems(emptyList(), true, "next"))
-        server.enqueue(MockResponse().setBody("""{"data":{"node":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"node":null}}"""))
 
         assertEquals(
             ApiResult.Failure(ApiError.UserVisible(com.gitmob.app.R.string.error_list_not_found)),
@@ -208,7 +208,7 @@ class StarRepositoryTest {
     @Test
     fun `getViewerStarred解析星标仓库分页数据`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"viewer":{"starredRepositories":{
                     "totalCount":1,
@@ -254,7 +254,7 @@ class StarRepositoryTest {
     fun `viewer和user星标续页分别传入容量和游标`() = runTest(accounts.context) {
         for (login in listOf(null, "octocat")) {
             val root = if (login == null) "viewer" else "user"
-            server.enqueue(MockResponse().setBody("""{"data":{"$root":{"starredRepositories":{"totalCount":0,"edges":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+            server.enqueue(MockResponse(body = """{"data":{"$root":{"starredRepositories":{"totalCount":0,"edges":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
 
             val result = if (login == null) repository.getViewerStarred("previous") else repository.getUserStarred(login, "previous")
 
@@ -271,7 +271,7 @@ class StarRepositoryTest {
 
     @Test
     fun `清单项目使用独立分页容量和共享话题容量`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"node":{"__typename":"UserList","items":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"node":{"__typename":"UserList","items":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
 
         val result = repository.getListItems("L1", "previous") as ApiResult.Success
 
@@ -287,18 +287,18 @@ class StarRepositoryTest {
 
     @Test
     fun `缺失根节点和权限失败不伪造成空星标或清单`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"user":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"user":null}}"""))
         assertTrue(repository.getUserStarred("missing") is ApiResult.Failure)
-        server.enqueue(MockResponse().setBody("""{"data":{"node":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"node":null}}"""))
         assertTrue(repository.getListItems("missing") is ApiResult.Failure)
-        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse(code = 403))
         assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getViewerStarred())
     }
 
     @Test
     fun `updateList解析更新后的列表`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """
                 {"data":{"updateUserList":{"list":
                     {"id":"L1","name":"新名字","slug":"blog","description":"desc","isPrivate":true,"items":{"totalCount":1}}
@@ -315,7 +315,7 @@ class StarRepositoryTest {
 
     @Test
     fun `deleteList成功时返回Unit`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"deleteUserList":{"clientMutationId":null}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"deleteUserList":{"clientMutationId":null}}}"""))
 
         val result = repository.deleteList("L1")
 
@@ -324,7 +324,7 @@ class StarRepositoryTest {
 
     @Test
     fun `标星直接返回服务器状态和数量不额外查询`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"addStar":{"starrable":{"__typename":"Repository","viewerHasStarred":true,"stargazerCount":910}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"addStar":{"starrable":{"__typename":"Repository","viewerHasStarred":true,"stargazerCount":910}}}}"""))
 
         assertEquals(ApiResult.Success(RepoStarState(true, 910)), repository.starRepo("R1"))
         assertEquals(1, server.requestCount)
@@ -333,7 +333,7 @@ class StarRepositoryTest {
 
     @Test
     fun `取消最后一颗星返回false和零`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"removeStar":{"starrable":{"__typename":"Repository","viewerHasStarred":false,"stargazerCount":0}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"removeStar":{"starrable":{"__typename":"Repository","viewerHasStarred":false,"stargazerCount":0}}}}"""))
 
         assertEquals(ApiResult.Success(RepoStarState(false, 0)), repository.unstarRepo("R1"))
         assertEquals(1, server.requestCount)
@@ -342,8 +342,8 @@ class StarRepositoryTest {
 
     @Test
     fun `标星响应缺少对象时只按ID读回一次且不重复写入`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"addStar":{"starrable":null}}}"""))
-        server.enqueue(MockResponse().setBody("""{"data":{"node":{"__typename":"Repository","viewerHasStarred":true,"stargazerCount":912}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"addStar":{"starrable":null}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"node":{"__typename":"Repository","viewerHasStarred":true,"stargazerCount":912}}}"""))
 
         assertEquals(ApiResult.Success(RepoStarState(true, 912)), repository.starRepo("R1"))
         assertEquals(2, server.requestCount)
@@ -353,8 +353,8 @@ class StarRepositoryTest {
 
     @Test
     fun `取消响应缺少对象时使用读回的状态而不假定取消成功`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"removeStar":null}}"""))
-        server.enqueue(MockResponse().setBody("""{"data":{"node":{"__typename":"Repository","viewerHasStarred":true,"stargazerCount":913}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"removeStar":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"node":{"__typename":"Repository","viewerHasStarred":true,"stargazerCount":913}}}"""))
 
         assertEquals(ApiResult.Success(RepoStarState(true, 913)), repository.unstarRepo("R1"))
         assertEquals(2, server.requestCount)
@@ -364,8 +364,8 @@ class StarRepositoryTest {
 
     @Test
     fun `读回仓库不可见时提示刷新且不伪造零计数`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"removeStar":{"starrable":null}}}"""))
-        server.enqueue(MockResponse().setBody("""{"data":{"node":null}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"removeStar":{"starrable":null}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"node":null}}"""))
 
         assertEquals(
             ApiResult.Failure(ApiError.UserVisible(com.gitmob.app.R.string.error_repo_star_state_refresh)),
@@ -378,7 +378,7 @@ class StarRepositoryTest {
 
     @Test
     fun `写入失败不读回也不重试`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse(code = 403))
 
         assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.starRepo("R1"))
         assertEquals(1, server.requestCount)
@@ -387,8 +387,8 @@ class StarRepositoryTest {
 
     @Test
     fun `只读核对失败不重新发送写请求`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"addStar":{"starrable":null}}}"""))
-        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse(body = """{"data":{"addStar":{"starrable":null}}}"""))
+        server.enqueue(MockResponse(code = 403))
 
         assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.starRepo("R1"))
         assertEquals(2, server.requestCount)
@@ -397,7 +397,7 @@ class StarRepositoryTest {
     }
 
     private fun assertStarRequest(operation: String, idVariable: String) {
-        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        val body = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject
         assertEquals(JsonPrimitive(operation), body["operationName"])
         assertEquals(JsonPrimitive("R1"), body.getValue("variables").jsonObject[idVariable])
     }
@@ -426,13 +426,13 @@ class StarRepositoryTest {
                 put("items", items)
             }
         })
-        server.enqueue(MockResponse().setBody("""{"data":{"viewer":{"lists":{"nodes":$nodes}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"viewer":{"lists":{"nodes":$nodes}}}}"""))
     }
 
     private fun enqueueMembershipPage(items: JsonObject) {
-        server.enqueue(MockResponse().setBody("""{"data":{"node":{"__typename":"UserList","items":$items}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"node":{"__typename":"UserList","items":$items}}}"""))
     }
 
     private fun takeVariables() =
-        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
 }

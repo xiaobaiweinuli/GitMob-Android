@@ -64,7 +64,8 @@ class LoginReauthenticationTest {
             coVerify(exactly = if (alreadyInvalid) 0 else 1) { auth.switchAccount(selected.key) }
             verify(exactly = if (device) 1 else 0) { auth.authorizeDevice() }
             vm.cancelAuthorization()
-            assertEquals(LoginUiState(), vm.state.value)
+            assertEquals("", vm.state.value.tokenInput.text.toString())
+            assertEquals(LoginUiState(tokenInput = vm.state.value.tokenInput), vm.state.value)
             assertEquals(device, deviceCancelled)
         } finally { vm.viewModelScope.cancel() }
     }

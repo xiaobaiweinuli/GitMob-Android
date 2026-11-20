@@ -15,7 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -67,8 +67,10 @@ fun RepoDiscussionEditorScreen(
 @Composable
 private fun DiscussionEditorContent(categories: List<RepoDiscussionCategory>, labels: List<com.gitmob.app.data.model.IssueLabel>, existing: RepoDiscussion?, bodyEditorState: MarkdownEditorUiState, saving: Boolean, modifier: Modifier, onBodyTabSelected: (MarkdownEditorTab, String) -> Unit, onSaveActionReady: ((() -> Unit) -> Unit), onSave: (String, String, String, List<String>) -> Unit) {
     var title by remember(existing) { mutableStateOf(existing?.title.orEmpty()) }
-    var body by remember(existing) { mutableStateOf(existing?.body.orEmpty()) }
-    var bodyValue by remember(existing) { mutableStateOf(TextFieldValue(body, TextRange(body.length))) }
+    val bodyState = remember(existing) {
+        val initialBody = existing?.body.orEmpty()
+        TextFieldState(initialBody, TextRange(initialBody.length))
+    }
     var category by remember(existing, categories) { mutableStateOf(existing?.category?.id ?: categories.firstOrNull()?.id.orEmpty()) }
     var selectedLabels by remember(existing) { mutableStateOf(existing?.labels.orEmpty().map { it.id }.toSet()) }
     var metadataSheet by remember { mutableStateOf<DiscussionMetadataSheet?>(null) }
@@ -79,17 +81,16 @@ private fun DiscussionEditorContent(categories: List<RepoDiscussionCategory>, la
         draftLabels = selectedLabels
         metadataSheet = sheet
     }
-    SideEffect { onSaveActionReady { onSave(title, body, category, selectedLabels.toList()) } }
+    SideEffect { onSaveActionReady { onSave(title, bodyState.text.toString(), category, selectedLabels.toList()) } }
     Column(
         modifier = modifier.padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         MarkdownBodyEditor(
-            value = bodyValue,
+            textState = bodyState,
             state = bodyEditorState,
-            onValueChange = { bodyValue = it; body = it.text; if (bodyEditorState.selectedTab == MarkdownEditorTab.PREVIEW) onBodyTabSelected(MarkdownEditorTab.PREVIEW, it.text) },
-            onTabSelected = { onBodyTabSelected(it, bodyValue.text) },
+            onTabSelected = { onBodyTabSelected(it, bodyState.text.toString()) },
             accessoryContent = {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = false, onClick = { openMetadata(DiscussionMetadataSheet.CATEGORY) }, label = { Text("${stringResource(R.string.discussion_category)} · ${categories.firstOrNull { it.id == category }?.name ?: "-"}") })
@@ -100,7 +101,7 @@ private fun DiscussionEditorContent(categories: List<RepoDiscussionCategory>, la
         )
     }
     metadataSheet?.let { sheet ->
-        ModalBottomSheet(onDismissRequest = { metadataSheet = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(onDismissRequest = { metadataSheet = null }, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Text(if (sheet == DiscussionMetadataSheet.CATEGORY) stringResource(R.string.discussion_category) else stringResource(R.string.issue_labels), style = MaterialTheme.typography.titleLarge)
                 LazyColumn(Modifier.weight(1f, fill = false), contentPadding = PaddingValues(vertical = 12.dp)) {

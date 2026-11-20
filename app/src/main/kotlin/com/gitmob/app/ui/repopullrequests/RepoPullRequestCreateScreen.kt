@@ -51,7 +51,7 @@ fun RepoPullRequestCreateScreen(
     }
     ModalBottomSheet(
         onDismissRequest = ::dismissSheet,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
     ) {
         Column(Modifier.fillMaxWidth().fillMaxHeight().navigationBarsPadding()) {
             when (state.page) {

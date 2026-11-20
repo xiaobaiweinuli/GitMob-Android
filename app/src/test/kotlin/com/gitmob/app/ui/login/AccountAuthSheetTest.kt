@@ -97,7 +97,8 @@ class AccountAuthSheetTest {
             composeRule.onNodeWithText(text(R.string.auth_create_classic_pat)).assertIsNotEnabled()
             composeRule.onNodeWithText(text(R.string.common_cancel)).assertIsDisplayed().assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick)
             composeRule.waitUntil(timeoutMillis = 5_000) { cancelled && vm.state.value.authSheet == null }
-            assertEquals(LoginUiState(), vm.state.value)
+            assertEquals("", vm.state.value.tokenInput.text.toString())
+            assertEquals(LoginUiState(tokenInput = vm.state.value.tokenInput), vm.state.value)
             composeRule.onNode(password).assertDoesNotExist()
 
             composeRule.onNodeWithText(text(R.string.login_pat_action)).assertIsEnabled().performClick()
@@ -147,14 +148,14 @@ class AccountAuthSheetTest {
             assertEquals("GitMob", intent.data!!.getQueryParameter("description"))
             assertEquals(setOf("repo", "user", "gist", "read:org", "notifications", "workflow", "delete_repo", "write:discussion"), intent.data!!.getQueryParameter("scopes")!!.split(',').toSet())
             assertEquals(listOf(BannerEvent.Error(ApiError.UserVisible(R.string.deep_link_browser_unavailable))), events)
-            assertEquals("test-candidate", vm.state.value.tokenInput)
+            assertEquals("test-candidate", vm.state.value.tokenInput.text.toString())
             assertEquals(AuthSheet.PAT, vm.state.value.authSheet)
             coVerify(exactly = 0) { repository.loginWithToken(any()) }
 
             fail = false
             composeRule.onNodeWithText(text(R.string.auth_create_classic_pat)).assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick)
             assertEquals(2, intents.size)
-            assertEquals("test-candidate", vm.state.value.tokenInput)
+            assertEquals("test-candidate", vm.state.value.tokenInput.text.toString())
         } finally {
             collector.cancel()
             vm.cancelAuthorization()
@@ -341,7 +342,8 @@ class AccountAuthSheetTest {
 
             composeRule.runOnIdle { visible.value = false }
             composeRule.waitUntil(timeoutMillis = 5_000) { cancelled && vm.state.value.authSheet == null }
-            assertEquals(LoginUiState(), vm.state.value)
+            assertEquals("", vm.state.value.tokenInput.text.toString())
+            assertEquals(LoginUiState(tokenInput = vm.state.value.tokenInput), vm.state.value)
         } finally {
             vm.cancelAuthorization()
             vm.viewModelScope.cancel()

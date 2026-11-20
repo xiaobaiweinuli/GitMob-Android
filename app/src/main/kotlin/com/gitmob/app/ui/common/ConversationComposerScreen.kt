@@ -30,13 +30,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -67,12 +65,12 @@ fun ConversationComposerScreen(
         viewModel.init(route.owner, route.name, route.number, route.target, route.subjectId, route.initialText, route.commentId, route.replyToId, route.reviewEvent)
     }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var editorValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(route.initialText, TextRange(route.initialText.length))) }
+    val editorState = state.textState
     var confirmDiscard by remember { mutableStateOf(false) }
     val dirty = state.text != route.initialText
 
-    LaunchedEffect(state.text) {
-        if (editorValue.text != state.text) editorValue = editorValue.copy(text = state.text, selection = TextRange(state.text.length))
+    LaunchedEffect(editorState) {
+        snapshotFlow { editorState.text.toString() }.collect(viewModel::updateText)
     }
     LaunchedEffect(state.submitted) { if (state.submitted) onSubmitted() }
 
@@ -117,12 +115,8 @@ fun ConversationComposerScreen(
                 .fitInside(WindowInsetsRulers.Ime.current),
         ) {
             MarkdownBodyEditor(
-                value = editorValue,
+                textState = editorState,
                 state = state.bodyEditor,
-                onValueChange = {
-                    editorValue = it
-                    viewModel.updateText(it.text)
-                },
                 onTabSelected = viewModel::selectTab,
                 modifier = Modifier.weight(1f),
             )

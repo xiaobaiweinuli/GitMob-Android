@@ -208,7 +208,7 @@ fun RepoWorkflowRunScreen(
                         item(key = "artifacts") { Text(stringResource(R.string.actions_artifacts), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }
                         items(detail.artifacts, key = { "artifact-${it.id}" }) { artifact ->
                             val opening = artifact.id in state.openingArtifactIds
-                            ListItem(headlineContent = { Text(artifact.name) }, supportingContent = { Text(Formatter.formatShortFileSize(context, artifact.sizeInBytes)) }, trailingContent = {
+                            ListItem(content = { Text(artifact.name) }, supportingContent = { Text(Formatter.formatShortFileSize(context, artifact.sizeInBytes)) }, trailingContent = {
                                 IconButton(onClick = { viewModel.downloadArtifact(artifact) }, enabled = !artifact.expired && !opening) {
                                     if (opening) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                                     else Icon(Icons.Default.Download, stringResource(R.string.common_download))

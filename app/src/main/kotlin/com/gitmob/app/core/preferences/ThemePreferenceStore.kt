@@ -59,11 +59,11 @@ class ThemePreferenceStore @Inject constructor(
             customSeedColor = prefs[customSeedColorKey]?.let { Color(it) },
             useAmoled = prefs[useAmoledKey] ?: false,
             paletteStyle = prefs[paletteStyleKey]
-                ?.let { stored -> PaletteStyle.entries.firstOrNull { it.name == stored } }
+                ?.let(PaletteStyle::parseOrNull)
                 ?: PaletteStyle.TonalSpot,
             colorSpec = prefs[colorSpecKey]
                 ?.let { stored -> ColorSpec.SpecVersion.entries.firstOrNull { it.name == stored } }
-                ?: ColorSpec.SpecVersion.SPEC_2021,
+                ?: ColorSpec.SpecVersion.Default,
             enablePredictiveBack = prefs[enablePredictiveBackKey] ?: true,
             pageScale = (prefs[pageScaleKey] ?: 1f).coerceIn(MIN_PAGE_SCALE, MAX_PAGE_SCALE),
         )
@@ -89,7 +89,7 @@ class ThemePreferenceStore @Inject constructor(
     }
 
     suspend fun setPaletteStyle(style: PaletteStyle) {
-        context.themeDataStore.edit { it[paletteStyleKey] = style.name }
+        context.themeDataStore.edit { it[paletteStyleKey] = style.toString() }
     }
 
     suspend fun setColorSpec(spec: ColorSpec.SpecVersion) {

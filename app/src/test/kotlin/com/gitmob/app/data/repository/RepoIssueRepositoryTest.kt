@@ -25,8 +25,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -51,13 +51,13 @@ class RepoIssueRepositoryTest {
                 .build(),
         )
     }
-    @After fun tearDown() = server.shutdown()
+    @After fun tearDown() = server.close()
 
     @Test fun `native issue author and assignee resolve current login`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(pageJson(cursor = null, hasNext = false)))
+        server.enqueue(MockResponse(body = pageJson(cursor = null, hasNext = false)))
         val filter = issueListSearch("author:@me assignee:@me", "o", "r", RepoIssueFilter()).filter
         assertTrue(repository.getIssues("o", "r", filter) is ApiResult.Success)
-        val variables = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        val variables = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
         val filterBy = variables.getValue("filterBy").jsonObject
         assertEquals(JsonPrimitive("viewer"), filterBy["createdBy"])
         assertEquals(JsonPrimitive("viewer"), filterBy["assignee"])
@@ -65,11 +65,11 @@ class RepoIssueRepositoryTest {
 
     @Test
     fun `issue filters and order are encoded in repository query`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(pageJson(cursor = "CURSOR", hasNext = true)))
+        server.enqueue(MockResponse(body = pageJson(cursor = "CURSOR", hasNext = true)))
         val result = repository.getIssues("octo", "repo", RepoIssueFilter(state = RepoIssueStateFilter.ALL, sort = RepoIssueSort.COMMENTS_ASC, assignee = RepoAssigneeFilter.ANY, milestone = RepoMilestoneFilter.Number(7, "Release 7"), mentionedMe = true))
         assertTrue(result is ApiResult.Success)
         assertEquals(1, (result as ApiResult.Success).data.items.size)
-        val body = server.takeRequest().body.readUtf8()
+        val body = requireNotNull(server.takeRequest().body).utf8()
         assertTrue(body.contains("\"states\":[\"OPEN\",\"CLOSED\"]"))
         assertTrue(body.contains("\"field\":\"COMMENTS\""))
         assertTrue(body.contains("\"assignee\":\"*\""))
@@ -83,14 +83,14 @@ class RepoIssueRepositoryTest {
 
     @Test
     fun `issue pagination forwards end cursor`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody(pageJson(cursor = "NEXT", hasNext = true)))
-        server.enqueue(MockResponse().setBody(pageJson(cursor = null, hasNext = false, number = 2)))
+        server.enqueue(MockResponse(body = pageJson(cursor = "NEXT", hasNext = true)))
+        server.enqueue(MockResponse(body = pageJson(cursor = null, hasNext = false, number = 2)))
         val filter = RepoIssueFilter()
         repository.getIssues("octo", "repo", filter)
         val second = repository.getIssues("octo", "repo", filter, after = "NEXT")
         assertTrue(second is ApiResult.Success)
-        val firstRequest = server.takeRequest().body.readUtf8()
-        val secondRequest = server.takeRequest().body.readUtf8()
+        val firstRequest = requireNotNull(server.takeRequest().body).utf8()
+        val secondRequest = requireNotNull(server.takeRequest().body).utf8()
         assertTrue(firstRequest.contains("\"after\":null") || !firstRequest.contains("\"after\""))
         assertTrue(secondRequest.contains("\"after\":\"NEXT\""))
         for (body in listOf(firstRequest, secondRequest)) {
@@ -103,7 +103,7 @@ class RepoIssueRepositoryTest {
     @Test
     fun `详情评论和共享元数据容量来自PageSize且保留游标`() = runTest(accounts.context) {
         val comments = """{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}"""
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"id":"R1","viewerPermission":"READ","issue":${issueNodeJson(1, comments)}}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"id":"R1","viewerPermission":"READ","issue":${issueNodeJson(1, comments)}}}}"""))
 
         val result = repository.getIssue("o", "r", 1, commentsAfter = "comment-next")
 
@@ -122,8 +122,8 @@ class RepoIssueRepositoryTest {
             "assignableUsers" to suspend { repository.getAssignableUsers("o", "r") },
         )
         for ((field, load) in loaders) {
-            server.enqueue(MockResponse().setBody("""{"data":{"repository":{"$field":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
-            server.enqueue(MockResponse().setBody("""{"data":{"repository":{"$field":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+            server.enqueue(MockResponse(body = """{"data":{"repository":{"$field":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""))
+            server.enqueue(MockResponse(body = """{"data":{"repository":{"$field":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
 
             assertTrue(load() is ApiResult.Success)
             val first = takeVariables()
@@ -138,21 +138,21 @@ class RepoIssueRepositoryTest {
     @Test
     fun `元数据下一页失败不缓存部分结果`() = runTest(accounts.context) {
         val first = """{"data":{"repository":{"labels":{"nodes":[{"id":"L1","name":"bug","color":"ff0000"}],"pageInfo":{"hasNextPage":true,"endCursor":"next"}}}}}"""
-        server.enqueue(MockResponse().setBody(first))
-        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse(body = first))
+        server.enqueue(MockResponse(code = 403))
         assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.getLabels("o", "r"))
 
-        server.enqueue(MockResponse().setBody(first))
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"labels":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
+        server.enqueue(MockResponse(body = first))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"labels":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"""))
         assertEquals(listOf("bug"), (repository.getLabels("o", "r") as ApiResult.Success).data.map { it.name })
         assertEquals(listOf(null, "next", null, "next"), List(4) { takeVariables()["after"]?.jsonPrimitive?.content })
     }
 
     @Test
     fun `delete issue uses issue id mutation`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("{\"data\":{\"deleteIssue\":{\"clientMutationId\":null}}}"))
+        server.enqueue(MockResponse(body = "{\"data\":{\"deleteIssue\":{\"clientMutationId\":null}}}"))
         assertTrue(repository.deleteIssue("ISSUE_1") is ApiResult.Success)
-        val body = server.takeRequest().body.readUtf8()
+        val body = requireNotNull(server.takeRequest().body).utf8()
         assertTrue(body.contains("deleteIssue"))
         assertTrue(body.contains("\"issueId\":\"ISSUE_1\""))
     }
@@ -174,8 +174,8 @@ class RepoIssueRepositoryTest {
                   required: true
         """.trimIndent()
         val config = "blank_issues_enabled: false"
-        server.enqueue(MockResponse().setBody("{\"data\":{\"repository\":{\"id\":\"R1\",\"viewerCanCreateIssues\":true,\"isBlankIssuesEnabled\":true,\"defaultBranchRef\":{\"name\":\"main\"}}}}"))
-        server.enqueue(MockResponse().setBody("""
+        server.enqueue(MockResponse(body = "{\"data\":{\"repository\":{\"id\":\"R1\",\"viewerCanCreateIssues\":true,\"isBlankIssuesEnabled\":true,\"defaultBranchRef\":{\"name\":\"main\"}}}}"))
+        server.enqueue(MockResponse(body = """
             {"data":{"repository":{"object":{"__typename":"Tree","entries":[
               {"name":"bug.yml","path":".github/ISSUE_TEMPLATE/bug.yml","type":"blob","object":{"__typename":"Blob","text":${JsonPrimitive(yaml)},"isBinary":false,"isTruncated":false,"byteSize":${yaml.encodeToByteArray().size}}},
               {"name":"config.yml","path":".github/ISSUE_TEMPLATE/config.yml","type":"blob","object":{"__typename":"Blob","text":${JsonPrimitive(config)},"isBinary":false,"isTruncated":false,"byteSize":${config.length}}},
@@ -190,19 +190,19 @@ class RepoIssueRepositoryTest {
         assertEquals(listOf("bug"), template.labels)
         assertEquals(listOf("octo"), template.assignees)
         assertEquals(1, template.fields.size)
-        val contextQuery = server.takeRequest().body.readUtf8()
-        val formsQuery = server.takeRequest().body.readUtf8()
+        val contextQuery = requireNotNull(server.takeRequest().body).utf8()
+        val formsQuery = requireNotNull(server.takeRequest().body).utf8()
         assertTrue(contextQuery.contains("defaultBranchRef"))
         assertTrue(formsQuery.contains("main:.github/ISSUE_TEMPLATE"))
         assertTrue(formsQuery.contains("... on Blob"))
         assertFalse(formsQuery.contains("issueTemplates"))
 
-        server.enqueue(MockResponse().setBody(mutationJson("createIssue")))
-        server.enqueue(MockResponse().setBody(mutationJson("updateIssue")))
-        server.enqueue(MockResponse().setBody(mutationJson("closeIssue")))
-        server.enqueue(MockResponse().setBody(mutationJson("reopenIssue")))
+        server.enqueue(MockResponse(body = mutationJson("createIssue")))
+        server.enqueue(MockResponse(body = mutationJson("updateIssue")))
+        server.enqueue(MockResponse(body = mutationJson("closeIssue")))
+        server.enqueue(MockResponse(body = mutationJson("reopenIssue")))
         assertTrue(repository.createIssue(CreateRepoIssueInput("R1", "T", "B")) is ApiResult.Success)
-        val createBody = server.takeRequest().body.readUtf8()
+        val createBody = requireNotNull(server.takeRequest().body).utf8()
         assertFalse(createBody.contains("issueTemplate"))
         assertEquals(JsonPrimitive(PageSize.METADATA), Json.parseToJsonElement(createBody).jsonObject.getValue("variables").jsonObject["metadataFirst"])
         assertTrue(repository.updateIssue(UpdateRepoIssueInput("ISSUE_1", "T2", "B2")) is ApiResult.Success)
@@ -220,13 +220,13 @@ class RepoIssueRepositoryTest {
 
     @Test
     fun `graphql errors become api failure`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("{\"data\":null,\"errors\":[{\"message\":\"denied\",\"type\":\"FORBIDDEN\"}]}"))
+        server.enqueue(MockResponse(body = "{\"data\":null,\"errors\":[{\"message\":\"denied\",\"type\":\"FORBIDDEN\"}]}"))
         assertTrue(repository.getIssues("o", "r", RepoIssueFilter()) is ApiResult.Failure)
     }
 
     @Test
     fun `缺失仓库根节点不伪造成空列表或详情`() = runTest(accounts.context) {
-        repeat(2) { server.enqueue(MockResponse().setBody("""{"data":{"repository":null}}""")) }
+        repeat(2) { server.enqueue(MockResponse(body = """{"data":{"repository":null}}""")) }
         assertTrue(repository.getIssues("o", "r", RepoIssueFilter()) is ApiResult.Failure)
         assertTrue(repository.getIssue("o", "r", 1) is ApiResult.Failure)
     }
@@ -236,7 +236,7 @@ class RepoIssueRepositoryTest {
         val node = issueNodeJson(1).replaceFirst("{", "{\"__typename\":\"Issue\",")
         val response = """{"data":{"repository":{"id":"R1","viewerPermission":"READ","viewerCanCreateIssues":false,"hasIssuesEnabled":true},"search":{"issueCount":1200,"nodes":[null,$node],"pageInfo":{"hasNextPage":true,"endCursor":"after2"}}}}"""
         val filter = RepoIssueFilter(mentionedMe = true)
-        server.enqueue(MockResponse().setBody(response))
+        server.enqueue(MockResponse(body = response))
         val page = (repository.searchIssues("o", "r", "bug", filter) as ApiResult.Success).data
         assertEquals(1, page.items.single().number)
         assertFalse(page.viewerCanCreateIssues)
@@ -244,7 +244,7 @@ class RepoIssueRepositoryTest {
         assertEquals(SearchContinuation(cursor = "after2", received = 2), page.searchNext)
         val first = takeVariables()
         assertEquals(JsonPrimitive("repo:o/r is:issue bug is:open mentions:\"viewer\" sort:updated-desc"), first["searchQuery"])
-        server.enqueue(MockResponse().setBody(response))
+        server.enqueue(MockResponse(body = response))
         val last = (repository.searchIssues("o", "r", "bug", filter,
             SearchContinuation(cursor = "prev", received = PageSize.SEARCH_ACCESSIBLE_LIMIT - 2)) as ApiResult.Success).data
         val second = takeVariables()
@@ -257,7 +257,7 @@ class RepoIssueRepositoryTest {
     }
 
     private fun takeVariables() =
-        Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject.getValue("variables").jsonObject
+        Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
 
     private fun pageJson(cursor: String?, hasNext: Boolean, number: Int = 1) = """
         {"data":{"repository":{"id":"REPO_1","viewerPermission":"ADMIN","viewerCanCreateIssues":true,"hasIssuesEnabled":true,"issues":{"totalCount":2,"nodes":[${issueNodeJson(number)}],"pageInfo":{"hasNextPage":$hasNext,"endCursor":${cursor?.let { "\"$it\"" } ?: "null"}}}}}}

@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.common
 
 import android.content.Context
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -56,7 +57,7 @@ class ConversationComposerNavigationTest {
             assertEquals(0, backCount)
         }
         // A later state update must not repeat the successful completion event.
-        composeRule.runOnIdle { state.value = state.value.copy(text = "sent") }
+        composeRule.runOnIdle { state.value.textState.setTextAndPlaceCursorAtEnd("sent") }
         composeRule.runOnIdle { assertEquals(1, submittedCount) }
     }
 

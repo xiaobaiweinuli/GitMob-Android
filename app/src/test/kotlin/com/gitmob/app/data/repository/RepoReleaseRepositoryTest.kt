@@ -13,7 +13,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.ByteArrayInputStream
 import java.util.concurrent.TimeUnit
-import okhttp3.mockwebserver.SocketPolicy
+import mockwebserver3.SocketEffect
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.testutil.TestAccessTokenProvider
@@ -31,8 +31,8 @@ import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -84,23 +84,23 @@ class RepoReleaseRepositoryTest {
 
     @After
     fun teardown() {
-        server.shutdown()
+        server.close()
     }
 
     @Test
     fun `repository permission comes from GraphQL viewerPermission`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setBody("""{"data":{"repository":{"viewerPermission":"ADMIN"}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"ADMIN"}}}"""))
 
         val result = repository.getRepositoryPermission("octo", "repo")
 
         assertEquals(RepoPermission.ADMIN, (result as ApiResult.Success).data)
-        assertEquals("/graphql", server.takeRequest().path)
+        assertEquals("/graphql", server.takeRequest().target)
     }
 
     @Test
     fun `create release sends draft and prerelease state`() = runTest(accounts.context) {
         server.enqueue(
-            MockResponse().setBody(
+            MockResponse(body =
                 """{"id":7,"node_id":"R7","tag_name":"v1.0.0","target_commitish":"main","name":"Version 1","body":"Notes","draft":true,"prerelease":false,"created_at":"2026-01-01T00:00:00Z","assets":[]}""",
             ),
         )
@@ -116,43 +116,43 @@ class RepoReleaseRepositoryTest {
         assertEquals("v1.0.0", release.tagName)
         val request = server.takeRequest()
         assertEquals("POST", request.method)
-        assertEquals("/repos/octo/repo/releases", request.path)
-        val body = request.body.readUtf8()
+        assertEquals("/repos/octo/repo/releases", request.target)
+        val body = requireNotNull(request.body).utf8()
         assertTrue(body.contains("\"draft\":true"))
         assertTrue(body.contains("\"prerelease\":false"))
     }
 
     @Test
     fun `delete release accepts empty success response`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(204))
+        server.enqueue(MockResponse(code = 204))
 
         val result = repository.deleteRelease("octo", "repo", releaseId = 7)
 
         assertTrue(result is ApiResult.Success)
         val request = server.takeRequest()
         assertEquals("DELETE", request.method)
-        assertEquals("/repos/octo/repo/releases/7", request.path)
+        assertEquals("/repos/octo/repo/releases/7", request.target)
     }
 
     @Test
     fun `release list tag and id retain the actual web URL including draft URL`() = runTest(accounts.context) {
         val url = "https://github.com/octo/repo/releases/tag/untagged-draft"
         val body = """{"id":7,"tag_name":"feature/slash","draft":true,"html_url":"$url"}"""
-        server.enqueue(MockResponse().setBody("[$body]"))
-        server.enqueue(MockResponse().setBody(body))
-        server.enqueue(MockResponse().setBody(body))
+        server.enqueue(MockResponse(body = "[$body]"))
+        server.enqueue(MockResponse(body = body))
+        server.enqueue(MockResponse(body = body))
 
         assertEquals(url, (repository.getReleases("octo", "repo") as ApiResult.Success).data.items.single().htmlUrl)
         assertEquals(url, (repository.getReleaseByTag("octo", "repo", "feature/slash") as ApiResult.Success).data.htmlUrl)
         assertEquals(url, (repository.getRelease("octo", "repo", 7) as ApiResult.Success).data.htmlUrl)
-        assertEquals("/repos/octo/repo/releases?per_page=${com.gitmob.app.core.network.PageSize.RELEASES}&page=1", server.takeRequest().path)
-        assertEquals("/repos/octo/repo/releases/tags/feature%2Fslash", server.takeRequest().path)
-        assertEquals("/repos/octo/repo/releases/7", server.takeRequest().path)
+        assertEquals("/repos/octo/repo/releases?per_page=${com.gitmob.app.core.network.PageSize.RELEASES}&page=1", server.takeRequest().target)
+        assertEquals("/repos/octo/repo/releases/tags/feature%2Fslash", server.takeRequest().target)
+        assertEquals("/repos/octo/repo/releases/7", server.takeRequest().target)
     }
 
     @Test
     fun `release asset download resolves redirect and opens external browser`() = runTest(accounts.context) {
-        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "https://objects.example/gitmob.apk"))
+        server.enqueue(MockResponse.Builder().code(302).setHeader("Location", "https://objects.example/gitmob.apk").build())
         val asset = RepoReleaseAsset(8, "gitmob.apk", null, "application/vnd.android.package-archive", "uploaded", 2048, 3, "", "")
 
         val result = repository.downloadAsset("octo", "repo", asset)
@@ -169,19 +169,19 @@ class RepoReleaseRepositoryTest {
 
     @Test fun uploadUsesReturnedUrlRawBinaryLengthAndExistingAuthentication() = runTest(accounts.context) {
         attachment()
-        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":8,"name":"asset.zip","content_type":"application/zip","size":5,"state":"uploaded"}"""))
+        server.enqueue(MockResponse(code = 201, body = """{"id":8,"name":"asset.zip","content_type":"application/zip","size":5,"state":"uploaded"}"""))
         val progress = java.util.concurrent.CopyOnWriteArrayList<Pair<Long, Long>>()
         val result = repository.uploadAsset(server.url("/uploads/release/7").toString() + "{?name,label}", uri) { sent, total -> progress += sent to total }
         assertTrue(result is ApiResult.Success)
         val request = server.takeRequest()
         assertEquals("POST", request.method)
-        assertEquals("/uploads/release/7?name=release%20asset%2B%23.zip", request.path)
-        assertEquals("Bearer fake-token", request.getHeader("Authorization"))
-        assertEquals("application/vnd.github+json", request.getHeader("Accept"))
-        assertEquals(com.gitmob.app.core.network.REST_API_VERSION, request.getHeader("X-GitHub-Api-Version"))
-        assertEquals("application/zip", request.getHeader("Content-Type"))
-        assertEquals("5", request.getHeader("Content-Length"))
-        org.junit.Assert.assertArrayEquals(byteArrayOf(0, 1, 2, 127, -1), request.body.readByteArray())
+        assertEquals("/uploads/release/7?name=release%20asset%2B%23.zip", request.target)
+        assertEquals("Bearer fake-token", request.headers["Authorization"])
+        assertEquals("application/vnd.github+json", request.headers["Accept"])
+        assertEquals(com.gitmob.app.core.network.REST_API_VERSION, request.headers["X-GitHub-Api-Version"])
+        assertEquals("application/zip", request.headers["Content-Type"])
+        assertEquals("5", request.headers["Content-Length"])
+        org.junit.Assert.assertArrayEquals(byteArrayOf(0, 1, 2, 127, -1), requireNotNull(request.body).toByteArray())
         assertEquals(0L to 5L, progress.first())
         assertEquals(5L to 5L, progress.last())
         assertTrue(folder.root.listFiles()!!.isEmpty())
@@ -189,7 +189,7 @@ class RepoReleaseRepositoryTest {
 
     @Test fun failedUploadKeepsErrorMappingAndCleansFile() = runTest(accounts.context) {
         attachment()
-        server.enqueue(MockResponse().setResponseCode(403).setBody("Forbidden"))
+        server.enqueue(MockResponse(code = 403, body = "Forbidden"))
         val result = repository.uploadAsset(server.url("/uploads/7").toString(), uri) { _, _ -> }
         assertEquals(ApiError.Forbidden, (result as ApiResult.Failure).error)
         assertTrue(folder.root.listFiles()!!.isEmpty())
@@ -197,7 +197,7 @@ class RepoReleaseRepositoryTest {
 
     @Test fun cancellationClosesNetworkRequestAndCleansPreparedFile() = runTest(accounts.context) {
         attachment(ByteArray(256 * 1024))
-        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.Stall).build())
         val task = launch { repository.uploadAsset(server.url("/uploads/7").toString(), uri) { _, _ -> } }
         val request = withContext(Dispatchers.IO) { server.takeRequest(10, TimeUnit.SECONDS) }
         org.junit.Assert.assertNotNull(request)
@@ -208,7 +208,7 @@ class RepoReleaseRepositoryTest {
 
     @Test fun accountSwitchCancelsAnEpochOwnedUploadAndDeletesTheCopy() = runTest(accounts.context) {
         attachment(ByteArray(128 * 1024))
-        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        server.enqueue(MockResponse.Builder().onResponseStart(SocketEffect.Stall).build())
         val parent = Job(accounts.session.epoch.job)
         val task = CoroutineScope(coroutineContext + parent).launch { repository.uploadAsset(server.url("/uploads/7").toString(), uri) { _, _ -> } }
         org.junit.Assert.assertNotNull(withContext(Dispatchers.IO) { server.takeRequest(10, TimeUnit.SECONDS) })

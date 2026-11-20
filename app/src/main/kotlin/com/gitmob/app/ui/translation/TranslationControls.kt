@@ -10,8 +10,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
 import com.gitmob.app.data.translation.*
@@ -91,7 +91,7 @@ internal fun TranslationOptionsSection(value: TranslationPreferences, onChange: 
 @Composable
 internal fun TranslationProviderSheet(selected: TranslationProvider, onSelect: (TranslationProvider) -> Unit, onDismiss: () -> Unit) {
     val providers = TranslationProvider.entries
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.translation_provider), style = MaterialTheme.typography.titleLarge)
             providers.forEach { provider ->
@@ -120,12 +120,13 @@ internal fun TranslationErrorRow(problem: TranslationProblem, retry: () -> Unit,
 @Composable
 internal fun TranslationCredentialsSheet(provider: TranslationProvider, initial: TranslationCredentials, state: TranslationUiState, preferences: TranslationPreferences, viewModel: TranslationViewModel, onDismiss: () -> Unit) {
     var value by remember(provider, initial) { mutableStateOf(initial) }
-    LaunchedEffect(value, preferences) { viewModel.clearTest(); viewModel.clearNotice() }
+    val secretState = remember(provider, initial) { TextFieldState(initial.secret) }
+    LaunchedEffect(value, secretState.text.toString(), preferences) { viewModel.clearTest(); viewModel.clearNotice() }
     DisposableEffect(provider) { onDispose { viewModel.clearTest() } }
     var visible by remember { mutableStateOf(false) }
     var methodOpen by remember { mutableStateOf(false) }
     var authOpen by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!state.saving) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = { if (!state.saving) onDismiss() }, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))) {
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(translationProviderName(provider), style = MaterialTheme.typography.titleLarge)
             if (provider in setOf(TranslationProvider.BAIDU, TranslationProvider.YOUDAO_OPEN)) OutlinedTextField(value.appId, { value = value.copy(appId = it) }, label = { Text(stringResource(R.string.translation_app_id)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -142,8 +143,8 @@ internal fun TranslationCredentialsSheet(provider: TranslationProvider, initial:
                 if (value.auth == TranslationAuth.HEADER) OutlinedTextField(value.header, { value = value.copy(header = it) }, label = { Text(stringResource(R.string.translation_header)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
             if (provider in setOf(TranslationProvider.BAIDU, TranslationProvider.YOUDAO_OPEN) || provider == TranslationProvider.CUSTOM && value.auth != TranslationAuth.NONE) {
-                OutlinedTextField(value.secret, { value = value.copy(secret = it) }, label = { Text(stringResource(R.string.translation_secret)) }, singleLine = true,
-                    visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                OutlinedSecureTextField(state = secretState, label = { Text(stringResource(R.string.translation_secret)) },
+                    textObfuscationMode = if (visible) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
                     trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, stringResource(R.string.translation_show_secret)) } }, modifier = Modifier.fillMaxWidth())
             }
             if (provider == TranslationProvider.CUSTOM) {
@@ -157,8 +158,8 @@ internal fun TranslationCredentialsSheet(provider: TranslationProvider, initial:
             state.testProblem?.let { Text(translationProblemText(it), color = MaterialTheme.colorScheme.error) }
             state.testResult?.let { Text(stringResource(R.string.translation_test_success, it), style = MaterialTheme.typography.bodySmall) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { viewModel.test(preferences.copy(provider = provider), value) }, enabled = !state.testing && !state.saving) { Text(stringResource(R.string.translation_test)) }
-                Button(onClick = { viewModel.saveCredentials(provider, value, onDismiss) }, enabled = !state.saving) { Text(stringResource(R.string.common_save)) }
+                TextButton(onClick = { viewModel.test(preferences.copy(provider = provider), value.copy(secret = secretState.text.toString())) }, enabled = !state.testing && !state.saving) { Text(stringResource(R.string.translation_test)) }
+                Button(onClick = { viewModel.saveCredentials(provider, value.copy(secret = secretState.text.toString()), onDismiss) }, enabled = !state.saving) { Text(stringResource(R.string.common_save)) }
             }
             Spacer(Modifier.height(12.dp))
         }

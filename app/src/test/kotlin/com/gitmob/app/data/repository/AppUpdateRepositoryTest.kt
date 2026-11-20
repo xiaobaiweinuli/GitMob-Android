@@ -15,8 +15,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
-import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -37,7 +37,7 @@ class AppUpdateRepositoryTest {
                 override suspend fun getToken(): String? = error("Public update check must never read a token")
             }, server.url("/").toString().removeSuffix("/")), markdown, downloads)
     }
-    @After fun teardown() { server.shutdown() }
+    @After fun teardown() { server.close() }
 
     @Test fun publicCheckNeedsNoAccountAndUsesTheAgreedAsset() = runTest {
         enqueueRelease()
@@ -47,11 +47,11 @@ class AppUpdateRepositoryTest {
         assertEquals("fix(auth/nav): 修复登录 401", update.title)
         assertEquals("<p>Release notes</p>", update.notesHtml)
         val request = server.takeRequest()
-        assertEquals("/repos/xiaobaiweinuli/GitMob-Android/releases/latest", request.path)
-        assertNull(request.getHeader("Authorization"))
-        assertEquals("application/vnd.github+json", request.getHeader("Accept"))
-        assertEquals(REST_API_VERSION, request.getHeader("X-GitHub-Api-Version"))
-        assertEquals("GitMob-Android", request.getHeader("User-Agent"))
+        assertEquals("/repos/xiaobaiweinuli/GitMob-Android/releases/latest", request.target)
+        assertNull(request.headers["Authorization"])
+        assertEquals("application/vnd.github+json", request.headers["Accept"])
+        assertEquals(REST_API_VERSION, request.headers["X-GitHub-Api-Version"])
+        assertEquals("GitMob-Android", request.headers["User-Agent"])
         assertEquals(ApiResult.Success(Unit), repository.download(update))
         verify(exactly = 1) { downloads.open("https://github.com/example/releases/download/v0.2.0/GitMob-v0.2.0-2.apk") }
     }
@@ -104,14 +104,14 @@ class AppUpdateRepositoryTest {
     }
 
     @Test fun missingReleaseHasNoCompatiblePackage() = runTest {
-        server.enqueue(MockResponse().setResponseCode(404))
+        server.enqueue(MockResponse(code = 404))
         assertEquals(AppUpdateCheck.NoCompatibleRelease, success())
     }
 
     @Test fun rateLimitAndServerFailureRemainErrors() = runTest {
-        server.enqueue(MockResponse().setResponseCode(403).setHeader("X-RateLimit-Remaining", "0"))
+        server.enqueue(MockResponse.Builder().code(403).setHeader("X-RateLimit-Remaining", "0").build())
         assertEquals(ApiResult.Failure(ApiError.RateLimited), repository.check(1))
-        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(MockResponse(code = 503))
         assertTrue(repository.check(1) is ApiResult.Failure)
     }
 
@@ -120,7 +120,7 @@ class AppUpdateRepositoryTest {
         tag: String = "v0.2.0", assets: String = asset(),
         title: String? = "fix(auth/nav): 修复登录 401",
         flags: String = """ "draft":false,"prerelease":false """,
-    ) { server.enqueue(MockResponse().setBody("""{"tag_name":"$tag","name":${Json.encodeToString(title)},"body":"Release notes",$flags,"assets":[$assets]}""")) }
+    ) { server.enqueue(MockResponse(body = """{"tag_name":"$tag","name":${Json.encodeToString(title)},"body":"Release notes",$flags,"assets":[$assets]}""")) }
     private fun asset(
         name: String = "GitMob-v0.2.0-2.apk", state: String = "uploaded", size: Long = 1234,
         url: String = "https://github.com/example/releases/download/v0.2.0/GitMob-v0.2.0-2.apk",
