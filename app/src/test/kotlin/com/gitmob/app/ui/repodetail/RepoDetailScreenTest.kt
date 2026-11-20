@@ -164,8 +164,8 @@ class RepoDetailScreenTest {
         val actionNodes = listOf(
             node(R.string.repo_starred, 42),
             node(R.string.repo_star_lists),
-            node(R.string.repo_forks_count, 7),
             node(R.string.repo_fork),
+            node(R.string.repo_forks_count, 7),
             composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_notifications)),
         ).map { it.fetchSemanticsNode() }
 
@@ -179,6 +179,7 @@ class RepoDetailScreenTest {
         node(R.string.repo_star_lists).assertHeightIsEqualTo(40.dp)
         coVerify(exactly = 1) { stars.getLists() }
         node(R.string.repo_fork).performScrollTo().assertIsDisplayed()
+        node(R.string.repo_forks_count, 7).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_notifications))
             .performScrollTo().assertIsDisplayed()
     }

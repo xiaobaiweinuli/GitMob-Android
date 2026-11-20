@@ -237,8 +237,21 @@
     <!-- 儲存庫詳情 -->
     <string name="repo_forked_from">" 復刻自 %1$s/%2$s"</string>
     <string name="repo_template">範本</string>
-    <string name="repo_forks">直接復刻</string>
-    <string name="repo_forks_count">復刻 %1$d</string>
+    <string name="repo_forks">復刻使用者</string>
+    <string name="repo_forks_sort_created">復刻建立時間</string>
+    <string name="repo_forks_sort_stars">星標數量</string>
+    <string name="repo_forks_sort_updated">更新時間</string>
+    <string name="repo_forks_sort_pushed">最近推送時間</string>
+    <string name="repo_forks_sort_created_desc">最新復刻</string>
+    <string name="repo_forks_sort_created_asc">最早復刻</string>
+    <string name="repo_forks_sort_stars_desc">星標最多</string>
+    <string name="repo_forks_sort_stars_asc">星標最少</string>
+    <string name="repo_forks_sort_name_desc">名稱倒序</string>
+    <string name="repo_forks_sort_name_asc">名稱正序</string>
+    <string name="repo_forks_sort_pushed_desc">最近推送</string>
+    <string name="repo_forks_sort_pushed_asc">最早推送</string>
+    <string name="repo_forks_total">復刻倉庫：%1$s</string>
+    <string name="repo_forks_count">復刻使用者 %1$d</string>
     <string name="repo_stargazers">標星使用者</string>
     <string name="repo_stargazers_unavailable">暫時無法取得標星使用者</string>
     <string name="repo_star">加星號 %1$d</string>

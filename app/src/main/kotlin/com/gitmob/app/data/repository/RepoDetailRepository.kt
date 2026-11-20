@@ -19,6 +19,9 @@ import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.PagedBranches
 import com.gitmob.app.data.model.PagedUsers
 import com.gitmob.app.data.model.RepoList
+import com.gitmob.app.data.model.RepoForkSort
+import com.gitmob.app.data.model.RepoForkSortDirection
+import com.gitmob.app.data.model.RepoForkSortField
 import com.gitmob.app.data.model.RepoBranch
 import com.gitmob.app.data.model.BranchCreationSpec
 import com.gitmob.app.data.model.RepoDetail
@@ -46,6 +49,9 @@ import com.gitmob.app.graphql.RepoForkIdentityQuery
 import com.gitmob.app.graphql.RepoForkTargetQuery
 import com.gitmob.app.graphql.fragment.ForkIdentity
 import com.gitmob.app.graphql.RepoTransferTargetQuery
+import com.gitmob.app.graphql.type.OrderDirection
+import com.gitmob.app.graphql.type.RepositoryOrder
+import com.gitmob.app.graphql.type.RepositoryOrderField
 import com.gitmob.app.graphql.type.UpdateRepositoryInput
 import com.gitmob.app.graphql.type.UpdateTopicsInput
 import com.gitmob.app.graphql.type.UpdateSubscriptionInput
@@ -278,7 +284,12 @@ class RepoDetailRepository @Inject constructor(
             }
         }
 
-    suspend fun getForks(owner: String, name: String, after: String? = null): ApiResult<RepoList> =
+    suspend fun getForks(
+        owner: String,
+        name: String,
+        after: String? = null,
+        sort: RepoForkSort = RepoForkSort(),
+    ): ApiResult<RepoList> =
         when (val result = apolloClient.query(
             RepoForksQuery(
                 owner,
@@ -286,6 +297,19 @@ class RepoDetailRepository @Inject constructor(
                 Optional.presentIfNotNull(after),
                 PageSize.REPOS,
                 PageSize.TOPICS_PER_REPO,
+                orderBy = RepositoryOrder(
+                    field = when (sort.field) {
+                        RepoForkSortField.CREATED -> RepositoryOrderField.CREATED_AT
+                        RepoForkSortField.STARS -> RepositoryOrderField.STARGAZERS
+                        RepoForkSortField.NAME -> RepositoryOrderField.NAME
+                        RepoForkSortField.UPDATED -> RepositoryOrderField.UPDATED_AT
+                        RepoForkSortField.PUSHED -> RepositoryOrderField.PUSHED_AT
+                    },
+                    direction = when (sort.direction) {
+                        RepoForkSortDirection.ASC -> OrderDirection.ASC
+                        RepoForkSortDirection.DESC -> OrderDirection.DESC
+                    },
+                ),
             ),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result

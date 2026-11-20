@@ -537,10 +537,6 @@ private fun RepoHeader(
                     Text(stringResource(R.string.repo_stargazers))
                 }
             }
-            OutlinedButton(onClick = onForksClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
-                Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(stringResource(R.string.repo_forks_count, detail.forkCount), modifier = Modifier.padding(start = 4.dp))
-            }
             OutlinedButton(
                 onClick = onForkClick,
                 enabled = canAct || isForking,
@@ -553,6 +549,10 @@ private fun RepoHeader(
             ) {
                 Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
                 Text(stringResource(when { personalForkPending -> R.string.repo_fork_creating; hasPersonalFork -> R.string.repo_fork_done; else -> R.string.repo_fork }), modifier = Modifier.padding(start = 4.dp))
+            }
+            OutlinedButton(onClick = onForksClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
+                Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(stringResource(R.string.repo_forks_count, detail.forkCount), modifier = Modifier.padding(start = 4.dp))
             }
             OutlinedButton(
                 onClick = onNotificationsClick,

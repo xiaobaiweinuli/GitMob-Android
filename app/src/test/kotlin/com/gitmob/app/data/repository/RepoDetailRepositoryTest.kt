@@ -3,6 +3,9 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.R
+import com.gitmob.app.data.model.RepoForkSort
+import com.gitmob.app.data.model.RepoForkSortField
+import com.gitmob.app.data.model.RepoForkSortDirection
 import com.gitmob.app.data.model.RepoDocumentContext
 import java.util.Base64
 import kotlinx.serialization.json.JsonObject
@@ -182,6 +185,41 @@ class RepoDetailRepositoryTest {
         assertEquals("octo", result.data.items.single().forkedFromOwner)
         assertEquals(RepoVisibility.INTERNAL, result.data.items.single().visibility)
         assertTrue(result.data.items.single().hasIssuesEnabled)
+    }
+
+    @Test
+    fun `fork ordering is sent to GraphQL for every field and direction on every page`() = runTest(accounts.context) {
+        val fields = mapOf(
+            RepoForkSortField.CREATED to "CREATED_AT",
+            RepoForkSortField.STARS to "STARGAZERS",
+            RepoForkSortField.NAME to "NAME",
+            RepoForkSortField.UPDATED to "UPDATED_AT",
+            RepoForkSortField.PUSHED to "PUSHED_AT",
+        )
+        for ((field, apiField) in fields) {
+            for (direction in RepoForkSortDirection.entries) {
+                for (cursor in listOf(null, "next")) {
+                    server.enqueue(MockResponse(body =
+                        """{"data":{"repository":{"forks":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}""",
+                    ))
+                    val result = repository.getForks("octo", "repo", cursor, RepoForkSort(field, direction))
+                    assertTrue(result is ApiResult.Success)
+                    val request = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()) as JsonObject
+                    val variables = request["variables"] as JsonObject
+                    assertEquals(JsonPrimitive("octo"), variables["owner"])
+                    assertEquals(JsonPrimitive("repo"), variables["name"])
+                    assertEquals(JsonPrimitive(PageSize.REPOS), variables["first"])
+                    if (cursor == null) assertFalse(variables.containsKey("after"))
+                    else assertEquals(JsonPrimitive(cursor), variables["after"])
+                    assertEquals(buildJsonObject {
+                        put("field", apiField)
+                        put("direction", direction.name)
+                    }, variables["orderBy"])
+                    val query = (request["query"] as JsonPrimitive).content
+                    assertTrue(query.contains("orderBy: \$orderBy"))
+                }
+            }
+        }
     }
 
     private fun forkSource() = mockk<RepoDetail> {

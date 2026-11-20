@@ -240,8 +240,21 @@
     <!-- Repository detail -->
     <string name="repo_forked_from">" Forked from %1$s/%2$s"</string>
     <string name="repo_template">Template</string>
-    <string name="repo_forks">Direct forks</string>
-    <string name="repo_forks_count">Forks %1$d</string>
+    <string name="repo_forks">Fork owners</string>
+    <string name="repo_forks_sort_created">Fork creation time</string>
+    <string name="repo_forks_sort_stars">Stars</string>
+    <string name="repo_forks_sort_updated">Updated time</string>
+    <string name="repo_forks_sort_pushed">Last push time</string>
+    <string name="repo_forks_sort_created_desc">Newest forks</string>
+    <string name="repo_forks_sort_created_asc">Oldest forks</string>
+    <string name="repo_forks_sort_stars_desc">Most stars</string>
+    <string name="repo_forks_sort_stars_asc">Fewest stars</string>
+    <string name="repo_forks_sort_name_desc">Name descending</string>
+    <string name="repo_forks_sort_name_asc">Name ascending</string>
+    <string name="repo_forks_sort_pushed_desc">Recently pushed</string>
+    <string name="repo_forks_sort_pushed_asc">Least recently pushed</string>
+    <string name="repo_forks_total">Fork repositories: %1$s</string>
+    <string name="repo_forks_count">Fork owners %1$d</string>
     <string name="repo_stargazers">Stargazers</string>
     <string name="repo_stargazers_unavailable">Stargazers are currently unavailable</string>
     <string name="repo_star">Star %1$d</string>
