@@ -37,7 +37,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.viewinterop.AndroidView
 import java.util.Locale
 import java.util.UUID
@@ -124,6 +126,9 @@ fun MarkdownWebView(
             .fillMaxWidth()
             .wrapContentHeight()
             .clipToBounds()
+            .remeasureOnMarkdownResize {
+                (webViewHolder.webView as? NoVerticalScrollWebView)?.layoutSize ?: IntSize.Zero
+            }
             // Compose 的滚动只平移 display list，不会像经典 ScrollView 那样让子 View
             // 重走 onDraw，Chromium 因此无法感知自己被滚进了屏幕（表现为 WebView
             // 从底部进入时有一条"死区"空白，静止也不恢复）。位置一变就强制重绘，
@@ -258,14 +263,14 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
     }
 
     fun detach(host: FrameLayout) {
+        val view = controller.webView ?: return
+        if (view.parent !== host) return
         onDocumentLink = null
         onExternalLink = null
         onDisplayError = null
-        controller.webView?.let { view ->
-            (view as? NoVerticalScrollWebView)?.onImageClick = null
-            host.removeView(view)
-            view.onPause()
-        }
+        (view as? NoVerticalScrollWebView)?.onImageClick = null
+        host.removeView(view)
+        view.onPause()
     }
 
     fun close() {
@@ -316,7 +321,7 @@ internal class ExternalLinkWebViewClient(
 
 /** View-local display coordination; business results remain exclusively in the ViewModel. */
 internal class MarkdownTranslationController(private val onError: () -> Unit) {
-    var webView: WebView? = null
+    var webView: WebView? by mutableStateOf(null)
     private var pageKey: Any? = null
     private var documentId: String? = null
     private var ready = false
@@ -400,6 +405,8 @@ internal fun translationPatch(documentId: String, value: TranslationPresentation
  * 代码块/表格的横向滑动是页面内元素级滚动，不产生 View 级垂直偏移，不受影响。
  */
 internal class NoVerticalScrollWebView(context: Context) : WebView(context) {
+    var layoutSize by mutableStateOf(IntSize.Zero)
+        private set
     var onImageClick: ((DocumentImage) -> Unit)? = null
     private val images = MarkdownImageTapHandler(this) { onImageClick?.invoke(it) }
 
@@ -414,11 +421,25 @@ internal class NoVerticalScrollWebView(context: Context) : WebView(context) {
         return super.onTouchEvent(event)
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        layoutSize = IntSize(w, h)
+    }
+
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
         if (t != 0) scrollTo(l, 0)
     }
 }
+
+private fun Modifier.remeasureOnMarkdownResize(size: () -> IntSize): Modifier =
+    layout { measurable, constraints ->
+        val observedSize = size()
+        // Measure naturally so a previous height cannot prevent WebView content from growing.
+        val placeable = measurable.measure(constraints)
+        val height = observedSize.height.coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(placeable.width, height) { placeable.placeRelative(0, 0) }
+    }
 
 internal fun createMarkdownWebViewHost(webView: WebView): FrameLayout =
     FrameLayout(webView.context).apply {
@@ -430,6 +451,7 @@ internal fun createMarkdownWebViewHost(webView: WebView): FrameLayout =
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
         )
+        (webView.parent as? ViewGroup)?.removeView(webView)
         addView(webView)
     }
 

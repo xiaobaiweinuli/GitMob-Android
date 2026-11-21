@@ -28,12 +28,16 @@ import androidx.core.net.toUri
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.layout.WindowInsetsRulers
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.*
 import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.ui.common.NavigationDocument
 import com.gitmob.app.ui.common.MarkdownBodyEditor
 import com.gitmob.app.ui.common.MarkdownEditorTab
 import com.gitmob.app.ui.common.MarkdownEditorUiState
@@ -173,22 +177,45 @@ private fun IssueEditor(
             )
         }
     } else {
+        val fieldDocuments = remember(template) { mutableMapOf<String, NavigationDocument>() }
+        val fieldSizes = remember(template) { mutableStateMapOf<String, IntSize>() }
+        DisposableEffect(template) {
+            onDispose {
+                fieldDocuments.values.forEach { it.close() }
+                fieldDocuments.clear()
+            }
+        }
         LazyColumn(
-            modifier = modifier,
+            modifier = modifier.layout { measurable, constraints ->
+                // Field size changes must invalidate the list's cached item measurements.
+                fieldSizes.toMap()
+                val placeable = measurable.measure(constraints)
+                layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
+            },
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { OutlinedTextField(title, onTitleChange, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-            itemsIndexed(template.fields, key = { index, field -> issueFormFieldKey(index, field) }) { _, field ->
-                IssueFormFieldContent(
-                    field = field,
-                    templateHtml = templateHtml,
-                    value = textValues[field.id].orEmpty(),
-                    selected = selections[field.id].orEmpty(),
-                    onValueChange = { value -> field.id?.let { onTextChange(it, value) } },
-                    onSelected = { selected -> field.id?.let { onSelectionChange(it, selected) } },
-                    onLinkClick = onLinkClick,
-                )
+            item(key = "form-title", contentType = "title") {
+                OutlinedTextField(title, onTitleChange, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+            itemsIndexed(
+                template.fields,
+                key = { index, field -> issueFormFieldKey(index, field) },
+                contentType = { _, field -> field::class },
+            ) { index, field ->
+                val fieldKey = issueFormFieldKey(index, field)
+                Box(Modifier.onSizeChanged { fieldSizes[fieldKey] = it }) {
+                    IssueFormFieldContent(
+                        field = field,
+                        templateHtml = templateHtml,
+                        value = textValues[field.id].orEmpty(),
+                        selected = selections[field.id].orEmpty(),
+                        onValueChange = { value -> field.id?.let { onTextChange(it, value) } },
+                        onSelected = { selected -> field.id?.let { onSelectionChange(it, selected) } },
+                        onLinkClick = onLinkClick,
+                        navigationDocument = fieldDocuments.getOrPut(fieldKey) { NavigationDocument(null) },
+                    )
+                }
             }
         }
     }
@@ -252,6 +279,7 @@ internal fun IssueFormFieldContent(
     onValueChange: (String) -> Unit,
     onSelected: (Set<Int>) -> Unit,
     onLinkClick: (String) -> Unit,
+    navigationDocument: NavigationDocument? = null,
 ) {
     val description = when (field) {
         is IssueFormField.Markdown -> null
@@ -262,24 +290,29 @@ internal fun IssueFormFieldContent(
     }
     val descriptionHtml = description?.takeIf(String::isNotBlank)?.let(templateHtml::getValue)
     when (field) {
-        is IssueFormField.Markdown -> IssueFormMarkdown(templateHtml.getValue(field.value), onLinkClick)
+        is IssueFormField.Markdown -> IssueFormMarkdown(templateHtml.getValue(field.value), onLinkClick, navigationDocument)
         is IssueFormField.Input -> IssueFormTextField(field.label, descriptionHtml, field.placeholder, field.required,
-            value, true, onLinkClick, onValueChange)
+            value, true, onLinkClick, onValueChange, navigationDocument)
         is IssueFormField.Textarea -> IssueFormTextField(field.label, descriptionHtml, field.placeholder, field.required,
-            value, false, onLinkClick, onValueChange)
-        is IssueFormField.Dropdown -> IssueFormDropdown(field, descriptionHtml, selected, onLinkClick, onSelected)
-        is IssueFormField.Checkboxes -> IssueFormCheckboxes(field, descriptionHtml, templateHtml, selected, onSelected, onLinkClick)
+            value, false, onLinkClick, onValueChange, navigationDocument)
+        is IssueFormField.Dropdown -> IssueFormDropdown(field, descriptionHtml, selected, onLinkClick, onSelected, navigationDocument)
+        is IssueFormField.Checkboxes -> IssueFormCheckboxes(field, descriptionHtml, templateHtml, selected, onSelected, onLinkClick, navigationDocument)
     }
 }
 
 @Composable
-private fun IssueFormMarkdown(html: String?, onLinkClick: (String) -> Unit) {
+private fun IssueFormMarkdown(
+    html: String?,
+    onLinkClick: (String) -> Unit,
+    navigationDocument: NavigationDocument?,
+) {
     if (html == null) return
     MarkdownWebView(
         bodyHtml = html,
         linkColor = MaterialTheme.colorScheme.primary,
         contentPadding = PaddingValues(0.dp),
         onExternalLink = onLinkClick,
+        navigationDocument = navigationDocument,
     )
 }
 
@@ -309,6 +342,7 @@ private fun IssueFormTextField(
     singleLine: Boolean,
     onLinkClick: (String) -> Unit,
     onValueChange: (String) -> Unit,
+    navigationDocument: NavigationDocument?,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         OutlinedTextField(
@@ -320,7 +354,7 @@ private fun IssueFormTextField(
             minLines = if (singleLine) 1 else 4,
             modifier = Modifier.fillMaxWidth(),
         )
-        IssueFormMarkdown(descriptionHtml, onLinkClick)
+        IssueFormMarkdown(descriptionHtml, onLinkClick, navigationDocument)
     }
 }
 
@@ -331,10 +365,11 @@ private fun IssueFormDropdown(
     selected: Set<Int>,
     onLinkClick: (String) -> Unit,
     onSelected: (Set<Int>) -> Unit,
+    navigationDocument: NavigationDocument?,
 ) {
     Column {
         IssueFormLabel(AnnotatedString(field.label), field.required, FontWeight.SemiBold)
-        IssueFormMarkdown(descriptionHtml, onLinkClick)
+        IssueFormMarkdown(descriptionHtml, onLinkClick, navigationDocument)
         field.options.forEachIndexed { index, option ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (field.multiple) {
@@ -356,12 +391,13 @@ private fun IssueFormCheckboxes(
     selected: Set<Int>,
     onSelected: (Set<Int>) -> Unit,
     onLinkClick: (String) -> Unit,
+    navigationDocument: NavigationDocument?,
 ) {
     val primary = MaterialTheme.colorScheme.primary
     val currentLinkClick by rememberUpdatedState(onLinkClick)
     Column {
         Text(field.label, fontWeight = FontWeight.SemiBold)
-        IssueFormMarkdown(descriptionHtml, onLinkClick)
+        IssueFormMarkdown(descriptionHtml, onLinkClick, navigationDocument)
         field.options.forEachIndexed { index, option ->
             val html = templateHtml.getValue(option.label)
             val label = remember(html, primary) {

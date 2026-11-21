@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -97,6 +99,7 @@ import com.gitmob.app.data.model.RepoPullRequestCreateMetadata
 import com.gitmob.app.data.model.RepoPullRequestListItem
 import com.gitmob.app.data.model.RepoPullRequestMergeMethod
 import com.gitmob.app.data.model.RepoPullRequestReviewEvent
+import com.gitmob.app.data.model.RepoPullRequestReviewThread
 import com.gitmob.app.data.model.RepoPullRequestSort
 import com.gitmob.app.data.model.RepoPullRequestState
 import com.gitmob.app.data.model.RepoPullRequestStateFilter
@@ -511,9 +514,9 @@ fun RepoPullRequestDetailScreen(
                             HorizontalDivider()
                         }
                     }
-                    else -> LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(state.reviews, key = { it.id }) { review ->
-                            Column {
+                    else -> LazyColumn(contentPadding = PaddingValues(12.dp)) {
+                        itemsIndexed(state.reviews, key = { _, review -> review.id }, contentType = { _, _ -> "review" }) { index, review ->
+                            Column(Modifier.padding(top = if (index > 0) 10.dp else 0.dp)) {
                                 Text(pullRequestReviewStateLabel(review.state), fontWeight = FontWeight.SemiBold)
                                 ConversationContentCard(
                                     author = review.author,
@@ -537,38 +540,15 @@ fun RepoPullRequestDetailScreen(
                                  )
                             }
                         }
-                        items(state.threads, key = { it.id }) { thread ->
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("${thread.path}:${thread.line ?: 0}", fontWeight = FontWeight.SemiBold)
-                                thread.comments.forEach { item ->
-                                    ConversationContentCard(
-                                        author = item.author,
-                                        createdAt = item.createdAt,
-                                        bodyHtml = item.bodyHtml,
-                                        url = item.url,
-                                        authorAssociation = item.authorAssociation,
-                                        isThreadAuthor = item.author?.login == state.pullRequest!!.author?.login,
-                                        onQuoteReply = {
-                                            onCompose(
-                                                ConversationComposeRequest(
-                                                    target = ConversationComposerTarget.PULL_REQUEST_THREAD,
-                                                    subjectId = thread.id,
-                                                    initialText = quoteMarkdown(item.body),
-                                                ),
-                                            )
-                                        },
-                                        editSummary = item.editSummary,
-                                        onEditHistoryClick = { viewModel.openEditHistory(item.id) },
-                                        onAuthorClick = onUserClick,
-                                    )
-                                }
-                                if (thread.viewerCanResolve || thread.viewerCanUnresolve) {
-                                    TextButton(onClick = { viewModel.toggleThreadResolved(thread) }) {
-                                        Text(stringResource(if (thread.isResolved) R.string.pr_unresolve else R.string.pr_resolve))
-                                    }
-                                }
-                            }
-                        }
+                        pullRequestReviewThreads(
+                            threads = state.threads,
+                            hasReviews = state.reviews.isNotEmpty(),
+                            pullRequestAuthor = state.pullRequest!!.author?.login,
+                            onCompose = onCompose,
+                            onEditHistoryClick = viewModel::openEditHistory,
+                            onUserClick = onUserClick,
+                            onToggleResolved = viewModel::toggleThreadResolved,
+                        )
                     }
                 }
             }
@@ -602,6 +582,60 @@ fun RepoPullRequestDetailScreen(
         onSelect = viewModel::selectEdit,
         onClearSelected = viewModel::clearSelectedEdit,
     )
+}
+
+private fun LazyListScope.pullRequestReviewThreads(
+    threads: List<RepoPullRequestReviewThread>,
+    hasReviews: Boolean,
+    pullRequestAuthor: String?,
+    onCompose: (ConversationComposeRequest) -> Unit,
+    onEditHistoryClick: (String) -> Unit,
+    onUserClick: (String) -> Unit,
+    onToggleResolved: (RepoPullRequestReviewThread) -> Unit,
+) {
+    threads.forEachIndexed { index, thread ->
+        item(key = "thread:${thread.id}:header", contentType = "thread-header") {
+            Text(
+                text = "${thread.path}:${thread.line ?: 0}",
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = if (index > 0 || hasReviews) 10.dp else 0.dp),
+            )
+        }
+        items(thread.comments, key = { "thread:${thread.id}:comment:${it.id}" }, contentType = { "thread-comment" }) { comment ->
+            Box(Modifier.padding(top = 8.dp)) {
+                ConversationContentCard(
+                    author = comment.author,
+                    createdAt = comment.createdAt,
+                    bodyHtml = comment.bodyHtml,
+                    url = comment.url,
+                    authorAssociation = comment.authorAssociation,
+                    isThreadAuthor = comment.author?.login == pullRequestAuthor,
+                    onQuoteReply = {
+                        onCompose(
+                            ConversationComposeRequest(
+                                target = ConversationComposerTarget.PULL_REQUEST_THREAD,
+                                subjectId = thread.id,
+                                initialText = quoteMarkdown(comment.body),
+                            ),
+                        )
+                    },
+                    editSummary = comment.editSummary,
+                    onEditHistoryClick = { onEditHistoryClick(comment.id) },
+                    onAuthorClick = onUserClick,
+                )
+            }
+        }
+        if (thread.viewerCanResolve || thread.viewerCanUnresolve) {
+            item(key = "thread:${thread.id}:actions", contentType = "thread-actions") {
+                TextButton(
+                    onClick = { onToggleResolved(thread) },
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    Text(stringResource(if (thread.isResolved) R.string.pr_unresolve else R.string.pr_resolve))
+                }
+            }
+        }
+    }
 }
 
 @Composable
