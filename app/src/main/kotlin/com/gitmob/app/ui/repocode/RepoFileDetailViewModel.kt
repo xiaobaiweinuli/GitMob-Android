@@ -17,6 +17,9 @@ import com.gitmob.app.core.markdown.MarkdownRenderer
 import com.gitmob.app.data.model.RepoFileContent
 import com.gitmob.app.data.model.RepoPathContent
 import com.gitmob.app.data.model.RepoPendingFileChange
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkKind
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.repository.RepoGitRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,10 +27,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class RepoFileDetailUiState(
+    val target: RepoLinkTarget? = null,
     val file: RepoFileContent? = null,
     val isDirectory: Boolean = false,
     val previewHtml: String? = null,
@@ -39,7 +45,7 @@ data class RepoFileDetailUiState(
     val wrapLines: Boolean = false,
     val isDeleting: Boolean = false,
     val isDownloading: Boolean = false,
-    val isLoading: Boolean = false,
+    val isLoading: Boolean = true,
     val loadFailed: Boolean = false,
 ) {
     val sourceAvailable: Boolean get() = file?.let { !it.isBinary && it.text != null } == true
@@ -61,15 +67,16 @@ class RepoFileDetailViewModel @Inject constructor(
     fun createDocumentResources(document: RepoDocumentContext) =
         RepoDocumentResources(document, accountEpoch, documentRepository)
 
+    private var loadJob: Job? = null
     private var initialized = false
     private var owner = ""
     private var name = ""
-    private var ref = ""
-    private var path = ""
+    private lateinit var source: RepoContentSource
 
-    fun init(owner: String, name: String, ref: String, path: String) {
+    fun init(owner: String, name: String, source: RepoContentSource) {
         if (initialized) return
-        initialized = true; this.owner = owner; this.name = name; this.ref = ref; this.path = path
+        initialized = true; this.owner = owner; this.name = name; this.source = source
+        _state.update { it.copy(target = source as? RepoLinkTarget) }
         observeCodeChanges()
         load(refreshResources = false)
     }
@@ -79,6 +86,7 @@ class RepoFileDetailViewModel @Inject constructor(
             repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.CodeChanged>()
                 .collect { event ->
+                    val (ref, path) = _state.value.target ?: return@collect
                     if (_state.value.file?.isCommitSnapshot != true &&
                         event.owner == owner && event.name == name && event.ref == ref &&
                         (path in event.changedPaths || _state.value.previewHtml != null)) load()
@@ -89,14 +97,29 @@ class RepoFileDetailViewModel @Inject constructor(
     fun load() = load(refreshResources = true)
 
     private fun load(refreshResources: Boolean) {
-        viewModelScope.launch {
-            if (refreshResources) documentRepository.invalidate(RepoDocumentContext(owner, name, ref, path))
+        if (!accountEpoch.isCurrent) return
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, loadFailed = false, isDirectory = false, previewRevision = it.previewRevision + 1) }
-            when (val result = repository.getPathContent(owner, name, ref, path)) {
+            val target = _state.value.target ?: when (val source = source) {
+                is RepoLinkTarget -> source
+                is RepoContentSource.Link -> when (val result = repository.resolveLink(owner, name, RepoLinkKind.FILE, source.refAndPath).also { coroutineContext.ensureActive() }) {
+                    is ApiResult.Success -> result.data
+                    is ApiResult.Failure -> {
+                        _state.update { it.copy(isLoading = false, loadFailed = true) }
+                        errorEventBus.emit(result.error)
+                        return@launch
+                    }
+                }
+            }
+            _state.update { it.copy(target = target) }
+            val (ref, path) = target
+            if (refreshResources) documentRepository.invalidate(RepoDocumentContext(owner, name, ref, path))
+            when (val result = repository.getPathContent(owner, name, ref, path).also { coroutineContext.ensureActive() }) {
                 is ApiResult.Success -> {
                     val file = when (val content = result.data) {
                         RepoPathContent.Directory -> {
-                            _state.update { RepoFileDetailUiState(isDirectory = true, previewRevision = it.previewRevision) }
+                            _state.update { RepoFileDetailUiState(target = target, isDirectory = true, isLoading = false, previewRevision = it.previewRevision) }
                             return@launch
                         }
                         is RepoFileContent -> content
@@ -137,6 +160,7 @@ class RepoFileDetailViewModel @Inject constructor(
     fun setWrapLines(value: Boolean) = _state.update { it.copy(wrapLines = value) }
 
     fun deleteFile(message: String, onDeleted: () -> Unit) {
+        val (ref, path) = _state.value.target ?: return
         val file = _state.value.file ?: return
         if (file.isCommitSnapshot || _state.value.isDeleting || file.isArchived || !file.capabilities.canPush || !file.capabilities.canPushToProtectedBranch || message.isBlank()) return
         viewModelScope.launch {
@@ -149,6 +173,7 @@ class RepoFileDetailViewModel @Inject constructor(
     }
 
     fun downloadFile() {
+        val (ref, path) = _state.value.target ?: return
         if (_state.value.isDownloading) return
         viewModelScope.launch {
             _state.update { it.copy(isDownloading = true) }

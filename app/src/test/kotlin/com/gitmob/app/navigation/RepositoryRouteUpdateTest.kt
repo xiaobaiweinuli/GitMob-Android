@@ -4,6 +4,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.gitmob.app.core.event.RepoUpdateEvent
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.testutil.AccountSessionRule
 import org.junit.Assert.assertEquals
@@ -21,8 +22,7 @@ class RepositoryRouteUpdateTest {
 
         assertEquals("new", updated.owner)
         assertEquals("renamed", updated.name)
-        assertEquals("main", updated.ref)
-        assertEquals("docs", updated.path)
+        assertEquals(RepoLinkTarget("main", "docs"), updated.source)
         assertNull(updated.permission)
     }
 

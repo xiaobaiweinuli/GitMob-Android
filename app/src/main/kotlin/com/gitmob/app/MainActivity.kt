@@ -27,8 +27,9 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.navigation.GitMobNavGraph
-import com.gitmob.app.navigation.DeepLinkDestination
-import com.gitmob.app.navigation.EXTRA_DEEP_LINK_DESTINATION
+import com.gitmob.app.navigation.DeepLinkRequest
+import com.gitmob.app.navigation.PendingDeepLink
+import com.gitmob.app.navigation.EXTRA_DEEP_LINK_REQUEST
 import com.gitmob.app.ui.update.AppUpdateViewModel
 import com.gitmob.app.ui.update.AppUpdateSettings
 import com.gitmob.app.ui.update.AppUpdateDialogHost
@@ -46,7 +47,7 @@ class MainActivity : AppCompatActivity() {
 
     private val startupViewModel: StartupViewModel by viewModels()
     private val appUpdateViewModel: AppUpdateViewModel by viewModels()
-    private var pendingDeepLink by mutableStateOf<DeepLinkDestination?>(null)
+    private var pendingDeepLink by mutableStateOf<PendingDeepLink?>(null)
 
     /**
      * 启动链路（KernelSU 同款零依赖配方，分析见 文档/splash-screen-deep-analysis.md §10）：
@@ -64,9 +65,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         // 重建时以已保存状态为准；null 表示已消费，不能回退到系统保留的启动 Intent。
         pendingDeepLink = if (savedInstanceState != null) {
-            BundleCompat.getSerializable(savedInstanceState, STATE_PENDING_DEEP_LINK, DeepLinkDestination::class.java)
+            BundleCompat.getSerializable(savedInstanceState, STATE_PENDING_DEEP_LINK, PendingDeepLink::class.java)
         } else {
-            intent.deepLinkDestination()
+            intent.pendingDeepLink()
         }
         enableEdgeToEdge()
 
@@ -118,8 +119,9 @@ class MainActivity : AppCompatActivity() {
                         repoUpdateEventBus = repoUpdateEventBus,
                         themePreference = themePreference,
                         enablePredictiveBack = themePreference.enablePredictiveBack,
-                        deepLinkDestination = pendingDeepLink,
-                        onDeepLinkConsumed = { pendingDeepLink = null },
+                        pendingDeepLink = pendingDeepLink,
+                        onDeepLinkConsumed = ::consumeDeepLink,
+                        onDeepLinkRequested = { pendingDeepLink = PendingDeepLink(it) },
                         updateSettings = { epoch -> AppUpdateSettings(appUpdateViewModel, epoch) },
                     )
                     if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
@@ -138,12 +140,16 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pendingDeepLink = intent.deepLinkDestination()
+        pendingDeepLink = intent.pendingDeepLink()
     }
 
     @Suppress("DEPRECATION")
-    private fun Intent.deepLinkDestination(): DeepLinkDestination? =
-        getSerializableExtra(EXTRA_DEEP_LINK_DESTINATION) as? DeepLinkDestination
+    private fun Intent.pendingDeepLink(): PendingDeepLink? =
+        (getSerializableExtra(EXTRA_DEEP_LINK_REQUEST) as? DeepLinkRequest)?.let { PendingDeepLink(it) }
+
+    internal fun consumeDeepLink(id: String) {
+        if (pendingDeepLink?.id == id) pendingDeepLink = null
+    }
 
     private companion object {
         const val STATE_PENDING_DEEP_LINK = "pending_deep_link"

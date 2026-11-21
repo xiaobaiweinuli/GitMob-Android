@@ -1,9 +1,13 @@
 package com.gitmob.app.navigation
 
 import androidx.core.net.toUri
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.gitmob.app.ui.translation.TranslationHost
 import com.gitmob.app.ui.translation.TranslationSettingsScreen
 
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkKind
 import com.gitmob.app.data.model.RepoDocumentContext
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.ContentTransform
@@ -15,6 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -125,6 +130,15 @@ private fun RepositoryCreateOwner.toRepoCreateRoute() = RepoCreateRoute(
     ownerCanCreateRepository = canCreateRepository,
 )
 
+internal fun DeepLinkRequest.toRoute(): Route? = when (this) {
+    is DeepLinkRequest.Direct -> destination.toRoute()
+    is DeepLinkRequest.RepositoryContent -> when (kind) {
+        RepoLinkKind.FILE -> RepoFileDetailRoute(owner, repo, RepoContentSource.Link(refAndPath))
+        RepoLinkKind.DIRECTORY -> RepoCodeRoute(owner, repo, RepoContentSource.Link(refAndPath))
+        RepoLinkKind.HISTORY -> RepoCommitsRoute(owner, repo, RepoContentSource.Link(refAndPath))
+    }
+}
+
 /** 外部 GitHub / Gist 链接目标 → 站内路由；浏览器分流与不支持的链接返回 null。 */
 internal fun DeepLinkDestination.toRoute(): Route? = when (this) {
     is DeepLinkDestination.GistDetail -> GistDetailRoute(id)
@@ -179,8 +193,9 @@ fun GitMobNavGraph(
     repoUpdateEventBus: RepoUpdateEventBus,
     themePreference: ThemePreference,
     enablePredictiveBack: Boolean,
-    deepLinkDestination: DeepLinkDestination? = null,
-    onDeepLinkConsumed: () -> Unit = {},
+    pendingDeepLink: PendingDeepLink? = null,
+    onDeepLinkConsumed: (String) -> Unit = {},
+    onDeepLinkRequested: (DeepLinkRequest) -> Unit = {},
     updateSettings: (@Composable (AccountEpoch) -> Unit)? = null,
 ) {
     val epoch = accountSession.epoch
@@ -203,8 +218,10 @@ fun GitMobNavGraph(
                 onLogout = {},
                 themePreference = themePreference,
                 enablePredictiveBack = enablePredictiveBack,
-                deepLinkDestination = deepLinkDestination.takeUnless { it == DeepLinkDestination.BrowserUnavailable },
+                pendingDeepLink = pendingDeepLink.takeUnless { it?.request == DeepLinkRequest.Direct(DeepLinkDestination.BrowserUnavailable) },
                 onDeepLinkConsumed = onDeepLinkConsumed,
+                onDeepLinkRequested = onDeepLinkRequested,
+                errorEventBus = errorEventBus,
                 repoUpdateEventBus = repoUpdateEventBus,
                 updateSettings = updateSettings,
                 epoch = epoch,
@@ -221,12 +238,12 @@ fun GitMobNavGraph(
                 .padding(top = 8.dp)
                 .windowInsetsPadding(WindowInsets.statusBars),
         )
-        LaunchedEffect(deepLinkDestination, epoch) {
-            if (deepLinkDestination == DeepLinkDestination.BrowserUnavailable && epoch.isCurrent) {
+        LaunchedEffect(pendingDeepLink, epoch) {
+            if (pendingDeepLink?.request == DeepLinkRequest.Direct(DeepLinkDestination.BrowserUnavailable) && epoch.isCurrent) {
                 // 等待提示宿主完成首帧订阅，避免无重放的事件在冷启动时丢失。
                 withFrameNanos { }
                 errorEventBus.emit(ApiError.UserVisible(R.string.deep_link_browser_unavailable), epoch)
-                onDeepLinkConsumed()
+                onDeepLinkConsumed(pendingDeepLink.id)
             }
         }
     }
@@ -245,33 +262,28 @@ private fun LoggedInApp(
     onLogout: () -> Unit,
     themePreference: ThemePreference,
     enablePredictiveBack: Boolean,
-    deepLinkDestination: DeepLinkDestination?,
-    onDeepLinkConsumed: () -> Unit,
+    pendingDeepLink: PendingDeepLink?,
+    onDeepLinkConsumed: (String) -> Unit,
+    onDeepLinkRequested: (DeepLinkRequest) -> Unit,
+    errorEventBus: ErrorEventBus,
     repoUpdateEventBus: RepoUpdateEventBus,
     epoch: AccountEpoch,
     updateSettings: (@Composable (AccountEpoch) -> Unit)?,
 ) {
     // Resolve before entryProvider installs each navigation entry's own store.
     val accountLibrary: AccountLibraryViewModel = hiltViewModel()
-    val externalRoute = deepLinkDestination?.let { destination ->
-        val visit = rememberSaveable(destination) { java.util.UUID.randomUUID().toString() }
-        remember(destination, visit) { destination.toRoute()?.withSearchVisit(visit) }
+    val externalRoute = remember(pendingDeepLink) {
+        pendingDeepLink?.let { it.request.toRoute()?.withSearchVisit(it.id) }
     }
     val navState = rememberGitMobNavState(startRoute = HomeRoute, initialRoute = externalRoute)
     val navigator = remember(navState, epoch) { GitMobNavigator(navState, epoch) }
     val activity = LocalActivity.current
     val uriHandler = LocalUriHandler.current
-    val openExternalUrl: (String) -> Unit = remember(uriHandler, epoch) {
+    val scope = rememberCoroutineScope()
+    val openExternalUrl: (String) -> Unit = remember(uriHandler, epoch, scope, errorEventBus) {
         { rawUrl ->
-            if (epoch.isCurrent) {
-            val target = if (rawUrl.startsWith("http://", ignoreCase = true) ||
-                rawUrl.startsWith("https://", ignoreCase = true)
-            ) {
-                rawUrl
-            } else {
-                "https://$rawUrl"
-            }
-            runCatching { uriHandler.openUri(target) }
+            if (epoch.isCurrent && !uriHandler.tryOpenExternalUrl(rawUrl)) {
+                scope.launch { errorEventBus.emit(ApiError.UserVisible(R.string.external_link_open_failed), epoch) }
             }
         }
     }
@@ -290,16 +302,17 @@ private fun LoggedInApp(
         }
     }
     val openDocumentExternal: (String) -> Unit = { url ->
-        val destination = DeepLinkRouter.parse(url.toUri())
-        if (destination == DeepLinkDestination.Unsupported) openExternalUrl(url)
-        else destination.toRoute()?.let { navigator.navigate(it.withSearchVisit(java.util.UUID.randomUUID().toString())) }
+        if (epoch.isCurrent) {
+            val request = DeepLinkRouter.parse(url.toUri())
+            if (request == DeepLinkRequest.Direct(DeepLinkDestination.Unsupported)) openExternalUrl(url)
+            else onDeepLinkRequested(request)
+        }
     }
-    LaunchedEffect(deepLinkDestination) {
-        val route = externalRoute ?: return@LaunchedEffect
-        if (!epoch.isCurrent) return@LaunchedEffect
-        // 外部入口直接进入；重复目标保持本次转场模式，过期账号不能消费待处理入口。
-        navigator.navigate(route, withoutAnimation = true)
-        onDeepLinkConsumed()
+    LaunchedEffect(pendingDeepLink) {
+        if (pendingDeepLink != null && epoch.isCurrent) {
+            externalRoute?.let { navigator.navigate(it, withoutAnimation = true) }
+            onDeepLinkConsumed(pendingDeepLink.id)
+        }
     }
 
     fun searchActions(clicks: GitMobEntryNavigation) = SearchResultActions(
@@ -477,7 +490,7 @@ private fun LoggedInApp(
         }
         entry<AboutRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
-            AboutScreen(onBack = { clicks.goBack() })
+            AboutScreen(onBack = { clicks.goBack() }, onOpenUrl = { url -> clicks.run { openExternalUrl(url) } })
         }
         entry<AppearanceRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
@@ -955,16 +968,15 @@ private fun LoggedInApp(
             RepoCodeScreen(
                 owner = route.owner,
                 name = route.name,
-                ref = route.ref,
-                path = route.path,
+                source = route.source,
                 permission = route.permission,
                 onBack = { clicks.goBack() },
                 onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
                 onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
-                onSearch = { isFork -> clicks.navigate(RepoCodeSearchRoute(route.owner, route.name, route.path, isFork)) },
-                onAdd = { clicks.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, null, route.permission)) },
-                onDirectoryClick = { path -> clicks.navigate(RepoCodeRoute(route.owner, route.name, route.ref, path, route.permission)) },
-                onFileClick = { path -> clicks.navigate(RepoFileDetailRoute(route.owner, route.name, route.ref, path, route.permission)) },
+                onSearch = { target, isFork -> clicks.navigate(RepoCodeSearchRoute(route.owner, route.name, target.path, isFork)) },
+                onAdd = { target -> clicks.navigate(RepoFileEditorRoute(route.owner, route.name, target.ref, null, route.permission)) },
+                onDirectoryClick = { target -> clicks.navigate(RepoCodeRoute(route.owner, route.name, target, route.permission)) },
+                onFileClick = { target -> clicks.navigate(RepoFileDetailRoute(route.owner, route.name, target, route.permission)) },
                 onCreateSyncPullRequest = { info ->
                     clicks.navigate(
                         RepoPullRequestEditorRoute(
@@ -991,13 +1003,12 @@ private fun LoggedInApp(
             RepoCommitsScreen(
                 owner = route.owner,
                 name = route.name,
-                ref = route.ref,
-                path = route.path,
+                source = route.source,
                 permission = route.permission,
                 onBack = { clicks.goBack() },
                 onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
                 onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
-                onCommitClick = { sha -> clicks.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, route.ref, route.permission)) },
+                onCommitClick = { sha, ref -> clicks.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, ref, route.permission)) },
                 onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
@@ -1019,23 +1030,22 @@ private fun LoggedInApp(
             val clicks = rememberEntryNavigation(navigator, route)
             TranslationHost {
                 RepoFileDetailScreen(
-                    onDirectoryFound = {
+                    onDirectoryFound = { target ->
                         if (epoch.isCurrent && navState.backStacks[navState.topLevelRoute]?.lastOrNull() == route) {
                             navigator.goBack()
-                            navigator.navigate(RepoCodeRoute(route.owner, route.name, route.ref, route.path, route.permission))
+                            navigator.navigate(RepoCodeRoute(route.owner, route.name, target, route.permission))
                         }
                     },
                     onDocumentLink = { document -> clicks.run { openDocument(document) } },
                     onDocumentExternalLink = { url -> clicks.run { openDocumentExternal(url) } },
                     owner = route.owner,
                     name = route.name,
-                    ref = route.ref,
-                    path = route.path,
+                    source = route.source,
                     onBack = { clicks.goBack() },
                     onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
                     onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
-                    onEdit = { clicks.navigate(RepoFileEditorRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
-                    onHistory = { clicks.navigate(RepoCommitsRoute(route.owner, route.name, route.ref, route.path, route.permission)) },
+                    onEdit = { target -> clicks.navigate(RepoFileEditorRoute(route.owner, route.name, target.ref, target.path, route.permission)) },
+                    onHistory = { target -> clicks.navigate(RepoCommitsRoute(route.owner, route.name, target, route.permission)) },
                 )
             }
         }

@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import com.gitmob.app.R
 import com.gitmob.app.core.error.UserVisibleException
+import com.gitmob.app.core.storage.readUri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -35,23 +36,23 @@ class ReleaseAssetFiles internal constructor(
         var temporary: File? = null
         try {
             val context = currentCoroutineContext()
-            val asset = runInterruptible(ioDispatcher) {
+            val asset = withContext(ioDispatcher) {
                 context.ensureActive()
                 val name = readFile {
-                    resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                        val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
+                    runInterruptible {
+                        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                            val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            if (column >= 0 && cursor.moveToFirst()) cursor.getString(column) else null
+                        }
                     }
                 }?.takeIf(String::isNotBlank) ?: "asset.bin"
                 context.ensureActive()
-                val type = readFile { resolver.getType(uri) }?.takeIf(String::isNotBlank) ?: "application/octet-stream"
+                val type = readFile { runInterruptible { resolver.getType(uri) } }?.takeIf(String::isNotBlank) ?: "application/octet-stream"
                 val file = writeFile { File.createTempFile("release-upload-", ".tmp", cacheDirectory) }
                 temporary = file
                 var length = 0L
-                val input = readFile { resolver.openInputStream(uri) }
-                    ?: throw UserVisibleException(R.string.release_asset_read_failed)
                 readFile {
-                    input.use { source ->
+                    resolver.readUri(uri, ioDispatcher) { source ->
                         writeFile {
                             file.outputStream().use { destination ->
                                 val buffer = ByteArray(64 * 1024)
@@ -65,7 +66,7 @@ class ReleaseAssetFiles internal constructor(
                                 }
                             }
                         }
-                    }
+                    } ?: throw UserVisibleException(R.string.release_asset_read_failed)
                 }
                 context.ensureActive()
                 PreparedReleaseAsset(file, name, type, length)
@@ -84,7 +85,7 @@ class ReleaseAssetFiles internal constructor(
         }
     }
 
-    private fun <T> readFile(block: () -> T): T = try { block() }
+    private inline fun <T> readFile(block: () -> T): T = try { block() }
     catch (_: IOException) { throw UserVisibleException(R.string.release_asset_read_failed) }
     catch (_: SecurityException) { throw UserVisibleException(R.string.release_asset_read_failed) }
 

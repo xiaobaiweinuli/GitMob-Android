@@ -48,6 +48,7 @@ class RepoGitCompareTest {
                 .okHttpClient(OkHttpClient())
                 .addHttpInterceptor(AuthHttpInterceptor(tokenProvider))
                 .build(),
+            io.mockk.mockk(),
         )
     }
 
@@ -176,8 +177,8 @@ class RepoGitCompareTest {
     fun `archived code tree has no write capabilities`() = runTest(accounts.context) {
         server.enqueue(MockResponse(body = """
             {"data":{"repository":{"id":"R1","isFork":true,"isArchived":true,"viewerPermission":"ADMIN",
-            "ref":{"name":"main","target":{"__typename":"Commit","oid":"sha"}},
-            "object":{"__typename":"Tree","entries":[]}}}}
+            "ref":{"name":"main","target":{"__typename":"Commit","oid":"sha","file":{"object":{"__typename":"Tree","entries":[]}}}},
+            "commit":null}}}
         """.trimIndent()))
 
         val tree = (repository.getCodeTree("viewer", "fork", "main") as ApiResult.Success).data

@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.ui.common.GitCommitRow
+import com.gitmob.app.data.model.RepoContentSource
 import com.gitmob.app.ui.common.RepositoryContextTitle
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,17 +45,16 @@ import com.gitmob.app.ui.common.RepositoryContextTitle
 fun RepoCommitsScreen(
     owner: String,
     name: String,
-    ref: String,
-    path: String?,
+    source: RepoContentSource,
     permission: RepoPermission?,
     onBack: () -> Unit,
     onOwnerClick: (String) -> Unit,
     onRepositoryClick: (String, String) -> Unit,
-    onCommitClick: (String) -> Unit,
+    onCommitClick: (String, String) -> Unit,
     onUserClick: (String) -> Unit,
     viewModel: RepoCommitsViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(owner, name, ref, path) { viewModel.init(owner, name, ref, path, permission) }
+    LaunchedEffect(owner, name, source) { viewModel.init(owner, name, source, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     Scaffold(
         topBar = {
@@ -63,7 +63,8 @@ fun RepoCommitsScreen(
                     RepositoryContextTitle(
                         owner = owner,
                         repository = name,
-                        pageTitle = stringResource(R.string.nav_commit_history, ref),
+                        pageTitle = state.target?.let { stringResource(R.string.nav_commit_history, it.ref) }
+                            ?: stringResource(R.string.repo_commits),
                         onOwnerClick = onOwnerClick,
                         onRepositoryClick = onRepositoryClick,
                     )
@@ -86,7 +87,7 @@ fun RepoCommitsScreen(
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     items(state.items, key = { it.oid }) {
                         commit ->
-                        GitCommitRow(commit, { onCommitClick(commit.oid) }, onAuthorClick = onUserClick)
+                        GitCommitRow(commit, { state.target?.let { onCommitClick(commit.oid, it.ref) } }, onAuthorClick = onUserClick)
                         HorizontalDivider()
                     }
                     if (state.hasNextPage) item(key = "more") { LaunchedEffect(state.items.size) { viewModel.loadMore() }; Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }

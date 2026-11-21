@@ -72,9 +72,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.RepoEntryType
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.model.RepoForkSyncInfo
 import com.gitmob.app.data.model.RepoForkSyncStatus
-import com.gitmob.app.core.storage.SafFileReader
+import com.gitmob.app.core.storage.SafSelection
 import com.gitmob.app.ui.common.RepositoryContextTitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -85,38 +87,33 @@ import java.io.IOException
 fun RepoCodeScreen(
     owner: String,
     name: String,
-    ref: String,
-    path: String,
+    source: RepoContentSource,
     permission: RepoPermission?,
     onBack: () -> Unit,
-    onSearch: (Boolean) -> Unit,
+    onSearch: (RepoLinkTarget, Boolean) -> Unit,
     onOwnerClick: (String) -> Unit,
     onRepositoryClick: (String, String) -> Unit,
-    onAdd: () -> Unit,
-    onDirectoryClick: (String) -> Unit,
-    onFileClick: (String) -> Unit,
+    onAdd: (RepoLinkTarget) -> Unit,
+    onDirectoryClick: (RepoLinkTarget) -> Unit,
+    onFileClick: (RepoLinkTarget) -> Unit,
     onCreateSyncPullRequest: (RepoForkSyncInfo) -> Unit,
     onExistingSyncPullRequest: (Int) -> Unit,
     viewModel: RepoCodeViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(owner, name, ref, path) { viewModel.init(owner, name, ref, path, permission) }
+    LaunchedEffect(owner, name, source) { viewModel.init(owner, name, source, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val target = state.target
     val context = LocalContext.current
     val uploadMessage = stringResource(R.string.repo_upload_commit)
     var addMenuExpanded by remember { mutableStateOf(false) }
-    var downloadMenuExpanded by remember(owner, name, ref, path) { mutableStateOf(false) }
-    var uploadError by remember { mutableStateOf<String?>(null) }
+    var downloadMenuExpanded by remember(owner, name, source) { mutableStateOf(false) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
-        runCatching { SafFileReader.readDocuments(context, uris) }
-            .onSuccess { viewModel.uploadFiles(it, uploadMessage) }
-            .onFailure { uploadError = it.message }
+        viewModel.uploadFiles(SafSelection.Documents(uris), uploadMessage)
     }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        runCatching { SafFileReader.readTree(context, uri) }
-            .onSuccess { viewModel.uploadFiles(it, uploadMessage) }
-            .onFailure { uploadError = it.message }
+        viewModel.uploadFiles(SafSelection.Tree(uri), uploadMessage)
     }
     val folderZipPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -142,7 +139,7 @@ fun RepoCodeScreen(
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    IconButton(onClick = { state.tree?.let { onSearch(it.isFork) } }, enabled = state.tree != null) {
+                    IconButton(onClick = { state.tree?.let { onSearch(RepoLinkTarget(it.ref, it.path), it.isFork) } }, enabled = state.tree != null) {
                         Icon(Icons.Default.Search, stringResource(R.string.repo_code_search))
                     }
                     if (state.tree?.isFork == true && state.tree?.isCommitSnapshot == false) {
@@ -150,15 +147,15 @@ fun RepoCodeScreen(
                             Icon(Icons.Default.Sync, stringResource(R.string.repo_sync_title))
                         }
                     }
-                    Box {
+                    if (target != null) Box {
                         IconButton(
                             onClick = {
-                                if (path.isBlank()) viewModel.downloadArchive() else downloadMenuExpanded = true
+                                if (target.path.isBlank()) viewModel.downloadArchive() else downloadMenuExpanded = true
                             },
                             enabled = !state.openingDownload && !state.isFolderExporting,
                         ) {
                             if (state.openingDownload) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.Download, stringResource(if (path.isBlank()) R.string.repo_download_archive else R.string.common_download))
+                            else Icon(Icons.Default.Download, stringResource(if (target.path.isBlank()) R.string.repo_download_archive else R.string.common_download))
                         }
                         DropdownMenu(expanded = downloadMenuExpanded, onDismissRequest = { downloadMenuExpanded = false }) {
                             DropdownMenuItem(
@@ -169,7 +166,7 @@ fun RepoCodeScreen(
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.repo_download_folder)) },
                                 leadingIcon = { Icon(Icons.Default.Folder, null) },
-                                onClick = { downloadMenuExpanded = false; folderZipPicker.launch(folderZipFileName(name, ref, path)) },
+                                onClick = { downloadMenuExpanded = false; folderZipPicker.launch(folderZipFileName(name, target.ref, target.path)) },
                             )
                         }
                     }
@@ -179,7 +176,7 @@ fun RepoCodeScreen(
                                 if (state.isUploading) CircularProgressIndicator() else Icon(Icons.Default.Add, stringResource(R.string.repo_add_file))
                             }
                             DropdownMenu(expanded = addMenuExpanded, onDismissRequest = { addMenuExpanded = false }) {
-                                DropdownMenuItem(text = { Text(stringResource(R.string.repo_add_file)) }, onClick = { addMenuExpanded = false; onAdd() })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.repo_add_file)) }, onClick = { addMenuExpanded = false; target?.let(onAdd) })
                                 DropdownMenuItem(text = { Text(stringResource(R.string.repo_upload_files)) }, onClick = { addMenuExpanded = false; filePicker.launch(arrayOf("*/*")) })
                                 DropdownMenuItem(text = { Text(stringResource(R.string.repo_upload_folder)) }, onClick = { addMenuExpanded = false; folderPicker.launch(null) })
                             }
@@ -192,7 +189,7 @@ fun RepoCodeScreen(
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            RepoCodeLocation(ref, path, onDirectoryClick)
+            if (target != null) RepoCodeLocation(target.ref, target.path) { onDirectoryClick(target.copy(path = it)) }
             HorizontalDivider()
             when {
                 state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -201,12 +198,13 @@ fun RepoCodeScreen(
                     TextButton(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) }
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
-                    if (path.isNotBlank()) item(key = "parent") {
+                    val location = requireNotNull(target)
+                    if (location.path.isNotBlank()) item(key = "parent") {
                         RepoCodeRow(
                             name = stringResource(R.string.repo_code_parent),
                             icon = Icons.Default.SubdirectoryArrowLeft,
                             directory = true,
-                            onClick = { onDirectoryClick(path.trimEnd('/').substringBeforeLast('/', "")) },
+                            onClick = { onDirectoryClick(location.copy(path = location.path.trimEnd('/').substringBeforeLast('/', ""))) },
                         )
                     }
                     items(state.tree!!.entries, key = { it.path }) { entry ->
@@ -217,7 +215,7 @@ fun RepoCodeScreen(
                             directory = directory,
                             size = entry.size?.takeIf { it >= 0 && !directory }?.let { Formatter.formatShortFileSize(context, it) },
                             showChevron = directory,
-                            onClick = { if (directory) onDirectoryClick(entry.path) else onFileClick(entry.path) },
+                            onClick = { if (directory) onDirectoryClick(location.copy(path = entry.path)) else onFileClick(location.copy(path = entry.path)) },
                         )
                     }
                     if (state.tree!!.entries.isEmpty()) item {
@@ -228,14 +226,6 @@ fun RepoCodeScreen(
                 }
             }
         }
-    }
-    uploadError?.let { message ->
-        AlertDialog(
-            onDismissRequest = { uploadError = null },
-            title = { Text(stringResource(R.string.common_load_failed)) },
-            text = { Text(message) },
-            confirmButton = { TextButton(onClick = { uploadError = null }) { Text(stringResource(R.string.common_cancel)) } },
-        )
     }
     if (state.isFolderExporting) {
         AlertDialog(

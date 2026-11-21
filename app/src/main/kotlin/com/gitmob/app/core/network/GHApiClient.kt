@@ -4,7 +4,6 @@ import com.gitmob.app.core.auth.AccessTokenProvider
 import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.error.UnauthorizedException
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -68,7 +67,7 @@ class GHApiClient @Inject constructor(
 
     /** 固定公共资源读取，不携带用户凭证，也不依赖账号会话。 */
     suspend inline fun <reified T> getPublic(path: String): T =
-        json.decodeFromString(readPublic(path))
+        json.decodeOnDefault(readPublic(path))
 
     @PublishedApi
     internal suspend fun readPublic(path: String): String {
@@ -94,13 +93,13 @@ class GHApiClient @Inject constructor(
         path: String,
         body: B,
         accept: String = DEFAULT_ACCEPT,
-    ): T = executeRest("POST", path, json.encodeToString(body), accept = accept)
+    ): T = executeRest("POST", path, json.encodeOnDefault(body), accept = accept)
 
     suspend inline fun <reified T, reified B> patch(
         path: String,
         body: B,
         accept: String = DEFAULT_ACCEPT,
-    ): T = executeRest("PATCH", path, json.encodeToString(body), accept = accept)
+    ): T = executeRest("PATCH", path, json.encodeOnDefault(body), accept = accept)
 
     /** 不需要请求体的 PATCH（比如"标记单条通知已读"这种纯动作型接口） */
     suspend inline fun <reified T> patchNoBody(path: String, accept: String = DEFAULT_ACCEPT): T =
@@ -110,7 +109,7 @@ class GHApiClient @Inject constructor(
         path: String,
         body: B,
         accept: String = DEFAULT_ACCEPT,
-    ): T = executeRest("PUT", path, json.encodeToString(body), accept = accept)
+    ): T = executeRest("PUT", path, json.encodeOnDefault(body), accept = accept)
 
     /** 不需要请求体的 PUT（比如"全部标记已读"这种纯动作型接口） */
     suspend inline fun <reified T> putNoBody(path: String, accept: String = DEFAULT_ACCEPT): T =
@@ -234,7 +233,7 @@ class GHApiClient @Inject constructor(
 
     /** Release assets retain the same authentication, REST headers, and cancellable transport. */
     suspend inline fun <reified T> uploadFile(url: String, contentType: String, file: File, length: Long, noinline progress: (Long, Long) -> Unit): T =
-        json.decodeFromString(readFileUpload(url, contentType, file, length, progress).decodeToString())
+        json.decodeOnDefault(readFileUpload(url, contentType, file, length, progress))
 
     @PublishedApi
     internal suspend fun readFileUpload(url: String, contentType: String, file: File, length: Long, progress: (Long, Long) -> Unit): ByteArray {
@@ -268,11 +267,12 @@ class GHApiClient @Inject constructor(
             @Suppress("UNCHECKED_CAST")
             return Unit as T
         }
-        return json.decodeFromString(bytes.decodeToString())
+        return json.decodeOnDefault(bytes)
     }
 
     suspend fun executeRestRaw(method: String, path: String, accept: String): String {
-        return readRest(method, path, body = null, accept = accept).decodeToString()
+        val bytes = readRest(method, path, body = null, accept = accept)
+        return withContext(Dispatchers.Default) { bytes.decodeToString() }
     }
 
     // executeRest（public inline）直接调用这个函数，同样必须至少 internal 才能过编译，

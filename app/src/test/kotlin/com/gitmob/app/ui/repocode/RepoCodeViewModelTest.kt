@@ -9,9 +9,12 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
-import com.gitmob.app.core.storage.SafFile
+import com.gitmob.app.core.storage.SafSelection
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkKind
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.model.RepoPendingFileChange
 import com.gitmob.app.data.model.RepoCodeTree
 import com.gitmob.app.data.model.ExistingRepoPullRequest
@@ -57,7 +60,7 @@ class RepoCodeViewModelTest {
             ApiResult.Success(expected)
         }
         val viewModel = RepoCodeViewModel(repository, mockk<RepoPullRequestRepository>(), ErrorEventBus(), mockk<ExternalDownloadLauncher>(), RepoUpdateEventBus(), accounts.session)
-        viewModel.init("o", "r", "main", "docs", RepoPermission.READ)
+        viewModel.init("o", "r", RepoLinkTarget("main", "docs"), RepoPermission.READ)
         advanceUntilIdle()
 
         var saved: ByteArray? = null
@@ -80,7 +83,7 @@ class RepoCodeViewModelTest {
             suspendCancellableCoroutine { }
         }
         val viewModel = RepoCodeViewModel(repository, mockk<RepoPullRequestRepository>(), ErrorEventBus(), mockk<ExternalDownloadLauncher>(), RepoUpdateEventBus(), accounts.session)
-        viewModel.init("o", "r", "main", "docs", RepoPermission.READ)
+        viewModel.init("o", "r", RepoLinkTarget("main", "docs"), RepoPermission.READ)
         advanceUntilIdle()
 
         var writerCalled = false
@@ -106,7 +109,7 @@ class RepoCodeViewModelTest {
         coEvery { repository.getCodeTree("o", "r", "main", "") } returns ApiResult.Success(tree().copy(path = ""))
         coEvery { repository.resolveArchiveDownloadUrl("o", "r", "main") } returns ApiResult.Success("https://example.test/archive.zip")
         val viewModel = RepoCodeViewModel(repository, mockk<RepoPullRequestRepository>(), ErrorEventBus(), launcher, RepoUpdateEventBus(), accounts.session)
-        viewModel.init("o", "r", "main", "", RepoPermission.READ)
+        viewModel.init("o", "r", RepoLinkTarget("main", ""), RepoPermission.READ)
         advanceUntilIdle()
 
         viewModel.downloadArchive()
@@ -127,7 +130,7 @@ class RepoCodeViewModelTest {
             ApiResult.Success(sync), ApiResult.Failure(ApiError.NetworkError),
         )
         val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
-        vm.init("viewer", "fork", "main", "", RepoPermission.WRITE)
+        vm.init("viewer", "fork", RepoLinkTarget("main", ""), RepoPermission.WRITE)
         vm.openSync()
         advanceUntilIdle()
         vm.showDiscardConfirmation(true)
@@ -156,7 +159,7 @@ class RepoCodeViewModelTest {
         coEvery { repository.forceAlignFork("viewer", "fork", sync) } returns
             ApiResult.Failure(ApiError.UserVisible(R.string.repo_sync_head_changed))
         val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
-        vm.init("viewer", "fork", "main", "", RepoPermission.WRITE)
+        vm.init("viewer", "fork", RepoLinkTarget("main", ""), RepoPermission.WRITE)
         vm.openSync()
         advanceUntilIdle()
         vm.showDiscardConfirmation(true)
@@ -197,7 +200,7 @@ class RepoCodeViewModelTest {
             pullRequests.findOpenPullRequest("viewer", "fork", "main", "upstream", "main")
         } returns ApiResult.Success(ExistingRepoPullRequest(12, "Sync", "https://example.test/pr/12"))
         val viewModel = RepoCodeViewModel(repository, pullRequests, ErrorEventBus(), mockk<ExternalDownloadLauncher>(), RepoUpdateEventBus(), accounts.session)
-        viewModel.init("viewer", "fork", "main", "", RepoPermission.WRITE)
+        viewModel.init("viewer", "fork", RepoLinkTarget("main", ""), RepoPermission.WRITE)
         advanceUntilIdle()
         viewModel.openSync()
         advanceUntilIdle()
@@ -473,17 +476,17 @@ class RepoCodeViewModelTest {
                 permission = RepoPermission.ADMIN, capabilities = RepoPermission.ADMIN.toCapabilities()),
         )
         val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
-        vm.init("o", "r", commit, "docs", RepoPermission.ADMIN)
+        vm.init("o", "r", RepoLinkTarget(commit, "docs"), RepoPermission.ADMIN)
         advanceUntilIdle()
         var uploaded = false
-        vm.uploadFiles(listOf(SafFile("guide.md", byteArrayOf(1))), "Upload") { uploaded = true }
+        vm.uploadFiles(SafSelection.Documents(emptyList()), "Upload") { uploaded = true }
         vm.openSync()
         advanceUntilIdle()
 
         assertFalse(uploaded)
         assertFalse(vm.state.value.isUploading)
         assertFalse(vm.state.value.isSyncDialogOpen)
-        coVerify(exactly = 0) { repository.createCommit(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repository.uploadFiles(any(), any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { repository.getForkSync(any(), any(), any()) }
         vm.viewModelScope.cancel()
     }
@@ -494,19 +497,67 @@ class RepoCodeViewModelTest {
         coEvery { repository.getCodeTree("o", "r", "feature/docs", "docs") } returns ApiResult.Success(
             tree().copy(ref = "feature/docs", permission = RepoPermission.ADMIN, capabilities = RepoPermission.ADMIN.toCapabilities()),
         )
-        val additions = listOf(RepoPendingFileChange.Addition("docs/guide.md", "AQ=="))
-        coEvery { repository.createCommit("o", "r", "feature/docs", "Upload", additions, emptyList(), "head") } returns ApiResult.Success(mockk())
+        val selection = SafSelection.Documents(emptyList())
+        coEvery { repository.uploadFiles("o", "r", "feature/docs", "docs", "head", selection, "Upload") } returns ApiResult.Success(mockk())
         val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
-        vm.init("o", "r", "feature/docs", "docs", RepoPermission.ADMIN)
+        vm.init("o", "r", RepoLinkTarget("feature/docs", "docs"), RepoPermission.ADMIN)
         advanceUntilIdle()
         var uploaded = false
-        vm.uploadFiles(listOf(SafFile("guide.md", byteArrayOf(1))), "Upload") { uploaded = true }
+        vm.uploadFiles(SafSelection.Documents(emptyList()), "Upload") { uploaded = true }
         advanceUntilIdle()
 
         assertTrue(uploaded)
         assertFalse(vm.state.value.isUploading)
-        coVerify(exactly = 1) { repository.createCommit("o", "r", "feature/docs", "Upload", additions, emptyList(), "head") }
+        coVerify(exactly = 1) { repository.uploadFiles("o", "r", "feature/docs", "docs", "head", selection, "Upload") }
         vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `busyStateCoversPreparationAndBlocksDuplicateSelections`() = runTest {
+        val repository = mockk<RepoGitRepository>()
+        coEvery { repository.getCodeTree("o", "r", "main", "docs") } returns ApiResult.Success(
+            tree().copy(permission = RepoPermission.ADMIN, capabilities = RepoPermission.ADMIN.toCapabilities()),
+        )
+        val prepared = CompletableDeferred<ApiResult<com.gitmob.app.data.model.RepoCommitSummary>>()
+        coEvery { repository.uploadFiles(any(), any(), any(), any(), any(), any(), any()) } coAnswers { prepared.await() }
+        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r", RepoLinkTarget("main", "docs"), RepoPermission.ADMIN)
+        advanceUntilIdle()
+        val selection = SafSelection.Documents(emptyList())
+        vm.uploadFiles(selection, "Upload")
+        assertTrue(vm.state.value.isUploading)
+        vm.uploadFiles(selection, "Duplicate")
+        coVerify(exactly = 1) { repository.uploadFiles(any(), any(), any(), any(), any(), any(), any()) }
+        prepared.complete(ApiResult.Failure(ApiError.UserVisible(R.string.repo_upload_too_large)))
+        advanceUntilIdle()
+        assertFalse(vm.state.value.isUploading)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `accountChangeCancelsPreparationAndClearsBusyWithoutSuccessCallback`() = runTest {
+        val repository = mockk<RepoGitRepository>()
+        coEvery { repository.getCodeTree("o", "r", "main", "docs") } returns ApiResult.Success(
+            tree().copy(permission = RepoPermission.ADMIN, capabilities = RepoPermission.ADMIN.toCapabilities()),
+        )
+        var cancelled = false
+        coEvery { repository.uploadFiles(any(), any(), any(), any(), any(), any(), any()) } coAnswers {
+            suspendCancellableCoroutine { continuation -> continuation.invokeOnCancellation { cancelled = true } }
+        }
+        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r", RepoLinkTarget("main", "docs"), RepoPermission.ADMIN)
+        advanceUntilIdle()
+        var uploaded = false
+        vm.uploadFiles(SafSelection.Documents(emptyList()), "Upload") { uploaded = true }
+        assertTrue(vm.state.value.isUploading)
+        accounts.session.replace(emptyList(), null)
+        advanceUntilIdle()
+        assertTrue(cancelled)
+        assertFalse(uploaded)
+        assertFalse(vm.state.value.isUploading)
+        vm.uploadFiles(SafSelection.Documents(emptyList()), "Late picker result")
+        assertFalse(vm.state.value.isUploading)
+        coVerify(exactly = 1) { repository.uploadFiles(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -519,7 +570,7 @@ class RepoCodeViewModelTest {
         val expected = byteArrayOf(1, 2, 3)
         coEvery { repository.createFolderZip("o", "r", commit, "docs", any()) } returns ApiResult.Success(expected)
         val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
-        vm.init("o", "r", commit, "docs", RepoPermission.READ)
+        vm.init("o", "r", RepoLinkTarget(commit, "docs"), RepoPermission.READ)
         advanceUntilIdle()
         var saved: ByteArray? = null
         vm.exportCurrentFolder { saved = it }
@@ -543,9 +594,42 @@ class RepoCodeViewModelTest {
         )
         coEvery { repository.getForkSync("viewer", "fork", "main") } returns ApiResult.Success(comparison)
         return RepoCodeViewModel(repository, pullRequests, ErrorEventBus(), mockk(), events, accounts.session).apply {
-            init("viewer", "fork", "main", "", permission)
+            init("viewer", "fork", RepoLinkTarget("main", ""), permission)
             openSync()
         }
+    }
+
+    @Test
+    fun `link failure retries before loading tree and upload uses resolved branch and directory`() = runTest {
+        val repository = mockk<RepoGitRepository>()
+        val source = RepoContentSource.Link(listOf("feature", "docs", "api"))
+        val target = RepoLinkTarget("feature/docs", "api")
+        coEvery { repository.resolveLink("o", "r", RepoLinkKind.DIRECTORY, source.refAndPath) } returnsMany listOf(
+            ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(target),
+        )
+        coEvery { repository.getCodeTree("o", "r", target.ref, target.path) } returns ApiResult.Success(
+            tree().copy(ref = target.ref, path = target.path, permission = RepoPermission.ADMIN, capabilities = RepoPermission.ADMIN.toCapabilities()),
+        )
+        val selection = SafSelection.Documents(emptyList())
+        coEvery { repository.uploadFiles("o", "r", target.ref, target.path, "head", selection, "Upload") } returns ApiResult.Failure(ApiError.NetworkError)
+        val vm = RepoCodeViewModel(repository, mockk(), ErrorEventBus(), mockk(), RepoUpdateEventBus(), accounts.session)
+        vm.init("o", "r", source, null)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.loadFailed)
+        assertFalse(vm.state.value.isLoading)
+        coVerify(exactly = 0) { repository.getCodeTree(any(), any(), any(), any()) }
+        vm.retry()
+        advanceUntilIdle()
+        assertEquals(target, vm.state.value.target)
+        assertFalse(vm.state.value.loadFailed)
+        vm.uploadFiles(selection, "Upload")
+        advanceUntilIdle()
+        coVerify(exactly = 1) { repository.uploadFiles("o", "r", target.ref, target.path, "head", selection, "Upload") }
+        vm.refresh()
+        advanceUntilIdle()
+        coVerify(exactly = 2) { repository.resolveLink(any(), any(), any(), any()) }
+        coVerify(exactly = 2) { repository.getCodeTree("o", "r", target.ref, target.path) }
+        vm.viewModelScope.cancel()
     }
 
     private fun tree() = RepoCodeTree(

@@ -16,9 +16,12 @@ import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.RepoCodeTree
 import com.gitmob.app.data.model.RepoForkSyncInfo
 import com.gitmob.app.data.model.RepoForkSyncStatus
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkKind
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.repository.RepoGitRepository
 import com.gitmob.app.data.repository.RepoPullRequestRepository
-import com.gitmob.app.core.storage.SafFile
+import com.gitmob.app.core.storage.SafSelection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,15 +30,16 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import java.util.Base64
 
 data class RepoCodeUiState(
+    val target: RepoLinkTarget? = null,
     val tree: RepoCodeTree? = null,
     val permission: RepoPermission = RepoPermission.NONE,
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
-    val isLoading: Boolean = false,
+    val isLoading: Boolean = true,
     val loadFailed: Boolean = false,
     val isUploading: Boolean = false,
     val isFolderExporting: Boolean = false,
@@ -65,17 +69,18 @@ class RepoCodeViewModel @Inject constructor(
 ) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoCodeUiState())
     val state: StateFlow<RepoCodeUiState> = _state.asStateFlow()
+    private var loadJob: Job? = null
     private var initialized = false
     private var owner = ""
     private var name = ""
-    private var ref = ""
-    private var path = ""
+    private lateinit var source: RepoContentSource
     private var folderExportJob: Job? = null
 
-    fun init(owner: String, name: String, ref: String, path: String, permission: RepoPermission?) {
+    fun init(owner: String, name: String, source: RepoContentSource, permission: RepoPermission?) {
         if (initialized) return
-        initialized = true; this.owner = owner; this.name = name; this.ref = ref; this.path = path
+        initialized = true; this.owner = owner; this.name = name; this.source = source
         permission?.let { _state.update { state -> state.copy(permission = it, capabilities = it.toCapabilities()) } }
+        _state.update { it.copy(target = source as? RepoLinkTarget) }
         observeCodeChanges()
         load()
     }
@@ -85,6 +90,7 @@ class RepoCodeViewModel @Inject constructor(
             repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.CodeChanged>()
                 .collect { event ->
+                    val (ref, path) = _state.value.target ?: return@collect
                     if (_state.value.tree?.isCommitSnapshot != true &&
                         event.owner == owner && event.name == name && event.ref == ref &&
                         (path.isBlank() || event.changedPaths.any { changed -> changed == path || changed.startsWith("$path/") })) {
@@ -95,9 +101,24 @@ class RepoCodeViewModel @Inject constructor(
     }
 
     fun load() {
-        viewModelScope.launch {
+        if (!accountEpoch.isCurrent) return
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, loadFailed = false) }
-            when (val result = repository.getCodeTree(owner, name, ref, path)) {
+            val target = _state.value.target ?: when (val source = source) {
+                is RepoLinkTarget -> source
+                is RepoContentSource.Link -> when (val result = repository.resolveLink(owner, name, RepoLinkKind.DIRECTORY, source.refAndPath).also { coroutineContext.ensureActive() }) {
+                    is ApiResult.Success -> result.data
+                    is ApiResult.Failure -> {
+                        _state.update { it.copy(isLoading = false, loadFailed = true) }
+                        errorEventBus.emit(result.error)
+                        return@launch
+                    }
+                }
+            }
+            _state.update { it.copy(target = target) }
+            val (ref, path) = target
+            when (val result = repository.getCodeTree(owner, name, ref, path).also { coroutineContext.ensureActive() }) {
                 is ApiResult.Success -> _state.update { it.copy(tree = result.data, permission = result.data.permission, capabilities = result.data.capabilities, isLoading = false) }
                 is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } }
             }
@@ -107,23 +128,33 @@ class RepoCodeViewModel @Inject constructor(
     fun retry() = load()
     fun refresh() = load()
 
-    fun uploadFiles(files: List<SafFile>, message: String, onDone: () -> Unit = {}) {
+    fun uploadFiles(selection: SafSelection, message: String, onDone: () -> Unit = {}) {
+        if (!accountEpoch.isCurrent) return
         val tree = _state.value.tree ?: return
         if (tree.isCommitSnapshot || _state.value.isUploading || tree.isArchived || !tree.capabilities.canPush || !tree.capabilities.canPushToProtectedBranch || tree.headOid.isBlank() || message.isBlank()) return
+        val targetOwner = owner
+        val targetName = name
+        val selected = when (selection) {
+            is SafSelection.Documents -> selection.copy(uris = selection.uris.toList())
+            is SafSelection.Tree -> selection
+        }
+        _state.update { it.copy(isUploading = true) }
         viewModelScope.launch {
-            _state.update { it.copy(isUploading = true) }
-            val prefix = tree.path.trim('/').takeIf { it.isNotBlank() }?.plus('/') ?: ""
-            val additions = files.map { file ->
-                com.gitmob.app.data.model.RepoPendingFileChange.Addition(prefix + file.relativePath, Base64.getEncoder().encodeToString(file.bytes))
-            }
-            when (val result = repository.createCommit(owner, name, tree.ref, message, additions, emptyList(), tree.headOid)) {
-                is ApiResult.Success -> { _state.update { it.copy(isUploading = false) }; load(); onDone() }
-                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isUploading = false) } }
+            try {
+                val result = repository.uploadFiles(targetOwner, targetName, tree.ref, tree.path, tree.headOid, selected, message)
+                if (!accountEpoch.isCurrent) return@launch
+                when (result) {
+                    is ApiResult.Success -> { load(); onDone() }
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                }
+            } finally {
+                _state.update { it.copy(isUploading = false) }
             }
         }
     }
 
     fun exportCurrentFolder(writeZip: suspend (ByteArray) -> Unit) {
+        val (ref, path) = _state.value.target ?: return
         if (folderExportJob?.isActive == true || _state.value.isFolderExporting) return
         folderExportJob = viewModelScope.launch {
             _state.update {
@@ -182,6 +213,7 @@ class RepoCodeViewModel @Inject constructor(
     }
 
     fun downloadArchive() {
+        val ref = _state.value.target?.ref ?: return
         if (_state.value.openingDownload) return
         viewModelScope.launch {
             _state.update { it.copy(openingDownload = true) }
@@ -309,6 +341,7 @@ class RepoCodeViewModel @Inject constructor(
     }
 
     private fun refreshSync() {
+        val ref = _state.value.target?.ref ?: return
         _state.update {
             it.copy(
                 isLoadingSync = true, syncInfo = null, showDiscardConfirmation = false,

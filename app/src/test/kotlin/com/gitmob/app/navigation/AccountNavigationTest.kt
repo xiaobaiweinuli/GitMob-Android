@@ -16,6 +16,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
@@ -52,6 +55,7 @@ import com.gitmob.app.data.model.RepoIssuePage
 import com.gitmob.app.data.repository.RepoIssueRepository
 import com.gitmob.app.ui.repoissues.RepoIssueEditorViewModel
 import com.gitmob.app.ui.repoissues.RepoIssueListViewModel
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.GistUpdateEventBus
@@ -70,6 +74,7 @@ import com.gitmob.app.data.model.GistSort
 import com.gitmob.app.data.model.GistVisibility
 import com.gitmob.app.data.model.GitHubAccount
 import com.gitmob.app.data.model.PagedStarredRepos
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.model.RepoFilters
 import com.gitmob.app.data.model.RepoList
 import com.gitmob.app.data.model.RepoListItem
@@ -94,6 +99,7 @@ import com.gitmob.app.ui.gist.GistCreateViewModel
 import com.gitmob.app.ui.gist.GistViewModel
 import com.gitmob.app.ui.home.HomeViewModel
 import com.gitmob.app.ui.login.LoginViewModel
+import com.gitmob.app.ui.repocode.RepoFileDetailViewModel
 import com.gitmob.app.ui.repos.ReposViewModel
 import com.gitmob.app.ui.repodetail.RepoDetailViewModel
 import com.gitmob.app.ui.settings.SettingsViewModel
@@ -112,6 +118,8 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.isActive
@@ -465,6 +473,197 @@ class AccountNavigationTest {
         assertEquals(1, fixture.consumedDeepLinks)
     }
 
+    private fun unresolvedRepositoryLink() = DeepLinkRequest.RepositoryContent(
+        "owner", "repo", com.gitmob.app.data.model.RepoLinkKind.FILE, listOf("feature", "docs", "guide.md"),
+    )
+
+    private val progress = SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)
+
+    private fun pressBack() {
+        composeRule.runOnUiThread { controller!!.get().onBackPressedDispatcher.onBackPressed() }
+        composeRule.waitForIdle()
+    }
+
+    @Test
+    fun `cold unresolved link immediately opens the file page and back creates Home`() {
+        coEvery { fixture.repoGit.resolveLink(any(), any(), any(), any()) } coAnswers { awaitCancellation() }
+        launch(request = unresolvedRepositoryLink())
+        composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+        composeRule.onNodeWithText(text(R.string.repo_file_content), substring = true).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.common_more)).assertDoesNotExist()
+        composeRule.onAllNodes(progress).assertCountEquals(1)
+        val file = fixture.model<RepoFileDetailViewModel>()
+        assertTrue(fixture.creations.none { it.model is HomeViewModel })
+        assertEquals(null, fixture.pendingDeepLink)
+        assertEquals(1, fixture.consumedDeepLinks)
+        pressBack()
+        assertTrue(fixture.creations.any { it.model is HomeViewModel })
+        assertTrue(fixture.creation(file).cleared)
+    }
+
+    @Test
+    fun `warm unresolved target survives recreation and back restores the previous page`() {
+        val response = CompletableDeferred<ApiResult<RepoLinkTarget>>()
+        coEvery { fixture.repoGit.resolveLink(any(), any(), any(), any()) } coAnswers {
+            withContext(NonCancellable) { response.await() }
+        }
+        launch()
+        tab(R.string.nav_tab_settings)
+        val settings = fixture.model<SettingsViewModel>()
+        composeRule.runOnIdle { fixture.pendingDeepLink = PendingDeepLink(unresolvedRepositoryLink()) }
+        composeRule.waitForIdle()
+        val file = fixture.model<RepoFileDetailViewModel>()
+        composeRule.runOnUiThread { controller!!.recreate() }
+        composeRule.waitForIdle()
+        assertSame(file, fixture.model<RepoFileDetailViewModel>())
+        composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+        composeRule.onAllNodes(progress).assertCountEquals(1)
+        composeRule.onNodeWithText(text(R.string.settings_about)).assertDoesNotExist()
+        coVerify(exactly = 1) { fixture.repoGit.resolveLink(any(), any(), any(), any()) }
+        pressBack()
+        composeRule.runOnIdle { response.complete(ApiResult.Success(RepoLinkTarget("feature/docs", "guide.md"))) }
+        composeRule.waitForIdle()
+        assertSame(settings, fixture.model<SettingsViewModel>())
+        assertFalse(fixture.creation(settings).cleared)
+        assertTrue(fixture.creation(file).cleared)
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertIsSelected()
+        composeRule.onAllNodes(progress).assertCountEquals(0)
+        coVerify(exactly = 0) { fixture.repoGit.getPathContent(any(), any(), any(), any()) }
+        assertEquals(null, fixture.pendingDeepLink)
+        assertEquals(1, fixture.consumedDeepLinks)
+    }
+
+    @Test
+    fun `cold resolution failure retries in the same file page`() {
+        coEvery { fixture.repoGit.resolveLink(any(), any(), any(), any()) } returnsMany listOf(
+            ApiResult.Failure(ApiError.NetworkError),
+            ApiResult.Success(RepoLinkTarget("feature/docs", "guide.md")),
+        )
+        coEvery { fixture.repoGit.getPathContent(any(), any(), any(), any()) } coAnswers { awaitCancellation() }
+        launch(request = unresolvedRepositoryLink())
+        val file = fixture.model<RepoFileDetailViewModel>()
+        composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+        composeRule.onNodeWithText(text(R.string.common_load_failed)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.common_retry)).performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodes(progress).assertCountEquals(1)
+        composeRule.onNodeWithText("guide.md", substring = true).assertIsDisplayed()
+        assertSame(file, fixture.model<RepoFileDetailViewModel>())
+        coVerify(exactly = 2) { fixture.repoGit.resolveLink(any(), any(), any(), any()) }
+        coVerify(exactly = 1) { fixture.repoGit.getPathContent("owner", "repo", "feature/docs", "guide.md") }
+        assertEquals(1, fixture.consumedDeepLinks)
+        assertTrue(fixture.creations.none { it.model is HomeViewModel })
+    }
+
+    @Test
+    fun `warm resolution failure uses page retry and the global error banner`() {
+        val response = CompletableDeferred<ApiResult<RepoLinkTarget>>()
+        var attempts = 0
+        coEvery { fixture.repoGit.resolveLink(any(), any(), any(), any()) } coAnswers {
+            if (++attempts == 1) response.await() else awaitCancellation()
+        }
+        launch()
+        tab(R.string.nav_tab_settings)
+        val settings = fixture.model<SettingsViewModel>()
+        composeRule.runOnIdle { fixture.pendingDeepLink = PendingDeepLink(unresolvedRepositoryLink()) }
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnIdle { response.complete(ApiResult.Failure(ApiError.NetworkError)) }
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(text(R.string.error_network)).assertIsDisplayed()
+        composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+        composeRule.onAllNodes(progress).assertCountEquals(0)
+        composeRule.onNodeWithText(text(R.string.common_retry)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.settings_about)).assertDoesNotExist()
+        assertSame(settings, fixture.model<SettingsViewModel>())
+        assertEquals(null, fixture.pendingDeepLink)
+        assertEquals(1, fixture.consumedDeepLinks)
+        composeRule.mainClock.autoAdvance = true
+        composeRule.onNodeWithText(text(R.string.common_retry)).performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodes(progress).assertCountEquals(1)
+        assertEquals(2, attempts)
+        pressBack()
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertIsSelected()
+    }
+
+    @Test
+    fun `toolbar back from resolving file page ignores a late response`() {
+        val response = CompletableDeferred<ApiResult<RepoLinkTarget>>()
+        coEvery { fixture.repoGit.resolveLink(any(), any(), any(), any()) } coAnswers {
+            withContext(NonCancellable) { response.await() }
+        }
+        launch()
+        tab(R.string.nav_tab_settings)
+        composeRule.runOnIdle { fixture.pendingDeepLink = PendingDeepLink(unresolvedRepositoryLink()) }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { response.complete(ApiResult.Success(RepoLinkTarget("feature/docs", "guide.md"))) }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(text(R.string.settings_about)).assertIsDisplayed()
+        composeRule.onAllNodes(progress).assertCountEquals(0)
+        coVerify(exactly = 0) { fixture.repoGit.getPathContent(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `newer direct link stays visible when the previous file resolves`() {
+        val response = CompletableDeferred<ApiResult<RepoLinkTarget>>()
+        coEvery { fixture.repoGit.resolveLink(any(), any(), any(), any()) } coAnswers { response.await() }
+        coEvery { fixture.repoGit.getPathContent(any(), any(), any(), any()) } coAnswers { awaitCancellation() }
+        launch(request = unresolvedRepositoryLink())
+        composeRule.runOnIdle { fixture.deepLinkDestination = DeepLinkDestination.GistDetail("abc123") }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { response.complete(ApiResult.Success(RepoLinkTarget("feature/docs", "guide.md"))) }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Deep link abc123")[0].assertIsDisplayed()
+        assertEquals(2, fixture.consumedDeepLinks)
+        assertTrue(fixture.creations.none { it.model is HomeViewModel })
+    }
+
+    @Test
+    fun `cold resolved link loads the exact target without creating Home`() {
+        val response = CompletableDeferred<ApiResult<RepoLinkTarget>>()
+        coEvery { fixture.repoGit.resolveLink(any(), any(), any(), any()) } coAnswers { response.await() }
+        coEvery { fixture.repoGit.getPathContent(any(), any(), any(), any()) } coAnswers { awaitCancellation() }
+        launch(request = unresolvedRepositoryLink())
+        val file = fixture.model<RepoFileDetailViewModel>()
+        composeRule.onAllNodes(progress).assertCountEquals(1)
+        composeRule.runOnIdle { response.complete(ApiResult.Success(RepoLinkTarget("feature/docs", "guide.md"))) }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("guide.md", substring = true).assertIsDisplayed()
+        assertSame(file, fixture.model<RepoFileDetailViewModel>())
+        coVerify(exactly = 1) { fixture.repoGit.getPathContent("owner", "repo", "feature/docs", "guide.md") }
+        assertTrue(fixture.creations.none { it.model is HomeViewModel })
+        assertEquals(null, fixture.pendingDeepLink)
+        assertEquals(1, fixture.consumedDeepLinks)
+    }
+
+    @Test
+    fun `warm resolved link stays in the file page and back restores the original page`() {
+        val response = CompletableDeferred<ApiResult<RepoLinkTarget>>()
+        coEvery { fixture.repoGit.resolveLink(any(), any(), any(), any()) } coAnswers { response.await() }
+        coEvery { fixture.repoGit.getPathContent(any(), any(), any(), any()) } coAnswers { awaitCancellation() }
+        launch()
+        tab(R.string.nav_tab_settings)
+        val settings = fixture.model<SettingsViewModel>()
+        composeRule.runOnIdle { fixture.pendingDeepLink = PendingDeepLink(unresolvedRepositoryLink()) }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(text(R.string.settings_about)).assertDoesNotExist()
+        val file = fixture.model<RepoFileDetailViewModel>()
+        composeRule.runOnIdle { response.complete(ApiResult.Success(RepoLinkTarget("feature/docs", "guide.md"))) }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("guide.md", substring = true).assertIsDisplayed()
+        assertSame(file, fixture.model<RepoFileDetailViewModel>())
+        coVerify(exactly = 1) { fixture.repoGit.getPathContent("owner", "repo", "feature/docs", "guide.md") }
+        assertEquals(null, fixture.pendingDeepLink)
+        assertEquals(1, fixture.consumedDeepLinks)
+        pressBack()
+        assertSame(settings, fixture.model<SettingsViewModel>())
+        composeRule.onNode(hasText(text(R.string.nav_tab_settings)) and tabRole).assertIsSelected()
+    }
+
     @Test
     fun `cold repository link displays the target without creating Home`() {
         launch(DeepLinkDestination.RepoOverview("tanmoumou252", "skill_toolkit"))
@@ -694,8 +893,9 @@ class AccountNavigationTest {
         composeRule.waitForIdle()
     }
 
-    private fun launch(destination: DeepLinkDestination? = null, loggedIn: Boolean = true) {
+    private fun launch(destination: DeepLinkDestination? = null, loggedIn: Boolean = true, request: DeepLinkRequest? = null) {
         fixture.deepLinkDestination = destination
+        if (request != null) fixture.pendingDeepLink = PendingDeepLink(request)
         if (loggedIn) accounts.session.replace(listOf(fixture.alpha, fixture.beta), fixture.alpha.key)
         else accounts.session.replace(emptyList(), null)
         HostActivity.fixture = fixture
@@ -760,8 +960,9 @@ class AccountNavigationTest {
                     val state by data.session.state.collectAsStateWithLifecycle()
                     GitMobNavGraph(
                         state, data.session, data.errors, data.repoEvents, ThemePreference(), false,
-                        deepLinkDestination = data.deepLinkDestination,
-                        onDeepLinkConsumed = { data.deepLinkDestination = null; data.consumedDeepLinks++ },
+                        pendingDeepLink = data.pendingDeepLink,
+                        onDeepLinkConsumed = { id -> if (data.pendingDeepLink?.id == id) { data.pendingDeepLink = null; data.consumedDeepLinks++ } },
+                        onDeepLinkRequested = { data.pendingDeepLink = PendingDeepLink(it) },
                     )
                 }
             }
@@ -777,9 +978,13 @@ internal class NavigationFixture(val session: AccountSession) {
     private val repos = mockk<RepoRepository>(relaxUnitFun = true)
     private val issues = mockk<RepoIssueRepository>()
     val repoDetails = mockk<RepoDetailRepository>()
+    val repoGit = mockk<com.gitmob.app.data.repository.RepoGitRepository>()
     val gists = mockk<GistRepository>()
     val translations = mockk<TranslationRepository>()
-    var deepLinkDestination by mutableStateOf<DeepLinkDestination?>(null)
+    var pendingDeepLink by mutableStateOf<PendingDeepLink?>(null)
+    var deepLinkDestination: DeepLinkDestination?
+        get() = (pendingDeepLink?.request as? DeepLinkRequest.Direct)?.destination
+        set(value) { pendingDeepLink = value?.let { PendingDeepLink(DeepLinkRequest.Direct(it)) } }
     var consumedDeepLinks = 0
     private val stars = mockk<StarRepository>()
     val auth = mockk<AuthRepository>()
@@ -859,6 +1064,9 @@ internal class NavigationFixture(val session: AccountSession) {
     private val factories: Map<Class<*>, (SavedStateHandle) -> AccountViewModel> = mapOf(
         com.gitmob.app.ui.library.AccountLibraryViewModel::class.java to { com.gitmob.app.ui.library.AccountLibraryViewModel(libraryRepositoryStub(), errors, session) },
         com.gitmob.app.ui.library.LibraryViewModel::class.java to { com.gitmob.app.ui.library.LibraryViewModel(libraryRepositoryStub(), errors, session) },
+        RepoFileDetailViewModel::class.java to {
+            RepoFileDetailViewModel(repoGit, CommonMarkRenderer(), errors, mockk(), repoEvents, session, mockk(relaxUnitFun = true))
+        },
         HomeViewModel::class.java to { HomeViewModel(users, errors, repoEvents, session) },
         RepoDetailViewModel::class.java to {
             RepoDetailViewModel(repoDetails, repos, stars, mockk(), repoEvents, errors, mockk(),

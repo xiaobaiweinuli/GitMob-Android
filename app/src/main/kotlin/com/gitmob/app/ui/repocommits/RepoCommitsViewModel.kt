@@ -11,6 +11,9 @@ import com.gitmob.app.core.permission.RepoCapabilities
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.RepoCommitSummary
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkKind
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.repository.RepoGitRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -19,16 +22,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class RepoCommitsUiState(
+    val target: RepoLinkTarget? = null,
     val items: List<RepoCommitSummary> = emptyList(),
     val totalCount: Int = 0,
     val permission: RepoPermission = RepoPermission.NONE,
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
     val isArchived: Boolean = false,
-    val isLoading: Boolean = false,
+    val isLoading: Boolean = true,
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
     val hasNextPage: Boolean = false,
@@ -45,17 +50,17 @@ class RepoCommitsViewModel @Inject constructor(
     val state: StateFlow<RepoCommitsUiState> = _state.asStateFlow()
     private var owner = ""
     private var name = ""
-    private var ref = ""
-    private var path: String? = null
+    private lateinit var source: RepoContentSource
     private var cursor: String? = null
     private var initialized = false
     private var loadJob: Job? = null
 
-    fun init(owner: String, name: String, ref: String, path: String?, permission: RepoPermission?) {
+    fun init(owner: String, name: String, source: RepoContentSource, permission: RepoPermission?) {
         if (initialized) return
         initialized = true
-        this.owner = owner; this.name = name; this.ref = ref; this.path = path
+        this.owner = owner; this.name = name; this.source = source
         permission?.let { _state.update { state -> state.copy(permission = it, capabilities = it.toCapabilities()) } }
+        _state.update { it.copy(target = source as? RepoLinkTarget) }
         observeCodeChanges()
         load()
     }
@@ -65,8 +70,9 @@ class RepoCommitsViewModel @Inject constructor(
             repoUpdateEventBus.eventsFor(accountEpoch)
                 .filterIsInstance<RepoUpdateEvent.CodeChanged>()
                 .collect { event ->
+                    val (ref, path) = _state.value.target ?: return@collect
                     if (event.owner == owner && event.name == name && event.ref == ref &&
-                        (path.isNullOrBlank() || event.changedPaths.any { changed -> changed == path || changed.startsWith("$path/") })) {
+                        (path.isEmpty() || event.changedPaths.any { changed -> changed == path || changed.startsWith("$path/") })) {
                         load()
                     }
                 }
@@ -74,10 +80,24 @@ class RepoCommitsViewModel @Inject constructor(
     }
 
     fun load() {
+        if (!accountEpoch.isCurrent) return
         loadJob?.cancel(); cursor = null
         loadJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true, loadFailed = false) }
-            when (val result = repository.getCommitHistory(owner, name, ref, path)) {
+            val target = _state.value.target ?: when (val source = source) {
+                is RepoLinkTarget -> source
+                is RepoContentSource.Link -> when (val result = repository.resolveLink(owner, name, RepoLinkKind.HISTORY, source.refAndPath).also { coroutineContext.ensureActive() }) {
+                    is ApiResult.Success -> result.data
+                    is ApiResult.Failure -> {
+                        _state.update { it.copy(isLoading = false, loadFailed = true) }
+                        errorEventBus.emit(result.error)
+                        return@launch
+                    }
+                }
+            }
+            _state.update { it.copy(target = target) }
+            val (ref, path) = target
+            when (val result = repository.getCommitHistory(owner, name, ref, path.ifEmpty { null }).also { coroutineContext.ensureActive() }) {
                 is ApiResult.Success -> _state.update { it.copy(items = result.data.items, totalCount = result.data.totalCount, permission = result.data.permission, capabilities = result.data.capabilities, isArchived = result.data.isArchived, hasNextPage = result.data.hasNextPage, isLoading = false) }.also { cursor = result.data.endCursor }
                 is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoading = false, loadFailed = true) } }
             }
@@ -88,11 +108,12 @@ class RepoCommitsViewModel @Inject constructor(
     fun retry() = load()
 
     fun loadMore() {
+        val (ref, path) = _state.value.target ?: return
         val current = _state.value
         if (current.isLoadingMore || !current.hasNextPage) return
         viewModelScope.launch {
             _state.update { it.copy(isLoadingMore = true) }
-            when (val result = repository.getCommitHistory(owner, name, ref, path, cursor)) {
+            when (val result = repository.getCommitHistory(owner, name, ref, path.ifEmpty { null }, cursor)) {
                 is ApiResult.Success -> { cursor = result.data.endCursor; _state.update { it.copy(items = it.items + result.data.items, totalCount = result.data.totalCount, hasNextPage = result.data.hasNextPage, isLoadingMore = false) } }
                 is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isLoadingMore = false) } }
             }

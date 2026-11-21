@@ -1,6 +1,11 @@
 package com.gitmob.app.navigation
 
 import com.gitmob.app.data.model.SearchCategory
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkTarget
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import com.gitmob.app.data.model.RepoLinkKind
 import android.net.Uri
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -19,7 +24,7 @@ import org.robolectric.annotation.Config
 class DeepLinkRouterTest {
 
     @Test fun repositoryLinksReachNativePagesWithOneDecodedQuery() {
-        fun route(path: String) = DeepLinkRouter.parse(Uri.parse("https://github.com/$path")).toRoute()
+        fun route(path: String) = direct(Uri.parse("https://github.com/$path")).toRoute()
         val owner = "xiaobaiweinuli"
         val repo = "GitMob-Android"
         assertEquals(RepoIssuesRoute(owner, repo, initialQuery = "is:issue state:open 发布"),
@@ -37,7 +42,7 @@ class DeepLinkRouterTest {
     }
 
     @Test fun globalCategoryLinksPreserveScopeAndEmptyQuery() {
-        fun route(path: String) = DeepLinkRouter.parse(Uri.parse("https://github.com/$path")).toRoute()
+        fun route(path: String) = direct(Uri.parse("https://github.com/$path")).toRoute()
         assertEquals(SearchRoute(query = "label:bug x"), route("search?q=label%3Abug+x"))
         for ((type, category) in listOf("users" to SearchCategory.USERS, "organizations" to SearchCategory.ORGANIZATIONS,
             "repositories" to SearchCategory.REPOSITORIES)) {
@@ -51,9 +56,9 @@ class DeepLinkRouterTest {
     @Test
     fun `设备授权地址交给浏览器普通仓库仍正常解析`() {
         for (url in listOf("https://github.com/login/device", "https://github.com/login/device/?source=app#code")) {
-            assertEquals(DeepLinkDestination.Unsupported, DeepLinkRouter.parse(Uri.parse(url)))
+            assertEquals(DeepLinkDestination.Unsupported, direct(Uri.parse(url)))
         }
-        assertEquals(DeepLinkDestination.RepoOverview("owner", "device"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/device")))
+        assertEquals(DeepLinkDestination.RepoOverview("owner", "device"), direct(Uri.parse("https://github.com/owner/device")))
     }
 
     @Test
@@ -65,9 +70,9 @@ class DeepLinkRouterTest {
             "https://gist.github.com/std-microblock/$id/?ref=share#file-main-kt",
             "HTTPS://GIST.GITHUB.COM/$id",
         ).forEach { url ->
-            assertEquals(url, DeepLinkDestination.GistDetail(id), DeepLinkRouter.parse(Uri.parse(url)))
+            assertEquals(url, DeepLinkDestination.GistDetail(id), direct(Uri.parse(url)))
         }
-        assertEquals(DeepLinkDestination.GistDetail("AbC123"), DeepLinkRouter.parse(Uri.parse("https://gist.github.com/AbC123")))
+        assertEquals(DeepLinkDestination.GistDetail("AbC123"), direct(Uri.parse("https://gist.github.com/AbC123")))
     }
 
     @Test
@@ -76,7 +81,7 @@ class DeepLinkRouterTest {
             "owner/abc/raw", "owner/abc/archive.zip", "owner/abc/download", "owner/abc/def123",
         ).forEach { path ->
             val url = "https://gist.github.com/$path"
-            assertEquals(url, DeepLinkDestination.Unsupported, DeepLinkRouter.parse(Uri.parse(url)))
+            assertEquals(url, DeepLinkDestination.Unsupported, direct(Uri.parse(url)))
         }
     }
 
@@ -86,98 +91,91 @@ class DeepLinkRouterTest {
             "https://gist.github.com.example.com/owner/abc", "https://gist.githubusercontent.com/owner/abc/raw/file",
             "ftp://github.com/owner/repo", "intent://gist.github.com/owner/abc", "/owner/repo",
         ).forEach { url ->
-            assertEquals(url, DeepLinkDestination.Unsupported, DeepLinkRouter.parse(Uri.parse(url)))
+            assertEquals(url, DeepLinkDestination.Unsupported, direct(Uri.parse(url)))
         }
-        assertEquals(DeepLinkDestination.RepoOverview("owner", "repo"), DeepLinkRouter.parse(Uri.parse("http://github.com/owner/repo")))
+        assertEquals(DeepLinkDestination.RepoOverview("owner", "repo"), direct(Uri.parse("http://github.com/owner/repo")))
     }
 
 
-    @Test
-    fun `解析仓库blob路径为文件查看目的地`() {
-        val uri = Uri.parse("https://github.com/owner/repo/blob/main/src/App.kt")
-        assertEquals(
-            DeepLinkDestination.FileView("owner", "repo", "main", "src/App.kt"),
-            DeepLinkRouter.parse(uri),
-        )
-    }
-
-    @Test
-    fun `解析仓库tree路径保留目录`() {
-        assertEquals(
-            DeepLinkDestination.DirView("owner", "repo", "main", "docs/api"),
-            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/tree/main/docs/api")),
-        )
-    }
-
-    @Test
-    fun `提交版本的文件和目录深链接保留SHA和路径`() {
+    @Test fun contentLinksPreserveUnresolvedSegmentsIncludingSlashBranches() {
+        fun request(path: String) = DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/$path"))
+        assertEquals(DeepLinkRequest.RepositoryContent("owner", "repo", RepoLinkKind.FILE, listOf("feature", "docs", "src", "App.kt")),
+            request("blob/feature/docs/src/App.kt"))
+        assertEquals(DeepLinkRequest.RepositoryContent("owner", "repo", RepoLinkKind.DIRECTORY, listOf("feature/docs", "api")),
+            request("tree/feature%2Fdocs/api"))
+        assertEquals(DeepLinkRequest.RepositoryContent("owner", "repo", RepoLinkKind.HISTORY, listOf("feature", "docs", "src")),
+            request("commits/feature/docs/src"))
         val commit = "a".repeat(40)
-        assertEquals(
-            DeepLinkDestination.FileView("owner", "repo", commit, "docs/guide.md"),
-            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/blob/$commit/docs/guide.md")),
-        )
-        assertEquals(
-            DeepLinkDestination.DirView("owner", "repo", commit, "docs/api"),
-            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/tree/$commit/docs/api")),
-        )
-        assertEquals(
-            DeepLinkDestination.DirView("owner", "repo", commit, ""),
-            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/tree/$commit")),
-        )
+        assertEquals(DeepLinkRequest.RepositoryContent("owner", "repo", RepoLinkKind.FILE, listOf(commit, "docs", "guide.md")),
+            request("blob/$commit/docs/guide.md"))
+        assertEquals(DeepLinkRequest.RepositoryContent("owner", "repo", RepoLinkKind.DIRECTORY, listOf(commit)),
+            request("tree/$commit"))
+        assertEquals(DeepLinkRequest.Direct(DeepLinkDestination.Unsupported), request("blob/main"))
     }
 
-    @Test
-    fun `解析提交和提交历史路径`() {
-        assertEquals(
-            DeepLinkDestination.CommitDetail("owner", "repo", "abcdef1"),
-            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/commit/abcdef1")),
-        )
-        assertEquals(
-            DeepLinkDestination.CommitList("owner", "repo", "main", "src"),
-            DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/commits/main/src")),
-        )
+    @Test fun contentLinksOpenExistingPagesWithSerializableSources() {
+        val source = RepoContentSource.Link(listOf("feature", "docs", "api"))
+        val file = DeepLinkRequest.RepositoryContent("owner", "repo", RepoLinkKind.FILE, source.refAndPath).toRoute()
+        val directory = DeepLinkRequest.RepositoryContent("owner", "repo", RepoLinkKind.DIRECTORY, source.refAndPath).toRoute()
+        val history = DeepLinkRequest.RepositoryContent("owner", "repo", RepoLinkKind.HISTORY, source.refAndPath).toRoute()
+        assertEquals(RepoFileDetailRoute("owner", "repo", source), file)
+        assertEquals(RepoCodeRoute("owner", "repo", source), directory)
+        assertEquals(RepoCommitsRoute("owner", "repo", source), history)
+        assertEquals(file, Json.decodeFromString<RepoFileDetailRoute>(Json.encodeToString(file as RepoFileDetailRoute)))
+        assertEquals(directory, Json.decodeFromString<RepoCodeRoute>(Json.encodeToString(directory as RepoCodeRoute)))
+        assertEquals(history, Json.decodeFromString<RepoCommitsRoute>(Json.encodeToString(history as RepoCommitsRoute)))
+        val known = RepoFileDetailRoute("owner", "repo", "feature/docs", "api/guide.md")
+        assertEquals(RepoLinkTarget("feature/docs", "api/guide.md"), known.source)
+        assertEquals(known, Json.decodeFromString<RepoFileDetailRoute>(Json.encodeToString(known)))
     }
+
+    @Test fun commitDetailsAreAlreadyUnambiguous() {
+        assertEquals(DeepLinkDestination.CommitDetail("owner", "repo", "abcdef1"),
+            direct(Uri.parse("https://github.com/owner/repo/commit/abcdef1")))
+    }
+
+    private fun direct(uri: Uri): DeepLinkDestination = (DeepLinkRouter.parse(uri) as DeepLinkRequest.Direct).destination
 
     @Test
     fun `orgs前缀路径解析为Profile目的地`() {
         val uri = Uri.parse("https://github.com/orgs/github")
-        assertEquals(DeepLinkDestination.Profile("github"), DeepLinkRouter.parse(uri))
+        assertEquals(DeepLinkDestination.Profile("github"), direct(uri))
     }
 
     @Test
     fun `单段路径解析为Profile目的地`() {
         val uri = Uri.parse("https://github.com/torvalds")
-        assertEquals(DeepLinkDestination.Profile("torvalds"), DeepLinkRouter.parse(uri))
+        assertEquals(DeepLinkDestination.Profile("torvalds"), direct(uri))
     }
 
     @Test
     fun `issues详情页解析出编号`() {
         val uri = Uri.parse("https://github.com/owner/repo/issues/42")
-        assertEquals(DeepLinkDestination.IssueDetail("owner", "repo", 42), DeepLinkRouter.parse(uri))
+        assertEquals(DeepLinkDestination.IssueDetail("owner", "repo", 42), direct(uri))
     }
 
     @Test
     fun `issues列表页无编号`() {
         val uri = Uri.parse("https://github.com/owner/repo/issues")
-        assertEquals(DeepLinkDestination.IssueList("owner", "repo"), DeepLinkRouter.parse(uri))
+        assertEquals(DeepLinkDestination.IssueList("owner", "repo"), direct(uri))
     }
 
     @Test
     fun `pulls列表和pull详情分别解析`() {
-        assertEquals(DeepLinkDestination.PullRequestList("owner", "repo"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/pulls")))
-        assertEquals(DeepLinkDestination.PullRequestDetail("owner", "repo", 7), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/pull/7")))
+        assertEquals(DeepLinkDestination.PullRequestList("owner", "repo"), direct(Uri.parse("https://github.com/owner/repo/pulls")))
+        assertEquals(DeepLinkDestination.PullRequestDetail("owner", "repo", 7), direct(Uri.parse("https://github.com/owner/repo/pull/7")))
     }
 
     @Test
     fun `actions列表和运行详情分别解析`() {
-        assertEquals(DeepLinkDestination.Actions("owner", "repo"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/actions")))
-        assertEquals(DeepLinkDestination.WorkflowRun("owner", "repo", 123L), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/actions/runs/123")))
+        assertEquals(DeepLinkDestination.Actions("owner", "repo"), direct(Uri.parse("https://github.com/owner/repo/actions")))
+        assertEquals(DeepLinkDestination.WorkflowRun("owner", "repo", 123L), direct(Uri.parse("https://github.com/owner/repo/actions/runs/123")))
     }
 
     @Test
     fun `发行版和贡献者链接解析`() {
-        assertEquals(DeepLinkDestination.ReleaseList("owner", "repo"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/releases")))
-        assertEquals(DeepLinkDestination.ReleaseDetail("owner", "repo", "v1.0.0"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/releases/tag/v1.0.0")))
-        assertEquals(DeepLinkDestination.Contributors("owner", "repo"), DeepLinkRouter.parse(Uri.parse("https://github.com/owner/repo/graphs/contributors")))
+        assertEquals(DeepLinkDestination.ReleaseList("owner", "repo"), direct(Uri.parse("https://github.com/owner/repo/releases")))
+        assertEquals(DeepLinkDestination.ReleaseDetail("owner", "repo", "v1.0.0"), direct(Uri.parse("https://github.com/owner/repo/releases/tag/v1.0.0")))
+        assertEquals(DeepLinkDestination.Contributors("owner", "repo"), direct(Uri.parse("https://github.com/owner/repo/graphs/contributors")))
     }
 }

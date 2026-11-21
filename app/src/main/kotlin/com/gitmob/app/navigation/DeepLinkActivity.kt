@@ -8,26 +8,26 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import com.gitmob.app.MainActivity
 
-const val EXTRA_DEEP_LINK_DESTINATION = "extra_deep_link_destination"
+const val EXTRA_DEEP_LINK_REQUEST = "extra_deep_link_request"
 
 /** 接收 GitHub / Gist 外部链接，解析后转交主界面；系统是否直接打开由链接设置决定。 */
 class DeepLinkActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val uri = intent?.data
-        val destination = uri?.let { DeepLinkRouter.parse(it) } ?: DeepLinkDestination.Unsupported
-        if (destination == DeepLinkDestination.Unsupported) {
-            if (uri != null && !tryOpenBrowser(uri)) openMain(DeepLinkDestination.BrowserUnavailable)
+        val destination = uri?.let { DeepLinkRouter.parse(it) } ?: DeepLinkRequest.Direct(DeepLinkDestination.Unsupported)
+        if (destination == DeepLinkRequest.Direct(DeepLinkDestination.Unsupported)) {
+            if (uri != null && !tryOpenBrowser(uri)) openMain(DeepLinkRequest.Direct(DeepLinkDestination.BrowserUnavailable))
         } else {
             openMain(destination)
         }
         finish()
     }
 
-    private fun openMain(destination: DeepLinkDestination) {
+    private fun openMain(destination: DeepLinkRequest) {
         startActivity(
             Intent(this, MainActivity::class.java).apply {
-                putExtra(EXTRA_DEEP_LINK_DESTINATION, destination)
+                putExtra(EXTRA_DEEP_LINK_REQUEST, destination)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             },
         )

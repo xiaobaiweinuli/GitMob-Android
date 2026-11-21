@@ -39,7 +39,7 @@ class GitHubIdentityClient @Inject constructor(
             response.body.string()
         }
         val user = try {
-            json.decodeFromString<IdentityResponse>(text)
+            json.decodeOnDefault<IdentityResponse>(text)
         } catch (_: SerializationException) {
             throw UserVisibleException(R.string.auth_response_invalid)
         }

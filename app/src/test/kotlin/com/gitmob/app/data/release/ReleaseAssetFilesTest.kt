@@ -1,6 +1,7 @@
 package com.gitmob.app.data.release
 
 import android.content.ContentResolver
+import android.content.res.AssetFileDescriptor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -12,6 +13,9 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import com.gitmob.app.testutil.BlockingInputStream
+import com.gitmob.app.testutil.asAssetInputStream
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
@@ -29,12 +33,14 @@ import org.robolectric.annotation.Config
 class ReleaseAssetFilesTest {
     @get:Rule val folder = TemporaryFolder()
     private val resolver = mockk<ContentResolver>()
+    private val descriptor = mockk<AssetFileDescriptor>(relaxed = true)
     private val uri = Uri.parse("content://files/document/7")
 
     @Before fun metadata() {
+        every { resolver.openAssetFileDescriptor(uri, "r", any()) } returns descriptor
         every { resolver.query(uri, any(), null, null, null) } answers { MatrixCursor(arrayOf(OpenableColumns.DISPLAY_NAME)).apply { addRow(arrayOf("asset.zip")) } }
         every { resolver.getType(uri) } returns "application/zip"
-        every { resolver.openInputStream(uri) } answers { ByteArrayInputStream(byteArrayOf(1, 2, 3)) }
+        every { descriptor.createInputStream() } answers { ByteArrayInputStream(byteArrayOf(1, 2, 3)).asAssetInputStream() }
     }
 
     @Test fun metadataAndReadsRunOnIoAndUnknownLengthIsCountedInBoundedChunks() = runTest {
@@ -45,7 +51,7 @@ class ReleaseAssetFilesTest {
             var closed = false
             var biggestRead = 0
             val size = 4 * 1024 * 1024 + 17
-            every { resolver.openInputStream(uri) } answers {
+            every { descriptor.createInputStream() } answers {
                 threads += Thread.currentThread().name
                 object : InputStream() {
                     var remaining = size
@@ -59,7 +65,7 @@ class ReleaseAssetFilesTest {
                         return count
                     }
                     override fun close() { closed = true }
-                }
+                }.asAssetInputStream()
             }
             val files = ReleaseAssetFiles(resolver, folder.root, io)
             lateinit var copy: File
@@ -109,11 +115,11 @@ class ReleaseAssetFilesTest {
         val cancelled = Job(coroutineContext[Job])
         var closed = false
         var reads = 0
-        every { resolver.openInputStream(uri) } returns object : InputStream() {
+        every { descriptor.createInputStream() } returns object : InputStream() {
             override fun read(): Int = error("Chunked reads required")
             override fun read(bytes: ByteArray, offset: Int, length: Int): Int { reads++; cancelled.cancel(); return length }
             override fun close() { closed = true }
-        }
+        }.asAssetInputStream()
         val files = ReleaseAssetFiles(resolver, folder.root, StandardTestDispatcher(testScheduler))
         var used = false
         val error = runCatching { withContext(cancelled) { files.withPreparedAsset(uri) { used = true } } }.exceptionOrNull()
@@ -124,8 +130,29 @@ class ReleaseAssetFilesTest {
         assertTrue(folder.root.listFiles()!!.isEmpty())
     }
 
+    @Test fun cancellationOfProviderIgnoringInterruptsClosesSourceAndDeletesPartialCopy() = runBlocking {
+        val source = BlockingInputStream(ignoreInterrupts = true)
+        every { descriptor.createInputStream() } returns source.asAssetInputStream()
+        var used = false
+        val task = launch(Dispatchers.Default) {
+            ReleaseAssetFiles(resolver, folder.root).withPreparedAsset(uri) { used = true }
+        }
+        try {
+            assertTrue(source.reading.await(5, TimeUnit.SECONDS))
+            assertEquals(1, folder.root.listFiles()!!.size)
+            task.cancel()
+            withTimeout(5_000) { task.join() }
+            assertTrue(source.closed.get())
+            assertFalse(used)
+            assertTrue(folder.root.listFiles()!!.isEmpty())
+        } finally {
+            source.close()
+            task.cancelAndJoin()
+        }
+    }
+
     @Test fun expiredPermissionIsReadableFailureAndLeavesNoCopy() = runTest {
-        every { resolver.openInputStream(uri) } throws SecurityException("expired")
+        every { descriptor.createInputStream() } throws SecurityException("expired")
         val files = ReleaseAssetFiles(resolver, folder.root, StandardTestDispatcher(testScheduler))
         val error = runCatching { files.withPreparedAsset(uri) { error("must not upload") } }.exceptionOrNull()
         assertEquals(R.string.release_asset_read_failed, (error as UserVisibleException).messageRes)
@@ -133,12 +160,12 @@ class ReleaseAssetFilesTest {
     }
 
     @Test fun sourceReadFailureAndNullStreamAreReportedAsFileErrors() = runTest {
-        every { resolver.openInputStream(uri) } returns object : InputStream() { override fun read(): Int = throw IOException("read failed") }
+        every { descriptor.createInputStream() } returns object : InputStream() { override fun read(): Int = throw IOException("read failed") }.asAssetInputStream()
         val files = ReleaseAssetFiles(resolver, folder.root, StandardTestDispatcher(testScheduler))
         var error = runCatching { files.withPreparedAsset(uri) { } }.exceptionOrNull()
         assertEquals(R.string.release_asset_read_failed, (error as UserVisibleException).messageRes)
         assertTrue(folder.root.listFiles()!!.isEmpty())
-        every { resolver.openInputStream(uri) } returns null
+        every { resolver.openAssetFileDescriptor(uri, "r", any()) } returns null
         error = runCatching { files.withPreparedAsset(uri) { } }.exceptionOrNull()
         assertEquals(R.string.release_asset_read_failed, (error as UserVisibleException).messageRes)
         assertTrue(folder.root.listFiles()!!.isEmpty())
@@ -148,13 +175,13 @@ class ReleaseAssetFilesTest {
         val files = ReleaseAssetFiles(resolver, File(folder.root, "missing/directory"), StandardTestDispatcher(testScheduler))
         val error = runCatching { files.withPreparedAsset(uri) { error("must not upload") } }.exceptionOrNull()
         assertEquals(R.string.release_asset_storage_failed, (error as UserVisibleException).messageRes)
-        verify(exactly = 0) { resolver.openInputStream(any()) }
+        verify(exactly = 0) { resolver.openAssetFileDescriptor(any(), "r", any()) }
     }
 
     @Test fun missingMetadataAndEmptyContentHaveSafeDefaults() = runTest {
         every { resolver.query(uri, any(), null, null, null) } returns null
         every { resolver.getType(uri) } returns null
-        every { resolver.openInputStream(uri) } returns ByteArrayInputStream(byteArrayOf())
+        every { descriptor.createInputStream() } returns ByteArrayInputStream(byteArrayOf()).asAssetInputStream()
         val files = ReleaseAssetFiles(resolver, folder.root, StandardTestDispatcher(testScheduler))
         files.withPreparedAsset(uri) {
             assertEquals("asset.bin", it.name)
@@ -165,9 +192,9 @@ class ReleaseAssetFilesTest {
     }
 
     @Test fun sourceCloseFailureUsesFileErrorAndStillCleansCopy() = runTest {
-        every { resolver.openInputStream(uri) } returns object : ByteArrayInputStream(byteArrayOf(1)) {
+        every { descriptor.createInputStream() } returns object : ByteArrayInputStream(byteArrayOf(1)) {
             override fun close() { throw IOException("close failed") }
-        }
+        }.asAssetInputStream()
         val files = ReleaseAssetFiles(resolver, folder.root, StandardTestDispatcher(testScheduler))
         val error = runCatching { files.withPreparedAsset(uri) { error("must not upload") } }.exceptionOrNull()
         assertEquals(R.string.release_asset_read_failed, (error as UserVisibleException).messageRes)

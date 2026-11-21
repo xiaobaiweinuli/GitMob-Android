@@ -5,6 +5,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.network.USER_AGENT
+import com.gitmob.app.core.network.decodeOnDefault
 import com.gitmob.app.core.network.readCancellable
 import com.gitmob.app.data.model.AccountAuthMethod
 import kotlinx.serialization.SerialName
@@ -48,8 +49,8 @@ class GitHubOAuthClient @Inject constructor(
         )),
     )
 
-    private inline fun <reified T> decode(text: String): T = try {
-        json.decodeFromString(text)
+    private suspend inline fun <reified T> decode(text: String): T = try {
+        json.decodeOnDefault(text)
     } catch (_: SerializationException) {
         // 解码异常可能包含响应片段；凭据响应不能进入日志。
         throw UserVisibleException(R.string.auth_response_invalid)

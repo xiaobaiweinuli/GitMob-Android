@@ -1071,4 +1071,13 @@
     <string name="repo_fork_rejected">GitHub rejected the request. Check the name, target permissions and fork restrictions.</string>
     <string name="repo_fork_submitting">Submitting the creation request. Acceptance has not been confirmed yet…</string>
     <string name="repo_fork_no_create_permission">You cannot create repositories in this organization, but you can find and open existing forks.</string>
+    <string name="repo_upload_too_many_files">Select at most 100 files</string>
+    <string name="repo_upload_too_large">Selected files must total no more than 20 MiB</string>
+    <string name="repo_upload_invalid_path">A selected file has an invalid path</string>
+    <string name="repo_upload_duplicate_path">Selected files contain duplicate paths</string>
+    <string name="repo_upload_read_failed">Unable to read the selected files or folder</string>
+    <string name="repo_upload_empty">No files to upload in the selection</string>
+    <string name="external_link_open_failed">Unable to open this link. Install or enable an app that can handle it.</string>
+    <string name="deep_link_ref_not_found">The branch or tag in this link could not be found</string>
+    <string name="deep_link_history_unsupported">Commit history is not supported for this reference</string>
 </resources>

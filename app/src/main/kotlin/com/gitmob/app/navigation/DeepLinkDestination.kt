@@ -1,6 +1,7 @@
 package com.gitmob.app.navigation
 
 import android.net.Uri
+import com.gitmob.app.data.model.RepoLinkKind
 import com.gitmob.app.data.model.SearchCategory
 import com.gitmob.app.data.repository.unquotedSearchTokens
 import java.io.Serializable
@@ -35,7 +36,29 @@ sealed class DeepLinkDestination : Serializable {
 }
 
 object DeepLinkRouter {
-    fun parse(uri: Uri): DeepLinkDestination {
+    fun parse(uri: Uri): DeepLinkRequest {
+        val segments = uri.pathSegments
+        if ((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) &&
+            uri.host.equals("github.com", true) && segments.size >= 4 && segments[0] !in setOf("orgs", "search")
+        ) {
+            val kind = when (segments[2]) {
+                "blob" -> RepoLinkKind.FILE
+                "tree" -> RepoLinkKind.DIRECTORY
+                "commits" -> RepoLinkKind.HISTORY
+                else -> null
+            }
+            if (kind != null) {
+                val tail = segments.drop(3)
+                if (kind == RepoLinkKind.FILE && tail.size < 2) {
+                    return DeepLinkRequest.Direct(DeepLinkDestination.Unsupported)
+                }
+                return DeepLinkRequest.RepositoryContent(segments[0], segments[1], kind, tail)
+            }
+        }
+        return DeepLinkRequest.Direct(parseDirect(uri))
+    }
+
+    private fun parseDirect(uri: Uri): DeepLinkDestination {
         if (!uri.scheme.equals("https", ignoreCase = true) &&
             !uri.scheme.equals("http", ignoreCase = true)
         ) return DeepLinkDestination.Unsupported
@@ -87,24 +110,9 @@ object DeepLinkRouter {
         }
 
         return when (segments.getOrNull(2)) {
-            "blob" -> {
-                val ref = segments.getOrNull(3) ?: return DeepLinkDestination.Unsupported
-                val path = segments.drop(4).joinToString("/")
-                DeepLinkDestination.FileView(owner, repo, ref, path)
-            }
-            "tree" -> {
-                val ref = segments.getOrNull(3) ?: return DeepLinkDestination.Unsupported
-                val path = segments.drop(4).joinToString("/")
-                DeepLinkDestination.DirView(owner, repo, ref, path)
-            }
             "commit" -> {
                 val sha = segments.getOrNull(3) ?: return DeepLinkDestination.Unsupported
                 DeepLinkDestination.CommitDetail(owner, repo, sha)
-            }
-            "commits" -> {
-                val ref = segments.getOrNull(3) ?: return DeepLinkDestination.Unsupported
-                val path = segments.drop(4).joinToString("/").ifBlank { null }
-                DeepLinkDestination.CommitList(owner, repo, ref, path)
             }
             "issues" -> {
                 val number = segments.getOrNull(3)?.toIntOrNull()

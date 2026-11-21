@@ -6,11 +6,18 @@ import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.network.GHApiClient
+import com.gitmob.app.core.storage.SafFileReader
+import com.gitmob.app.core.storage.SafSelection
+import kotlinx.coroutines.Dispatchers
+import java.util.Base64
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.executeAsApiResult
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
+import com.gitmob.app.graphql.RepoLinkRefsQuery
+import com.gitmob.app.graphql.RepoLinkCommitQuery
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.graphql.CommitParentQuery
 import com.gitmob.app.graphql.CreateCommitOnBranchMutation
 import com.gitmob.app.graphql.ForceAlignForkMutation
@@ -21,6 +28,7 @@ import com.gitmob.app.graphql.RepoFileContentQuery
 import com.gitmob.app.graphql.RepoForkSyncQuery
 import com.gitmob.app.graphql.fragment.CommitFields
 import com.gitmob.app.graphql.fragment.CommitWithParentsFields
+import com.gitmob.app.graphql.fragment.RepoTreeCommitFields
 import com.gitmob.app.graphql.type.CommitMessage
 import com.gitmob.app.graphql.type.CommittableBranch
 import com.gitmob.app.graphql.type.CreateCommitOnBranchInput
@@ -53,7 +61,46 @@ import javax.inject.Singleton
 class RepoGitRepository @Inject constructor(
     private val api: GHApiClient,
     private val apolloClient: ApolloClient,
+    private val fileReader: SafFileReader,
 ) {
+
+    /** Resolve against exact refs, never against a truncated page of branch names. */
+    suspend fun resolveLink(owner: String, name: String, kind: RepoLinkKind, refAndPath: List<String>): ApiResult<RepoLinkTarget> {
+        if (refAndPath.isEmpty() || (kind == RepoLinkKind.FILE && refAndPath.size < 2)) {
+            return ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_ref_not_found))
+        }
+        val first = refAndPath.first()
+        if (first.matches(Regex("[0-9a-fA-F]{40}"))) {
+            return if (kind == RepoLinkKind.HISTORY) {
+                ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_history_unsupported))
+            } else {
+                ApiResult.Success(RepoLinkTarget(first, refAndPath.drop(1).joinToString("/")))
+            }
+        }
+        val longest = refAndPath.size - if (kind == RepoLinkKind.FILE) 1 else 0
+        for (boundary in longest downTo 1) {
+            coroutineContext.ensureActive()
+            val candidate = refAndPath.take(boundary).joinToString("/")
+            val path = refAndPath.drop(boundary).joinToString("/")
+            val result = apolloClient.query(RepoLinkRefsQuery(owner, name, "refs/heads/$candidate", "refs/tags/$candidate")).executeAsApiResult()
+            if (result is ApiResult.Failure) return result
+            val repository = (result as ApiResult.Success).data.repository
+                ?: return ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_ref_not_found))
+            if (repository.branch?.target?.__typename == "Commit") {
+                return ApiResult.Success(RepoLinkTarget(candidate, path))
+            }
+            if (repository.tag != null) {
+                if (kind == RepoLinkKind.HISTORY) return ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_history_unsupported))
+                // Peel annotated tags to a commit; only branches may enter writable code pages.
+                val commit = apolloClient.query(RepoLinkCommitQuery(owner, name, "refs/tags/$candidate^{commit}")).executeAsApiResult()
+                if (commit is ApiResult.Failure) return commit
+                val oid = (commit as ApiResult.Success).data.repository?.`object`?.onCommit?.oid
+                    ?: return ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_ref_not_found))
+                return ApiResult.Success(RepoLinkTarget(oid, path))
+            }
+        }
+        return ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_ref_not_found))
+    }
 
     /** REST commit comparison. Pagination is deliberately hidden in this repository API. */
     suspend fun compare(
@@ -216,21 +263,20 @@ class RepoGitRepository @Inject constructor(
     }
 
     suspend fun getCodeTree(owner: String, name: String, ref: String, path: String = ""): ApiResult<RepoCodeTree> {
-        val expression = if (path.isBlank()) "$ref:" else "$ref:$path"
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
         return when (val result = apolloClient.query(
-            RepoCodeTreeQuery(owner, name, qualifiedRef, ref, expression),
+            RepoCodeTreeQuery(owner, name, qualifiedRef, ref, path),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 val repository = result.data.repository ?: error("Repository not found")
-                val tree = repository.`object`?.onTree ?: error("Tree not found")
                 val repositoryRef = repository.ref
-                val head = if (repositoryRef != null) {
-                    repositoryRef.target?.oid ?: error("Branch head not found")
+                val commit = if (repositoryRef != null) {
+                    repositoryRef.target?.repoTreeCommitFields
                 } else {
-                    repository.commit?.onCommit?.oid ?: error("Commit not found")
-                }
+                    repository.commit?.repoTreeCommitFields
+                } ?: error("Commit not found")
+                val tree = commit.file?.`object`?.onTree ?: error("Tree not found")
                 val permission = permission(repository.viewerPermission?.rawValue)
                 RepoCodeTree(
                     repositoryId = repository.id,
@@ -239,7 +285,7 @@ class RepoGitRepository @Inject constructor(
                     isArchived = repository.isArchived,
                     isFork = repository.isFork,
                     ref = repositoryRef?.name ?: ref,
-                    headOid = head,
+                    headOid = commit.oid,
                     path = path,
                     entries = tree.entries.orEmpty().filterNotNull().map(::toTreeEntry),
                     isCommitSnapshot = repositoryRef == null,
@@ -254,26 +300,25 @@ class RepoGitRepository @Inject constructor(
             is ApiResult.Success -> safeCall { result.data as? RepoFileContent ?: error("File not found") }
         }
 
-    /** The existing object query identifies both files and directories without a second lookup. */
+    /** Content and HEAD are read from the same branch commit or immutable snapshot. */
     suspend fun getPathContent(owner: String, name: String, ref: String, path: String): ApiResult<RepoPathContent> {
         require(path.isNotBlank()) { "File path is empty" }
-        val expression = "$ref:$path"
         val qualifiedRef = if (ref.startsWith("refs/")) ref else "refs/heads/$ref"
         return when (val result = apolloClient.query(
-            RepoFileContentQuery(owner, name, qualifiedRef, ref, expression),
+            RepoFileContentQuery(owner, name, qualifiedRef, ref, path),
         ).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
                 val repository = result.data.repository ?: error("Repository not found")
-                val target = repository.`object` ?: error("File not found")
+                val repositoryRef = repository.ref
+                val commit = if (repositoryRef != null) {
+                    repositoryRef.target?.repoFileCommitFields
+                } else {
+                    repository.commit?.repoFileCommitFields
+                } ?: error("Commit not found")
+                val target = commit.file?.`object` ?: error("File not found")
                 if (target.__typename == "Tree") return@safeCall RepoPathContent.Directory
                 val blob = target.onBlob ?: error("File not found")
-                val repositoryRef = repository.ref
-                val head = if (repositoryRef != null) {
-                    repositoryRef.target?.oid ?: error("Branch head not found")
-                } else {
-                    repository.commit?.onCommit?.oid ?: error("Commit not found")
-                }
                 val permission = permission(repository.viewerPermission?.rawValue)
                 RepoFileContent(
                     repositoryId = repository.id,
@@ -281,7 +326,7 @@ class RepoGitRepository @Inject constructor(
                     capabilities = permission.toCapabilities(),
                     isArchived = repository.isArchived,
                     ref = repositoryRef?.name ?: ref,
-                    headOid = head,
+                    headOid = commit.oid,
                     path = path,
                     oid = blob.oid,
                     byteSize = blob.byteSize.toLong(),
@@ -466,6 +511,31 @@ class RepoGitRepository @Inject constructor(
         output.toByteArray()
     }
 
+    suspend fun uploadFiles(
+        owner: String,
+        name: String,
+        ref: String,
+        path: String,
+        expectedHeadOid: String,
+        selection: SafSelection,
+        message: String,
+    ): ApiResult<RepoCommitSummary> {
+        val prepared = safeCall {
+            val additions = mutableListOf<RepoPendingFileChange.Addition>()
+            val prefix = path.trim('/').takeIf { it.isNotBlank() }?.plus('/') ?: ""
+            fileReader.readEach(selection) { file ->
+                additions += withContext(Dispatchers.Default) {
+                    RepoPendingFileChange.Addition(prefix + file.relativePath, Base64.getEncoder().encodeToString(file.bytes))
+                }
+            }
+            additions
+        }
+        return when (prepared) {
+            is ApiResult.Failure -> prepared
+            is ApiResult.Success -> createCommit(owner, name, ref, message, prepared.data, emptyList(), expectedHeadOid)
+        }
+    }
+
     suspend fun createCommit(
         owner: String,
         name: String,
@@ -500,7 +570,7 @@ class RepoGitRepository @Inject constructor(
 
     private fun permission(value: String?): RepoPermission = value?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() } ?: RepoPermission.NONE
 
-    private fun toTreeEntry(node: RepoCodeTreeQuery.Entry) = RepoTreeEntry(
+    private fun toTreeEntry(node: RepoTreeCommitFields.Entry) = RepoTreeEntry(
         name = node.name,
         path = node.path ?: node.name,
         type = when (node.type.uppercase()) {

@@ -24,6 +24,9 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.core.permission.toCapabilities
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkKind
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.model.ExistingRepoPullRequest
 import com.gitmob.app.data.model.RepoEntryType
 import com.gitmob.app.data.model.RepoTreeEntry
@@ -209,8 +212,8 @@ class RepoCodeScreenTest {
 
     @Test
     fun `commit directory allows browsing but hides write and sync actions`() {
-        var openedDirectory: String? = null
-        var openedFile: String? = null
+        var openedDirectory: RepoLinkTarget? = null
+        var openedFile: RepoLinkTarget? = null
         render(
             ref = "a".repeat(40), snapshot = true, permission = RepoPermission.ADMIN,
             entries = listOf(
@@ -225,8 +228,8 @@ class RepoCodeScreenTest {
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_download_archive)).assertIsDisplayed()
         composeRule.onNodeWithText("docs").performClick()
         composeRule.onNodeWithText("README.md").performClick()
-        assertEquals("docs", openedDirectory)
-        assertEquals("README.md", openedFile)
+        assertEquals(RepoLinkTarget("a".repeat(40), "docs"), openedDirectory)
+        assertEquals(RepoLinkTarget("a".repeat(40), "README.md"), openedFile)
     }
 
     @Test
@@ -256,14 +259,14 @@ class RepoCodeScreenTest {
 
     @Test
     fun `subdirectory breadcrumbs and parent navigate without changing the page title`() {
-        var target: String? = null
+        var target: RepoLinkTarget? = null
         render(path = "src/main", onDirectoryClick = { target = it })
         node(R.string.repo_code_parent).performClick()
-        assertEquals("src", target)
+        assertEquals(RepoLinkTarget("main", "src"), target)
         node(R.string.repo_code_root).performClick()
-        assertEquals("", target)
+        assertEquals(RepoLinkTarget("main", ""), target)
         composeRule.onNodeWithText("src").performClick()
-        assertEquals("src", target)
+        assertEquals(RepoLinkTarget("main", "src"), target)
         composeRule.onNodeWithText(" · " + context.getString(R.string.repo_code)).assertIsDisplayed()
     }
 
@@ -337,6 +340,33 @@ class RepoCodeScreenTest {
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_sync_title)).performClick()
     }
 
+    @Test
+    fun `resolved directory actions preserve the slash branch and current path`() {
+        val source = RepoContentSource.Link(listOf("feature", "docs", "api"))
+        val target = RepoLinkTarget("feature/docs", "api")
+        coEvery { repository.resolveLink("viewer", "fork", RepoLinkKind.DIRECTORY, source.refAndPath) } returns ApiResult.Success(target)
+        var directory: RepoLinkTarget? = null
+        var file: RepoLinkTarget? = null
+        var added: RepoLinkTarget? = null
+        render(
+            ref = target.ref, path = target.path, source = source, permission = RepoPermission.ADMIN,
+            entries = listOf(
+                RepoTreeEntry("examples", "api/examples", RepoEntryType.DIRECTORY, "tree", null, null, null),
+                RepoTreeEntry("guide.md", "api/guide.md", RepoEntryType.FILE, "blob", 12, ".md", null),
+            ),
+            onAdd = { added = it }, onDirectoryClick = { directory = it }, onFileClick = { file = it },
+        )
+        composeRule.onNodeWithText("examples").performClick()
+        composeRule.onNodeWithText("guide.md").performClick()
+        assertEquals(target.copy(path = "api/examples"), directory)
+        assertEquals(target.copy(path = "api/guide.md"), file)
+        node(R.string.repo_code_parent).performClick()
+        assertEquals(target.copy(path = ""), directory)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.repo_add_file)).performClick()
+        node(R.string.repo_add_file).performClick()
+        assertEquals(target, added)
+    }
+
     private fun render(
         archived: Boolean = false,
         ref: String = "main",
@@ -347,8 +377,10 @@ class RepoCodeScreenTest {
         isFork: Boolean = true,
         treeGate: CompletableDeferred<Unit>? = null,
         onSearch: (Boolean) -> Unit = {},
-        onDirectoryClick: (String) -> Unit = {},
-        onFileClick: (String) -> Unit = {},
+        source: RepoContentSource = RepoLinkTarget(ref, path),
+        onAdd: (RepoLinkTarget) -> Unit = {},
+        onDirectoryClick: (RepoLinkTarget) -> Unit = {},
+        onFileClick: (RepoLinkTarget) -> Unit = {},
     ) {
         coEvery { repository.getCodeTree("viewer", "fork", ref, path) } coAnswers {
             treeGate?.await()
@@ -364,9 +396,10 @@ class RepoCodeScreenTest {
         composeRule.setContent {
             MaterialTheme {
                 RepoCodeScreen(
-                    owner = "viewer", name = "fork", ref = ref, path = path, permission = permission,
+                    owner = "viewer", name = "fork", source = source, permission = permission,
                     onBack = {},
-                    onSearch = onSearch, onOwnerClick = {}, onRepositoryClick = { _, _ -> }, onAdd = {}, onDirectoryClick = onDirectoryClick, onFileClick = onFileClick,
+                    onSearch = { _, isFork -> onSearch(isFork) }, onOwnerClick = {}, onRepositoryClick = { _, _ -> }, onAdd = onAdd,
+                    onDirectoryClick = onDirectoryClick, onFileClick = onFileClick,
                     onCreateSyncPullRequest = { createdPr = it }, onExistingSyncPullRequest = { existingPr = it }, viewModel = viewModel,
                 )
             }

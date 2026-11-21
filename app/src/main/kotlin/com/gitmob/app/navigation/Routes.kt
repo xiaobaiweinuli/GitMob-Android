@@ -2,6 +2,8 @@ package com.gitmob.app.navigation
 
 import androidx.navigation3.runtime.NavKey
 import com.gitmob.app.core.permission.RepoPermission
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.model.SearchCategory
 import kotlinx.serialization.Serializable
 
@@ -142,17 +144,21 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
 @Serializable data class RepoCodeRoute(
     val owner: String,
     val name: String,
-    val ref: String,
-    val path: String = "",
+    val source: RepoContentSource,
     val permission: RepoPermission? = null,
-) : Route
+) : Route {
+    constructor(owner: String, name: String, ref: String, path: String = "", permission: RepoPermission? = null) :
+        this(owner, name, RepoLinkTarget(ref, path), permission)
+}
 @Serializable data class RepoCommitsRoute(
     val owner: String,
     val name: String,
-    val ref: String,
-    val path: String? = null,
+    val source: RepoContentSource,
     val permission: RepoPermission? = null,
-) : Route
+) : Route {
+    constructor(owner: String, name: String, ref: String, path: String? = null, permission: RepoPermission? = null) :
+        this(owner, name, RepoLinkTarget(ref, path.orEmpty()), permission)
+}
 @Serializable data class RepoCommitDetailRoute(
     val owner: String,
     val name: String,
@@ -163,10 +169,12 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
 @Serializable data class RepoFileDetailRoute(
     val owner: String,
     val name: String,
-    val ref: String,
-    val path: String,
+    val source: RepoContentSource,
     val permission: RepoPermission? = null,
-) : Route
+) : Route {
+    constructor(owner: String, name: String, ref: String, path: String, permission: RepoPermission? = null) :
+        this(owner, name, RepoLinkTarget(ref, path), permission)
+}
 @Serializable data class RepoFileEditorRoute(
     val owner: String,
     val name: String,

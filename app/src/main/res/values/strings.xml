@@ -1051,4 +1051,13 @@
     <string name="repo_fork_rejected">GitHub 未接受创建请求，请重新检查名称、目标权限及复刻限制。</string>
     <string name="repo_fork_submitting">正在提交创建请求，尚未确认是否受理…</string>
     <string name="repo_fork_no_create_permission">你不能在此组织创建仓库，但可以查找并打开已有复刻。</string>
+    <string name="repo_upload_too_many_files">最多可上传 100 个文件</string>
+    <string name="repo_upload_too_large">所选文件总大小不能超过 20 MiB</string>
+    <string name="repo_upload_invalid_path">所选文件的路径无效</string>
+    <string name="repo_upload_duplicate_path">所选文件中有重复路径</string>
+    <string name="repo_upload_read_failed">无法读取所选文件或文件夹</string>
+    <string name="repo_upload_empty">所选内容中没有可上传的文件</string>
+    <string name="external_link_open_failed">无法打开链接，请安装或启用可处理此链接的应用</string>
+    <string name="deep_link_ref_not_found">找不到链接指向的分支或标签</string>
+    <string name="deep_link_history_unsupported">暂不支持此引用的提交历史</string>
 </resources>

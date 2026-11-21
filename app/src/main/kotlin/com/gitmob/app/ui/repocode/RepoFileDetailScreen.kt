@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.data.model.RepoContentSource
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.translation.TranslationTarget
 import com.gitmob.app.ui.translation.TranslationFileMenuItem
@@ -69,25 +71,26 @@ import com.gitmob.app.ui.common.RepositoryImagePreview
 fun RepoFileDetailScreen(
     owner: String,
     name: String,
-    ref: String,
-    path: String,
+    source: RepoContentSource,
     onBack: () -> Unit,
     onOwnerClick: (String) -> Unit,
     onRepositoryClick: (String, String) -> Unit,
-    onEdit: () -> Unit,
-    onHistory: () -> Unit,
-    onDirectoryFound: () -> Unit,
+    onEdit: (RepoLinkTarget) -> Unit,
+    onHistory: (RepoLinkTarget) -> Unit,
+    onDirectoryFound: (RepoLinkTarget) -> Unit,
     onDocumentLink: (RepoDocumentContext) -> Unit = {},
     onDocumentExternalLink: (String) -> Unit = {},
     viewModel: RepoFileDetailViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(owner, name, ref, path) { viewModel.init(owner, name, ref, path) }
+    LaunchedEffect(owner, name, source) { viewModel.init(owner, name, source) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LaunchedEffect(state.isDirectory) { if (state.isDirectory) onDirectoryFound() }
+    val target = state.target
+    LaunchedEffect(state.isDirectory, target) { if (state.isDirectory && target != null) onDirectoryFound(target) }
     var confirmDelete by remember { mutableStateOf(false) }
-    val fileTarget = remember(owner, name, ref, path, state.file, state.previewHtml) {
-        state.previewHtml?.takeIf { state.file?.let { file -> !file.isBinary && !file.isTruncated && file.text != null && !state.imagePreview } == true }
-            ?.let { TranslationTarget("file:$owner/$name/$ref/$path", it, html = true) }
+    val fileTarget = remember(owner, name, state.file, state.previewHtml) {
+        val file = state.file ?: return@remember null
+        state.previewHtml?.takeIf { !file.isBinary && !file.isTruncated && file.text != null && !state.imagePreview }
+            ?.let { TranslationTarget("file:$owner/$name/${file.ref}/${file.path}", it, html = true) }
     }
     val previewScroll = rememberScrollState()
     val sourceScroll = rememberScrollState()
@@ -100,21 +103,21 @@ fun RepoFileDetailScreen(
                     RepositoryContextTitle(
                         owner = owner,
                         repository = name,
-                        pageTitle = path,
+                        pageTitle = target?.path ?: stringResource(R.string.repo_file_content),
                         onOwnerClick = onOwnerClick,
                         onRepositoryClick = onRepositoryClick,
                     )
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    RepoFileMenu(
+                    if (target != null) RepoFileMenu(
                         state = state,
                         translationTarget = fileTarget,
                         onPreviewModeChange = viewModel::setPreviewMode,
                         onWrapLinesChange = viewModel::setWrapLines,
-                        onHistory = onHistory,
+                        onHistory = { onHistory(target) },
                         onDownload = viewModel::downloadFile,
-                        onEdit = onEdit,
+                        onEdit = { onEdit(target) },
                         onDelete = { confirmDelete = true },
                     )
                 },
@@ -146,7 +149,7 @@ fun RepoFileDetailScreen(
                             )
                             Column(Modifier.weight(1f).verticalScroll(previewScroll)) {
                                 TranslationHtml(
-                                    translationKey = "file:$owner/$name/$ref/$path",
+                                    translationKey = "file:$owner/$name/${file.ref}/${file.path}",
                                     bodyHtml = previewHtml,
                                     documentResources = document.resources,
                                     navigationDocument = document,

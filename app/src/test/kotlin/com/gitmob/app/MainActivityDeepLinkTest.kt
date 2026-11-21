@@ -5,8 +5,10 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Parcel
 import androidx.compose.runtime.MutableState
+import com.gitmob.app.navigation.DeepLinkRequest
+import com.gitmob.app.navigation.PendingDeepLink
 import com.gitmob.app.navigation.DeepLinkDestination
-import com.gitmob.app.navigation.EXTRA_DEEP_LINK_DESTINATION
+import com.gitmob.app.navigation.EXTRA_DEEP_LINK_REQUEST
 import dagger.hilt.android.internal.managers.ActivityComponentManager
 import io.mockk.every
 import io.mockk.mockk
@@ -39,17 +41,17 @@ class MainActivityDeepLinkTest {
         val cold = DeepLinkDestination.IssueList("o", "r", "state:open 发布")
         val warm = DeepLinkDestination.PullRequestList("o", "r", "is:merged")
         val controller = launch(intentFor(cold))
-        assertEquals(cold, controller.get().pendingState().value)
+        assertEquals(DeepLinkRequest.Direct(cold), controller.get().pendingState().value?.request)
         controller.newIntent(intentFor(warm))
         val saved = saveAndDestroy(controller)
-        assertEquals(warm, launch(intentFor(cold), parcelCopy(saved)).get().pendingState().value)
+        assertEquals(DeepLinkRequest.Direct(warm), launch(intentFor(cold), parcelCopy(saved)).get().pendingState().value?.request)
     }
 
     @Test
     fun `first creation reads the incoming deep link`() {
         val activity = launch(intentFor(firstLink)).get()
 
-        assertEquals(firstLink, activity.pendingState().value)
+        assertEquals(DeepLinkRequest.Direct(firstLink), activity.pendingState().value?.request)
     }
 
     @Test
@@ -58,12 +60,12 @@ class MainActivityDeepLinkTest {
         val controller = launch(Intent(originalIntent))
         // 模拟导航消费后的状态；此处验证真实 Activity 的保存恢复，不启动 Compose 页面。
         controller.get().pendingState().value = null
-        assertTrue(controller.get().intent.hasExtra(EXTRA_DEEP_LINK_DESTINATION))
+        assertTrue(controller.get().intent.hasExtra(EXTRA_DEEP_LINK_REQUEST))
         val savedState = saveAndDestroy(controller)
 
         val restored = launch(Intent(originalIntent), parcelCopy(savedState)).get()
 
-        assertTrue(restored.intent.hasExtra(EXTRA_DEEP_LINK_DESTINATION))
+        assertTrue(restored.intent.hasExtra(EXTRA_DEEP_LINK_REQUEST))
         assertNull(restored.pendingState().value)
     }
 
@@ -73,7 +75,7 @@ class MainActivityDeepLinkTest {
 
         val restored = launch(Intent(), parcelCopy(savedState)).get()
 
-        assertEquals(firstLink, restored.pendingState().value)
+        assertEquals(DeepLinkRequest.Direct(firstLink), restored.pendingState().value?.request)
     }
 
     @Test
@@ -85,7 +87,7 @@ class MainActivityDeepLinkTest {
 
         val restored = launch(Intent(originalIntent), parcelCopy(savedState)).get()
 
-        assertEquals(secondLink, restored.pendingState().value)
+        assertEquals(DeepLinkRequest.Direct(secondLink), restored.pendingState().value?.request)
     }
 
     @Test
@@ -98,7 +100,7 @@ class MainActivityDeepLinkTest {
         val restored = launch(sameIntent, savedState).get()
 
         assertNull(restored.pendingState().value)
-        assertTrue(sameIntent.hasExtra(EXTRA_DEEP_LINK_DESTINATION))
+        assertTrue(sameIntent.hasExtra(EXTRA_DEEP_LINK_REQUEST))
     }
 
     @Test
@@ -113,9 +115,21 @@ class MainActivityDeepLinkTest {
             val newIntent = intentFor(nextLink)
             restored.newIntent(newIntent)
 
-            assertEquals(nextLink, restored.get().pendingState().value)
+            assertEquals(DeepLinkRequest.Direct(nextLink), restored.get().pendingState().value?.request)
             assertEquals(newIntent, restored.get().intent)
         }
+    }
+
+    @Test fun sameUrlIsANewEventAndOldAcknowledgementCannotConsumeIt() {
+        val controller = launch(intentFor(firstLink))
+        val old = controller.get().pendingState().value!!
+        controller.newIntent(intentFor(firstLink))
+        val next = controller.get().pendingState().value!!
+        assertTrue(old.id != next.id)
+        controller.get().consumeDeepLink(old.id)
+        assertEquals(next, controller.get().pendingState().value)
+        controller.get().consumeDeepLink(next.id)
+        assertNull(controller.get().pendingState().value)
     }
 
     private fun launch(intent: Intent, state: Bundle? = null): ActivityController<MainActivity> {
@@ -135,9 +149,9 @@ class MainActivityDeepLinkTest {
     }
 
     private fun intentFor(destination: DeepLinkDestination): Intent =
-        Intent().putExtra(EXTRA_DEEP_LINK_DESTINATION, destination)
+        Intent().putExtra(EXTRA_DEEP_LINK_REQUEST, DeepLinkRequest.Direct(destination))
 
-    private fun MainActivity.pendingState(): MutableState<DeepLinkDestination?> =
+    private fun MainActivity.pendingState(): MutableState<PendingDeepLink?> =
         ReflectionHelpers.getField(this, "pendingDeepLink\$delegate")
 
     private fun parcelCopy(state: Bundle): Bundle {

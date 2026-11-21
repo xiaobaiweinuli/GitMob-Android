@@ -1,7 +1,6 @@
 package com.gitmob.app.ui.settings
 
 import androidx.compose.material3.ExperimentalMaterial3Api
-import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,7 +45,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -56,7 +54,7 @@ import com.gitmob.app.core.auth.GITHUB_CLIENT_ID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(onBack: () -> Unit) {
+fun AboutScreen(onBack: () -> Unit, onOpenUrl: (String) -> Unit) {
     val context = LocalContext.current
     val logoRequest = remember(context) {
         ImageRequest.Builder(context)
@@ -132,6 +130,7 @@ fun AboutScreen(onBack: () -> Unit) {
                         label = "xiaobaiweinuli",
                         sub = stringResource(R.string.about_developer_sub),
                         url = "https://github.com/xiaobaiweinuli",
+                        onOpenUrl = onOpenUrl,
                     )
                 }
             }
@@ -143,6 +142,7 @@ fun AboutScreen(onBack: () -> Unit) {
                         label = stringResource(R.string.about_repo_label),
                         sub = "xiaobaiweinuli/GitMob-Android · Apache 2.0",
                         url = "https://github.com/xiaobaiweinuli/GitMob-Android",
+                        onOpenUrl = onOpenUrl,
                     )
                 }
             }
@@ -154,6 +154,7 @@ fun AboutScreen(onBack: () -> Unit) {
                         label = stringResource(R.string.about_auth_label),
                         sub = stringResource(R.string.about_auth_sub),
                         url = "https://github.com/settings/connections/applications/$GITHUB_CLIENT_ID",
+                        onOpenUrl = onOpenUrl,
                     )
                 }
             }
@@ -165,6 +166,7 @@ fun AboutScreen(onBack: () -> Unit) {
                         label = stringResource(R.string.about_telegram_label),
                         sub = "t.me/MyResNav",
                         url = "https://t.me/MyResNav",
+                        onOpenUrl = onOpenUrl,
                     )
                 }
             }
@@ -185,13 +187,12 @@ fun AboutScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun AboutLinkRow(icon: ImageVector?, label: String, sub: String, url: String) {
-    val context = LocalContext.current
+private fun AboutLinkRow(icon: ImageVector?, label: String, sub: String, url: String, onOpenUrl: (String) -> Unit) {
     SettingsNavigationRow(
         icon = icon,
         title = label,
         summary = sub,
-        onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) },
+        onClick = { onOpenUrl(url) },
         trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
     )
 }

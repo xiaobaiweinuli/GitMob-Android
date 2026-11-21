@@ -26,8 +26,8 @@ class DeepLinkActivityTest {
         val forwarded = shadowOf(activity).nextStartedActivity
         assertEquals(MainActivity::class.java.name, forwarded.component?.className)
         @Suppress("DEPRECATION")
-        val destination = forwarded.getSerializableExtra(EXTRA_DEEP_LINK_DESTINATION)
-        assertEquals(DeepLinkDestination.GistDetail("abc123"), destination)
+        val destination = forwarded.getSerializableExtra(EXTRA_DEEP_LINK_REQUEST)
+        assertEquals(DeepLinkRequest.Direct(DeepLinkDestination.GistDetail("abc123")), destination)
         assertTrue(forwarded.flags and Intent.FLAG_ACTIVITY_CLEAR_TOP != 0)
         assertTrue(forwarded.flags and Intent.FLAG_ACTIVITY_SINGLE_TOP != 0)
         assertTrue(activity.isFinishing)
@@ -42,8 +42,8 @@ class DeepLinkActivityTest {
             assertTrue(activity.isFinishing)
             val forwarded = shadowOf(activity).nextStartedActivity
             @Suppress("DEPRECATION")
-            val destination = forwarded.getSerializableExtra(EXTRA_DEEP_LINK_DESTINATION)
-            assertEquals(DeepLinkDestination.RepoOverview(owner, name), destination)
+            val destination = forwarded.getSerializableExtra(EXTRA_DEEP_LINK_REQUEST)
+            assertEquals(DeepLinkRequest.Direct(DeepLinkDestination.RepoOverview(owner, name)), destination)
         }
     }
 
@@ -74,7 +74,7 @@ class DeepLinkActivityTest {
         assertEquals(Intent.ACTION_VIEW, browser.action)
         assertEquals(Intent.ACTION_MAIN, browser.selector?.action)
         assertTrue(browser.selector!!.hasCategory(Intent.CATEGORY_APP_BROWSER))
-        assertFalse(browser.hasExtra(EXTRA_DEEP_LINK_DESTINATION))
+        assertFalse(browser.hasExtra(EXTRA_DEEP_LINK_REQUEST))
         assertTrue(activity.isFinishing)
     }
 
@@ -86,8 +86,8 @@ class DeepLinkActivityTest {
         val forwarded = shadowOf(activity).nextStartedActivity
         assertEquals(MainActivity::class.java.name, forwarded.component?.className)
         @Suppress("DEPRECATION")
-        val destination = forwarded.getSerializableExtra(EXTRA_DEEP_LINK_DESTINATION)
-        assertEquals(DeepLinkDestination.BrowserUnavailable, destination)
+        val destination = forwarded.getSerializableExtra(EXTRA_DEEP_LINK_REQUEST)
+        assertEquals(DeepLinkRequest.Direct(DeepLinkDestination.BrowserUnavailable), destination)
         assertTrue(activity.isFinishing)
     }
 

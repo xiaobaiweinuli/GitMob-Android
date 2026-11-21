@@ -1,0 +1,12 @@
+query RepoLinkRefs($owner: String!, $name: String!, $branch: String!, $tag: String!) {
+  repository(owner: $owner, name: $name) {
+    branch: ref(qualifiedName: $branch) { target { __typename oid } }
+    tag: ref(qualifiedName: $tag) { target { __typename oid } }
+  }
+}
+
+query RepoLinkCommit($owner: String!, $name: String!, $expression: String!) {
+  repository(owner: $owner, name: $name) {
+    object(expression: $expression) { ... on Commit { oid } }
+  }
+}
