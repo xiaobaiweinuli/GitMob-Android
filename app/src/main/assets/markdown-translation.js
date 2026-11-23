@@ -56,4 +56,5 @@
             return { documentId, generation, version };
         }
     });
+    if (window.gmTranslationHost) window.gmTranslationHost.ready(documentId);
 })();

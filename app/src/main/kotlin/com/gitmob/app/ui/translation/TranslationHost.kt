@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -132,17 +134,29 @@ fun TranslationHtml(
     val target = remember(translationKey, bodyHtml) { TranslationTarget(translationKey, bodyHtml, true) }
     val controller = LocalTranslationController.current
     val entry = controller?.state?.entries?.get(target.identity)
-    val presentation = entry?.document?.let { document ->
-        TranslationPresentation(document, entry.translations, entry.version,
-            if (entry.showOriginal) "original" else if (entry.preferences.bilingual) "bilingual" else "translation", entry.generation)
+    val cached = navigationDocument?.translationDocument?.takeIf { it.target == target }
+    val document by key(target, navigationDocument) {
+        produceState(cached) {
+            if (value == null) {
+                value = withContext(Dispatchers.Default) { TranslationDocuments.prepareHtml(target) }
+                navigationDocument?.translationDocument = value
+            }
+        }
+    }
+    val presentation = entry?.let {
+        TranslationPresentation(it.translations, it.version,
+            if (it.showOriginal) "original" else if (it.preferences.bilingual) "bilingual" else "translation", it.generation)
     }
     Column(modifier) {
         TranslationStatus(target, Modifier.padding(horizontal = 8.dp))
-        MarkdownWebView(bodyHtml, backgroundColor = backgroundColor, documentResources = documentResources,
-            onDocumentLink = onDocumentLink, onExternalLink = onExternalLink, translation = presentation,
-            navigationDocument = navigationDocument,
-            displayAttempt = entry?.displayAttempt ?: 0,
-            onTranslationDisplayError = { controller?.viewModel?.displayFailed(target, entry?.generation ?: -1) })
+        document?.let { prepared ->
+            MarkdownWebView(bodyHtml, preparedDocument = prepared, backgroundColor = backgroundColor, documentResources = documentResources,
+                onDocumentLink = onDocumentLink, onExternalLink = onExternalLink, translation = presentation,
+                navigationDocument = navigationDocument,
+                displayAttempt = entry?.displayAttempt ?: 0,
+                onTranslationDisplayError = { controller?.viewModel?.displayFailed(target, entry?.generation ?: -1) },
+                onTranslationDisplayed = { controller?.viewModel?.displaySucceeded(target, it?.generation ?: -1) })
+        }
         TranslationStatus(target, Modifier.padding(horizontal = 8.dp), completedOnly = true)
     }
 }

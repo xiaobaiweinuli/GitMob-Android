@@ -27,7 +27,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
-import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.data.translation.TranslationTarget
+import com.gitmob.app.ui.translation.TranslationHtml
+import com.gitmob.app.ui.translation.TranslationMenuItem
+import com.gitmob.app.ui.translation.TranslationText
 import com.gitmob.app.ui.common.RepositoryContextTitle
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +50,13 @@ fun RepoReleaseListScreen(owner: String, name: String, permission: RepoPermissio
 fun RepoReleaseDetailScreen(owner: String, name: String, tag: String?, releaseId: Long?, permission: RepoPermission?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onEdit: (Long) -> Unit, viewModel: RepoReleaseDetailViewModel = hiltViewModel()) {
     val context = LocalContext.current
     LaunchedEffect(owner, name, tag, releaseId) { viewModel.init(owner, name, tag, releaseId, permission) }; val state by viewModel.state.collectAsStateWithLifecycle(); var menu by remember { mutableStateOf(false) }; var editorAsset by remember { mutableStateOf<RepoReleaseAsset?>(null) }
+    val translationTarget = remember(owner, name, state.release?.id, state.release?.bodyHtml, state.release?.body) {
+        state.release?.let { release ->
+            val html = release.bodyHtml?.takeIf { it.isNotBlank() }
+            TranslationTarget("release:$owner/$name/${release.id}", html ?: release.body, html = html != null)
+                .takeIf { it.content.isNotBlank() }
+        }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::uploadAsset)
     }
@@ -55,6 +65,7 @@ fun RepoReleaseDetailScreen(owner: String, name: String, tag: String?, releaseId
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                 DropdownMenu(menu, { menu = false }) {
+                    translationTarget?.let { TranslationMenuItem(it, onDismiss = { menu = false }) }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.conversation_share)) },
                         leadingIcon = { Icon(Icons.Default.Share, null) },
@@ -66,7 +77,10 @@ fun RepoReleaseDetailScreen(owner: String, name: String, tag: String?, releaseId
             }
         }
     }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) }, contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) { padding ->
-        when { state.isLoading && state.release == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; state.loadFailed -> ReleaseRetry(viewModel::retry); state.release != null -> LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) { item { val release = state.release!!; Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(release.name ?: release.tagName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text("${release.tagName} · ${release.targetCommitish}"); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { AssistChip(onClick = {}, label = { Text(stringResource(if (release.draft) R.string.release_draft else if (release.prerelease) R.string.release_prerelease else R.string.release_published)) }); Text(release.publishedAt?.take(10) ?: release.createdAt.take(10)) } }; if (release.bodyHtml?.isNotBlank() == true) MarkdownWebView(release.bodyHtml, Modifier.fillMaxWidth()) else Text(release.body, modifier = Modifier.padding(horizontal = 16.dp)) }; item { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.release_assets), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); if (state.capabilities.canPush) IconButton(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !state.upload.isActive && !state.isLoading) { Icon(Icons.Default.UploadFile, stringResource(R.string.release_upload_asset)) } } }; item { ReleaseAssetUploadStatus(state.upload, state.isLoading, viewModel::cancelUpload, viewModel::load) }; items(state.release!!.assets, key = { it.id }) { asset -> val opening = asset.id in state.openingAssetIds; ListItem(content = { Text(asset.name) }, supportingContent = { Text(pluralStringResource(R.plurals.release_asset_meta, asset.downloadCount, asset.downloadCount, Formatter.formatShortFileSize(context, asset.size))) }, trailingContent = { Row { if (state.capabilities.canPush) IconButton(onClick = { editorAsset = asset }) { Icon(Icons.Default.Edit, stringResource(R.string.common_edit)) }; IconButton(onClick = { viewModel.downloadAsset(asset) }, enabled = !opening) { if (opening) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Download, stringResource(R.string.common_download)) }; if (state.capabilities.canPush) IconButton(onClick = { viewModel.confirmDeleteAsset(asset) }) { Icon(Icons.Default.Delete, stringResource(R.string.common_delete)) } } }) } } }
+        when { state.isLoading && state.release == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; state.loadFailed -> ReleaseRetry(viewModel::retry); state.release != null -> LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) { item { val release = state.release!!; Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(release.name ?: release.tagName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text("${release.tagName} · ${release.targetCommitish}"); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { AssistChip(onClick = {}, label = { Text(stringResource(if (release.draft) R.string.release_draft else if (release.prerelease) R.string.release_prerelease else R.string.release_published)) }); Text(release.publishedAt?.take(10) ?: release.createdAt.take(10)) } }; translationTarget?.let { target ->
+            if (target.html) TranslationHtml(target.key, target.content, Modifier.fillMaxWidth())
+            else TranslationText(target, Modifier.padding(horizontal = 16.dp), showStatus = true)
+        } }; item { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.release_assets), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); if (state.capabilities.canPush) IconButton(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !state.upload.isActive && !state.isLoading) { Icon(Icons.Default.UploadFile, stringResource(R.string.release_upload_asset)) } } }; item { ReleaseAssetUploadStatus(state.upload, state.isLoading, viewModel::cancelUpload, viewModel::load) }; items(state.release!!.assets, key = { it.id }) { asset -> val opening = asset.id in state.openingAssetIds; ListItem(content = { Text(asset.name) }, supportingContent = { Text(pluralStringResource(R.plurals.release_asset_meta, asset.downloadCount, asset.downloadCount, Formatter.formatShortFileSize(context, asset.size))) }, trailingContent = { Row { if (state.capabilities.canPush) IconButton(onClick = { editorAsset = asset }) { Icon(Icons.Default.Edit, stringResource(R.string.common_edit)) }; IconButton(onClick = { viewModel.downloadAsset(asset) }, enabled = !opening) { if (opening) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Download, stringResource(R.string.common_download)) }; if (state.capabilities.canPush) IconButton(onClick = { viewModel.confirmDeleteAsset(asset) }) { Icon(Icons.Default.Delete, stringResource(R.string.common_delete)) } } }) } } }
     }
     if (state.pendingDelete) AlertDialog(onDismissRequest = { viewModel.confirmDelete(false) }, title = { Text(stringResource(R.string.release_delete_title)) }, text = { Text(stringResource(R.string.release_delete_message)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDelete(false) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = { viewModel.delete(onBack) }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } })
     state.pendingDeleteAsset?.let { asset -> AlertDialog(onDismissRequest = { viewModel.confirmDeleteAsset(null) }, title = { Text(stringResource(R.string.release_delete_asset_title)) }, text = { Text(asset.name) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteAsset(null) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = viewModel::deleteAsset) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } }) }

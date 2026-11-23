@@ -303,6 +303,52 @@ class TranslationViewModelTest {
         assertTrue(vm.state.value.entries.getValue(revised.identity).showOriginal)
     }
 
+    @Test fun htmlServiceChangesReuseDocumentButDiscardPreviousResults() = runTest {
+        coEvery { repository.translate(any(), any(), any()) } coAnswers {
+            Result.success(thirdArg<TranslationCredentials>().toString() + secondArg<TranslationPreferences>().provider.name)
+        }
+        val vm = viewModel()
+        val target = TranslationTarget("body", "<p>Hello</p>", true)
+        vm.open(target); vm.request(); advanceUntilIdle()
+        val original = vm.state.value.entries.getValue(target.identity)
+        vm.open(target); vm.options(preferences.copy(provider = TranslationProvider.BAIDU)); vm.request(); advanceUntilIdle()
+        val changed = vm.state.value.entries.getValue(target.identity)
+        assertSame(original.document, changed.document)
+        assertNotEquals(original.translations, changed.translations)
+        coVerify(exactly = 1) { repository.document(target, any()) }
+    }
+
+    @Test fun displayRetryTokensAreNotReusedAfterTaskClearing() = runTest {
+        coEvery { repository.translate(any(), any(), any()) } returns Result.success("translated")
+        val vm = viewModel()
+        val target = TranslationTarget("body", "hello")
+        vm.open(target); vm.request(); advanceUntilIdle()
+        vm.displayFailed(target, vm.state.value.entries.getValue(target.identity).generation)
+        vm.retry(target)
+        val first = vm.state.value.entries.getValue(target.identity).displayAttempt
+        configuration.value = TranslationConfiguration(preferences.copy(enabled = false)); advanceUntilIdle()
+        configuration.value = TranslationConfiguration(preferences); advanceUntilIdle()
+        vm.open(target); vm.request(); advanceUntilIdle()
+        vm.displayFailed(target, vm.state.value.entries.getValue(target.identity).generation)
+        vm.retry(target)
+        assertTrue(vm.state.value.entries.getValue(target.identity).displayAttempt > first)
+    }
+
+    @Test fun onlyTheCurrentDisplayCanClearItsFailure() = runTest {
+        coEvery { repository.translate(any(), any(), any()) } returns Result.success("translated")
+        val vm = viewModel()
+        val target = TranslationTarget("body", "hello")
+        vm.open(target); vm.request(); advanceUntilIdle()
+        val generation = vm.state.value.entries.getValue(target.identity).generation
+        vm.displayFailed(target, generation)
+        vm.displaySucceeded(target, generation - 1)
+        assertTrue(vm.state.value.entries.getValue(target.identity).displayProblem)
+        vm.displaySucceeded(target, generation)
+        val entry = vm.state.value.entries.getValue(target.identity)
+        assertFalse(entry.displayProblem)
+        assertEquals(mapOf(0 to "translated"), entry.translations)
+    }
+
     @Test fun displayRetryReplaysExistingResultsWithoutCallingServiceAgain() = runTest {
         coEvery { repository.translate(any(), any(), any()) } returns Result.success("translated")
         val vm = viewModel()

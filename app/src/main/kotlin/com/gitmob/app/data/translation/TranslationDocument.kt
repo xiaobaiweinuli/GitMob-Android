@@ -33,7 +33,6 @@ data class TranslationDocument(
 
 /** Immutable snapshot. Network progress does not participate in the HTML loading identity. */
 data class TranslationPresentation(
-    val document: TranslationDocument,
     val translations: Map<Int, String>,
     val version: Long,
     val mode: String,
@@ -43,7 +42,7 @@ data class TranslationPresentation(
 object TranslationDocuments {
     private val protected = setOf("pre", "code", "kbd", "samp")
     private val inlineTags = setOf("a", "b", "br", "cite", "code", "del", "em", "i", "kbd", "q", "s", "samp", "small", "span", "strike", "strong", "sub", "sup", "u")
-    private val urls = Regex("(?:https?://|www\\.)[^\\s<>]+|[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}")
+    private val urls = Regex("(?:https?://|www\\.)[^\\s<>]+|(?<![\\w.+-])[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}")
     private const val PARSING_BASE = "https://translation.invalid/"
 
     fun create(target: TranslationTarget, provider: TranslationProvider): TranslationDocument {
@@ -52,15 +51,6 @@ object TranslationDocuments {
         val parts = mutableListOf<String>()
         val spans = mutableListOf<TranslationSpan>()
         fun chunks(text: String) = splitUtf8(text, if (arrayService) 12_000 else 1800, if (arrayService) 4000 else Int.MAX_VALUE)
-        fun fragments(text: String, visit: (Int, Int, Boolean) -> Unit) {
-            var cursor = 0
-            urls.findAll(text).forEach { match ->
-                if (match.range.first > cursor) visit(cursor, match.range.first, true)
-                visit(match.range.first, match.range.last + 1, false)
-                cursor = match.range.last + 1
-            }
-            if (cursor < text.length) visit(cursor, text.length, true)
-        }
         if (!target.html) {
             fragments(target.content) { start, end, translate ->
                 val text = target.content.substring(start, end)
@@ -73,6 +63,13 @@ object TranslationDocuments {
             return TranslationDocument(target, parts, spans)
         }
 
+        return prepareHtml(target).also { requireParts(it.parts) }
+    }
+
+    /** Safe display preparation is independent of service limits and translation availability. */
+    fun prepareHtml(target: TranslationTarget): TranslationDocument {
+        require(target.html)
+        val parts = mutableListOf<String>()
         val dirty = Jsoup.parse(target.content, PARSING_BASE)
         // Remove active subtrees before cleaning; their fallback text must not become translation units.
         dirty.select("script,style,iframe,frame,frameset,object,embed,svg,math,form,button,select,textarea,template,noscript,meta,link,base").remove()
@@ -81,17 +78,23 @@ object TranslationDocuments {
             else input.attr("disabled", "")
         }
         val safelist = Safelist.relaxed()
-            .addTags("details", "summary", "section", "article", "div", "span", "s", "del", "kbd", "samp", "input", "picture")
-            .addAttributes(":all", "id", "title", "dir", "lang", "align")
+            .addTags("details", "summary", "section", "article", "div", "span", "s", "del", "kbd", "samp", "input", "picture", "source")
+            .addAttributes(":all", "id", "class", "title", "dir", "lang", "align")
             .addAttributes("a", "name")
             .addAttributes("details", "open")
             .addAttributes("input", "type", "checked", "disabled")
+            .addAttributes("img", "srcset", "sizes", "loading", "decoding")
+            .addAttributes("source", "srcset", "sizes", "media", "type", "width", "height")
+            .addProtocols("img", "src", "data")
             .addProtocols("a", "href", "#")
             .preserveRelativeLinks(true)
         val clean = Cleaner(safelist).clean(dirty)
         clean.outputSettings().prettyPrint(false)
         // Keep anchor IDs but never allow a source document to impersonate our script or markers.
         clean.select("[id]").forEach { if (it.id().startsWith("gm-")) it.removeAttr("id") }
+        clean.select("[class]").forEach { element ->
+            element.classNames().filter { it.startsWith("gm-") }.forEach(element::removeClass)
+        }
         val root = clean.body()
         val textNodes = mutableListOf<TextNode>()
         fun collect(element: Element, skip: Boolean = false) {
@@ -111,16 +114,15 @@ object TranslationDocuments {
             fragments(text) { start, end, translate ->
                 val fragment = text.substring(start, end)
                 if (!translate || !fragment.any(Char::isLetter)) node.before(TextNode(fragment))
-                else chunks(fragment).forEach { chunk ->
+                else {
                     val index = parts.size
-                    parts.add(chunk)
+                    parts.add(fragment)
                     groups.add(block)
-                    node.before(Element("span").attr("data-gm-unit", index.toString()).text(chunk))
+                    node.before(Element("span").attr("data-gm-unit", index.toString()).text(fragment))
                 }
             }
             node.remove()
         }
-        requireParts(parts)
         val outputs = groups.mapIndexed { id, element ->
             // Preserve inline literals/formatting, without copying images, block code or nested paragraphs.
             // Empty result slots never contain pending source text or duplicate anchor IDs.
@@ -130,6 +132,16 @@ object TranslationDocuments {
         }
         outputs.forEach { (element, output) -> element.appendChild(output) }
         return TranslationDocument(target, parts, safeHtml = root.html())
+    }
+
+    private fun fragments(text: String, visit: (Int, Int, Boolean) -> Unit) {
+        var cursor = 0
+        urls.findAll(text).forEach { match ->
+            if (match.range.first > cursor) visit(cursor, match.range.first, true)
+            visit(match.range.first, match.range.last + 1, false)
+            cursor = match.range.last + 1
+        }
+        if (cursor < text.length) visit(cursor, text.length, true)
     }
 
     private fun bilingualInline(node: Node): Node? = when {

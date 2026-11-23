@@ -93,6 +93,25 @@ class TranslationRepository internal constructor(
     }
 
     private suspend fun process(units: List<TranslationUnit>, p: TranslationPreferences, c: TranslationCredentials, budget: RequestBudget, event: suspend (TranslationUpdate) -> Unit, deliver: suspend (Map<Int, String>) -> Unit) {
+        if (units.size == 1) {
+            val unit = units.single()
+            val pieces = withContext(cpuDispatcher) {
+                val batch = TranslationClient.supportsBatch(p.provider)
+                var limit = if (batch) 12000 else 1800
+                var chunks = TranslationDocuments.splitUtf8(unit.text, limit, if (batch) 4000 else Int.MAX_VALUE)
+                while (chunks.any { client.requestBytes(listOf(it.trim()), p, c) > 20 * 1024 }) {
+                    currentCoroutineContext().ensureActive()
+                    if (limit <= 4) throw TranslationException(TranslationProblem.TOO_LONG)
+                    limit = (limit / 2).coerceAtLeast(4)
+                    chunks = TranslationDocuments.splitUtf8(unit.text, limit, if (batch) 4000 else Int.MAX_VALUE)
+                }
+                chunks
+            }
+            if (pieces.size > 1) {
+                processPieces(unit, pieces, p, c, budget.takeIf { it.attempts > 0 }, event, deliver)
+                return
+            }
+        }
         val values = try { request(units.map { it.text }, p, c, budget, event) }
         catch (e: TranslationException) {
             val mappingSplit = e.problem == TranslationProblem.MAPPING && units.size > 1 && !budget.mappingSplit
@@ -112,20 +131,7 @@ class TranslationRepository internal constructor(
                     TranslationDocuments.splitUtf8(unit.text, (bytes / 2).coerceAtLeast(8))
                 }
                 if (pieces.size < 2) throw e
-                val translated = StringBuilder()
-                for (piece in pieces) {
-                    // Retain the original unit identity; only publish it once its split response is complete.
-                    process(listOf(TranslationUnit(piece.trim(), mapOf(0 to piece))), p, c, budget, event) { translated.append(it.getValue(0)) }
-                }
-                val mapped = withContext(cpuDispatcher) {
-                    val context = currentCoroutineContext()
-                    val combined = translated.toString()
-                    unit.originals.mapValues {
-                        context.ensureActive()
-                        preserveSpacing(it.value, combined)
-                    }
-                }
-                deliver(mapped)
+                processPieces(unit, pieces, p, c, budget, event, deliver)
             }
             return
         }
@@ -138,6 +144,30 @@ class TranslationRepository internal constructor(
                         put(id, preserveSpacing(original, value))
                     }
                 }
+            }
+        }
+        deliver(mapped)
+    }
+
+    private suspend fun processPieces(unit: TranslationUnit, pieces: List<String>, p: TranslationPreferences, c: TranslationCredentials, retryBudget: RequestBudget?, event: suspend (TranslationUpdate) -> Unit, deliver: suspend (Map<Int, String>) -> Unit) {
+        val translated = StringBuilder()
+        for (piece in pieces) {
+            if (piece.isBlank()) {
+                currentCoroutineContext().ensureActive()
+                translated.append(piece)
+                continue
+            }
+            // Normal service segmentation gets a budget per request; error-driven splitting shares its retry bound.
+            process(listOf(TranslationUnit(piece.trim(), mapOf(0 to piece))), p, c, retryBudget ?: RequestBudget(), event) {
+                translated.append(it.getValue(0))
+            }
+        }
+        val mapped = withContext(cpuDispatcher) {
+            val context = currentCoroutineContext()
+            val combined = translated.toString()
+            unit.originals.mapValues {
+                context.ensureActive()
+                preserveSpacing(it.value, combined)
             }
         }
         deliver(mapped)
@@ -208,7 +238,7 @@ class TranslationRepository internal constructor(
 
 internal data class TranslationUnit(val text: String, val originals: Map<Int, String>)
 
-/** Display units keep their identity when short units share a request. */
+/** Short units share a request; oversized units run alone and are split before sending. */
 internal fun planTranslationBatches(units: List<TranslationUnit>, provider: TranslationProvider, checkCancellation: () -> Unit = {}, bodyBytes: (List<String>) -> Long): List<List<TranslationUnit>> {
     if (!TranslationClient.supportsBatch(provider)) return units.map { checkCancellation(); listOf(it) }
     val batches = mutableListOf<List<TranslationUnit>>()
@@ -223,7 +253,6 @@ internal fun planTranslationBatches(units: List<TranslationUnit>, provider: Tran
         if (current.isNotEmpty() && (candidate.size > 30 || points + unitPoints > 4000 || bytes + unitBytes > 12000 || bodyBytes(candidate.map { it.text }) > 20 * 1024)) {
             batches += current; current = mutableListOf(); points = 0; bytes = 0
         }
-        if (bodyBytes(listOf(unit.text)) > 20 * 1024) throw TranslationException(TranslationProblem.TOO_LONG)
         current += unit; points += unitPoints; bytes += unitBytes
     }
     if (current.isNotEmpty()) batches += current

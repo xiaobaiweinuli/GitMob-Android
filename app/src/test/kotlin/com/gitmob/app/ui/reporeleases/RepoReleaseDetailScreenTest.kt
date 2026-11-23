@@ -4,6 +4,17 @@ import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import com.gitmob.app.data.translation.TranslationConfiguration
+import com.gitmob.app.data.translation.TranslationDocuments
+import com.gitmob.app.data.translation.TranslationPreferences
+import com.gitmob.app.data.translation.TranslationProvider
+import com.gitmob.app.data.translation.TranslationTarget
+import com.gitmob.app.ui.translation.LocalTranslationController
+import com.gitmob.app.ui.translation.TranslationController
+import com.gitmob.app.ui.translation.TranslationEntry
+import com.gitmob.app.ui.translation.TranslationUiState
+import com.gitmob.app.ui.translation.TranslationViewModel
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.core.app.ApplicationProvider
@@ -45,12 +56,70 @@ class RepoReleaseDetailScreenTest {
         every { state } returns this@RepoReleaseDetailScreenTest.state
     }
     private fun text(id: Int) = ApplicationProvider.getApplicationContext<Context>().getString(id)
-    private fun show() {
+    private val translationVm = mockk<TranslationViewModel>(relaxed = true)
+    private val translationConfig = TranslationConfiguration(TranslationPreferences(enabled = true))
+    private fun show(translation: TranslationUiState = TranslationUiState()) {
         compose.setContent {
             MaterialTheme {
-                RepoReleaseDetailScreen("o", "r", null, 7, RepoPermission.WRITE, {}, {}, { _, _ -> }, {}, vm)
+                CompositionLocalProvider(LocalTranslationController provides TranslationController(translation, translationVm) {}) {
+                    RepoReleaseDetailScreen("o", "r", null, 7, RepoPermission.WRITE, {}, {}, { _, _ -> }, {}, vm)
+                }
             }
         }
+    }
+
+    @Test fun readOnlyReleaseCanTranslateHtmlFromOverflowMenu() {
+        val html = "<p>Release notes</p>"
+        state.value = state.value.copy(release = release.copy(body = "Release notes", bodyHtml = html),
+            permission = RepoPermission.READ, capabilities = RepoPermission.READ.toCapabilities())
+        show(TranslationUiState(configuration = translationConfig))
+        compose.onNodeWithContentDescription(text(R.string.issue_more)).performClick()
+        compose.onNodeWithText(text(R.string.conversation_share)).assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.common_edit)).assertDoesNotExist()
+        compose.onNodeWithText(text(R.string.release_delete)).assertDoesNotExist()
+        compose.onNodeWithText(text(R.string.translation_start)).performClick()
+        verify(exactly = 1) { translationVm.open(TranslationTarget("release:o/r/7", html, true)) }
+    }
+
+    @Test fun plainReleaseBodyDisplaysTranslationAndRestoresOriginal() {
+        val target = TranslationTarget("release:o/r/7", "Release notes")
+        val document = TranslationDocuments.create(target, TranslationProvider.EDGE)
+        val translation = androidx.compose.runtime.mutableStateOf(TranslationUiState(
+            configuration = translationConfig,
+            entries = mapOf(target.identity to TranslationEntry(document = document,
+                translations = mapOf(0 to "版本说明"), preferences = TranslationPreferences(bilingual = false))),
+        ))
+        state.value = state.value.copy(release = release.copy(body = target.content))
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalTranslationController provides TranslationController(translation.value, translationVm) {}) {
+                    RepoReleaseDetailScreen("o", "r", null, 7, RepoPermission.WRITE, {}, {}, { _, _ -> }, {}, vm)
+                }
+            }
+        }
+        compose.onNodeWithText("版本说明").assertIsDisplayed()
+        compose.onNodeWithText(target.content).assertDoesNotExist()
+        compose.runOnIdle {
+            translation.value = translation.value.copy(entries = translation.value.entries.mapValues { (_, entry) -> entry.copy(showOriginal = true) })
+        }
+        compose.onNodeWithText(target.content).assertIsDisplayed()
+        compose.onNodeWithText("版本说明").assertDoesNotExist()
+        compose.onNodeWithContentDescription(text(R.string.issue_more)).performClick()
+        compose.onNodeWithText(text(R.string.translation_start)).performClick()
+        verify(exactly = 1) { translationVm.open(target) }
+    }
+
+    @Test fun emptyReleaseHasNoTranslationAction() {
+        show(TranslationUiState(configuration = translationConfig))
+        compose.onNodeWithContentDescription(text(R.string.issue_more)).performClick()
+        compose.onNodeWithText(text(R.string.translation_start)).assertDoesNotExist()
+    }
+
+    @Test fun disabledTranslationHasNoReleaseAction() {
+        state.value = state.value.copy(release = release.copy(body = "Release notes"))
+        show(TranslationUiState(configuration = TranslationConfiguration(TranslationPreferences(enabled = false))))
+        compose.onNodeWithContentDescription(text(R.string.issue_more)).performClick()
+        compose.onNodeWithText(text(R.string.translation_start)).assertDoesNotExist()
     }
 
     @Test fun cancelledUploadCanRefreshAndBlocksRefreshAndUploadWhileLoading() {

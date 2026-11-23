@@ -58,6 +58,7 @@ class TranslationViewModel @Inject constructor(
     private val jobs = mutableMapOf<String, Job>()
     private val generations = mutableMapOf<String, Long>()
     private var generation = 0L
+    private var displayAttempt = 0
     private var testGeneration = 0L
     private var testJob: Job? = null
 
@@ -113,7 +114,7 @@ class TranslationViewModel @Inject constructor(
     fun retry(target: TranslationTarget) {
         val entry = _state.value.entries[target.identity] ?: return
         if (entry.displayProblem) {
-            updateEntry(target.identity) { it.copy(displayProblem = false, displayAttempt = it.displayAttempt + 1) }
+            updateEntry(target.identity) { it.copy(displayProblem = false, displayAttempt = ++displayAttempt) }
             return
         }
         if (entry.running) return
@@ -122,6 +123,9 @@ class TranslationViewModel @Inject constructor(
     }
     fun displayFailed(target: TranslationTarget, generation: Long) {
         updateEntry(target.identity) { if (it.generation == generation) it.copy(displayProblem = true) else it }
+    }
+    fun displaySucceeded(target: TranslationTarget, generation: Long) {
+        updateEntry(target.identity) { if (it.generation == generation) it.copy(displayProblem = false) else it }
     }
     fun cancel(target: TranslationTarget) {
         generations.remove(target.identity)
@@ -146,18 +150,20 @@ class TranslationViewModel @Inject constructor(
         jobs.remove(id)?.cancel()
         val requestGeneration = ++generation
         generations[id] = requestGeneration
-        val previous = _state.value.entries[id]?.takeIf { it.preferences.copy(bilingual = preferences.bilingual) == preferences && it.credentials == credentials }
+        val current = _state.value.entries[id]
+        val previous = current?.takeIf { it.preferences.copy(bilingual = preferences.bilingual) == preferences && it.credentials == credentials }
         // Bound per-page memory, and discard an obsolete revision of the same logical content.
         // Keys such as a thread URL and "URL:title" are distinct translation targets.
         val obsolete = _state.value.entries.keys.filter { it.substringBeforeLast(':') == target.key && it != id }
         obsolete.forEach { generations.remove(it); jobs.remove(it)?.cancel() }
         _state.update { it.copy(entries = (it.entries - obsolete).let { entries ->
             val retained = if (entries.size >= 32 && id !in entries) entries - entries.keys.first().also { key -> generations.remove(key); jobs.remove(key)?.cancel() } else entries
-            retained + (id to (previous ?: TranslationEntry()).copy(preferences = preferences, credentials = credentials, phase = TranslationPhase.PREPARING, problem = null, showOriginal = false, generation = requestGeneration, version = (previous?.version ?: 0) + 1, waitingUntil = 0))
+            retained + (id to (previous ?: TranslationEntry(document = current?.document?.takeIf { target.html },
+                displayProblem = current?.displayProblem ?: false, displayAttempt = current?.displayAttempt ?: 0)).copy(preferences = preferences, credentials = credentials, phase = TranslationPhase.PREPARING, problem = null, showOriginal = false, generation = requestGeneration, version = (previous?.version ?: 0) + 1, waitingUntil = 0))
         }) }
         jobs[id] = viewModelScope.launch {
             try {
-                val document = previous?.document ?: repository.document(target, preferences.provider).getOrThrow()
+                val document = _state.value.entries[id]?.document ?: repository.document(target, preferences.provider).getOrThrow()
                 if (generations[id] != requestGeneration) return@launch
                 _state.update { it.copy(entries = it.entries + (id to it.entries.getValue(id).copy(document = document))) }
                 repository.translateDocument(document, _state.value.entries[id]?.translations.orEmpty(), preferences, credentials).collect { update ->

@@ -188,6 +188,51 @@ class TranslationRepositoryTest {
         coVerify(exactly = 0) { client.translateBatch(any(), any(), any()) }
     }
 
+    @Test fun serviceLimitsSplitStableHtmlUnitsAndPublishOnlyReassembledResults() = runTest {
+        val repository = repository()
+        val original = "word ".repeat(4000).trim()
+        val document = TranslationDocuments.prepareHtml(TranslationTarget("body", "<p> $original </p><p>$original</p>", true))
+        for (provider in listOf(TranslationProvider.EDGE, TranslationProvider.TRANSMART, TranslationProvider.BAIDU)) {
+            val requests = mutableListOf<List<String>>()
+            coEvery { client.translateBatch(any(), any(), any()) } coAnswers {
+                firstArg<List<String>>().also { requests += it }.map(String::uppercase)
+            }
+            val events = repository.translateDocument(document, emptyMap(), preferences.copy(provider = provider), credentials).toList()
+            val results = events.filterIsInstance<TranslationUpdate.Batch>()
+            assertEquals(1, results.size)
+            assertEquals(mapOf(0 to " ${original.uppercase()} ", 1 to original.uppercase()), results.single().values)
+            assertTrue(requests.size > 1)
+            val batch = TranslationClient.supportsBatch(provider)
+            assertTrue(requests.flatten().all { it.toByteArray().size <= if (batch) 12000 else 1800 })
+            if (batch) assertTrue(requests.flatten().all { it.codePointCount(0, it.length) <= 4000 })
+            else assertTrue(requests.size > 8)
+        }
+    }
+
+    @Test fun splittingSkipsWhitespaceOnlyRequestsAndPreservesInternalSpacing() = runTest {
+        val repository = repository()
+        coEvery { client.translateBatch(any(), any(), any()) } coAnswers {
+            firstArg<List<String>>().also { assertTrue(it.none(String::isBlank)) }.map(String::uppercase)
+        }
+        val original = "hello" + " ".repeat(5000) + "world"
+        val result = repository.translateDocument(document(listOf(original)), emptyMap(), preferences.copy(provider = TranslationProvider.BAIDU), credentials).toList()
+        assertEquals(mapOf(0 to original.uppercase()), result.filterIsInstance<TranslationUpdate.Batch>().single().values)
+    }
+
+    @Test fun encodedBodyLimitSplitsAUnitBeforeSendingIt() = runTest {
+        val repository = repository()
+        every { client.requestBytes(any(), any(), any()) } answers { firstArg<List<String>>().sumOf { it.length * 6L } + 100 }
+        val requests = mutableListOf<List<String>>()
+        coEvery { client.translateBatch(any(), any(), any()) } coAnswers {
+            firstArg<List<String>>().also { requests.add(it.toList()) }.map(String::uppercase)
+        }
+        val source = "x".repeat(4000)
+        val result = repository.translateDocument(document(listOf(source)), emptyMap(), preferences, credentials).toList()
+        assertEquals(mapOf(0 to source.uppercase()), result.filterIsInstance<TranslationUpdate.Batch>().single().values)
+        assertTrue(requests.size > 1)
+        assertTrue(requests.all { client.requestBytes(it, preferences, credentials) <= 20 * 1024 })
+    }
+
     @Test fun tooLongUnitSplitsWithoutChangingOriginalIdsOrWhitespace() = runTest {
         val repository = repository()
         var attempts = 0

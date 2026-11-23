@@ -5,6 +5,7 @@ import android.content.Context
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -44,6 +45,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import java.util.Locale
 import java.util.UUID
 import org.json.JSONObject
+import com.gitmob.app.data.translation.TranslationDocument
 import com.gitmob.app.data.translation.TranslationPresentation
 import kotlin.math.abs
 
@@ -66,9 +68,11 @@ fun MarkdownWebView(
     documentResources: RepoDocumentResources? = null,
     onDocumentLink: (RepoDocumentContext) -> Unit = {},
     onExternalLink: ((String) -> Unit)? = null,
+    preparedDocument: TranslationDocument? = null,
     translation: TranslationPresentation? = null,
     displayAttempt: Int = 0,
     onTranslationDisplayError: () -> Unit = {},
+    onTranslationDisplayed: (TranslationPresentation?) -> Unit = {},
     navigationDocument: NavigationDocument? = null,
     linkColor: Color? = null,
     contentPadding: PaddingValues = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
@@ -95,13 +99,14 @@ fun MarkdownWebView(
         if (onExternalLink != null) onExternalLink(url)
         else runCatching { uriHandler.openUri(url) }
     }
-    val controlled = translation?.document?.safeHtml != null
+    val controlled = preparedDocument?.safeHtml != null
     val currentDisplayError by rememberUpdatedState(onTranslationDisplayError)
+    val currentDisplayed by rememberUpdatedState(onTranslationDisplayed)
     DisposableEffect(documentResources, navigationDocument) {
         onDispose { if (navigationDocument == null) documentResources?.close() }
     }
     val viewState = remember(bodyHtml, documentResources, controlled, navigationDocument) {
-        navigationDocument?.renderer(controlled) ?: MarkdownWebViewState(documentResources)
+        navigationDocument?.renderer() ?: MarkdownWebViewState(documentResources)
     }
     val webViewHolder = viewState.controller
     val client = viewState.client
@@ -111,15 +116,14 @@ fun MarkdownWebView(
     val sourceCss = MaterialTheme.colorScheme.onSurfaceVariant.toCssHex()
     val borderCss = MaterialTheme.colorScheme.outlineVariant.toCssHex()
     // Results and progress never participate in the HTML loading identity.
-    val page = viewState.pageFor(listOf(bodyHtml, translation?.document, cssFileName,
-        backgroundCss, sourceCss, borderCss, displayAttempt, linkCss, contentPaddingCss))
+    val page = viewState.pageFor(listOf(bodyHtml, preparedDocument?.safeHtml, cssFileName,
+        backgroundCss, sourceCss, borderCss, linkCss, contentPaddingCss))
     val fullHtml = remember(page) {
-        buildMarkdownDocument(translation?.document?.safeHtml ?: bodyHtml, stylesheet, backgroundCss,
+        buildMarkdownDocument(preparedDocument?.safeHtml ?: bodyHtml, stylesheet, backgroundCss,
             script = script, nonce = page.nonce, documentId = page.documentId, sourceCss = sourceCss, borderCss = borderCss,
             linkCss = linkCss, contentPaddingCss = contentPaddingCss)
     }
 
-    // Raw and script-controlled documents always use separate WebView instances.
     key(viewState) {
     AndroidView(
         modifier = modifier
@@ -127,7 +131,7 @@ fun MarkdownWebView(
             .wrapContentHeight()
             .clipToBounds()
             .remeasureOnMarkdownResize {
-                (webViewHolder.webView as? NoVerticalScrollWebView)?.layoutSize ?: IntSize.Zero
+                (webViewHolder.webView as? NoVerticalScrollWebView)?.layoutSize?.height ?: 0
             }
             // Compose 的滚动只平移 display list，不会像经典 ScrollView 那样让子 View
             // 重走 onDraw，Chromium 因此无法感知自己被滚进了屏幕（表现为 WebView
@@ -139,6 +143,7 @@ fun MarkdownWebView(
         factory = { context ->
             val webView = webViewHolder.webView ?: NoVerticalScrollWebView(context).apply {
                 settings.javaScriptEnabled = controlled
+                if (controlled) addJavascriptInterface(MarkdownReadyBridge(this, webViewHolder), "gmTranslationHost")
                 settings.javaScriptCanOpenWindowsAutomatically = false
                 settings.setSupportMultipleWindows(false)
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -186,7 +191,7 @@ fun MarkdownWebView(
             val webView = host.getChildAt(0) as? WebView ?: return@AndroidView
             viewState.onDocumentLink = { currentDocumentLink(it) }
             viewState.onExternalLink = { currentExternalLink(it) }
-            viewState.bindDisplayError { currentDisplayError() }
+            viewState.bindDisplayCallbacks({ currentDisplayError() }, { currentDisplayed(it) })
             (webView as? NoVerticalScrollWebView)?.onImageClick = { selectedImage = it }
             if (webView.tag !== page) {
                 webView.tag = page
@@ -203,7 +208,7 @@ fun MarkdownWebView(
                     null,
                 )
             }
-            webViewHolder.submit(translation)
+            webViewHolder.submit(translation, displayAttempt)
         },
         onRelease = { host ->
             viewState.detach(host)
@@ -234,18 +239,27 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
     var onDocumentLink: ((RepoDocumentContext) -> Unit)? = null
     var onExternalLink: ((String) -> Unit)? = null
     private var onDisplayError: (() -> Unit)? = null
-    private var pendingDisplayError = false
-    val controller = MarkdownTranslationController {
-        val handler = onDisplayError
-        if (handler == null) pendingDisplayError = true else handler()
-    }
+    private var onDisplayed: ((TranslationPresentation?) -> Unit)? = null
+    private var pendingDisplayState: Boolean? = null
+    private var displayedPresentation: TranslationPresentation? = null
+    private var pageInputs: List<Any?>? = null
+    private var page by mutableStateOf(MarkdownPage())
+    val controller = MarkdownTranslationController(
+        onReload = { page = MarkdownPage() },
+        onDisplayed = {
+            displayedPresentation = it
+            val handler = onDisplayed
+            if (handler == null) pendingDisplayState = false else handler(it)
+        },
+        onError = {
+            val handler = onDisplayError
+            if (handler == null) pendingDisplayState = true else handler()
+        },
+    )
     val client: WebViewClient = resources?.let {
         RepoDocumentWebViewClient(it, { onDocumentLink?.invoke(it) }, { onExternalLink?.invoke(it) },
             controller::pageReady, controller::pageError)
     } ?: ExternalLinkWebViewClient(controller::pageReady, controller::pageError) { onExternalLink?.invoke(it) }
-    private var pageInputs: List<Any?>? = null
-    private var page = MarkdownPage()
-
     fun pageFor(inputs: List<Any?>): MarkdownPage {
         if (pageInputs != inputs) {
             pageInputs = inputs
@@ -254,12 +268,12 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
         return page
     }
 
-    fun bindDisplayError(handler: () -> Unit) {
-        onDisplayError = handler
-        if (pendingDisplayError) {
-            pendingDisplayError = false
-            handler()
-        }
+    fun bindDisplayCallbacks(error: () -> Unit, displayed: (TranslationPresentation?) -> Unit) {
+        onDisplayError = error
+        onDisplayed = displayed
+        val pending = pendingDisplayState
+        pendingDisplayState = null
+        if (pending == true) error() else if (pending == false) displayed(displayedPresentation)
     }
 
     fun detach(host: FrameLayout) {
@@ -268,6 +282,7 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
         onDocumentLink = null
         onExternalLink = null
         onDisplayError = null
+        onDisplayed = null
         (view as? NoVerticalScrollWebView)?.onImageClick = null
         host.removeView(view)
         view.onPause()
@@ -277,6 +292,7 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
         onDocumentLink = null
         onExternalLink = null
         onDisplayError = null
+        onDisplayed = null
         controller.release()
         val view = controller.webView ?: return
         controller.webView = null
@@ -320,7 +336,11 @@ internal class ExternalLinkWebViewClient(
 }
 
 /** View-local display coordination; business results remain exclusively in the ViewModel. */
-internal class MarkdownTranslationController(private val onError: () -> Unit) {
+internal class MarkdownTranslationController(
+    private val onReload: () -> Unit = {},
+    private val onDisplayed: (TranslationPresentation?) -> Unit = {},
+    private val onError: () -> Unit,
+) {
     var webView: WebView? by mutableStateOf(null)
     private var pageKey: Any? = null
     private var documentId: String? = null
@@ -328,69 +348,143 @@ internal class MarkdownTranslationController(private val onError: () -> Unit) {
     private var failed = false
     private var applying = false
     private var pending: TranslationPresentation? = null
-    private var confirmed: Pair<Long, Long>? = null
-    private val timeout = Runnable { fail() }
+    private var submitted = false
+    private var revision = 0L
+    private var confirmed = -1L
+    private var displayAttempt = 0
+    private var operation = 0L
+    private var timeout: Runnable? = null
 
     fun begin(key: Any, id: String?) {
-        webView?.removeCallbacks(timeout)
-        pageKey = key; documentId = id; ready = false; failed = false; applying = false; confirmed = null
-        if (id != null) webView?.postDelayed(timeout, 15000)
+        cancelOperation()
+        pageKey = key; documentId = id; ready = false; failed = false; applying = false
+        pending = null; submitted = false; revision = 0; confirmed = -1
+        if (id != null) startOperation { fail() }
     }
-    fun submit(value: TranslationPresentation?) { pending = value; flush() }
+
+    fun submit(value: TranslationPresentation?, retry: Int = 0) {
+        val retryRequested = submitted && retry != 0 && retry != displayAttempt
+        if (retry != 0) displayAttempt = retry
+        if (submitted && pending == value && !retryRequested) return
+        val original = value == null || value.mode == "original"
+        val generationChanged = pending?.generation != value?.generation
+        val recover = retryRequested || failed && (original || generationChanged)
+        pending = value; submitted = true; revision++
+        when {
+            recover -> probe(reloadIfUnavailable = true)
+            failed -> onError()
+            else -> flush()
+        }
+    }
+
+    fun scriptReady(view: WebView, id: String) {
+        if (!current(view, pageKey) || id != documentId || ready) return
+        cancelOperation()
+        ready = true; failed = false; applying = false
+        remeasure(view)
+        flush()
+    }
+
     fun pageReady(view: WebView) {
         if (view !== webView) return
         if (documentId == null) { view.requestLayout(); return }
-        if (ready || failed) return
+        if (!ready && !applying) probe(reloadIfUnavailable = false)
+    }
+
+    private fun probe(reloadIfUnavailable: Boolean) {
+        val view = webView ?: return
+        val id = documentId ?: return
         val expected = pageKey
+        fun unavailable() {
+            fail()
+            if (reloadIfUnavailable) onReload()
+        }
+        applying = true
+        val attempt = startOperation { unavailable() }
         runCatching {
             view.evaluateJavascript("window.gmTranslation && window.gmTranslation.ready()") { result ->
-                if (!current(view, expected)) return@evaluateJavascript
-                val ack = parse(result)
-                // A late page-finished callback can still observe the previous document.
-                // Keep waiting for the current document; the bounded handshake timeout reports a missing script.
-                if (ack?.optString("documentId") != documentId) return@evaluateJavascript
-                ready = true; view.removeCallbacks(timeout); remeasure(view); flush()
-            }
-        }.onFailure { fail() }
-    }
-    fun pageError(view: WebView) { if (view === webView && documentId != null) fail() }
-    private fun flush() {
-        val view = webView ?: return
-        val value = pending ?: return
-        val id = documentId ?: return
-        if (!ready || failed || applying || confirmed == (value.generation to value.version)) return
-        val expected = pageKey
-        applying = true
-        view.removeCallbacks(timeout); view.postDelayed(timeout, 15000)
-        runCatching {
-            view.evaluateJavascript("window.gmTranslation && window.gmTranslation.apply(" + translationPatch(id, value) + ")") { result ->
-                if (!current(view, expected)) return@evaluateJavascript
-                applying = false; view.removeCallbacks(timeout)
-                val ack = parse(result)
-                if (ack?.optString("documentId") != id || ack.optLong("generation", -1) != value.generation || ack.optLong("version", -1) != value.version) {
-                    fail(); return@evaluateJavascript
+                if (!current(view, expected) || operation != attempt) return@evaluateJavascript
+                if (parse(result)?.optString("documentId") != id) {
+                    // An old page-finished event may still observe the previous document.
+                    if (reloadIfUnavailable) unavailable()
+                    return@evaluateJavascript
                 }
-                confirmed = value.generation to value.version
+                cancelOperation()
+                ready = true; failed = false; applying = false
                 remeasure(view)
                 flush()
             }
-        }.onFailure { fail() }
+        }.onFailure { if (operation == attempt) unavailable() }
     }
-    private fun current(view: WebView, key: Any?) = view === webView && pageKey === key && view.tag === key && !failed
+
+    fun pageError(view: WebView) {
+        if (view === webView && documentId != null) { ready = false; fail() }
+    }
+
+    private fun flush() {
+        val view = webView ?: return
+        val value = pending
+        val id = documentId ?: return
+        if (!submitted || !ready || failed || applying || confirmed == revision) return
+        val expectedRevision = revision
+        val expected = pageKey
+        fun rejected() {
+            cancelOperation(); applying = false
+            if (revision != expectedRevision) flush() else fail()
+        }
+        applying = true
+        val attempt = startOperation { rejected() }
+        runCatching {
+            view.evaluateJavascript("window.gmTranslation && window.gmTranslation.apply(" + translationPatch(id, value, expectedRevision) + ")") { result ->
+                if (!current(view, expected) || operation != attempt) return@evaluateJavascript
+                val ack = parse(result)
+                if (ack?.optString("documentId") != id || ack.optLong("generation", -1) != 0L || ack.optLong("version", -1) != expectedRevision) {
+                    rejected(); return@evaluateJavascript
+                }
+                cancelOperation(); applying = false
+                confirmed = expectedRevision
+                remeasure(view)
+                if (revision == expectedRevision) onDisplayed(value)
+                flush()
+            }
+        }.onFailure { if (operation == attempt) rejected() }
+    }
+
+    private fun current(view: WebView, key: Any?) = key != null && view === webView && pageKey === key && view.tag === key
     private fun parse(value: String?): JSONObject? = runCatching { JSONObject(value.orEmpty()) }.getOrNull()
     private fun remeasure(view: WebView) {
         view.requestLayout(); view.postInvalidateOnAnimation()
     }
-    private fun fail() {
-        if (failed || documentId == null) return
-        failed = true; applying = false; webView?.removeCallbacks(timeout); onError()
+    private fun startOperation(expired: () -> Unit): Long {
+        cancelOperation()
+        val attempt = operation
+        timeout = Runnable { if (operation == attempt) expired() }.also { webView?.postDelayed(it, 15000) }
+        return attempt
     }
-    fun release() { webView?.removeCallbacks(timeout); ready = false; failed = true; pending = null; pageKey = null }
+    private fun cancelOperation() {
+        timeout?.let { webView?.removeCallbacks(it) }
+        timeout = null
+        operation++
+    }
+    private fun fail() {
+        cancelOperation(); applying = false
+        if (failed || documentId == null) return
+        failed = true; onError()
+    }
+    fun release() {
+        cancelOperation(); ready = false; failed = true; pending = null; pageKey = null
+    }
 }
 
-internal fun translationPatch(documentId: String, value: TranslationPresentation): String = JSONObject().apply {
-    put("documentId", documentId); put("generation", value.generation); put("version", value.version); put("mode", value.mode)
-    put("values", JSONObject().apply { value.translations.forEach { (id, text) -> put(id.toString(), text) } })
+/** Only the sanitized document's nonce-authorized script can notify readiness. */
+internal class MarkdownReadyBridge(private val view: WebView, private val controller: MarkdownTranslationController) {
+    @JavascriptInterface
+    fun ready(documentId: String) { view.post { controller.scriptReady(view, documentId) } }
+}
+
+internal fun translationPatch(documentId: String, value: TranslationPresentation?, revision: Long): String = JSONObject().apply {
+    put("documentId", documentId); put("generation", 0); put("version", revision); put("mode", value?.mode ?: "original")
+    put("values", JSONObject().apply { value?.translations?.forEach { (id, text) -> put(id.toString(), text) } })
 }.toString()
 
 /**
@@ -432,12 +526,12 @@ internal class NoVerticalScrollWebView(context: Context) : WebView(context) {
     }
 }
 
-private fun Modifier.remeasureOnMarkdownResize(size: () -> IntSize): Modifier =
+private fun Modifier.remeasureOnMarkdownResize(contentHeight: () -> Int): Modifier =
     layout { measurable, constraints ->
-        val observedSize = size()
-        // Measure naturally so a previous height cannot prevent WebView content from growing.
+        val observedHeight = contentHeight()
+        // Measure naturally so a previous height cannot prevent WebView content from growing or shrinking.
         val placeable = measurable.measure(constraints)
-        val height = observedSize.height.coerceIn(constraints.minHeight, constraints.maxHeight)
+        val height = observedHeight.coerceIn(constraints.minHeight, constraints.maxHeight)
         layout(placeable.width, height) { placeable.placeRelative(0, 0) }
     }
 

@@ -39,6 +39,31 @@ class TranslationDocumentTest {
         assertFalse(document.parts.any { "alert" in it || "secret" in it })
     }
 
+    @Test fun originalClassesAndResponsiveImagesSurviveWithoutActiveContentOrReservedMarkers() {
+        val document = html("""<div class="markdown-alert markdown-alert-note gm-source" onclick="evil()">
+            <p class="markdown-alert-title">Note</p><picture>
+            <source media="(prefers-color-scheme: dark)" srcset="dark.png 1x, dark@2x.png 2x" type="image/png">
+            <img class="emoji" src="light.png" srcset="light.png 1x, light@2x.png 2x" sizes="100vw" width="100" height="50" loading="lazy" onerror="evil()">
+            </picture><img src="data:image/png;base64,AAAA"><input type="checkbox" checked></div>""")
+        val dom = Jsoup.parse(document.safeHtml!!)
+        assertEquals("markdown-alert markdown-alert-note", dom.selectFirst("div")!!.className())
+        assertTrue(dom.selectFirst("p")!!.hasClass("markdown-alert-title"))
+        val source = dom.selectFirst("picture > source")!!
+        assertEquals("(prefers-color-scheme: dark)", source.attr("media"))
+        assertEquals("dark.png 1x, dark@2x.png 2x", source.attr("srcset"))
+        assertEquals("image/png", source.attr("type"))
+        val image = dom.selectFirst("picture > img")!!
+        assertEquals("light.png 1x, light@2x.png 2x", image.attr("srcset"))
+        assertEquals("100vw", image.attr("sizes"))
+        assertEquals("100", image.attr("width"))
+        assertEquals("50", image.attr("height"))
+        assertEquals("lazy", image.attr("loading"))
+        assertTrue(image.hasClass("emoji"))
+        assertEquals("data:image/png;base64,AAAA", dom.select("img")[1].attr("src"))
+        assertTrue(dom.selectFirst("input")!!.hasAttr("disabled"))
+        assertTrue(dom.select("[onclick], [onerror], .gm-source").isEmpty())
+    }
+
     @Test fun tablesDetailsTaskListsAndAnchorsSurviveCleaning() {
         val document = html("""<details open><summary>More</summary><p id="section">Body</p></details><table><tr><td>Cell</td></tr></table><ul><li><input type="checkbox" checked>Task</li></ul><a href="#section">Jump</a>""")
         val dom = Jsoup.parse(document.safeHtml!!)
@@ -49,11 +74,12 @@ class TranslationDocumentTest {
         assertEquals(5, dom.select("[data-gm-output]").size)
     }
 
-    @Test fun longParagraphProducesIndependentStableUnitsAndNoTranslatedOriginalCopies() {
+    @Test fun longParagraphKeepsTheSameDisplayUnitAcrossProviders() {
         val source = "word ".repeat(2000)
         val document = html("<p>$source</p><pre>untouched</pre><img src='a.png'>")
         val dom = Jsoup.parse(document.safeHtml!!)
-        assertTrue(document.parts.size > 1)
+        assertEquals(listOf(source), document.parts)
+        assertEquals(document, TranslationDocuments.create(document.target, TranslationProvider.BAIDU))
         assertEquals(source, document.parts.joinToString(""))
         assertEquals(document.parts.indices.map(Int::toString), dom.select("[data-gm-unit]").map { it.attr("data-gm-unit") })
         assertTrue(dom.select("[data-gm-output]").all { it.hasAttr("hidden") && it.text().isEmpty() })
@@ -125,6 +151,17 @@ class TranslationDocumentTest {
         assertEquals("阅读 https://example.test 然后联系 dev@example.test!",
             document.renderText(mapOf(0 to "阅读 ", 1 to " 然后联系 "), translatedOnly = true))
         assertEquals("", document.renderText(emptyMap(), translatedOnly = true))
+    }
+
+    @Test(timeout = 5000) fun untranslatableAndOverLimitOriginalsStillHaveSafeDisplayDocuments() {
+        for (source in listOf("", "<pre><code>val x = 1</code></pre><img src='image.png'>", "<p>" + "x".repeat(200001) + "</p>", "<p>Hello</p>".repeat(4001))) {
+            val target = TranslationTarget("body", source, true)
+            val prepared = TranslationDocuments.prepareHtml(target)
+            val dom = Jsoup.parse(prepared.safeHtml!!)
+            assertEquals(Jsoup.parse(source).text(), dom.text())
+            assertEquals(Jsoup.parse(source).select("img").size, dom.select("img").size)
+            assertThrows(TranslationException::class.java) { TranslationDocuments.create(target, TranslationProvider.EDGE) }
+        }
     }
 
     @Test fun emptyAndOversizeDocumentsProduceUsefulErrors() {

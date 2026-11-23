@@ -4,6 +4,17 @@ import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
+import kotlinx.coroutines.runBlocking
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -20,8 +31,17 @@ import com.gitmob.app.data.translation.TranslationDocuments
 import com.gitmob.app.data.translation.TranslationPresentation
 import com.gitmob.app.data.translation.TranslationProvider
 import com.gitmob.app.data.translation.TranslationTarget
+import com.gitmob.app.data.translation.TranslationConfiguration
+import com.gitmob.app.data.translation.TranslationPreferences
+import com.gitmob.app.ui.translation.LocalTranslationController
+import com.gitmob.app.ui.translation.TranslationController
+import com.gitmob.app.ui.translation.TranslationEntry
+import com.gitmob.app.ui.translation.TranslationHtml
+import com.gitmob.app.ui.translation.TranslationUiState
+import com.gitmob.app.ui.translation.TranslationViewModel
 import android.webkit.ValueCallback
 import org.json.JSONObject
+import io.mockk.Called
 import io.mockk.verify
 import io.mockk.every
 import io.mockk.mockk
@@ -39,10 +59,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implements
+import org.robolectric.annotation.Implementation
+import org.robolectric.shadows.ShadowWebView
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], shadows = [MarkdownWebViewTest.CountingWebViewShadow::class])
 class MarkdownWebViewTest {
     @get:Rule val composeRule = createComposeRule()
 
@@ -286,7 +309,6 @@ class MarkdownWebViewTest {
     }
 
     private fun snapshot(version: Long = 1, values: Map<Int, String> = mapOf(0 to "你好")) = TranslationPresentation(
-        TranslationDocuments.create(TranslationTarget("doc", "<p>Hello</p><p>World</p>", html = true), TranslationProvider.EDGE),
         values, version, "bilingual", 7,
     )
 
@@ -297,7 +319,7 @@ class MarkdownWebViewTest {
         assertTrue(html.contains("""<script nonce="unique">"""))
         assertFalse(buildMarkdownDocument("<p>Static</p>", "", "#ffffff").contains("<script"))
         val hostile = "\"</script><img onerror=alert(1)>\\\n"
-        val patch = JSONObject(translationPatch("doc", snapshot(values = mapOf(0 to hostile))))
+        val patch = JSONObject(translationPatch("doc", snapshot(values = mapOf(0 to hostile)), 1))
         assertEquals(hostile, patch.getJSONObject("values").getString("0"))
     }
 
@@ -321,12 +343,43 @@ class MarkdownWebViewTest {
         assertTrue(scripts[1].contains("你好"))
         controller.submit(snapshot(2, mapOf(0 to "你好", 1 to "世界")))
         assertEquals(2, scripts.size)
-        callbacks[1].onReceiveValue("""{"documentId":"doc","generation":7,"version":1}""")
+        callbacks[1].onReceiveValue("""{"documentId":"doc","generation":0,"version":1}""")
         assertEquals(3, scripts.size)
         assertTrue(scripts[2].contains("世界"))
-        callbacks[2].onReceiveValue("""{"documentId":"doc","generation":7,"version":2}""")
-        controller.submit(snapshot(2))
+        callbacks[2].onReceiveValue("""{"documentId":"doc","generation":0,"version":2}""")
+        controller.submit(snapshot(2, mapOf(0 to "你好", 1 to "世界")))
         assertEquals(3, scripts.size)
+        assertEquals(0, failures)
+        verify(exactly = 0) { view.loadDataWithBaseURL(any(), any(), any(), any(), any()) }
+        controller.release()
+    }
+
+    @Test fun clearedTaskRestoresOriginalAfterAnOutstandingTranslationAck() {
+        val view = mockk<WebView>(relaxed = true)
+        val scripts = mutableListOf<String>()
+        val callbacks = mutableListOf<ValueCallback<String>>()
+        every { view.evaluateJavascript(any(), any()) } answers {
+            scripts += firstArg<String>(); callbacks += secondArg<ValueCallback<String>>()
+        }
+        val key = Any()
+        every { view.tag } returns key
+        var failures = 0
+        val controller = MarkdownTranslationController { failures++ }.apply { webView = view }
+        controller.begin(key, "doc")
+        controller.submit(snapshot(99).copy(generation = 100))
+        controller.pageReady(view)
+        callbacks[0].onReceiveValue("""{"documentId":"doc"}""")
+        controller.submit(null)
+        callbacks[1].onReceiveValue("""{"documentId":"doc","generation":0,"version":1}""")
+        val restored = JSONObject(scripts.last().substringAfter("apply(").dropLast(1))
+        assertEquals("original", restored.getString("mode"))
+        assertEquals(0, restored.getJSONObject("values").length())
+        assertEquals(2L, restored.getLong("version"))
+        callbacks[2].onReceiveValue("""{"documentId":"doc","generation":0,"version":2}""")
+        controller.submit(snapshot().copy(generation = 1))
+        val next = JSONObject(scripts.last().substringAfter("apply(").dropLast(1))
+        assertEquals(3L, next.getLong("version"))
+        callbacks[3].onReceiveValue("""{"documentId":"doc","generation":0,"version":3}""")
         assertEquals(0, failures)
         verify(exactly = 0) { view.loadDataWithBaseURL(any(), any(), any(), any(), any()) }
         controller.release()
@@ -353,20 +406,340 @@ class MarkdownWebViewTest {
         controller.pageError(view)
         assertEquals(1, failures)
         key = Any(); controller.begin(key, "retry")
+        controller.submit(snapshot())
         controller.pageReady(view)
         callbacks[2].onReceiveValue("""{"documentId":"retry"}""")
         assertEquals(4, callbacks.size)
-        callbacks[3].onReceiveValue("""{"documentId":"retry","generation":7,"version":1}""")
+        callbacks[3].onReceiveValue("""{"documentId":"retry","generation":0,"version":1}""")
         assertEquals(1, failures)
         controller.release()
     }
 
-    @Test fun enablingTranslationReplacesStaticViewWithoutClosingSharedResources() {
+    private class DisplayHarness {
+        val view = mockk<WebView>(relaxed = true)
+        val callbacks = mutableListOf<ValueCallback<String>>()
+        val scripts = mutableListOf<String>()
+        val timers = mutableListOf<Runnable>()
+        var failures = 0
+        var reloads = 0
+        val displayed = mutableListOf<TranslationPresentation?>()
+        val controller = MarkdownTranslationController({ reloads++ }, { displayed.add(it) }, { failures++ })
+        init {
+            every { view.tag } returns Any()
+            every { view.evaluateJavascript(any(), any()) } answers {
+                scripts.add(firstArg()); callbacks.add(secondArg())
+            }
+            every { view.postDelayed(any(), any()) } answers { timers.add(firstArg()); true }
+            controller.webView = view
+            controller.begin(view.tag, "doc")
+        }
+        fun ready() = controller.scriptReady(view, "doc")
+        fun patch() = JSONObject(scripts.last().substringAfter("apply(").dropLast(1))
+        fun ack() = callbacks.last().onReceiveValue(patch().apply { remove("mode"); remove("values") }.toString())
+        fun probeReady() = callbacks.last().onReceiveValue("""{"documentId":"doc"}""")
+        fun assertNoReload() {
+            assertEquals(0, reloads)
+            verify(exactly = 0) { view.loadDataWithBaseURL(any(), any(), any(), any(), any()) }
+        }
+    }
+
+    @Test fun scriptReadinessAppliesBeforeImagesFinishAndLateReadinessClearsFailure() {
+        for (late in listOf(false, true)) {
+            val h = DisplayHarness()
+            val value = snapshot()
+            h.controller.submit(value)
+            if (late) h.timers.last().run()
+            assertEquals(if (late) 1 else 0, h.failures)
+            h.ready()
+            assertEquals(1, h.scripts.size)
+            assertEquals("bilingual", h.patch().getString("mode"))
+            h.ack()
+            assertEquals(listOf(value), h.displayed)
+            h.controller.pageReady(h.view)
+            assertEquals(1, h.scripts.size)
+            h.assertNoReload()
+            h.controller.release()
+        }
+    }
+
+    @Test fun failedApplyCanRestoreOriginalOrDisableTranslationInTheSameDocument() {
+        for (timeout in listOf(false, true)) for (disable in listOf(false, true)) {
+            val h = DisplayHarness()
+            h.controller.submit(snapshot()); h.ready()
+            val obsolete = h.callbacks.last()
+            if (timeout) h.timers.last().run() else obsolete.onReceiveValue("null")
+            assertEquals(1, h.failures)
+            val original = if (disable) null else snapshot(2).copy(mode = "original")
+            h.controller.submit(original)
+            h.probeReady()
+            assertEquals("original", h.patch().getString("mode"))
+            h.ack()
+            obsolete.onReceiveValue("null")
+            assertEquals(1, h.failures)
+            assertEquals(listOf(original), h.displayed)
+            h.assertNoReload()
+            h.controller.release()
+        }
+    }
+
+    @Test fun originalRequestedWhileTranslationIsPendingStillAppliesAfterItsTimeout() {
+        val h = DisplayHarness()
+        h.controller.submit(snapshot()); h.ready()
+        h.controller.submit(null)
+        h.timers.last().run()
+        assertEquals("original", h.patch().getString("mode"))
+        h.ack()
+        assertEquals(0, h.failures)
+        assertEquals(listOf<TranslationPresentation?>(null), h.displayed)
+        h.assertNoReload()
+        h.controller.release()
+    }
+
+    @Test fun displayRetryAndProviderSwitchReuseTheWorkingDocument() {
+        for (retry in listOf(false, true)) {
+            val h = DisplayHarness()
+            val initial = snapshot()
+            h.controller.submit(initial); h.ready()
+            h.callbacks.last().onReceiveValue("null")
+            val next = if (retry) initial else initial.copy(generation = 8)
+            h.controller.submit(next, if (retry) 1 else 0)
+            h.probeReady(); h.ack()
+            assertEquals(listOf(next), h.displayed)
+            h.assertNoReload()
+            h.controller.release()
+        }
+    }
+
+    @Test fun recoveryReloadsOnlyWhenTheCurrentDocumentCannotAnswer() {
+        for (timeout in listOf(false, true)) {
+            val h = DisplayHarness()
+            h.controller.submit(snapshot()); h.ready()
+            h.callbacks.last().onReceiveValue("null")
+            assertEquals(0, h.reloads)
+            h.controller.submit(snapshot(), 1)
+            if (timeout) h.timers.last().run() else h.callbacks.last().onReceiveValue("null")
+            assertEquals(1, h.reloads)
+            h.timers.last().run()
+            assertEquals(1, h.reloads)
+            h.controller.release()
+        }
+    }
+
+    @Test fun detachedRendererDeliversLatestDisplayOutcomeAfterRebinding() {
+        val state = MarkdownWebViewState(null)
+        val view = mockk<WebView>(relaxed = true)
+        val host = mockk<FrameLayout>(relaxed = true)
+        val callbacks = mutableListOf<ValueCallback<String>>()
+        every { view.tag } returns Any()
+        every { view.parent } returns host
+        every { view.evaluateJavascript(any(), any()) } answers { callbacks.add(secondArg()) }
+        state.controller.webView = view
+        state.controller.begin(view.tag, "doc")
+        var errors = 0
+        var successes = 0
+        state.bindDisplayCallbacks({ errors++ }, { successes++ })
+        state.controller.submit(snapshot())
+        state.controller.scriptReady(view, "doc")
+        state.detach(host)
+        callbacks.last().onReceiveValue("null")
+        state.controller.submit(null)
+        callbacks.last().onReceiveValue("""{"documentId":"doc"}""")
+        callbacks.last().onReceiveValue("""{"documentId":"doc","generation":0,"version":2}""")
+        assertEquals(0, errors)
+        assertEquals(0, successes)
+        state.bindDisplayCallbacks({ errors++ }, { successes++ })
+        assertEquals(0, errors)
+        assertEquals(1, successes)
+        state.close()
+    }
+
+    @Test fun staleReadinessAndCallbacksCannotUpdateAnotherDocument() {
+        val h = DisplayHarness()
+        h.controller.submit(snapshot()); h.ready()
+        val stale = h.callbacks.last()
+        val key = Any()
+        every { h.view.tag } returns key
+        h.controller.begin(key, "new")
+        h.controller.submit(snapshot())
+        h.controller.scriptReady(h.view, "doc")
+        stale.onReceiveValue("null")
+        assertEquals(1, h.scripts.size)
+        assertEquals(0, h.failures)
+        h.controller.scriptReady(h.view, "new")
+        assertEquals(2, h.scripts.size)
+        h.ack()
+        h.controller.release()
+    }
+
+    @Test fun translationKeepsRendererAndOuterScrollWhileContentResizes() {
+        val body = mutableStateOf("<p>Hello</p><p>World</p>")
+        val document = TranslationDocuments.create(TranslationTarget("readme", body.value, true), TranslationProvider.EDGE)
+        val presentation = mutableStateOf<TranslationPresentation?>(null)
+        lateinit var root: View
+        lateinit var scroll: ScrollState
+        lateinit var original: WebView
+        composeRule.setContent {
+            val local = LocalView.current
+            SideEffect { root = local.rootView }
+            scroll = rememberScrollState()
+            MaterialTheme {
+                Column(Modifier.height(200.dp).verticalScroll(scroll)) {
+                    MarkdownWebView(body.value, preparedDocument = document.takeIf { it.target.content == body.value }, translation = presentation.value)
+                }
+            }
+        }
+        composeRule.runOnIdle {
+            original = requireNotNull(findWebView(root))
+            notifyContentHeight(original, 3000)
+        }
+        composeRule.runOnIdle { runBlocking { scroll.scrollTo(1000) } }
+        composeRule.runOnIdle {
+            assertEquals(1000, scroll.value)
+            presentation.value = TranslationPresentation(emptyMap(), 0, "translation", 1)
+        }
+        composeRule.runOnIdle {
+            val replacement = requireNotNull(findWebView(root))
+            assertSame(original, replacement)
+            assertEquals(1, (shadowOf(original) as CountingWebViewShadow).pageLoads)
+            assertEquals(1000, scroll.value)
+            assertEquals(3000 - scroll.viewportSize, scroll.maxValue)
+            notifyContentHeight(replacement, 4000)
+        }
+        composeRule.runOnIdle {
+            assertEquals(1000, scroll.value)
+            assertEquals(4000 - scroll.viewportSize, scroll.maxValue)
+            notifyContentHeight(requireNotNull(findWebView(root)), 2000)
+        }
+        composeRule.runOnIdle {
+            assertEquals(1000, scroll.value)
+            assertEquals(2000 - scroll.viewportSize, scroll.maxValue)
+            notifyContentHeight(requireNotNull(findWebView(root)), 600)
+        }
+        composeRule.runOnIdle {
+            assertEquals(600 - scroll.viewportSize, scroll.maxValue)
+            assertEquals(scroll.maxValue, scroll.value)
+            body.value = "<p>A different document</p>"
+            presentation.value = null
+        }
+        composeRule.runOnIdle {
+            assertEquals(0, scroll.maxValue)
+            notifyContentHeight(requireNotNull(findWebView(root)), 600)
+        }
+        composeRule.runOnIdle { assertEquals(600 - scroll.viewportSize, scroll.maxValue) }
+    }
+
+    @Test fun displayFailureLeavesTheCurrentBodyAndScrollInPlace() {
+        val body = "<p>Original README</p>"
+        val document = TranslationDocuments.prepareHtml(TranslationTarget("readme", body, true))
+        val navigation = NavigationDocument(null)
+        val failed = mutableStateOf(false)
+        val shown = mutableStateOf(true)
+        lateinit var root: View
+        lateinit var scroll: ScrollState
+        lateinit var view: WebView
+        lateinit var loaded: String
+        composeRule.setContent {
+            val local = LocalView.current
+            SideEffect { root = local.rootView }
+            scroll = rememberScrollState()
+            MaterialTheme {
+                if (shown.value) Column(Modifier.height(200.dp).verticalScroll(scroll)) {
+                    if (failed.value) Spacer(Modifier.height(40.dp))
+                    MarkdownWebView(body, preparedDocument = document, navigationDocument = navigation,
+                        translation = snapshot(), onTranslationDisplayError = { failed.value = true })
+                }
+            }
+        }
+        composeRule.runOnIdle {
+            view = requireNotNull(findWebView(root))
+            loaded = shadowOf(view).lastLoadDataWithBaseURL.data
+            notifyContentHeight(view, 3000)
+        }
+        composeRule.runOnIdle { runBlocking { scroll.scrollTo(1000) } }
+        composeRule.runOnIdle { navigation.renderer().controller.pageError(view) }
+        composeRule.runOnIdle {
+            assertTrue(failed.value)
+            assertSame(view, findWebView(root))
+            assertEquals(loaded, shadowOf(view).lastLoadDataWithBaseURL.data)
+            assertEquals(1, (shadowOf(view) as CountingWebViewShadow).pageLoads)
+            assertEquals(3000, (view as NoVerticalScrollWebView).layoutSize.height)
+            assertEquals(1000, scroll.value)
+            shown.value = false
+        }
+        composeRule.runOnIdle { navigation.close() }
+    }
+
+    @Test fun translationKeepsNavigationRendererAndLazyListItemOffset() {
+        val body = "<p>Hello</p><p>World</p>"
+        val document = TranslationDocuments.create(TranslationTarget("readme", body, true), TranslationProvider.EDGE)
+        val presentation = mutableStateOf<TranslationPresentation?>(null)
+        lateinit var root: View
+        lateinit var scroll: LazyListState
+        lateinit var original: WebView
+        composeRule.setContent {
+            val local = LocalView.current
+            SideEffect { root = local.rootView }
+            scroll = rememberLazyListState()
+            MaterialTheme {
+                LazyColumn(Modifier.height(200.dp), state = scroll) {
+                    item(key = "body") {
+                        val navigationDocument = rememberNavigationDocument(body, null, 0) { error("No resources needed") }
+                        Column {
+                            Spacer(Modifier.height(48.dp))
+                            MarkdownWebView(body, preparedDocument = document, translation = presentation.value, navigationDocument = navigationDocument)
+                        }
+                    }
+                    items(5, key = { "following:$it" }) { Spacer(Modifier.height(100.dp)) }
+                }
+            }
+        }
+        composeRule.runOnIdle {
+            original = requireNotNull(findWebView(root))
+            notifyContentHeight(original, 3000)
+        }
+        composeRule.runOnIdle { runBlocking { scroll.scrollToItem(0, 1000) } }
+        composeRule.runOnIdle {
+            assertEquals(0, scroll.firstVisibleItemIndex)
+            assertEquals(1000, scroll.firstVisibleItemScrollOffset)
+            presentation.value = TranslationPresentation(emptyMap(), 0, "translation", 1)
+        }
+        composeRule.runOnIdle {
+            val replacement = requireNotNull(findWebView(root))
+            assertSame(original, replacement)
+            assertEquals(1, (shadowOf(original) as CountingWebViewShadow).pageLoads)
+            assertEquals(0, scroll.firstVisibleItemIndex)
+            assertEquals(1000, scroll.firstVisibleItemScrollOffset)
+            notifyContentHeight(replacement, 4000)
+        }
+        composeRule.runOnIdle {
+            assertEquals(0, scroll.firstVisibleItemIndex)
+            assertEquals(1000, scroll.firstVisibleItemScrollOffset)
+        }
+    }
+
+    private fun findWebView(view: View): WebView? {
+        if (view is WebView) return view
+        if (view is ViewGroup) for (index in 0 until view.childCount) findWebView(view.getChildAt(index))?.let { return it }
+        return null
+    }
+
+    // Robolectric does not lay out HTML; deliver Chromium's size notification explicitly.
+    private fun notifyContentHeight(view: WebView, height: Int) {
+        ReflectionHelpers.callInstanceMethod<Unit>(view, "onSizeChanged",
+            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, 360),
+            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, height),
+            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, 0),
+            ReflectionHelpers.ClassParameter.from(Int::class.javaPrimitiveType, 0))
+    }
+
+    @Test fun allTranslationStatesKeepTheInitialPageAndSharedResources() {
         val resources = mockk<RepoDocumentResources>(relaxed = true) {
             every { document } returns RepoDocumentContext("owner", "repo", "main", "README.md")
         }
         val presentation = mutableStateOf<TranslationPresentation?>(null)
         val shown = mutableStateOf(true)
+        val retry = mutableStateOf(0)
+        val document = TranslationDocuments.prepareHtml(TranslationTarget("doc", "<p>Hello</p><p>World</p>", true))
         lateinit var root: View
         lateinit var staticView: WebView
         lateinit var controlledView: WebView
@@ -380,17 +753,19 @@ class MarkdownWebViewTest {
             val local = LocalView.current
             SideEffect { root = local.rootView }
             if (shown.value) MaterialTheme {
-                MarkdownWebView("<p>Hello</p><p>World</p>", documentResources = resources, translation = presentation.value)
+                MarkdownWebView("<p>Hello</p><p>World</p>", preparedDocument = document, documentResources = resources,
+                    translation = presentation.value, displayAttempt = retry.value)
             }
         }
         composeRule.runOnIdle {
             staticView = requireNotNull(find(root))
-            assertFalse(staticView.settings.javaScriptEnabled)
+            assertTrue(staticView.settings.javaScriptEnabled)
+            assertEquals(1, (shadowOf(staticView) as CountingWebViewShadow).pageLoads)
             presentation.value = snapshot()
         }
         composeRule.runOnIdle {
             controlledView = requireNotNull(find(root))
-            assertTrue(controlledView !== staticView)
+            assertSame(staticView, controlledView)
             assertTrue(controlledView.settings.javaScriptEnabled)
             assertFalse(controlledView.settings.allowFileAccess)
             assertFalse(controlledView.settings.allowContentAccess)
@@ -401,9 +776,95 @@ class MarkdownWebViewTest {
         composeRule.runOnIdle {
             assertSame(controlledView, find(root))
             assertEquals(loadedHtml, shadowOf(controlledView).lastLoadDataWithBaseURL.data)
+        }
+        val states = listOf(
+            snapshot(3).copy(mode = "original"),
+            snapshot(4).copy(mode = "bilingual"),
+            snapshot(1).copy(generation = 8),
+            snapshot(1).copy(generation = 9),
+            null,
+        )
+        for (state in states) {
+            composeRule.runOnIdle { presentation.value = state }
+            composeRule.runOnIdle {
+                assertSame(controlledView, find(root))
+                assertEquals(1, (shadowOf(controlledView) as CountingWebViewShadow).pageLoads)
+            }
+        }
+        composeRule.runOnIdle { retry.value = 1 }
+        composeRule.runOnIdle {
+            assertSame(controlledView, find(root))
+            assertEquals(1, (shadowOf(controlledView) as CountingWebViewShadow).pageLoads)
+            retry.value = 0
+        }
+        composeRule.runOnIdle {
+            assertEquals(1, (shadowOf(controlledView) as CountingWebViewShadow).pageLoads)
             shown.value = false
         }
         composeRule.runOnIdle { verify(exactly = 1) { resources.close() } }
+    }
+
+    @Test fun htmlHostPreparesOnceBeforeDisplayAndRetainsPageAcrossTaskAndNavigationChanges() {
+        val body = "<p onclick='evil()'>Hello</p><p>World</p>"
+        val target = TranslationTarget("readme", body, true)
+        val navigation = NavigationDocument(null)
+        val vm = mockk<TranslationViewModel>(relaxed = true)
+        val enabled = TranslationConfiguration(TranslationPreferences(enabled = true))
+        val state = mutableStateOf(TranslationUiState(configuration = enabled))
+        val shown = mutableStateOf(true)
+        lateinit var root: View
+        lateinit var original: WebView
+        composeRule.setContent {
+            val local = LocalView.current
+            SideEffect { root = local.rootView }
+            MaterialTheme {
+                CompositionLocalProvider(LocalTranslationController provides TranslationController(state.value, vm) {}) {
+                    if (shown.value) TranslationHtml(target.key, body, navigationDocument = navigation)
+                }
+            }
+        }
+        composeRule.waitUntil(5000) { findWebView(root) != null }
+        composeRule.runOnIdle {
+            original = requireNotNull(findWebView(root))
+            val html = shadowOf(original).lastLoadDataWithBaseURL.data
+            assertTrue(original.settings.javaScriptEnabled)
+            assertTrue(html.contains("data-gm-unit"))
+            assertFalse(html.contains("evil()"))
+            verify { vm wasNot Called }
+        }
+        val prepared = requireNotNull(navigation.translationDocument)
+        val entry = TranslationEntry(document = prepared, translations = mapOf(0 to "你好"), generation = 7, version = 10)
+        for (entryState in listOf(entry, entry.copy(showOriginal = true), entry.copy(preferences = enabled.preferences.copy(bilingual = true)), null)) {
+            composeRule.runOnIdle {
+                state.value = state.value.copy(entries = entryState?.let { mapOf(target.identity to it) }.orEmpty())
+            }
+            composeRule.runOnIdle {
+                assertSame(original, findWebView(root))
+                assertSame(prepared, navigation.translationDocument)
+                assertEquals(1, (shadowOf(original) as CountingWebViewShadow).pageLoads)
+            }
+        }
+        composeRule.runOnIdle { shown.value = false }
+        composeRule.runOnIdle { shown.value = true }
+        composeRule.runOnIdle {
+            assertSame(original, findWebView(root))
+            assertEquals(1, (shadowOf(original) as CountingWebViewShadow).pageLoads)
+            assertSame(prepared, navigation.translationDocument)
+            shown.value = false
+        }
+        composeRule.runOnIdle { navigation.close() }
+    }
+
+    @Implements(WebView::class)
+    class CountingWebViewShadow : ShadowWebView() {
+        var pageLoads = 0
+            private set
+
+        @Implementation
+        public override fun loadDataWithBaseURL(baseUrl: String?, data: String?, mimeType: String?, encoding: String?, historyUrl: String?) {
+            pageLoads++
+            super.loadDataWithBaseURL(baseUrl, data, mimeType, encoding, historyUrl)
+        }
     }
 
 }

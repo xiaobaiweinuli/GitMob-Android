@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.navigation3.runtime.NavEntryDecorator
 import com.gitmob.app.data.model.RepoDocumentContext
+import com.gitmob.app.data.translation.TranslationDocument
 
 /** UI resources live only in this Activity's navigation entries, never in a ViewModel. */
 private val LocalDocumentOwner = staticCompositionLocalOf<NavigationDocumentOwner?> { null }
@@ -69,20 +70,15 @@ private class NavigationDocumentOwner {
 /** One repository document, including its resource requests and live renderer. */
 class NavigationDocument internal constructor(val resources: RepoDocumentResources?) {
     private var renderer: MarkdownWebViewState? = null
-    private var controlled = false
+    internal var translationDocument: TranslationDocument? = null
 
-    internal fun renderer(controlled: Boolean): MarkdownWebViewState {
-        if (renderer == null || this.controlled != controlled) {
-            renderer?.close()
-            this.controlled = controlled
-            renderer = MarkdownWebViewState(resources)
-        }
-        return checkNotNull(renderer)
-    }
+    internal fun renderer(): MarkdownWebViewState =
+        renderer ?: MarkdownWebViewState(resources).also { renderer = it }
 
     internal fun close() {
         renderer?.close()
         renderer = null
+        translationDocument = null
         resources?.close()
     }
 }

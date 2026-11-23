@@ -869,17 +869,19 @@ private fun LoggedInApp(
         }
         entry<RepoReleaseDetailRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
-            RepoReleaseDetailScreen(
-                owner = route.owner,
-                name = route.name,
-                tag = route.tag,
-                releaseId = null,
-                permission = route.permission,
-                onBack = { clicks.goBack() },
-                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
-                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
-                onEdit = { releaseId -> clicks.navigate(RepoReleaseEditorRoute(route.owner, route.name, releaseId, route.permission)) },
-            )
+            TranslationHost {
+                RepoReleaseDetailScreen(
+                    owner = route.owner,
+                    name = route.name,
+                    tag = route.tag,
+                    releaseId = null,
+                    permission = route.permission,
+                    onBack = { clicks.goBack() },
+                    onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                    onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                    onEdit = { releaseId -> clicks.navigate(RepoReleaseEditorRoute(route.owner, route.name, releaseId, route.permission)) },
+                )
+            }
         }
         entry<RepoReleaseEditorRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
