@@ -172,7 +172,7 @@ class RepoActionLogsScreenTest {
         runVm = vm
         restoration.setContent { MaterialTheme {
             inputMode = androidx.compose.ui.platform.LocalInputModeManager.current
-            RepoWorkflowRunScreen("octo", "repo", 42, RepoPermission.WRITE, {}, {}, { _, _ -> }, { opened = it }, vm)
+            RepoWorkflowRunScreen("octo", "repo", 42, RepoPermission.WRITE, false, {}, {}, { _, _ -> }, { opened = it }, vm)
         } }
     }
     private fun renderLog(raw: String, truncated: Boolean = false, fontScale: Float = 1f) {

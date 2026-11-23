@@ -12,6 +12,8 @@ import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.core.permission.RepoCapabilities
+import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.core.permission.RepoPermission
 import com.apollographql.apollo.ApolloClient
 import com.gitmob.app.core.network.graphql.executeAsApiResult
@@ -20,6 +22,9 @@ import com.gitmob.app.graphql.ActionWorkflowYamlQuery
 import com.gitmob.app.graphql.RepositoryPermissionQuery
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,15 +34,35 @@ class RepoActionsRepository @Inject constructor(
     private val apolloClient: ApolloClient,
     private val downloadLauncher: ExternalDownloadLauncher,
 ) {
-    suspend fun getRepositoryPermission(owner: String, name: String): ApiResult<RepoPermission> =
+    suspend fun getRepositoryCapabilities(owner: String, name: String): ApiResult<RepoCapabilities> =
         when (val result = apolloClient.query(RepositoryPermissionQuery(owner, name)).executeAsApiResult()) {
             is ApiResult.Failure -> result
             is ApiResult.Success -> safeCall {
-                result.data.repository?.viewerPermission?.rawValue
-                    ?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() }
-                    ?: RepoPermission.NONE
+                result.data.repository?.let { repository ->
+                    val permission = repository.viewerPermission?.rawValue
+                        ?.let { runCatching { RepoPermission.valueOf(it) }.getOrNull() }
+                        ?: RepoPermission.NONE
+                    permission.toCapabilities(repository.isArchived)
+                } ?: RepoCapabilities.NONE
             }
         }
+
+    suspend fun getRepositoryActionsEnabled(owner: String, name: String): ApiResult<Boolean> = safeCall {
+        api.get<RepositoryActionsPermissions>("${actionsPath(owner, name)}/permissions").enabled
+    }
+
+    suspend fun setRepositoryActionsEnabled(owner: String, name: String, enabled: Boolean): ApiResult<Unit> = safeCall {
+        try {
+            api.put<Unit, RepositoryActionsPermissions>(
+                "${actionsPath(owner, name)}/permissions", RepositoryActionsPermissions(enabled),
+            )
+        } catch (error: HttpStatusException) {
+            if (error.code in 400..499 && error.code !in setOf(401, 403, 408, 429)) {
+                throw UserVisibleException(R.string.actions_repository_change_failed)
+            }
+            throw error
+        }
+    }
 
     suspend fun getActions(owner: String, name: String, page: Int = 1): ApiResult<RepoActionsPage> = safeCall {
         val workflows = api.get<RestWorkflowsResponse>("/repos/$owner/$name/actions/workflows?per_page=${PageSize.ACTION_WORKFLOWS}&page=1")
@@ -96,7 +121,17 @@ class RepoActionsRepository @Inject constructor(
     }
 
     suspend fun dispatch(owner: String, name: String, workflowId: Long, ref: String, inputs: Map<String, String>): ApiResult<Unit> = safeCall {
-        api.post<Unit, DispatchRequest>("/repos/$owner/$name/actions/workflows/$workflowId/dispatches", DispatchRequest(ref, inputs))
+        try {
+            api.post<Unit, DispatchRequest>("/repos/$owner/$name/actions/workflows/$workflowId/dispatches", DispatchRequest(ref, inputs))
+        } catch (error: HttpStatusException) {
+            val message = if (error.code == 422) runCatching {
+                Json.parseToJsonElement(error.message.orEmpty()).jsonObject["message"]?.jsonPrimitive?.content
+            }.getOrNull() else null
+            if (message == "Actions has been disabled for this repository.") {
+                throw UserVisibleException(R.string.actions_repository_disabled)
+            }
+            throw error
+        }
     }
     suspend fun cancel(owner: String, name: String, runId: Long, force: Boolean = false): ApiResult<Unit> = safeCall {
         api.post<Unit, EmptyRequest>("/repos/$owner/$name/actions/runs/$runId/${if (force) "force-cancel" else "cancel"}", EmptyRequest)
@@ -173,6 +208,7 @@ class RepoActionsRepository @Inject constructor(
     private fun toArtifact(value: RestArtifact) = RepoActionArtifact(value.id, value.name, value.sizeInBytes, value.expired, value.expiresAt)
 }
 
+@Serializable private data class RepositoryActionsPermissions(val enabled: Boolean)
 @Serializable private data class RerunRequest(@SerialName("enable_debug_logging") val enableDebugLogging: Boolean)
 @Serializable private data object EmptyRequest
 @Serializable private data class DispatchRequest(val ref: String, val inputs: Map<String, String>)

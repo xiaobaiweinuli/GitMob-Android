@@ -508,13 +508,25 @@ class RepoDetailScreenTest {
         assertEquals(1, openedStargazers)
     }
 
+    @Test
+    fun archivedRepositoryPassesArchiveStateToActions() {
+        var opened: Triple<RepoPermission, String?, Boolean>? = null
+        render(detail().copy(
+            isArchived = true, capabilities = RepoPermission.ADMIN.toCapabilities(isArchived = true),
+        ), onNavigateActions = { permission, ref, archived -> opened = Triple(permission, ref, archived) })
+
+        node(R.string.repo_actions).performScrollTo().performClick()
+
+        assertEquals(Triple(RepoPermission.ADMIN, "main", true), opened)
+    }
+
     private fun node(resource: Int, vararg args: Any) = composeRule.onNodeWithText(context.getString(resource, *args))
 
     private fun openMenu() {
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_manage_more)).performClick()
     }
 
-    private fun render(detail: RepoDetail = detail()) {
+    private fun render(detail: RepoDetail = detail(), onNavigateActions: (RepoPermission, String?, Boolean) -> Unit = { _, _, _ -> }) {
         coEvery { repository.getRepoDetail("octo", "repo") } returns ApiResult.Success(detail)
         coEvery { repository.getReadme("octo", "repo", "main") } returns ApiResult.Success(null)
         coEvery { owners.getRepositoryCreateOwners(null) } returns ApiResult.Success(
@@ -534,7 +546,7 @@ class RepoDetailScreenTest {
                     onHomepageClick = { openedHomepage = it }, onNavigateBranches = { _, _, _ -> }, onNavigateCode = {},
                     onNavigateCommits = {}, onNavigateWatchers = {}, onNavigateStargazers = { openedStargazers++ }, onNavigateForks = {},
                     onNavigateIssues = { _, _ -> }, onNavigatePullRequests = {}, onNavigateDiscussions = {},
-                    onNavigateActions = { _, _ -> }, onNavigateReleases = {}, onNavigateContributors = {},
+                    onNavigateActions = onNavigateActions, onNavigateReleases = {}, onNavigateContributors = {},
                     onNavigateLicense = {}, onNavigatePlaceholder = {}, onRepositoryAddressChanged = { _, _ -> addressChanges++ },
                     onRepositoryDeleted = {}, viewModel = viewModel,
                     libraryViewModel = libraryViewModel,

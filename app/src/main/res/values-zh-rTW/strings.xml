@@ -1002,7 +1002,7 @@
     <string name="actions_logs_title">步驟日誌</string>
     <string name="actions_logs_download_zip">下載目前嘗試的日誌 ZIP</string>
     <string name="actions_logs_zip_label">ZIP</string>
-    <string name="actions_logs_context">步驟 %1$d · 嘗試 %2$s</string>
+    <string name="actions_logs_context">步驟 %1$d · 執行輪次 %2$s</string>
     <string name="actions_logs_unknown_attempt">未知</string>
     <string name="actions_logs_refresh">重新整理日誌</string>
     <string name="actions_logs_copy">複製日誌</string>
@@ -1055,4 +1055,14 @@
     <string name="external_link_open_failed">無法開啟連結，請安裝或啟用可處理此連結的應用程式</string>
     <string name="deep_link_ref_not_found">找不到連結指向的分支或標籤</string>
     <string name="deep_link_history_unsupported">暫不支援此參照的提交歷史</string>
+    <string name="actions_repository_enable">啟用 Actions</string>
+    <string name="actions_repository_disable">停用 Actions</string>
+    <string name="actions_repository_unknown">Actions 狀態未知</string>
+    <string name="actions_repository_enabling">正在啟用…</string>
+    <string name="actions_repository_disabling">正在停用…</string>
+    <string name="actions_repository_disabled">儲存庫 Actions 已關閉</string>
+    <string name="actions_repository_not_confirmed">Actions 狀態尚未確認</string>
+    <string name="actions_repository_enabled_notice">已啟用 Actions</string>
+    <string name="actions_repository_disabled_notice">已停用 Actions</string>
+    <string name="actions_repository_change_failed">無法變更 Actions 設定</string>
 </resources>

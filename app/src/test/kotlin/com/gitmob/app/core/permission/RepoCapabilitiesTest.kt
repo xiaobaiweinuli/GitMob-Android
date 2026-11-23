@@ -87,4 +87,13 @@ class RepoCapabilitiesTest {
         assertFalse(RepoPermission.READ.toCapabilities().canDeleteActionRuns)
         assertFalse(RepoPermission.ADMIN.toCapabilities(isArchived = true).canDeleteActionRuns)
     }
+    @Test
+    fun ` repository Actions administration is separate from execution `() {
+        for (permission in RepoPermission.entries) {
+            org.junit.Assert.assertEquals(permission == RepoPermission.ADMIN, permission.toCapabilities().canManageRepositoryActions)
+            assertFalse(permission.toCapabilities(isArchived = true).canManageRepositoryActions)
+        }
+        assertTrue(RepoPermission.WRITE.toCapabilities().canPush)
+        assertTrue(RepoPermission.MAINTAIN.toCapabilities().canPush)
+    }
 }

@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.ScrollAxisRange
 import androidx.compose.ui.semantics.horizontalScrollAxisRange
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -158,11 +159,12 @@ private fun ActionLogContent(text: String, wrap: Boolean, listState: LazyListSta
     val fontPixels = with(density) { 14.sp.toPx() }
     val paint = remember(fontPixels) { TextPaint().apply { textSize = fontPixels; typeface = Typeface.MONOSPACE; isAntiAlias = true } }
     val style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 14.sp, lineHeight = 24.sp, letterSpacing = 0.sp, textDirection = TextDirection.Ltr)
-    val gutter = with(density) { paint.measureText("10000").toDp() } + 24.dp
     var layout by remember(text) { mutableStateOf(ActionLogLayout()) }
+    val lastLineNumber = layout.rows.lastOrNull()?.number ?: 1
+    val gutter = with(density) { paint.measureText(lastLineNumber.toString()).toDp() } + 12.dp
     var horizontalOffset by remember { mutableFloatStateOf(0f) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val width = with(density) { (maxWidth - gutter - 28.dp).toPx().coerceAtLeast(fontPixels * 2) }
+        val width = with(density) { (maxWidth - gutter - 24.dp).toPx().coerceAtLeast(fontPixels * 2) }
         LaunchedEffect(text, wrap, width, fontPixels) {
             val anchor = layout.rows.getOrNull(listState.firstVisibleItemIndex)?.number ?: 1
             val next = withContext(Dispatchers.Default) {
@@ -200,9 +202,9 @@ private fun ActionLogContent(text: String, wrap: Boolean, listState: LazyListSta
                     }
                     Row(Modifier.fillMaxWidth().heightIn(min = 24.dp)) {
                         androidx.compose.foundation.text.selection.DisableSelection {
-                            Text(if (row.fragment == 0) row.number.toString() else "", style = style, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(gutter).padding(horizontal = 12.dp))
+                            Text(if (row.fragment == 0) row.number.toString() else "", style = style, textAlign = TextAlign.Right, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(gutter).padding(start = 12.dp))
                         }
-                        Box(Modifier.weight(1f).clipToBounds().padding(start = 12.dp, end = 16.dp)) {
+                        Box(Modifier.weight(1f).clipToBounds().padding(start = 8.dp, end = 16.dp)) {
                             Text(visible.first.ifEmpty { " " }, style = style, softWrap = false, modifier = Modifier.offset { IntOffset(visible.second.roundToInt(), 0) })
                         }
                     }

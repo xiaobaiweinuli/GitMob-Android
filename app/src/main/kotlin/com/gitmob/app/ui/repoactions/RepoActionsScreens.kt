@@ -25,6 +25,9 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -45,26 +48,39 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RepoActionsScreen(owner: String, name: String, permission: RepoPermission?, defaultRef: String?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onRunClick: (Long) -> Unit, viewModel: RepoActionsViewModel = hiltViewModel()) {
-    LaunchedEffect(owner, name) { viewModel.init(owner, name, permission, defaultRef) }
+fun RepoActionsScreen(owner: String, name: String, permission: RepoPermission?, defaultRef: String?, isArchived: Boolean?, onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit, onRunClick: (Long) -> Unit, viewModel: RepoActionsViewModel = hiltViewModel()) {
+    LaunchedEffect(owner, name) { viewModel.init(owner, name, permission, defaultRef, isArchived) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
-    Scaffold(topBar = { TopAppBar(title = { RepositoryContextTitle(owner, name, stringResource(R.string.repo_actions), onOwnerClick, onRepositoryClick) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } }, windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) }, contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { RepositoryContextTitle(owner, name, stringResource(R.string.repo_actions), onOwnerClick, onRepositoryClick) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                actions = { ActionsOverflowMenu(state, viewModel::onActionsMenuOpened, viewModel::shareActions, viewModel::setRepositoryActionsEnabled) },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+    ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             SecondaryTabRow(tab) { Tab(tab == 0, { tab = 0 }, text = { Text(stringResource(R.string.actions_runs)) }); Tab(tab == 1, { tab = 1 }, text = { Text(stringResource(R.string.actions_workflows)) }) }
             PullToRefreshBox(state.isLoading && (state.runs.isNotEmpty() || state.workflows.isNotEmpty()), viewModel::refresh, Modifier.fillMaxSize()) {
                 when {
                     state.isLoading && state.runs.isEmpty() && state.workflows.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    state.loadFailed -> ActionsRetry(viewModel::load)
+                    state.loadFailed -> ActionsRetry(viewModel::refresh)
                     tab == 0 && state.runs.isEmpty() -> Text(stringResource(R.string.actions_empty_runs), modifier = Modifier.align(Alignment.Center))
                     tab == 1 && state.workflows.isEmpty() -> Text(stringResource(R.string.actions_empty_workflows), modifier = Modifier.align(Alignment.Center))
                     tab == 0 -> LazyColumn { items(state.runs, key = { it.id }) { run -> SwipeableRunRow(run, state.capabilities.canDeleteActionRuns, run.id in state.deletingRunIds, { onRunClick(run.id) }, { viewModel.requestDelete(run) }); HorizontalDivider() }; if (state.hasNextPage) item { LaunchedEffect(state.runs.size) { viewModel.loadMore() }; Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp)) } } }
-                    else -> LazyColumn { items(state.workflows, key = { it.id }) { workflow -> WorkflowRow(workflow, state.capabilities.canPush, { viewModel.prepareDispatch(workflow) }, { enabled -> viewModel.setWorkflowEnabled(workflow, enabled) }); HorizontalDivider() } }
+                    else -> LazyColumn { items(state.workflows, key = { it.id }) { workflow -> WorkflowRow(workflow, state.capabilities.canPush, state.canDispatch, { viewModel.prepareDispatch(workflow) }, { enabled -> viewModel.setWorkflowEnabled(workflow, enabled) }); HorizontalDivider() } }
                 }
             }
         }
     }
-    state.dispatchWorkflow?.let { workflow -> DispatchDialog(workflow, state.dispatchInputs, state.dispatchRef, state.dispatchInputsRef, state.isLoadingInputs, viewModel::loadDispatchInputs, viewModel::dismissDispatch, viewModel::dispatch) }
+    state.dispatchWorkflow?.let { workflow ->
+        DispatchDialog(workflow, state, viewModel::loadDispatchInputs, viewModel::dismissDispatch,
+            viewModel::dispatch)
+    }
     state.pendingDeleteRun?.let { run ->
         AlertDialog(
             onDismissRequest = viewModel::dismissDelete,
@@ -134,18 +150,117 @@ private fun RunRow(run: RepoWorkflowRun, deleting: Boolean, click: () -> Unit, m
         }
     }
 }
-@Composable private fun WorkflowRow(workflow: RepoWorkflow, canManage: Boolean, dispatch: () -> Unit, enable: (Boolean) -> Unit) { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AccountTree, null); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(workflow.name, fontWeight = FontWeight.SemiBold); Text(workflow.path, style = MaterialTheme.typography.bodySmall); Text(workflowStateLabel(workflow.state), style = MaterialTheme.typography.labelSmall) }; if (canManage) { IconButton(onClick = dispatch, enabled = workflow.state == "active") { Icon(Icons.Default.PlayArrow, stringResource(R.string.actions_run_workflow)) }; IconButton(onClick = { enable(workflow.state != "active") }) { Icon(if (workflow.state == "active") Icons.Default.Pause else Icons.Default.PlayCircle, stringResource(if (workflow.state == "active") R.string.actions_disable_workflow else R.string.actions_enable_workflow)) } } } }
+@Composable
+private fun ActionsOverflowMenu(
+    state: RepoActionsUiState,
+    opened: () -> Unit,
+    share: () -> Unit,
+    setEnabled: (Boolean) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val shareLabel = stringResource(R.string.conversation_share)
+    val shareTextWidth = rememberTextMeasurer().measure(AnnotatedString(shareLabel), MaterialTheme.typography.bodyLarge).size.width
+    val shareMenuWidth = with(LocalDensity.current) { shareTextWidth.toDp() + 32.dp }.coerceAtLeast(48.dp)
+    Box {
+        IconButton(onClick = { expanded = true; opened() }) {
+            Icon(Icons.Default.MoreVert, stringResource(R.string.common_more))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(shareLabel, style = MaterialTheme.typography.bodyLarge) },
+                onClick = { expanded = false; share() },
+                modifier = if (state.capabilities.canManageRepositoryActions) Modifier else Modifier.width(shareMenuWidth),
+            )
+            if (state.capabilities.canManageRepositoryActions) {
+                val label = when {
+                    state.pendingRepositoryActionsEnabled == true -> R.string.actions_repository_enabling
+                    state.pendingRepositoryActionsEnabled == false -> R.string.actions_repository_disabling
+                    state.repositoryActionsEnabled == true -> R.string.actions_repository_disable
+                    state.repositoryActionsEnabled == false -> R.string.actions_repository_enable
+                    else -> R.string.actions_repository_unknown
+                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(label)) },
+                    onClick = { expanded = false; setEnabled(state.repositoryActionsEnabled != true) },
+                    enabled = state.repositoryActionsEnabled != null && state.pendingRepositoryActionsEnabled == null &&
+                        !state.isLoadingRepositoryActions && !state.repositoryActionsNeedsConfirmation && !state.isDispatching,
+                )
+            }
+        }
+    }
+}
 
 @Composable
-private fun DispatchDialog(workflow: RepoWorkflow, definitions: List<WorkflowDispatchInput>, initialRef: String, loadedRef: String?, loading: Boolean, loadInputs: (String) -> Unit, dismiss: () -> Unit, dispatch: (String, Map<String, String>) -> Unit) {
-    var ref by remember(workflow) { mutableStateOf(initialRef) }
-    val values = remember(workflow, definitions) { mutableStateMapOf<String, String>().apply { definitions.forEach { put(it.name, it.defaultValue.orEmpty()) } } }
+private fun WorkflowRow(workflow: RepoWorkflow, canManage: Boolean, canDispatch: Boolean, dispatch: () -> Unit, enable: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.AccountTree, null)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(workflow.name, fontWeight = FontWeight.SemiBold)
+            Text(workflow.path, style = MaterialTheme.typography.bodySmall)
+            Text(workflowStateLabel(workflow.state), style = MaterialTheme.typography.labelSmall)
+        }
+        if (canManage) {
+            IconButton(onClick = dispatch, enabled = workflow.state == "active" && canDispatch) {
+                Icon(Icons.Default.PlayArrow, stringResource(R.string.actions_run_workflow))
+            }
+            IconButton(onClick = { enable(workflow.state != "active") }) {
+                Icon(if (workflow.state == "active") Icons.Default.Pause else Icons.Default.PlayCircle,
+                    stringResource(if (workflow.state == "active") R.string.actions_disable_workflow else R.string.actions_enable_workflow))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DispatchDialog(
+    workflow: RepoWorkflow,
+    state: RepoActionsUiState,
+    loadInputs: (String) -> Unit,
+    dismiss: () -> Unit,
+    dispatch: (String, Map<String, String>) -> Unit,
+) {
+    var ref by remember(workflow.id) { mutableStateOf(state.dispatchRef) }
+    val definitions = state.dispatchInputs
+    val values = remember(workflow.id, definitions) {
+        mutableStateMapOf<String, String>().apply { definitions.forEach { put(it.name, it.defaultValue.orEmpty()) } }
+    }
     val valid = definitions.all { input ->
         val value = values[input.name].orEmpty()
         (!input.required || value.isNotBlank()) && (input.type != WorkflowDispatchInputType.NUMBER || value.isBlank() || value.toDoubleOrNull() != null)
     }
-    val definitionsCurrent = loadedRef == ref.trim()
-    AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.actions_run_workflow)) }, text = { LazyColumn(Modifier.heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { item { Text(workflow.name, fontWeight = FontWeight.SemiBold) }; item { OutlinedTextField(ref, { ref = it }, label = { Text(stringResource(R.string.actions_ref)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }; if (loading) item { Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } } else if (!definitionsCurrent) item { Button(onClick = { loadInputs(ref) }, enabled = ref.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.actions_load_inputs)) } }; if (definitionsCurrent) items(definitions, key = { it.name }) { input -> DispatchInputField(input, values[input.name].orEmpty()) { values[input.name] = it } } } }, dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { Button(onClick = { dispatch(ref.trim(), values.toMap()) }, enabled = !loading && definitionsCurrent && ref.isNotBlank() && valid) { Text(stringResource(R.string.actions_run_workflow)) } })
+    val definitionsCurrent = state.dispatchInputsRef == ref.trim()
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.actions_run_workflow)) },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item { Text(workflow.name, fontWeight = FontWeight.SemiBold) }
+                item {
+                    OutlinedTextField(ref, { ref = it }, label = { Text(stringResource(R.string.actions_ref)) },
+                        singleLine = true, enabled = !state.isDispatching, modifier = Modifier.fillMaxWidth())
+                }
+                if (state.isLoadingInputs) item {
+                    Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                } else if (!definitionsCurrent) item {
+                    Button(onClick = { loadInputs(ref) }, enabled = ref.isNotBlank() && !state.isDispatching, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Refresh, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.actions_load_inputs))
+                    }
+                }
+                if (definitionsCurrent) items(definitions, key = { it.name }) { input ->
+                    DispatchInputField(input, values[input.name].orEmpty()) { values[input.name] = it }
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = dismiss, enabled = !state.isDispatching) { Text(stringResource(R.string.common_cancel)) } },
+        confirmButton = {
+            Button(onClick = { dispatch(ref.trim(), values.toMap()) }, enabled = state.canDispatch && !state.isLoadingInputs && definitionsCurrent && ref.isNotBlank() && valid) {
+                Text(stringResource(R.string.actions_run_workflow))
+            }
+        },
+    )
 }
 
 @Composable private fun DispatchInputField(input: WorkflowDispatchInput, value: String, change: (String) -> Unit) { when (input.type) { WorkflowDispatchInputType.BOOLEAN -> Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(value.equals("true", true), { change(it.toString()) }); Column { Text(input.name); input.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) } } }; WorkflowDispatchInputType.CHOICE -> { var open by remember { mutableStateOf(false) }; Box { OutlinedTextField(value, {}, label = { Text(input.name + if (input.required) " *" else "") }, supportingText = { input.description?.let { Text(it) } }, readOnly = true, trailingIcon = { IconButton(onClick = { open = true }) { Icon(Icons.Default.ArrowDropDown, null) } }, modifier = Modifier.fillMaxWidth().clickable { open = true }); DropdownMenu(open, { open = false }) { input.options.forEach { option -> DropdownMenuItem(text = { Text(option) }, onClick = { open = false; change(option) }) } } } }; else -> OutlinedTextField(value, change, label = { Text(input.name + if (input.required) " *" else "") }, supportingText = { input.description?.let { Text(it) } }, singleLine = input.type == WorkflowDispatchInputType.ENVIRONMENT || input.type == WorkflowDispatchInputType.NUMBER, keyboardOptions = if (input.type == WorkflowDispatchInputType.NUMBER) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default, modifier = Modifier.fillMaxWidth()) } }
@@ -153,13 +268,13 @@ private fun DispatchDialog(workflow: RepoWorkflow, definitions: List<WorkflowDis
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RepoWorkflowRunScreen(
-    owner: String, name: String, runId: Long, permission: RepoPermission?,
+    owner: String, name: String, runId: Long, permission: RepoPermission?, isArchived: Boolean?,
     onBack: () -> Unit, onOwnerClick: (String) -> Unit, onRepositoryClick: (String, String) -> Unit,
     onStepClick: (RepoActionStepLogKey) -> Unit,
     viewModel: RepoWorkflowRunViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
-    LaunchedEffect(owner, name, runId) { viewModel.init(owner, name, runId, permission) }
+    LaunchedEffect(owner, name, runId) { viewModel.init(owner, name, runId, permission, isArchived) }
     DisposableEffect(viewModel) { onDispose { viewModel.cancelLogDownload() } }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()

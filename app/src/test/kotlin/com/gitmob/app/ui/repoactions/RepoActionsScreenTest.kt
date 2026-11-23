@@ -270,14 +270,14 @@ class RepoActionsScreenTest {
         coEvery { repository.getActions("octo", "repo") } returns ApiResult.Success(
             RepoActionsPage(1, emptyList(), listOf(record), 1, false),
         )
-        viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(relaxed = true), accounts.session)
         composeRule.setContent {
             MaterialTheme {
                 background = MaterialTheme.colorScheme.background
                 contentView = LocalView.current
                 inputModeManager = LocalInputModeManager.current
                 RepoActionsScreen(
-                    owner = "octo", name = "repo", permission = permission, defaultRef = "main",
+                    owner = "octo", name = "repo", permission = permission, defaultRef = "main", isArchived = false,
                     onBack = {}, onOwnerClick = {}, onRepositoryClick = { _, _ -> }, onRunClick = { openedRunId = it },
                     viewModel = viewModel,
                 )

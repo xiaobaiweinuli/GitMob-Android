@@ -104,7 +104,7 @@ class AccountNetworkIsolationTest {
                 return "token-1"
             }
         }
-        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"READ"}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"READ","isArchived":false}}}"""))
         apollo(tokens).use { graph ->
             val work = async(AccountContext(session.epoch)) {
                 graph.query(RepositoryPermissionQuery("owner", "repo")).executeAsApiResult()

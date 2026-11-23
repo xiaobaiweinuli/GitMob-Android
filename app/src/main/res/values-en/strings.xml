@@ -1027,7 +1027,7 @@
     <string name="actions_logs_title">Step logs</string>
     <string name="actions_logs_download_zip">Download logs ZIP for this attempt</string>
     <string name="actions_logs_zip_label">ZIP</string>
-    <string name="actions_logs_context">Step %1$d · Attempt %2$s</string>
+    <string name="actions_logs_context">Step %1$d · Run attempt %2$s</string>
     <string name="actions_logs_unknown_attempt">unknown</string>
     <string name="actions_logs_refresh">Refresh logs</string>
     <string name="actions_logs_copy">Copy logs</string>
@@ -1080,4 +1080,14 @@
     <string name="external_link_open_failed">Unable to open this link. Install or enable an app that can handle it.</string>
     <string name="deep_link_ref_not_found">The branch or tag in this link could not be found</string>
     <string name="deep_link_history_unsupported">Commit history is not supported for this reference</string>
+    <string name="actions_repository_enable">Enable Actions</string>
+    <string name="actions_repository_disable">Disable Actions</string>
+    <string name="actions_repository_unknown">Actions status unknown</string>
+    <string name="actions_repository_enabling">Enabling…</string>
+    <string name="actions_repository_disabling">Disabling…</string>
+    <string name="actions_repository_disabled">Repository Actions are disabled</string>
+    <string name="actions_repository_not_confirmed">Actions status is not confirmed</string>
+    <string name="actions_repository_enabled_notice">Actions enabled</string>
+    <string name="actions_repository_disabled_notice">Actions disabled</string>
+    <string name="actions_repository_change_failed">Could not change Actions settings</string>
 </resources>

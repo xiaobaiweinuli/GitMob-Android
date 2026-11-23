@@ -2,6 +2,7 @@ package com.gitmob.app.data.repository
 
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
+import com.gitmob.app.R
 import com.gitmob.app.testutil.TestAccessTokenProvider
 import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.error.ApiError
@@ -9,6 +10,7 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import com.gitmob.app.core.permission.RepoPermission
+import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.RepoActionArtifact
 import com.gitmob.app.data.model.RepoActionStepLogKey
 import com.gitmob.app.data.model.ActionLogAvailability
@@ -30,6 +32,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -85,15 +88,38 @@ class RepoActionsRepositoryTest {
     }
 
     @Test
-    fun `repository permission comes from GraphQL viewerPermission`() = runTest(accounts.context) {
-        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"WRITE"}}}"""))
+    fun `repository capabilities come from GraphQL permission and archive state`() = runTest(accounts.context) {
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"WRITE","isArchived":false}}}"""))
 
-        val result = repository.getRepositoryPermission("octo", "repo")
+        val result = repository.getRepositoryCapabilities("octo", "repo")
 
-        assertEquals(RepoPermission.WRITE, (result as ApiResult.Success).data)
+        assertEquals(RepoPermission.WRITE.toCapabilities(), (result as ApiResult.Success).data)
         val request = server.takeRequest()
         assertEquals("/graphql", request.target)
-        assertTrue(requireNotNull(request.body).utf8().contains("viewerPermission"))
+        val body = requireNotNull(request.body).utf8()
+        assertTrue(body.contains("viewerPermission"))
+        assertTrue(body.contains("isArchived"))
+    }
+
+    @Test
+    fun `archived administrator has no Actions write capabilities`() = runTest(accounts.context) {
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"ADMIN","isArchived":true}}}"""))
+
+        val result = repository.getRepositoryCapabilities("octo", "repo")
+
+        val capabilities = (result as ApiResult.Success).data
+        assertFalse(capabilities.canManageRepositoryActions)
+        assertFalse(capabilities.canPush)
+        assertFalse(capabilities.canDeleteActionRuns)
+    }
+
+    @Test
+    fun `active administrator can manage Actions`() = runTest(accounts.context) {
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"ADMIN","isArchived":false}}}"""))
+
+        val result = repository.getRepositoryCapabilities("octo", "repo")
+
+        assertTrue((result as ApiResult.Success).data.canManageRepositoryActions)
     }
 
     @Test
@@ -336,4 +362,51 @@ class RepoActionsRepositoryTest {
         assertEquals(3, server.requestCount)
     }
 
+
+    @Test
+    fun `repositoryActionsReadsExplicitEnabledAndRejectsMissingField`() = runTest(accounts.context) {
+        for (enabled in listOf(true, false)) {
+            server.enqueue(MockResponse(body = """{"enabled":$enabled,"allowed_actions":"selected","sha_pinning_required":true}"""))
+            assertEquals(ApiResult.Success(enabled), repository.getRepositoryActionsEnabled("octo", "repo"))
+            assertEquals("/repos/octo/repo/actions/permissions", server.takeRequest().target)
+        }
+        server.enqueue(MockResponse(body = """{"allowed_actions":"all"}"""))
+        assertTrue(repository.getRepositoryActionsEnabled("octo", "repo") is ApiResult.Failure)
+    }
+
+    @Test
+    fun `repositoryActionsWritesOnlyEnabledIncludingFalse`() = runTest(accounts.context) {
+        for (enabled in listOf(true, false)) {
+            server.enqueue(MockResponse(code = 204))
+            assertEquals(ApiResult.Success(Unit), repository.setRepositoryActionsEnabled("octo", "repo", enabled))
+            val request = server.takeRequest()
+            assertEquals("PUT", request.method)
+            assertEquals("/repos/octo/repo/actions/permissions", request.target)
+            assertEquals("""{"enabled":$enabled}""", requireNotNull(request.body).utf8())
+        }
+    }
+
+    @Test
+    fun `onlyExactDisabled422TriggersRepositoryRecovery`() = runTest(accounts.context) {
+        server.enqueue(MockResponse(code = 422, body = """{"message":"Actions has been disabled for this repository.","status":"422"}"""))
+        assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.actions_repository_disabled)), repository.dispatch("octo", "repo", 7, "main", emptyMap()))
+        for ((status, body) in listOf(
+            422 to """{"message":"Workflow does not have workflow_dispatch trigger"}""",
+            422 to """{"message":"Invalid inputs","details":"Actions has been disabled for this repository."}""",
+            403 to """{"message":"Actions has been disabled for this repository."}""",
+            422 to "not-json",
+        )) {
+            server.enqueue(MockResponse(code = status, body = body))
+            val result = repository.dispatch("octo", "repo", 7, "main", emptyMap()) as ApiResult.Failure
+            assertTrue(result.error != ApiError.UserVisible(R.string.actions_repository_disabled))
+        }
+    }
+
+    @Test
+    fun `explicitSettingRejectionIsDifferentFromUncertainServerFailure`() = runTest(accounts.context) {
+        server.enqueue(MockResponse(code = 422, body = """{"message":"Blocked by policy"}"""))
+        assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.actions_repository_change_failed)), repository.setRepositoryActionsEnabled("octo", "repo", true))
+        server.enqueue(MockResponse(code = 503, body = """{"message":"Unavailable"}"""))
+        assertTrue((repository.setRepositoryActionsEnabled("octo", "repo", true) as ApiResult.Failure).error is ApiError.Unknown)
+    }
 }

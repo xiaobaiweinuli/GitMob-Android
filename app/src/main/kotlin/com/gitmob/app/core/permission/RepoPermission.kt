@@ -28,6 +28,7 @@ data class RepoCapabilities(
     val canToggleIssues: Boolean = canDeleteRepo,
     val canToggleDiscussions: Boolean = canManageSomeSettings,
     val canDeleteActionRuns: Boolean = canPush,
+    val canManageRepositoryActions: Boolean = canDeleteRepo,
     /** 入口资格；读取名单仍取决于当前凭据授权。公开仓库的 READ 不能证明协作者身份。 */
     val canViewStargazers: Boolean = false,
 ) {
@@ -85,5 +86,6 @@ fun RepoPermission.toCapabilities(isArchived: Boolean = false): RepoCapabilities
         canToggleIssues = false,
         canToggleDiscussions = false,
         canDeleteActionRuns = false,
+        canManageRepositoryActions = false,
     )
 }

@@ -1007,7 +1007,7 @@
     <string name="actions_logs_title">步骤日志</string>
     <string name="actions_logs_download_zip">下载当前尝试的日志 ZIP</string>
     <string name="actions_logs_zip_label">ZIP</string>
-    <string name="actions_logs_context">步骤 %1$d · 尝试 %2$s</string>
+    <string name="actions_logs_context">步骤 %1$d · 运行轮次 %2$s</string>
     <string name="actions_logs_unknown_attempt">未知</string>
     <string name="actions_logs_refresh">刷新日志</string>
     <string name="actions_logs_copy">复制日志</string>
@@ -1060,4 +1060,14 @@
     <string name="external_link_open_failed">无法打开链接，请安装或启用可处理此链接的应用</string>
     <string name="deep_link_ref_not_found">找不到链接指向的分支或标签</string>
     <string name="deep_link_history_unsupported">暂不支持此引用的提交历史</string>
+    <string name="actions_repository_enable">启用 Actions</string>
+    <string name="actions_repository_disable">停用 Actions</string>
+    <string name="actions_repository_unknown">Actions 状态未知</string>
+    <string name="actions_repository_enabling">正在启用…</string>
+    <string name="actions_repository_disabling">正在停用…</string>
+    <string name="actions_repository_disabled">仓库 Actions 已关闭</string>
+    <string name="actions_repository_not_confirmed">Actions 状态尚未确认</string>
+    <string name="actions_repository_enabled_notice">已启用 Actions</string>
+    <string name="actions_repository_disabled_notice">已停用 Actions</string>
+    <string name="actions_repository_change_failed">无法更改 Actions 设置</string>
 </resources>

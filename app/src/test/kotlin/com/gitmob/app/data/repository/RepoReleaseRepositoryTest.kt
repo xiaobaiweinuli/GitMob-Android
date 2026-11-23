@@ -89,7 +89,7 @@ class RepoReleaseRepositoryTest {
 
     @Test
     fun `repository permission comes from GraphQL viewerPermission`() = runTest(accounts.context) {
-        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"ADMIN"}}}"""))
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"viewerPermission":"ADMIN","isArchived":false}}}"""))
 
         val result = repository.getRepositoryPermission("octo", "repo")
 

@@ -27,6 +27,21 @@ class RepositoryRouteUpdateTest {
     }
 
     @Test
+    fun `Actions address replacement clears permission and archive context`() {
+        val actions = RepoActionsRoute("old", "repo", RepoPermission.ADMIN, "main", isArchived = true)
+        val run = RepoWorkflowRunRoute("old", "repo", 42, RepoPermission.ADMIN, isArchived = true)
+
+        assertEquals(
+            RepoActionsRoute("new", "renamed", defaultRef = "main"),
+            actions.replaceRepositoryAddress("old", "repo", "new", "renamed"),
+        )
+        assertEquals(
+            RepoWorkflowRunRoute("new", "renamed", 42),
+            run.replaceRepositoryAddress("old", "repo", "new", "renamed"),
+        )
+    }
+
+    @Test
     fun `address replacement preserves repository code search directory and fork scope`() {
         assertEquals(
             RepoCodeSearchRoute("new", "renamed", "app/src", isFork = true),

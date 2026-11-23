@@ -124,8 +124,8 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
     val replyToId: String? = null,
     val reviewEvent: String? = null,
 ) : Route
-@Serializable data class RepoActionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val defaultRef: String? = null) : Route
-@Serializable data class RepoWorkflowRunRoute(val owner: String, val name: String, val runId: Long, val permission: RepoPermission? = null) : Route
+@Serializable data class RepoActionsRoute(val owner: String, val name: String, val permission: RepoPermission? = null, val defaultRef: String? = null, val isArchived: Boolean? = null) : Route
+@Serializable data class RepoWorkflowRunRoute(val owner: String, val name: String, val runId: Long, val permission: RepoPermission? = null, val isArchived: Boolean? = null) : Route
 @Serializable data class RepoActionStepLogRoute(
     val owner: String, val name: String, val runId: Long, val attempt: Int?, val jobId: Long, val stepNumber: Int,
 ) : Route
@@ -233,8 +233,8 @@ internal fun Route.replaceRepositoryAddress(owner: String, name: String, newOwne
         is RepoDiscussionDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoDiscussionEditorRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is ConversationComposerRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
-        is RepoActionsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
-        is RepoWorkflowRunRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoActionsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null, isArchived = null) else this
+        is RepoWorkflowRunRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null, isArchived = null) else this
         is RepoActionStepLogRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
         is RepoReleasesRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoReleaseDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this

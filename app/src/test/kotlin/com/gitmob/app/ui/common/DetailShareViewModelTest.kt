@@ -67,7 +67,7 @@ class DetailShareViewModelTest {
         val vm = RepoWorkflowRunViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), share, accounts.session)
         vm.share()
         verify(exactly = 0) { share.share(any()) }
-        vm.init("o", "r", 7, RepoPermission.READ); advanceUntilIdle()
+        vm.init("o", "r", 7, RepoPermission.READ, isArchived = false); advanceUntilIdle()
         vm.share()
         verify(exactly = 1) { share.share(url) }
         vm.viewModelScope.cancel()

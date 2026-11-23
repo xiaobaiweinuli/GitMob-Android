@@ -4,6 +4,7 @@ import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.*
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoPermission
+import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.data.model.*
 import com.gitmob.app.data.repository.RepoActionsRepository
 import com.gitmob.app.testutil.AccountSessionRule
@@ -23,11 +24,39 @@ class RepoActionLogsViewModelTest {
     private val key = RepoActionStepLogKey("octo", "repo", 42, 3, 101, 8)
     private val log = RepoActionStepLog("Build", "Compile", ActionLogAvailability.READY, "raw\r\nlog")
     private val run = RepoWorkflowRun(42, "CI", "Build", "push", "completed", "failure", 7, 8, 3, "main", "abc", null, "", "", "https://github.com/octo/repo/actions/runs/42")
-    private fun runVm(permission: RepoPermission = RepoPermission.WRITE): RepoWorkflowRunViewModel {
+    private fun runVm(permission: RepoPermission? = RepoPermission.WRITE, isArchived: Boolean? = false): RepoWorkflowRunViewModel {
         coEvery { repository.getRun("octo", "repo", 42) } returns ApiResult.Success(RepoWorkflowRunDetail(run, emptyList(), emptyList()))
-        return RepoWorkflowRunViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(relaxed = true), accounts.session).apply { init("octo", "repo", 42, permission) }
+        return RepoWorkflowRunViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(relaxed = true), accounts.session).apply { init("octo", "repo", 42, permission, isArchived) }
     }
     private fun logVm() = RepoActionStepLogViewModel(repository, ErrorEventBus(), accounts.session)
+
+    @Test fun archivedRunKeepsHistoryButBlocksMutations() = runTest {
+        val vm = runVm(RepoPermission.ADMIN, isArchived = true)
+        advanceUntilIdle()
+        assertEquals(run, vm.state.value.detail?.run)
+        assertFalse(vm.state.value.capabilities.canPush)
+        vm.requestRerun(false)
+        vm.cancel()
+        vm.delete { error("Archived run cannot be deleted") }
+        advanceUntilIdle()
+        assertNull(vm.state.value.pendingRerunFailedOnly)
+        coVerify(exactly = 0) { repository.getRepositoryCapabilities(any(), any()) }
+        coVerify(exactly = 0) { repository.rerun(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repository.cancel(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repository.deleteRun(any(), any(), any()) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun archivedRunDeepLinkUsesQueriedCapabilities() = runTest {
+        coEvery { repository.getRepositoryCapabilities("octo", "repo") } returns
+            ApiResult.Success(RepoPermission.ADMIN.toCapabilities(isArchived = true))
+        val vm = runVm(permission = null, isArchived = null)
+        advanceUntilIdle()
+        assertEquals(run, vm.state.value.detail?.run)
+        assertFalse(vm.state.value.capabilities.canPush)
+        coVerify(exactly = 1) { repository.getRepositoryCapabilities("octo", "repo") }
+        vm.viewModelScope.cancel()
+    }
 
     @Test fun `wrap persists through refresh and resets on close`() = runTest {
         coEvery { repository.getStepLog(key) } returns ApiResult.Success(log)

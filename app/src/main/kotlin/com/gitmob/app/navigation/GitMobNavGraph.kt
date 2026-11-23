@@ -595,7 +595,7 @@ private fun LoggedInApp(
                     },
                     onNavigatePullRequests = { permission -> clicks.navigate(RepoPullRequestsRoute(route.owner, route.name, permission)) },
                     onNavigateDiscussions = { permission -> clicks.navigate(RepoDiscussionsRoute(route.owner, route.name, permission)) },
-                    onNavigateActions = { permission, defaultRef -> clicks.navigate(RepoActionsRoute(route.owner, route.name, permission, defaultRef)) },
+                    onNavigateActions = { permission, defaultRef, isArchived -> clicks.navigate(RepoActionsRoute(route.owner, route.name, permission, defaultRef, isArchived)) },
                     onNavigateReleases = { permission -> clicks.navigate(RepoReleasesRoute(route.owner, route.name, permission)) },
                     onNavigateContributors = { clicks.navigate(RepoContributorsRoute(route.owner, route.name)) },
                     onNavigateLicense = { ref -> clicks.navigate(RepoLicenseRoute(route.owner, route.name, ref)) },
@@ -827,11 +827,12 @@ private fun LoggedInApp(
                 owner = route.owner,
                 name = route.name,
                 permission = route.permission,
+                isArchived = route.isArchived,
                 defaultRef = route.defaultRef,
                 onBack = { clicks.goBack() },
                 onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
                 onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
-                onRunClick = { runId -> clicks.navigate(RepoWorkflowRunRoute(route.owner, route.name, runId, route.permission)) },
+                onRunClick = { runId -> clicks.navigate(RepoWorkflowRunRoute(route.owner, route.name, runId, route.permission, route.isArchived)) },
             )
         }
         entry<RepoWorkflowRunRoute> { route ->
@@ -841,6 +842,7 @@ private fun LoggedInApp(
                 name = route.name,
                 runId = route.runId,
                 permission = route.permission,
+                isArchived = route.isArchived,
                 onStepClick = { key -> clicks.navigate(RepoActionStepLogRoute(key.owner, key.name, key.runId, key.attempt, key.jobId, key.stepNumber)) },
                 onBack = { clicks.goBack() },
                 onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
