@@ -28,6 +28,8 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.viewModelScope
@@ -578,6 +580,25 @@ class RepoDetailScreenTest {
         assertFalse(viewModel.state.value.loadFailed)
         coVerify(exactly = 1) { repository.getRepoDetail("octo", "repo") }
         coVerify(exactly = 3) { repository.getReadme("octo", "repo", "main") }
+    }
+
+    @Test fun pullToRefreshKeepsIndicatorUntilReadmeRequestCompletes() {
+        render()
+        val pending = CompletableDeferred<ApiResult<com.gitmob.app.data.model.RepoReadme?>>()
+        coEvery { repository.getReadme("octo", "repo", "main") } coAnswers { pending.await() }
+        composeRule.onRoot().performTouchInput {
+            swipe(Offset(center.x, height * 0.2f), Offset(center.x, height * 0.8f), durationMillis = 700)
+        }
+        composeRule.runOnIdle {
+            assertTrue(viewModel.state.value.isRefreshing)
+            assertTrue(viewModel.state.value.isLoadingReadme)
+            assertFalse(viewModel.state.value.isLoading)
+            coVerify(exactly = 2) { repository.getRepoDetail("octo", "repo") }
+            coVerify(exactly = 2) { repository.getReadme("octo", "repo", "main") }
+            pending.complete(ApiResult.Success(null))
+        }
+        composeRule.waitUntil { !viewModel.state.value.isRefreshing }
+        composeRule.runOnIdle { assertFalse(viewModel.state.value.isLoadingReadme) }
     }
 
 }

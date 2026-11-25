@@ -65,6 +65,26 @@ class GHApiClient @Inject constructor(
         accept: String = DEFAULT_ACCEPT,
     ): T = executeRest("GET", path, body = null, accept = accept)
 
+    suspend inline fun <reified T> getConditional(
+        path: String,
+        etag: String?,
+        accept: String = DEFAULT_ACCEPT,
+    ): ConditionalResponse<T> = when (val response = readConditional(path, etag, accept)) {
+        is ConditionalResponse.Modified -> ConditionalResponse.Modified(json.decodeOnDefault<T>(response.body), response.etag)
+        is ConditionalResponse.NotModified -> response
+    }
+
+    @PublishedApi
+    internal suspend fun readConditional(path: String, etag: String?, accept: String): ConditionalResponse<ByteArray> {
+        val request = restRequest("GET", path, body = null, accept = accept).newBuilder()
+            .apply { if (etag != null) header("If-None-Match", etag) }
+            .build()
+        return readAccountResponse(okHttpClient.newCall(request)) { response ->
+            if (response.code == 304 && etag != null) ConditionalResponse.NotModified(response.header("ETag"))
+            else ConditionalResponse.Modified(readResponseBytes(response), response.header("ETag"))
+        }
+    }
+
     /** 固定公共资源读取，不携带用户凭证，也不依赖账号会话。 */
     suspend inline fun <reified T> getPublic(path: String): T =
         json.decodeOnDefault(readPublic(path))
@@ -279,7 +299,10 @@ class GHApiClient @Inject constructor(
     // 但它自己内部访问 restBaseUrl 这些私有成员没问题——它本身不是 inline，字节码不会被
     // 复制到别处，"泄漏"规则只约束 inline 函数体直接引用到的符号，不会顺着调用链传递。
     @PublishedApi
-    internal suspend fun readRest(method: String, path: String, body: String?, accept: String, maxBytes: Int? = null): ByteArray {
+    internal suspend fun readRest(method: String, path: String, body: String?, accept: String, maxBytes: Int? = null): ByteArray =
+        readUpload(restRequest(method, path, body, accept), maxBytes)
+
+    private suspend fun restRequest(method: String, path: String, body: String?, accept: String): Request {
         val epoch = AccountContext.ensureCurrent()
         val token = tokenProvider.getToken() ?: throw UnauthorizedException()
         epoch.ensureCurrent()
@@ -290,7 +313,7 @@ class GHApiClient @Inject constructor(
             .header("X-GitHub-Api-Version", REST_API_VERSION)   // REST 专属：版本锁定，GraphQL 没有这个概念
             .header("User-Agent", USER_AGENT)
 
-        val request = when (method) {
+        return when (method) {
             "GET" -> requestBuilder.get()
             "POST" -> requestBuilder.post(body!!.toRequestBody("application/json".toMediaType()))
             "PATCH" -> if (body != null) {
@@ -308,32 +331,31 @@ class GHApiClient @Inject constructor(
             "DELETE" -> requestBuilder.delete()
             else -> throw IllegalArgumentException("不支持的方法: $method")
         }.build()
-
-        return readUpload(request, maxBytes)
     }
 
     @PublishedApi
-    internal suspend fun readUpload(request: Request, maxBytes: Int? = null): ByteArray {
-        return readAccountResponse(okHttpClient.newCall(request)) { response ->
-            if (maxBytes != null && !response.isSuccessful) throw HttpStatusException(response.code, "Image request failed")
-            val bytes = if (maxBytes == null) response.body.bytes() else {
-                require(maxBytes > 0)
-                if (response.body.contentLength() > maxBytes) throw ResourceSizeLimitException()
-                val buffer = okio.Buffer()
-                val source = response.body.source()
-                while (source.read(buffer, minOf(8192L, maxBytes.toLong() + 1 - buffer.size)) != -1L) {
-                    if (buffer.size > maxBytes) throw ResourceSizeLimitException()
-                }
-                buffer.readByteArray()
+    internal suspend fun readUpload(request: Request, maxBytes: Int? = null): ByteArray =
+        readAccountResponse(okHttpClient.newCall(request)) { readResponseBytes(it, maxBytes) }
+
+    private fun readResponseBytes(response: Response, maxBytes: Int? = null): ByteArray {
+        if (maxBytes != null && !response.isSuccessful) throw HttpStatusException(response.code, "Image request failed")
+        val bytes = if (maxBytes == null) response.body.bytes() else {
+            require(maxBytes > 0)
+            if (response.body.contentLength() > maxBytes) throw ResourceSizeLimitException()
+            val buffer = okio.Buffer()
+            val source = response.body.source()
+            while (source.read(buffer, minOf(8192L, maxBytes.toLong() + 1 - buffer.size)) != -1L) {
+                if (buffer.size > maxBytes) throw ResourceSizeLimitException()
             }
-            if (!response.isSuccessful) {
-                val code = if (response.code == 403 &&
-                    (response.header("X-RateLimit-Remaining") == "0" || response.header("Retry-After") != null)
-                ) 429 else response.code
-                throw HttpStatusException(code, bytes.decodeToString())
-            }
-            bytes
+            buffer.readByteArray()
         }
+        if (!response.isSuccessful) {
+            val code = if (response.code == 403 &&
+                (response.header("X-RateLimit-Remaining") == "0" || response.header("Retry-After") != null)
+            ) 429 else response.code
+            throw HttpStatusException(code, bytes.decodeToString())
+        }
+        return bytes
     }
 
     private suspend fun <T> readAccountResponse(call: Call, read: (Response) -> T): T {
@@ -361,3 +383,8 @@ class GHApiClient @Inject constructor(
 
 /** Network payload; repository maps it into the action log domain model. */
 data class ActionLogPreview(val text: String, val truncated: Boolean)
+
+sealed interface ConditionalResponse<out T> {
+    data class Modified<T>(val body: T, val etag: String?) : ConditionalResponse<T>
+    data class NotModified(val etag: String?) : ConditionalResponse<Nothing>
+}

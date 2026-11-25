@@ -33,6 +33,7 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -648,6 +649,88 @@ class RepoDetailRepositoryTest {
         server.enqueue(MockResponse(body = readmeBody("hello\u0000binary").toString()))
         assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.repo_readme_unsupported)),
             repository.getReadme("o", "r", "main"))
+    }
+
+    @Test fun readmeEtagRevalidatesAndReusesBodyForEmpty304() = runTest(accounts.context) {
+        val etag = "W/\"readme-v1\""
+        server.enqueue(MockResponse.Builder().addHeader("ETag", etag).body(readmeBody("# One").toString()).build())
+        server.enqueue(MockResponse.Builder().code(304).addHeader("ETag", "\"readme-v2\"").build())
+        server.enqueue(MockResponse(code = 304))
+        val first = repository.getReadme("o", "r", "feature/Docs")
+        assertEquals(first, repository.getReadme("o", "r", "feature/Docs"))
+        assertEquals(first, repository.getReadme("o", "r", "feature/Docs"))
+        assertNull(server.takeRequest().headers["If-None-Match"])
+        assertEquals(etag, server.takeRequest().headers["If-None-Match"])
+        assertEquals("\"readme-v2\"", server.takeRequest().headers["If-None-Match"])
+    }
+
+    @Test fun readmeCacheTracksChangesAndDropsEtagWhenResponseOmitsItOrFileIsDeleted() = runTest(accounts.context) {
+        server.enqueue(MockResponse.Builder().addHeader("ETag", "\"one\"").body(readmeBody("# One").toString()).build())
+        repository.getReadme("o", "r", "main")
+        server.enqueue(MockResponse(body = readmeBody("# Two").toString()))
+        val changed = repository.getReadme("o", "r", "main") as ApiResult.Success
+        assertEquals("# Two", changed.data!!.markdown)
+        server.enqueue(MockResponse.Builder().addHeader("ETag", "\"three\"").body(readmeBody("# Three").toString()).build())
+        repository.getReadme("o", "r", "main")
+        server.enqueue(MockResponse(code = 404))
+        assertEquals(ApiResult.Success(null), repository.getReadme("o", "r", "main"))
+        server.enqueue(MockResponse(body = readmeBody("# Restored").toString()))
+        repository.getReadme("o", "r", "main")
+        assertNull(server.takeRequest().headers["If-None-Match"])
+        assertEquals("\"one\"", server.takeRequest().headers["If-None-Match"])
+        assertNull(server.takeRequest().headers["If-None-Match"])
+        assertEquals("\"three\"", server.takeRequest().headers["If-None-Match"])
+        assertNull(server.takeRequest().headers["If-None-Match"])
+    }
+
+    @Test fun emptyReadmeIsCachedAndInvalidResponsesDoNotReplaceValidatedContent() = runTest(accounts.context) {
+        server.enqueue(MockResponse.Builder().addHeader("ETag", "\"empty\"").body(readmeBody(" \n").toString()).build())
+        assertEquals(ApiResult.Success(null), repository.getReadme("o", "r", "main"))
+        server.enqueue(MockResponse.Builder().addHeader("ETag", "\"invalid\"").body("{}").build())
+        assertTrue(repository.getReadme("o", "r", "main") is ApiResult.Failure)
+        server.enqueue(MockResponse(code = 304))
+        assertEquals(ApiResult.Success(null), repository.getReadme("o", "r", "main"))
+        server.takeRequest()
+        repeat(2) { assertEquals("\"empty\"", server.takeRequest().headers["If-None-Match"]) }
+        repository.invalidateAllCaches()
+        server.enqueue(MockResponse(body = readmeBody("# New").toString()))
+        repository.getReadme("o", "r", "main")
+        assertNull(server.takeRequest().headers["If-None-Match"])
+    }
+
+    @Test fun readmeEtagIsScopedToRepositoryRefAndAccount() = runTest(accounts.context) {
+        server.enqueue(MockResponse.Builder().addHeader("ETag", "\"main\"").body(readmeBody("# Main").toString()).build())
+        repository.getReadme("o", "r", "feature/Docs")
+        server.takeRequest()
+        for ((repo, ref) in listOf("r" to "feature/docs", "other" to "feature/Docs")) {
+            server.enqueue(MockResponse(body = readmeBody("# Other").toString()))
+            repository.getReadme("o", repo, ref)
+            assertNull(server.takeRequest().headers["If-None-Match"])
+        }
+        server.enqueue(MockResponse(code = 304))
+        repository.getReadme("O", "R", "feature/Docs")
+        assertEquals("\"main\"", server.takeRequest().headers["If-None-Match"])
+        val other = com.gitmob.app.data.model.GitHubAccount("2", 2, "U_2", "other")
+        accounts.session.replace(listOf(other), other.key)
+        kotlinx.coroutines.withContext(accounts.context) {
+            server.enqueue(MockResponse(body = readmeBody("# Other account").toString()))
+            repository.getReadme("o", "r", "feature/Docs")
+            assertNull(server.takeRequest().headers["If-None-Match"])
+        }
+    }
+
+    @Test fun readmeCacheRetainsOnlySixteenRecentEntries() = runTest(accounts.context) {
+        repeat(17) { index ->
+            server.enqueue(MockResponse.Builder().addHeader("ETag", "\"$index\"").body(readmeBody("# $index").toString()).build())
+            repository.getReadme("o", "r", "branch/$index")
+            server.takeRequest()
+        }
+        server.enqueue(MockResponse(code = 304))
+        repository.getReadme("o", "r", "branch/1")
+        assertEquals("\"1\"", server.takeRequest().headers["If-None-Match"])
+        server.enqueue(MockResponse(body = readmeBody("# Zero").toString()))
+        repository.getReadme("o", "r", "branch/0")
+        assertNull(server.takeRequest().headers["If-None-Match"])
     }
 
 }

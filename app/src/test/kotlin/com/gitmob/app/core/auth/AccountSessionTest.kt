@@ -119,4 +119,28 @@ class AccountSessionTest {
         assertEquals(session.epoch.id, session.state.value.sessionId)
         session.epoch.job.cancel()
     }
+    @Test fun boundedCacheEvictsOldestWriteAndExpiresEntries() = runTest {
+        val session = AccountSession()
+        val account = GitHubAccount("1", 1, "U_1", "first")
+        session.replace(listOf(account), account.key)
+        withContext(AccountContext(session.epoch)) {
+            val cache = MemoryCache<String, String>(60_000, maxEntries = 2)
+            cache.set("a", "old")
+            cache.set("b", "second")
+            cache.set("a", "updated")
+            cache.set("c", "third")
+            assertNull(cache.get("b"))
+            assertEquals("updated", cache.get("a"))
+            assertEquals("third", cache.get("c"))
+            cache.invalidate("a")
+            assertNull(cache.get("a"))
+            val expired = MemoryCache<String, String>(ttlMs = -1, maxEntries = 2)
+            expired.set("a", "expired")
+            assertNull(expired.get("a"))
+            cache.invalidateAll()
+            assertNull(cache.get("c"))
+        }
+        session.epoch.job.cancel()
+    }
+
 }

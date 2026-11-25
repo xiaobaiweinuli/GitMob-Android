@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.repodetail
 
+import com.gitmob.app.data.model.RepoReadme
 import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.repository.RepoDocumentRepository
 import com.gitmob.app.ui.common.RepoDocumentResources
@@ -40,6 +41,7 @@ import com.gitmob.app.data.repository.RepoDetailRepository
 import com.gitmob.app.data.repository.RepoRepository
 import com.gitmob.app.data.repository.StarRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -62,6 +64,7 @@ data class RepoDetailUiState(
     val readmeError: ApiError? = null,
     val currentRef: String? = null, // null 表示还没加载出 defaultBranchRef
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val loadFailed: Boolean = false,
     val managementAction: RepoManagementAction? = null,
     val isManaging: Boolean = false,
@@ -100,7 +103,7 @@ data class RepoDetailUiState(
     val deleted: Boolean = false,
 ) {
     val actionsEnabled: Boolean
-        get() = !isLoading && !loadFailed && !isManaging && !isStarring && !isForking &&
+        get() = !isLoading && !isRefreshing && !loadFailed && !isManaging && !isStarring && !isForking &&
             !isSavingStarLists && !isCreatingList &&
             !transferPending && !deleted
 }
@@ -160,6 +163,7 @@ class RepoDetailViewModel @Inject constructor(
     private lateinit var name: String
     private var loadJob: Job? = null
     private var readmeJob: Job? = null
+    private var renderedReadme: RepoReadme? = null
     private var topicsJob: Job? = null
     private var transferCheckJob: Job? = null
     private var starListsJob: Job? = null
@@ -185,53 +189,68 @@ class RepoDetailViewModel @Inject constructor(
         hasResumed = true
     }
 
-    fun load() = load(refreshResources = true)
+    fun load() = load(refreshResources = false)
+
+    fun refresh() = load(refreshResources = true)
 
     private fun load(refreshResources: Boolean) {
         val state = _state.value
         if (state.deleted || state.isManaging || state.isStarring || state.isForking || state.showStarListSelector ||
             state.showCreateListDialog || state.isSavingStarLists || state.isCreatingList
         ) return
-        loadJob?.cancel()
-        loadJob = viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, loadFailed = false) }
-            when (val result = repoDetailRepository.getRepoDetail(owner, name)) {
-                is ApiResult.Success -> {
-                    _state.update {
-                        it.copy(
-                            detail = result.data,
-                            isLoading = false,
-                            currentRef = it.currentRef ?: result.data.defaultBranchName,
-                            transferPending = transferPendingStore.find(result.data.id, owner, name) != null,
-                        )
-                    }
-                    refreshForkState(result.data)
-                    val card = result.data.cardData()
-                    viewModelScope.launch {
-                        when (val refresh = library.refreshFavorite(accountEpoch, result.data.id, card)) {
-                            is ApiResult.Failure -> { accountEpoch.ensureCurrent(); errorEventBus.emit(refresh.error) }
-                            is ApiResult.Success -> Unit
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            _state.update { it.copy(isLoading = true, isRefreshing = refreshResources, loadFailed = false) }
+            try {
+                val result = repoDetailRepository.getRepoDetail(owner, name)
+                coroutineContext.ensureActive()
+                accountEpoch.ensureCurrent()
+                when (result) {
+                    is ApiResult.Success -> {
+                        _state.update {
+                            it.copy(
+                                detail = result.data,
+                                isLoading = false,
+                                currentRef = it.currentRef ?: result.data.defaultBranchName,
+                                transferPending = transferPendingStore.find(result.data.id, owner, name) != null,
+                            )
                         }
-                    }
-                    if (!visitRecorded) {
-                        accountEpoch.ensureCurrent()
-                        visitRecorded = true
+                        refreshForkState(result.data)
+                        val card = result.data.cardData()
                         viewModelScope.launch {
-                            when (val visit = library.recordVisit(accountEpoch, result.data.id, card)) {
-                                is ApiResult.Failure -> { accountEpoch.ensureCurrent(); errorEventBus.emit(visit.error) }
+                            when (val refresh = library.refreshFavorite(accountEpoch, result.data.id, card)) {
+                                is ApiResult.Failure -> { accountEpoch.ensureCurrent(); errorEventBus.emit(refresh.error) }
                                 is ApiResult.Success -> Unit
                             }
                         }
+                        if (!visitRecorded) {
+                            accountEpoch.ensureCurrent()
+                            visitRecorded = true
+                            viewModelScope.launch {
+                                when (val visit = library.recordVisit(accountEpoch, result.data.id, card)) {
+                                    is ApiResult.Failure -> { accountEpoch.ensureCurrent(); errorEventBus.emit(visit.error) }
+                                    is ApiResult.Success -> Unit
+                                }
+                            }
+                        }
+                        if (refreshResources || readmeJob?.isActive != true) loadReadme(refreshResources)
+                        loadStarLists(refresh = true)
+                        while (true) {
+                            val pendingReadme = readmeJob
+                            pendingReadme?.join()
+                            if (pendingReadme === readmeJob) break
+                        }
                     }
-                    loadReadme(refreshResources)
-                    loadStarLists(refresh = true)
+                    is ApiResult.Failure -> {
+                        errorEventBus.emit(result.error)
+                        showRepositoryLoadFailure(result.error)
+                    }
                 }
-                is ApiResult.Failure -> {
-                    errorEventBus.emit(result.error)
-                    showRepositoryLoadFailure(result.error)
-                }
+            } finally {
+                if (loadJob === coroutineContext[Job]) _state.update { it.copy(isLoading = false, isRefreshing = false) }
             }
         }
+        loadJob?.start()
     }
 
     private fun showRepositoryLoadFailure(error: ApiError) {
@@ -241,6 +260,11 @@ class RepoDetailViewModel @Inject constructor(
             is ApiError.UserVisible -> error.messageRes == R.string.error_repo_not_found
             is ApiError.GraphQLError -> error.errors.any { it.type in setOf("NOT_FOUND", "FORBIDDEN", "UNAUTHORIZED") }
             else -> false
+        }
+        if (accessUnavailable) {
+            readmeJob?.cancel()
+            renderedReadme = null
+            _state.update { it.copy(readmeHtml = null, readmeContext = null, readmeTruncated = false, isLoadingReadme = false) }
         }
         _state.update { it.copy(
             detail = if (accessUnavailable) null else it.detail,
@@ -352,33 +376,49 @@ class RepoDetailViewModel @Inject constructor(
 
     private fun loadReadme(refreshResources: Boolean = false) {
         val ref = _state.value.currentRef ?: return
+        val requestOwner = owner
+        val requestName = name
         readmeJob?.cancel()
+        val previous = renderedReadme?.context
+        if (previous != null && (previous.owner != owner || previous.name != name || previous.ref != ref)) {
+            renderedReadme = null
+            _state.update { it.copy(readmeHtml = null, readmeContext = null, readmeTruncated = false) }
+        }
         readmeJob = viewModelScope.launch {
-            if (refreshResources) {
-                // Invalidate the ref's resources before the API resolves the preferred file path.
-                documentRepository.invalidate(RepoDocumentContext(owner, name, ref, ""))
-            }
-            _state.update {
-                it.copy(isLoadingReadme = true, readmeHtml = null, readmeContext = null,
-                    readmeTruncated = false, readmeError = null, readmeRevision = it.readmeRevision + 1)
-            }
-            val result = repoDetailRepository.getReadme(owner, name, ref)
-            coroutineContext.ensureActive()
-            accountEpoch.ensureCurrent()
-            when (result) {
-                is ApiResult.Success -> {
-                    val readme = result.data
-                    val html = readme?.let {
-                        withContext(Dispatchers.Default) { markdownRenderer.renderToHtml(it.markdown) }
+            _state.update { it.copy(isLoadingReadme = true, readmeError = null) }
+            try {
+                val result = repoDetailRepository.getReadme(requestOwner, requestName, ref)
+                coroutineContext.ensureActive()
+                accountEpoch.ensureCurrent()
+                when (result) {
+                    is ApiResult.Success -> {
+                        val readme = result.data
+                        val html = if (readme == renderedReadme) _state.value.readmeHtml else readme?.let {
+                            withContext(Dispatchers.Default) { markdownRenderer.renderToHtml(it.markdown) }
+                        }
+                        coroutineContext.ensureActive()
+                        accountEpoch.ensureCurrent()
+                        if (refreshResources) {
+                            documentRepository.invalidate(RepoDocumentContext(requestOwner, requestName, ref, ""))
+                        }
+                        renderedReadme = readme
+                        _state.update {
+                            it.copy(readmeHtml = html, readmeContext = readme?.context,
+                                readmeTruncated = readme?.isTruncated ?: false, isLoadingReadme = false,
+                                readmeRevision = it.readmeRevision + if (refreshResources) 1 else 0)
+                        }
                     }
-                    _state.update {
-                        it.copy(readmeHtml = html, readmeContext = readme?.context,
-                            readmeTruncated = readme?.isTruncated ?: false, isLoadingReadme = false)
+                    is ApiResult.Failure -> {
+                        if (result.error == ApiError.Unauthorized || result.error == ApiError.Forbidden) {
+                            renderedReadme = null
+                            _state.update { it.copy(readmeHtml = null, readmeContext = null, readmeTruncated = false) }
+                        }
+                        _state.update { it.copy(readmeError = result.error, isLoadingReadme = false) }
+                        if (_state.value.readmeHtml != null) errorEventBus.emit(result.error)
                     }
                 }
-                is ApiResult.Failure -> _state.update {
-                    it.copy(readmeError = result.error, isLoadingReadme = false)
-                }
+            } finally {
+                if (readmeJob === coroutineContext[Job]) _state.update { it.copy(isLoadingReadme = false) }
             }
         }
     }
@@ -1055,6 +1095,7 @@ class RepoDetailViewModel @Inject constructor(
         if (address.owner == owner && address.name == name) return
         val oldOwner = owner
         val oldName = name
+        loadJob?.cancel()
         owner = address.owner
         name = address.name
         readmeJob?.cancel()

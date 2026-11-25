@@ -475,6 +475,43 @@ class RepoDetailViewModelTest {
         reopened.viewModelScope.cancel()
     }
 
+    @Test fun transferAddressChangeReplacesInFlightRefreshWithoutRestoringOldDetails() = runTest(accounts.context) {
+        val details = mockk<RepoDetailRepository>(relaxUnitFun = true)
+        val initial = fakeDetail()
+        val updated = initial.copy(ownerLogin = "new-owner")
+        coEvery { details.getRepoDetail("octo", "greetings") } returns ApiResult.Success(initial)
+        coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
+        coEvery { details.getManagementIdentity(initial.id) } returns ApiResult.Success(CreatedRepository("new-owner", "greetings"))
+        val store = RepoTransferPendingStore().apply {
+            mark(PendingRepositoryTransfer(initial.id, "octo", "greetings", "new-owner", "greetings"))
+        }
+        val vm = RepoDetailViewModel(details, mockk(relaxed = true), mockk(relaxed = true), makeFakeRenderer(),
+            RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session,
+            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        vm.init("octo", "greetings")
+        advanceUntilIdle()
+        val oldAddress = CompletableDeferred<ApiResult<RepoDetail>>()
+        val newAddress = CompletableDeferred<ApiResult<RepoDetail>>()
+        coEvery { details.getRepoDetail("octo", "greetings") } coAnswers { withContext(NonCancellable) { oldAddress.await() } }
+        coEvery { details.getRepoDetail("new-owner", "greetings") } coAnswers { newAddress.await() }
+        vm.refresh()
+        vm.checkTransferStatus()
+        advanceUntilIdle()
+        coVerify(exactly = 1) { details.getRepoDetail("new-owner", "greetings") }
+        oldAddress.complete(ApiResult.Success(initial.copy(description = "stale")))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.isLoading)
+        assertFalse(vm.state.value.isRefreshing)
+        assertEquals(initial, vm.state.value.detail)
+        newAddress.complete(ApiResult.Success(updated))
+        advanceUntilIdle()
+        assertEquals(updated, vm.state.value.detail)
+        assertFalse(vm.state.value.isLoading)
+        assertFalse(vm.state.value.transferPending)
+        coVerify(exactly = 1) { details.getReadme("new-owner", "greetings", "main") }
+        vm.viewModelScope.cancel()
+    }
+
     @Test
     fun `partial topics update reloads server state after saving information`() = runTest {
         val detailRepo = mockk<RepoDetailRepository>(relaxed = true)
@@ -1144,20 +1181,28 @@ class RepoDetailViewModelTest {
         val images = mockk<com.gitmob.app.data.repository.RepoDocumentRepository>(relaxUnitFun = true)
         val updates = RepoUpdateEventBus()
         coEvery { detailRepo.getRepoDetail("octo", "greetings") } returns ApiResult.Success(fakeDetail())
-        coEvery { detailRepo.getReadme("octo", "greetings", "main") } returns ApiResult.Success(RepoReadme(fakeMd, com.gitmob.app.data.model.RepoDocumentContext("octo", "greetings", "main", "docs/README.md"), false))
+        val readme = RepoReadme(fakeMd, com.gitmob.app.data.model.RepoDocumentContext("octo", "greetings", "main", "docs/README.md"), false)
+        coEvery { detailRepo.getReadme("octo", "greetings", "main") } returns ApiResult.Success(readme)
         val renderer = mockk<MarkdownRenderer>()
         every { renderer.renderToHtml(fakeMd) } returns fakeHtml
         val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), renderer, updates, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), images)
         vm.init("octo", "greetings")
         val initial = withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
+        advanceUntilIdle()
         io.mockk.verify(exactly = 0) { images.invalidate(any(), any()) }
+        val pending = CompletableDeferred<ApiResult<RepoReadme?>>()
+        coEvery { detailRepo.getReadme("octo", "greetings", "main") } coAnswers { pending.await() }
         kotlinx.coroutines.withContext(accounts.context) {
             updates.emit(RepoUpdateEvent.CodeChanged("octo", "greetings", "main", "commit", listOf("docs/image.png")))
         }
+        vm.load()
+        advanceUntilIdle()
+        pending.complete(ApiResult.Success(readme))
         val refreshed = withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml && it.readmeRevision > initial.readmeRevision } }
         assertEquals(initial.readmeContext, refreshed.readmeContext)
         io.mockk.verify(exactly = 1) { images.invalidate(com.gitmob.app.data.model.RepoDocumentContext("octo", "greetings", "main", ""), null) }
         coVerify(exactly = 2) { detailRepo.getReadme("octo", "greetings", "main") }
+        vm.viewModelScope.cancel()
     }
 
     @Test fun readmeRetryKeepsRepositoryDetailAndClearsOnlyItsOwnFailure() = runTest {
@@ -1205,6 +1250,164 @@ class RepoDetailViewModelTest {
         assertNull(vm.state.value.readmeContext)
         assertFalse(vm.state.value.isLoadingReadme)
         vm.viewModelScope.cancel()
+    }
+
+    @Test fun unchangedReadmeKeepsRenderingOnResumeAndReloadsResourcesOnlyOnPullRefresh() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        val resources = mockk<com.gitmob.app.data.repository.RepoDocumentRepository>(relaxUnitFun = true)
+        val readme = RepoReadme(fakeMd, com.gitmob.app.data.model.RepoDocumentContext("o", "r", "main", "README.md"), false)
+        coEvery { details.getRepoDetail("o", "r") } returns ApiResult.Success(fakeDetail())
+        coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Success(readme)
+        val renderer = mockk<MarkdownRenderer>()
+        every { renderer.renderToHtml(fakeMd) } returns fakeHtml
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), renderer,
+            RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            libraryRepositoryStub(), resources)
+        vm.init("o", "r")
+        val initial = withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
+        advanceUntilIdle()
+        vm.onResume()
+        val automatic = CompletableDeferred<ApiResult<RepoReadme?>>()
+        coEvery { details.getReadme("o", "r", "main") } coAnswers { automatic.await() }
+        vm.onResume()
+        assertTrue(vm.state.value.isLoadingReadme)
+        assertFalse(vm.state.value.isRefreshing)
+        assertEquals(initial.readmeHtml, vm.state.value.readmeHtml)
+        automatic.complete(ApiResult.Success(readme.copy()))
+        advanceUntilIdle()
+        assertEquals(initial.readmeRevision, vm.state.value.readmeRevision)
+        io.mockk.verify(exactly = 0) { resources.invalidate(any(), any()) }
+
+        val manual = CompletableDeferred<ApiResult<RepoReadme?>>()
+        coEvery { details.getReadme("o", "r", "main") } coAnswers { manual.await() }
+        vm.refresh()
+        vm.refresh()
+        vm.onResume()
+        assertTrue(vm.state.value.isRefreshing)
+        assertFalse(vm.state.value.isLoading)
+        assertEquals(initial.readmeHtml, vm.state.value.readmeHtml)
+        assertFalse(vm.state.value.actionsEnabled)
+        coVerify(exactly = 3) { details.getRepoDetail("o", "r") }
+        coVerify(exactly = 3) { details.getReadme("o", "r", "main") }
+        manual.complete(ApiResult.Success(readme.copy()))
+        advanceUntilIdle()
+        assertFalse(vm.state.value.isRefreshing)
+        assertEquals(initial.readmeRevision + 1, vm.state.value.readmeRevision)
+        io.mockk.verify(exactly = 1) { renderer.renderToHtml(fakeMd) }
+        io.mockk.verify(exactly = 1) { resources.invalidate(readme.context.copy(filePath = ""), null) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun changedReadmeUpdatesRenderingAndMissingReadmeClearsIt() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        val readme = RepoReadme(fakeMd, com.gitmob.app.data.model.RepoDocumentContext("o", "r", "main", "README.md"), false)
+        coEvery { details.getRepoDetail("o", "r") } returns ApiResult.Success(fakeDetail())
+        coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Success(readme)
+        val renderer = mockk<MarkdownRenderer>()
+        every { renderer.renderToHtml(fakeMd) } returns fakeHtml
+        every { renderer.renderToHtml("# Updated") } returns "<h1>Updated</h1>"
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), renderer,
+            RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        vm.init("o", "r")
+        withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
+        advanceUntilIdle()
+        coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Success(readme.copy(markdown = "# Updated"))
+        vm.load()
+        withTimeout(5_000) { vm.state.first { it.readmeHtml == "<h1>Updated</h1>" } }
+        advanceUntilIdle()
+        io.mockk.verify(exactly = 2) { renderer.renderToHtml(any()) }
+        coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Success(null)
+        vm.load()
+        advanceUntilIdle()
+        assertNull(vm.state.value.readmeHtml)
+        assertNull(vm.state.value.readmeContext)
+        assertFalse(vm.state.value.isLoadingReadme)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun readmeRefreshFailureKeepsContentButAccessLossClearsIt() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        val resources = mockk<com.gitmob.app.data.repository.RepoDocumentRepository>(relaxUnitFun = true)
+        val readme = RepoReadme(fakeMd, com.gitmob.app.data.model.RepoDocumentContext("o", "r", "main", "README.md"), false)
+        coEvery { details.getRepoDetail("o", "r") } returns ApiResult.Success(fakeDetail())
+        coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Success(readme)
+        val renderer = mockk<MarkdownRenderer>()
+        every { renderer.renderToHtml(fakeMd) } returns fakeHtml
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), renderer,
+            RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            libraryRepositoryStub(), resources)
+        vm.init("o", "r")
+        val initial = withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
+        advanceUntilIdle()
+        coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Failure(ApiError.NetworkError)
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(fakeHtml, vm.state.value.readmeHtml)
+        assertEquals(initial.readmeRevision, vm.state.value.readmeRevision)
+        assertEquals(ApiError.NetworkError, vm.state.value.readmeError)
+        assertFalse(vm.state.value.isRefreshing)
+        io.mockk.verify(exactly = 0) { resources.invalidate(any(), any()) }
+        coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Failure(ApiError.Forbidden)
+        vm.refresh()
+        advanceUntilIdle()
+        assertNull(vm.state.value.readmeHtml)
+        assertNull(vm.state.value.readmeContext)
+        assertFalse(vm.state.value.isRefreshing)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun branchSwitchClearsPreviousDocumentAndCancelledRefreshCannotRestoreIt() = runTest(accounts.context) {
+        val details = mockk<RepoDetailRepository>()
+        val readme = RepoReadme(fakeMd, com.gitmob.app.data.model.RepoDocumentContext("o", "r", "main", "README.md"), false)
+        coEvery { details.getRepoDetail("o", "r") } returns ApiResult.Success(fakeDetail())
+        coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Success(readme)
+        val renderer = mockk<MarkdownRenderer>()
+        every { renderer.renderToHtml(fakeMd) } returns fakeHtml
+        val updates = RepoUpdateEventBus()
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), renderer,
+            updates, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        vm.init("o", "r")
+        withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
+        advanceUntilIdle()
+        val oldBranch = CompletableDeferred<ApiResult<RepoReadme?>>()
+        val newBranch = CompletableDeferred<ApiResult<RepoReadme?>>()
+        coEvery { details.getReadme("o", "r", "main") } coAnswers { withContext(NonCancellable) { oldBranch.await() } }
+        coEvery { details.getReadme("o", "r", "dev") } coAnswers { newBranch.await() }
+        vm.refresh()
+        updates.emit(RepoUpdateEvent.BranchSwitched("o", "r", "dev"))
+        assertNull(vm.state.value.readmeHtml)
+        assertNull(vm.state.value.readmeContext)
+        oldBranch.complete(ApiResult.Success(readme))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.isRefreshing)
+        assertNull(vm.state.value.readmeHtml)
+        newBranch.complete(ApiResult.Success(null))
+        advanceUntilIdle()
+        assertFalse(vm.state.value.isRefreshing)
+        assertFalse(vm.state.value.isLoadingReadme)
+        assertEquals("dev", vm.state.value.currentRef)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun cancelledRefreshStopsLoadingIndicators() = runTest {
+        val details = mockk<RepoDetailRepository>()
+        coEvery { details.getRepoDetail("o", "r") } returns ApiResult.Success(fakeDetail())
+        coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Success(null)
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(),
+            RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
+            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        vm.init("o", "r")
+        advanceUntilIdle()
+        coEvery { details.getReadme("o", "r", "main") } coAnswers { kotlinx.coroutines.awaitCancellation() }
+        vm.refresh()
+        assertTrue(vm.state.value.isRefreshing)
+        assertTrue(vm.state.value.isLoadingReadme)
+        vm.viewModelScope.cancel()
+        advanceUntilIdle()
+        assertFalse(vm.state.value.isRefreshing)
+        assertFalse(vm.state.value.isLoadingReadme)
     }
 
 }

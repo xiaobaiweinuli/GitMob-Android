@@ -2,7 +2,6 @@ package com.gitmob.app.core.cache
 
 import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.auth.AccountEpoch
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 轻量 TTL 内存缓存，供 @Singleton Repository 使用。
@@ -11,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
  * 1. 不持久化到磁盘——进程被杀/重启清零，避免展示过时数据；
  *    会话级缓存不需要 Room（Room 用于结构化持久数据，属于不同层职责）。
  * 2. 不使用 DataStore/SharedPreferences——这些是磁盘 IO，会话级缓存用内存足够。
- * 3. 线程安全——ConcurrentHashMap 原生支持多线程读-写并发。
+ * 3. 线程安全——每个账号分区独立同步读写与容量淘汰。
  * 4. Repository 是 @Singleton 天然跨 ViewModel 存活，因此缓存实例放在 Repository 属性上，
  *    与 Repository 生命周期相同（App 会话期间一直存在）。
  *
@@ -25,20 +24,23 @@ import java.util.concurrent.ConcurrentHashMap
  *   profileCache.invalidate(Unit)
  *
  * @param ttlMs 缓存有效期（毫秒）；到期后下次 get() 时惰性移除并返回 null
+ * @param maxEntries 每个账号分区的容量；超出时移除最早写入的条目
  */
-class MemoryCache<K : Any, V : Any>(private val ttlMs: Long) {
+class MemoryCache<K : Any, V : Any>(private val ttlMs: Long, private val maxEntries: Int = Int.MAX_VALUE) {
+
+    init { require(maxEntries > 0) }
 
     /** 内部条目：保存值 + 写入时间戳 */
     private data class Entry<V>(val value: V, val timestamp: Long)
 
-    private val stores = mutableMapOf<AccountEpoch, ConcurrentHashMap<K, Entry<V>>>()
+    private val stores = mutableMapOf<AccountEpoch, LinkedHashMap<K, Entry<V>>>()
 
-    private fun store(): ConcurrentHashMap<K, Entry<V>> {
+    private fun store(): LinkedHashMap<K, Entry<V>> {
         val epoch = AccountContext.ensureCurrent()
         check(epoch.accountKey != null) { "An authenticated account is required for business caches" }
         return synchronized(stores) {
             epoch.ensureCurrent()
-            stores[epoch] ?: ConcurrentHashMap<K, Entry<V>>().also { partition ->
+            stores[epoch] ?: LinkedHashMap<K, Entry<V>>().also { partition ->
                 stores[epoch] = partition
                 epoch.job.invokeOnCompletion { synchronized(stores) { stores.remove(epoch) } }
             }
@@ -51,13 +53,15 @@ class MemoryCache<K : Any, V : Any>(private val ttlMs: Long) {
      */
     fun get(key: K): V? {
         val store = store()
-        val entry = store[key] ?: return null
-        if (System.currentTimeMillis() - entry.timestamp > ttlMs) {
-            store.remove(key, entry)
-            return null
+        return synchronized(store) {
+            val entry = store[key] ?: return null
+            if (System.currentTimeMillis() - entry.timestamp > ttlMs) {
+                store.remove(key)
+                return null
+            }
+            AccountContext.ensureCurrent()
+            entry.value
         }
-        AccountContext.ensureCurrent()
-        return entry.value
     }
 
     /**
@@ -65,17 +69,24 @@ class MemoryCache<K : Any, V : Any>(private val ttlMs: Long) {
      * 相同 key 会覆盖旧值（典型：下拉刷新成功后重新 set）。
      */
     fun set(key: K, value: V) {
-        store()[key] = Entry(value, System.currentTimeMillis())
+        val store = store()
+        synchronized(store) {
+            store.remove(key)
+            store[key] = Entry(value, System.currentTimeMillis())
+            while (store.size > maxEntries) store.remove(store.keys.first())
+        }
         AccountContext.ensureCurrent()
     }
 
     /** 主动失效指定 key（mutation 后调用，保证下次读一定走网络）。 */
     fun invalidate(key: K) {
-        store().remove(key)
+        val store = store()
+        synchronized(store) { store.remove(key) }
     }
 
     /** 只失效发起会话的分区；会话结束时自动释放整个分区。 */
     fun invalidateAll() {
-        store().clear()
+        val store = store()
+        synchronized(store) { store.clear() }
     }
 }

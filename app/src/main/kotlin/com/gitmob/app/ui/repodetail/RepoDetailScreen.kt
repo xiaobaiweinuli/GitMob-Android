@@ -11,6 +11,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.ExtendedFloatingActionButton
 
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -216,7 +217,9 @@ fun RepoDetailScreen(
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     ) { innerPadding ->
-        Box(
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = viewModel::refresh,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)

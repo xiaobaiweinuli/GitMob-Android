@@ -9,6 +9,7 @@ import com.gitmob.app.core.error.UserVisibleException
 import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.safeCall
+import com.gitmob.app.core.network.ConditionalResponse
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.network.graphql.GraphQLErrorMapper
@@ -81,12 +82,15 @@ class RepoDetailRepository @Inject constructor(
     // ── 缓存实例 ──────────────────────────────────────────────
     /** 仓库分支列表（第一页 after=null），Key = "$owner/$name"，TTL 10 min */
     private val branchesCache = MemoryCache<String, PagedBranches>(ttlMs = 10 * 60_000L)
+    private data class CachedReadme(val etag: String?, val readme: RepoReadme?)
+    private val readmeCache = MemoryCache<String, CachedReadme>(ttlMs = 10 * 60_000L, maxEntries = 16)
 
     /**
      * 公开：登出时由 AuthRepository 统一调用，清空当前 Repository 的全部内存缓存。
      */
     fun invalidateAllCaches() {
         branchesCache.invalidateAll()
+        readmeCache.invalidateAll()
     }
     suspend fun getRepoDetail(owner: String, name: String): ApiResult<RepoDetail> =
         when (val result = apolloClient.query(
@@ -159,15 +163,30 @@ class RepoDetailRepository @Inject constructor(
 
     /** GitHub selects the preferred README and returns its actual path with the content. */
     suspend fun getReadme(owner: String, name: String, ref: String): ApiResult<RepoReadme?> = safeCall {
-        val response = try {
-            api.get<ReadmeResponse>(
+        val key = "${owner.lowercase()}/${name.lowercase()}/$ref"
+        val cached = readmeCache.get(key)
+        val result = try {
+            api.getConditional<ReadmeResponse>(
                 "/repos/${encodePathSegment(owner)}/${encodePathSegment(name)}/readme?ref=${encodePathSegment(ref)}",
+                etag = cached?.etag,
                 accept = "application/vnd.github+json",
             )
         } catch (error: HttpStatusException) {
-            if (error.code == 404) return@safeCall null
+            if (error.code == 404) {
+                readmeCache.invalidate(key)
+                return@safeCall null
+            }
             throw error
         }
+        val updated = when (result) {
+            is ConditionalResponse.NotModified -> requireNotNull(cached).copy(etag = result.etag ?: cached.etag)
+            is ConditionalResponse.Modified -> CachedReadme(result.etag, decodeReadme(result.body, owner, name, ref))
+        }
+        readmeCache.set(key, updated)
+        updated.readme
+    }
+
+    private suspend fun decodeReadme(response: ReadmeResponse, owner: String, name: String, ref: String): RepoReadme? {
         if (response.type != "file" || response.path.isNullOrBlank() || response.encoding != "base64" ||
             response.content == null || response.size == null || response.size < 0
         ) throw UserVisibleException(R.string.repo_readme_invalid)
@@ -192,8 +211,8 @@ class RepoDetailRepository @Inject constructor(
             if ('\u0000' in text) throw UserVisibleException(R.string.repo_readme_unsupported)
             text
         }
-        if (markdown.isBlank()) return@safeCall null
-        RepoReadme(markdown, RepoDocumentContext(owner, name, ref, path), isTruncated = false)
+        if (markdown.isBlank()) return null
+        return RepoReadme(markdown, RepoDocumentContext(owner, name, ref, path), isTruncated = false)
     }
 
     /**
