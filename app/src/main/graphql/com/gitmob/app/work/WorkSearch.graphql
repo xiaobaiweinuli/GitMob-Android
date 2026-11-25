@@ -1,7 +1,7 @@
 # "involves:@me" 跨仓库聚合搜索。
 # type: ISSUE 同时覆盖 Issue 和 PullRequest（用 inline fragment 分流）；
 # type: DISCUSSION 是完全独立的一次查询，没法和前者合并。
-query WorkIssues($searchQuery: String!, $after: String, $first: Int!, $searchType: SearchType! = ISSUE) {
+query WorkIssues($searchQuery: String!, $after: String, $first: Int!, $searchType: SearchType!) {
   search(query: $searchQuery, type: $searchType, first: $first, after: $after) {
     issueCount
     nodes {
@@ -20,7 +20,7 @@ query WorkIssues($searchQuery: String!, $after: String, $first: Int!, $searchTyp
   }
 }
 
-query WorkPullRequests($searchQuery: String!, $after: String, $first: Int!, $searchType: SearchType! = ISSUE) {
+query WorkPullRequests($searchQuery: String!, $after: String, $first: Int!, $searchType: SearchType!) {
   search(query: $searchQuery, type: $searchType, first: $first, after: $after) {
     issueCount
     nodes {

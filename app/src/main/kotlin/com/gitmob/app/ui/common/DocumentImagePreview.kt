@@ -5,8 +5,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,6 +35,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
 import coil3.ImageLoader
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
@@ -45,6 +49,7 @@ import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.markdown.baseUrl
 import com.gitmob.app.core.markdown.resourcePath
 import com.gitmob.app.data.model.DocumentImage
+import com.gitmob.app.data.model.DocumentImageGallery
 import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.repository.RepoDocumentResource
 import com.materialkolor.material3.rememberDynamicColorScheme
@@ -52,18 +57,47 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun DocumentImageViewer(
-    image: DocumentImage,
+    gallery: DocumentImageGallery,
     document: RepoDocumentContext?,
     onDismiss: () -> Unit,
     onOriginalLink: (String) -> Unit,
-    viewModel: DocumentImageViewModel = hiltViewModel(key = "document-image-viewer"),
 ) {
-    LaunchedEffect(image, document) { viewModel.show(image, document) }
-    DisposableEffect(viewModel) { onDispose { viewModel.clear() } }
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    ImageViewerDialog(image, document, state, viewModel::retry, viewModel::decodeFailed,
-        viewModel::download, onDismiss, onOriginalLink)
+    val pager = rememberPagerState(initialPage = gallery.initialIndex) { gallery.images.size }
+    // Retain only the current image and its neighbors; each page owns its existing loader and zoom.
+    val pages = ((pager.currentPage - 1).coerceAtLeast(0)..(pager.currentPage + 1).coerceAtMost(gallery.images.lastIndex))
+        .associateWith { index ->
+            key(index) {
+                val image = gallery.images[index]
+                val viewModel: DocumentImageViewModel = hiltViewModel(rememberViewModelStoreOwner())
+                val visible = index == pager.currentPage || pager.layoutInfo.visiblePagesInfo.any { it.index == index }
+                LaunchedEffect(image, document, visible) { if (visible) viewModel.show(image, document) }
+                DisposableEffect(viewModel) { onDispose { viewModel.clear() } }
+                val state by viewModel.state.collectAsStateWithLifecycle()
+                val zoom = remember(image, state.resource) { ImageZoomState() }
+                ImagePage(viewModel, state, zoom)
+            }
+        }
+    val current = pages.getValue(pager.currentPage)
+    ImageViewerDialog(gallery.images[pager.currentPage], document, current.state, current.viewModel::retry,
+        current.viewModel::decodeFailed, current.viewModel::download, onDismiss, onOriginalLink,
+        zoom = current.zoom, position = if (gallery.images.size > 1)
+            stringResource(R.string.image_page_position, pager.currentPage + 1, gallery.images.size) else null,
+    ) { modifier ->
+        HorizontalPager(pager, modifier, userScrollEnabled = current.zoom.scale <= 1.01f) { index ->
+            pages[index]?.let { page ->
+                ImageSurface(page.state, page.viewModel::retry, page.viewModel::decodeFailed, page.viewModel::download,
+                    gallery.images[index].description ?: stringResource(R.string.image_viewer_title),
+                    Modifier.fillMaxSize(), zoom = page.zoom)
+            }
+        }
+    }
 }
+
+private data class ImagePage(
+    val viewModel: DocumentImageViewModel,
+    val state: DocumentImageState,
+    val zoom: ImageZoomState,
+)
 
 @Composable
 internal fun RepositoryImagePreview(
@@ -96,9 +130,14 @@ private fun ImageViewerDialog(
     onDownload: () -> Unit,
     onDismiss: () -> Unit,
     onOriginalLink: (String) -> Unit,
+    zoom: ImageZoomState = remember(image, state.resource) { ImageZoomState() },
+    position: String? = null,
+    imageContent: @Composable (Modifier) -> Unit = { modifier ->
+        ImageSurface(state, onRetry, onDecodeError, onDownload, image.description ?: stringResource(R.string.image_viewer_title),
+            modifier, zoom = zoom)
+    },
 ) {
     val scheme = rememberDynamicColorScheme(seedColor = MaterialTheme.colorScheme.primary, isDark = true)
-    val zoom = remember(image, state.resource) { ImageZoomState() }
     val sourcePath = remember(image, document) {
         document?.resourcePath(image.source) ?: image.source.toUri().takeUnless { it.scheme == "data" }?.lastPathSegment
     }
@@ -125,9 +164,9 @@ private fun ImageViewerDialog(
                         } },
                         windowInsets = WindowInsets(0, 0, 0, 0),
                     )
-                    ImageSurface(state, onRetry, onDecodeError, onDownload, image.description ?: stringResource(R.string.image_viewer_title),
-                        Modifier.weight(1f).fillMaxWidth(), zoom = zoom)
+                    imageContent(Modifier.weight(1f).fillMaxWidth())
                     Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        position?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
                         image.originalLink?.let { link -> TextButton({ onDismiss(); onOriginalLink(link) }) { Text(stringResource(R.string.image_open_original_link)) } }
                         if (state.resource != null) {
                             TextButton(zoom::reset) { Text(if (zoom.scale <= 1.01f) stringResource(R.string.image_fit_screen)
@@ -204,8 +243,9 @@ private fun DecodedImage(
     val zoomDescription = stringResource(R.string.image_zoom_percent, ((zoom?.scale ?: 1f) * 100).roundToInt())
     var gestures = Modifier.fillMaxSize().onSizeChanged { viewport = Size(it.width.toFloat(), it.height.toFloat()) }
     if (zoom != null) {
+        val transform = rememberTransformableState { centroid, factor, pan, _ -> zoom.transform(centroid, pan, factor) }
         gestures = gestures.pointerInput(zoom) { detectTapGestures(onDoubleTap = zoom::doubleTap) }
-            .pointerInput(zoom) { detectTransformGestures { centroid, pan, factor, _ -> zoom.transform(centroid, pan, factor) } }
+            .transformable(transform, canPan = { zoom.scale > 1.01f })
             .semantics {
                 stateDescription = zoomDescription
                 customActions = listOf(

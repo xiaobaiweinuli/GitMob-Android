@@ -200,7 +200,7 @@ private fun IssueConversation(
                 bodyHtml = comment.bodyHtml,
                 url = comment.url,
                 authorAssociation = comment.authorAssociation,
-                isThreadAuthor = comment.author?.login == issue.author?.login,
+                isThreadAuthor = comment.author?.login?.equals(issue.author?.login, ignoreCase = true) == true,
                 onQuoteReply = { onQuoteComment(comment) },
                 onEdit = ({ onEditComment(comment) }).takeIf { comment.viewerCanUpdate },
                 onDelete = ({ onDeleteComment(comment) }).takeIf { comment.viewerCanDelete },

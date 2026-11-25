@@ -77,7 +77,8 @@ fun ConversationContentCard(
 ) {
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
-    val authorLogin = author?.login?.takeIf(String::isNotBlank)
+    val displayLogin = author?.login ?: "ghost"
+    val authorLogin = displayLogin.takeIf(String::isNotBlank)
     val authorClickModifier = if (authorLogin != null && onAuthorClick != null) {
         Modifier.clickable { onAuthorClick(authorLogin) }
     } else {
@@ -87,8 +88,8 @@ fun ConversationContentCard(
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
-                    model = author?.avatarUrl,
-                    contentDescription = author?.login,
+                    model = if (author == null) "https://avatars.githubusercontent.com/u/10137?v=4" else author.avatarUrl,
+                    contentDescription = displayLogin,
                     modifier = Modifier.size(36.dp).clip(CircleShape).then(authorClickModifier),
                 )
                 Spacer(Modifier.width(10.dp))
@@ -99,7 +100,7 @@ fun ConversationContentCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            author?.login ?: stringResource(R.string.common_deleted_user),
+                            displayLogin,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             softWrap = false,

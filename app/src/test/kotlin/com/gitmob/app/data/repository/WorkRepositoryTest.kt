@@ -27,6 +27,9 @@ import com.gitmob.app.data.model.UserPullRequestStateFilter
 import com.gitmob.app.data.model.UserPullRequestVisibilityFilter
 import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -88,6 +91,9 @@ class WorkRepositoryTest {
         val result = repository.getUserIssues()
 
         assertTrue(result is ApiResult.Success)
+        val variables = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8())
+            .jsonObject.getValue("variables").jsonObject
+        assertEquals("ISSUE", variables.getValue("searchType").jsonPrimitive.content)
         val page = (result as ApiResult.Success).data
         assertEquals(1, page.totalCount)
         val item = page.items.first()
@@ -121,6 +127,9 @@ class WorkRepositoryTest {
         val result = repository.getUserPullRequests()
 
         assertTrue(result is ApiResult.Success)
+        val variables = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8())
+            .jsonObject.getValue("variables").jsonObject
+        assertEquals("ISSUE", variables.getValue("searchType").jsonPrimitive.content)
         val item = (result as ApiResult.Success).data.items.first()
         assertTrue(item.isPullRequest)
         assertEquals(PullRequestState.OPEN, item.pullRequestState)

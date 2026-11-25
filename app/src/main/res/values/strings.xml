@@ -870,6 +870,7 @@
     <string name="image_zoom_percent">缩放 %1$d%%</string>
     <string name="image_zoom_in">放大图片</string>
     <string name="image_zoom_out">缩小图片</string>
+    <string name="image_page_position">%1$d / %2$d</string>
     <string name="image_gesture_hint">双指缩放 · 双击放大 · 放大后拖动</string>
     <string name="image_preview_failed">图片加载失败，请重试</string>
     <string name="image_preview_too_large">图片超过 8 MiB 预览限制，可下载后查看</string>

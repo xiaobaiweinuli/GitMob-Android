@@ -451,7 +451,7 @@ fun RepoPullRequestDetailScreen(
                                 bodyHtml = item.bodyHtml,
                                 url = item.url,
                                 authorAssociation = item.authorAssociation,
-                                isThreadAuthor = item.author?.login == state.pullRequest!!.author?.login,
+                                isThreadAuthor = item.author?.login?.equals(state.pullRequest!!.author?.login, ignoreCase = true) == true,
                                 onQuoteReply = {
                                     onCompose(
                                         ConversationComposeRequest(
@@ -524,7 +524,7 @@ fun RepoPullRequestDetailScreen(
                                     bodyHtml = review.bodyHtml,
                                     url = review.url,
                                     authorAssociation = review.authorAssociation,
-                                    isThreadAuthor = review.author?.login == state.pullRequest!!.author?.login,
+                                    isThreadAuthor = review.author?.login?.equals(state.pullRequest!!.author?.login, ignoreCase = true) == true,
                                      onQuoteReply = {
                                         onCompose(
                                             ConversationComposeRequest(
@@ -609,7 +609,7 @@ private fun LazyListScope.pullRequestReviewThreads(
                     bodyHtml = comment.bodyHtml,
                     url = comment.url,
                     authorAssociation = comment.authorAssociation,
-                    isThreadAuthor = comment.author?.login == pullRequestAuthor,
+                    isThreadAuthor = comment.author?.login?.equals(pullRequestAuthor, ignoreCase = true) == true,
                     onQuoteReply = {
                         onCompose(
                             ConversationComposeRequest(

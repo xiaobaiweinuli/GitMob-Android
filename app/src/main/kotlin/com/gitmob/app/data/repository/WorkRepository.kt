@@ -33,6 +33,7 @@ import com.gitmob.app.data.model.WorkIssueItem
 import com.gitmob.app.graphql.WorkDiscussionsQuery
 import com.gitmob.app.graphql.WorkIssuesQuery
 import com.gitmob.app.graphql.WorkPullRequestsQuery
+import com.gitmob.app.graphql.type.SearchType
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -51,6 +52,7 @@ class WorkRepository @Inject constructor(
         after: String? = null,
     ): ApiResult<PagedWorkIssues> =
         when (val result = apolloClient.query(WorkIssuesQuery(
+            searchType = SearchType.ISSUE,
             searchQuery = buildUserIssueSearchQuery(filter),
             after = Optional.presentIfNotNull(after),
             first = PageSize.WORK_ITEMS,
@@ -72,6 +74,7 @@ class WorkRepository @Inject constructor(
         after: String? = null,
     ): ApiResult<PagedWorkIssues> =
         when (val result = apolloClient.query(WorkPullRequestsQuery(
+            searchType = SearchType.ISSUE,
             searchQuery = buildUserPullRequestSearchQuery(filter),
             after = Optional.presentIfNotNull(after),
             first = PageSize.WORK_ITEMS,

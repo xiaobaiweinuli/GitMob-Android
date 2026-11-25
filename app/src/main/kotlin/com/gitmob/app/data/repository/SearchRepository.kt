@@ -47,7 +47,7 @@ class SearchRepository @Inject constructor(
                     connection.pageInfo.hasNextPage, connection.pageInfo.endCursor, position)
             }
             SearchCategory.ISSUES -> apollo.query(WorkIssuesQuery(
-                searchType = Optional.present(SearchType.ISSUE_ADVANCED),
+                searchType = SearchType.ISSUE_ADVANCED,
                 searchQuery = scoped, first = size, after = Optional.presentIfNotNull(position.cursor),
             )).executeAsApiResult().mapped { data ->
                 val connection = data.search
@@ -62,7 +62,7 @@ class SearchRepository @Inject constructor(
                 }, connection.issueCount, connection.pageInfo.hasNextPage, connection.pageInfo.endCursor, position)
             }
             SearchCategory.PULL_REQUESTS -> apollo.query(WorkPullRequestsQuery(
-                searchType = Optional.present(SearchType.ISSUE_ADVANCED),
+                searchType = SearchType.ISSUE_ADVANCED,
                 searchQuery = scoped, first = size, after = Optional.presentIfNotNull(position.cursor),
             )).executeAsApiResult().mapped { data ->
                 val connection = data.search

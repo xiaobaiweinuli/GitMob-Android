@@ -139,8 +139,11 @@ internal fun RepoManagementDialogs(state: RepoDetailUiState, viewModel: RepoDeta
                     RepoManagementAction.INFORMATION -> {
                         OutlinedTextField(state.editWebsite, viewModel::editWebsite, label = { Text(stringResource(R.string.repo_manage_website)) }, enabled = !state.isManaging, singleLine = true, isError = !isValidRepositoryWebsite(state.editWebsite), supportingText = { if (!isValidRepositoryWebsite(state.editWebsite)) Text(stringResource(R.string.repo_manage_invalid_website)) }, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(state.editDescription, viewModel::editDescription, label = { Text(stringResource(R.string.repo_create_description)) }, enabled = !state.isManaging, modifier = Modifier.fillMaxWidth())
-                        if (state.isLoadingTopics) CircularProgressIndicator(Modifier.size(24.dp))
-                        else if (!state.topicsLoaded) TextButton(onClick = viewModel::loadTopics) { Text(stringResource(R.string.common_retry)) }
+                        if (state.isLoadingTopics) {
+                            CircularProgressIndicator(
+                                Modifier.size(24.dp).align(Alignment.CenterHorizontally)
+                            )
+                        } else if (!state.topicsLoaded) TextButton(onClick = viewModel::loadTopics) { Text(stringResource(R.string.common_retry)) }
                         OutlinedTextField(state.editTopics, viewModel::editTopics, label = { Text(stringResource(R.string.repo_manage_topics)) }, enabled = state.topicsLoaded && !state.isManaging, isError = !areValidRepositoryTopics(parseRepositoryTopics(state.editTopics)), supportingText = { Text(stringResource(if (areValidRepositoryTopics(parseRepositoryTopics(state.editTopics))) R.string.repo_manage_topics_hint else R.string.repo_manage_invalid_topics)) }, modifier = Modifier.fillMaxWidth())
                     }
                     RepoManagementAction.VISIBILITY -> Text(stringResource(if (detail.isPrivate) R.string.repo_manage_public_warning else R.string.repo_manage_private_warning))

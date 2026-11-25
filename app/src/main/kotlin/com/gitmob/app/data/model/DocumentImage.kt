@@ -7,6 +7,11 @@ data class DocumentImage(
     val description: String? = null,
 )
 
+internal data class DocumentImageGallery(
+    val images: List<DocumentImage>,
+    val initialIndex: Int,
+)
+
 internal fun isPreviewableImage(path: String): Boolean =
     path.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT) in
         setOf("png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif", "heic", "heif", "ico")

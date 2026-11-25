@@ -245,7 +245,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
                             bodyHtml = comment.bodyHtml,
                             url = comment.url,
                             authorAssociation = comment.authorAssociation,
-                            isThreadAuthor = comment.author?.login == discussion.author?.login,
+                            isThreadAuthor = comment.author?.login?.equals(discussion.author?.login, ignoreCase = true) == true,
                             onQuoteReply = {
                                 onCompose(
                                     ConversationComposeRequest(

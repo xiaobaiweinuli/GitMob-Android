@@ -21,7 +21,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
 import androidx.core.net.toUri
 import androidx.compose.runtime.getValue
-import com.gitmob.app.data.model.DocumentImage
+import com.gitmob.app.data.model.DocumentImageGallery
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
@@ -92,7 +92,7 @@ fun MarkdownWebView(
     val stylesheet = remember(context, cssFileName) {
         context.assets.open(cssFileName).bufferedReader().use { it.readText() }
     }
-    var selectedImage by remember(bodyHtml, documentResources) { mutableStateOf<DocumentImage?>(null) }
+    var selectedImage by remember(bodyHtml, documentResources) { mutableStateOf<DocumentImageGallery?>(null) }
     val currentDocumentLink by rememberUpdatedState(onDocumentLink)
     val uriHandler = LocalUriHandler.current
     val currentExternalLink by rememberUpdatedState<(String) -> Unit> { url ->
@@ -200,8 +200,11 @@ fun MarkdownWebView(
                 webView.settings.allowFileAccess = false
                 webView.settings.allowContentAccess = !controlled && documentResources == null
                 webView.settings.cacheMode = if (documentResources == null) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_NO_CACHE
+                val baseUrl = documentResources?.document?.baseUrl()?.toString()
+                    ?: if (controlled) "https://translation.invalid/" else "file:///android_asset/"
+                (webView as? NoVerticalScrollWebView)?.setImageDocument(fullHtml, baseUrl)
                 webView.loadDataWithBaseURL(
-                    documentResources?.document?.baseUrl()?.toString() ?: if (controlled) "https://translation.invalid/" else "file:///android_asset/",
+                    baseUrl,
                     fullHtml,
                     "text/html",
                     "UTF-8",
@@ -501,8 +504,10 @@ internal fun translationPatch(documentId: String, value: TranslationPresentation
 internal class NoVerticalScrollWebView(context: Context) : WebView(context) {
     var layoutSize by mutableStateOf(IntSize.Zero)
         private set
-    var onImageClick: ((DocumentImage) -> Unit)? = null
+    var onImageClick: ((DocumentImageGallery) -> Unit)? = null
     private val images = MarkdownImageTapHandler(this) { onImageClick?.invoke(it) }
+
+    fun setImageDocument(html: String, baseUrl: String) = images.setDocument(html, baseUrl)
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
