@@ -26,7 +26,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.net.toUri
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.text.input.TextFieldState
+import com.gitmob.app.ui.common.SoraTextField
+import com.gitmob.app.ui.common.SoraEditorState
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
@@ -103,6 +104,8 @@ fun RepoIssueEditorScreen(
                 bodyEditorState = state.bodyEditor,
                 draft = state.draft,
                 bodyState = viewModel.bodyState,
+                textareaStates = viewModel.textareaStates,
+                enabled = !state.isSaving,
                 modifier = contentModifier,
                 onBodyTabSelected = viewModel::selectBodyEditorTab,
                 onTitleChange = viewModel::editTitle,
@@ -126,7 +129,9 @@ private fun IssueEditor(
     assignees: List<SimpleUser>,
     bodyEditorState: MarkdownEditorUiState,
     draft: RepoIssueEditorDraft,
-    bodyState: TextFieldState,
+    bodyState: SoraEditorState,
+    textareaStates: Map<String, SoraEditorState>,
+    enabled: Boolean,
     modifier: Modifier,
     onBodyTabSelected: (MarkdownEditorTab) -> Unit,
     onTitleChange: (String) -> Unit,
@@ -164,6 +169,7 @@ private fun IssueEditor(
             )
             MarkdownBodyEditor(
                 textState = bodyState,
+                enabled = enabled,
                 state = bodyEditorState,
                 onTabSelected = onBodyTabSelected,
                 accessoryContent = {
@@ -214,6 +220,8 @@ private fun IssueEditor(
                         onSelected = { selected -> field.id?.let { onSelectionChange(it, selected) } },
                         onLinkClick = onLinkClick,
                         navigationDocument = fieldDocuments.getOrPut(fieldKey) { NavigationDocument(null) },
+                        textareaState = textareaStates[field.id],
+                        enabled = enabled,
                     )
                 }
             }
@@ -280,6 +288,8 @@ internal fun IssueFormFieldContent(
     onSelected: (Set<Int>) -> Unit,
     onLinkClick: (String) -> Unit,
     navigationDocument: NavigationDocument? = null,
+    textareaState: SoraEditorState? = null,
+    enabled: Boolean = true,
 ) {
     val description = when (field) {
         is IssueFormField.Markdown -> null
@@ -292,9 +302,17 @@ internal fun IssueFormFieldContent(
     when (field) {
         is IssueFormField.Markdown -> IssueFormMarkdown(templateHtml.getValue(field.value), onLinkClick, navigationDocument)
         is IssueFormField.Input -> IssueFormTextField(field.label, descriptionHtml, field.placeholder, field.required,
-            value, true, onLinkClick, onValueChange, navigationDocument)
-        is IssueFormField.Textarea -> IssueFormTextField(field.label, descriptionHtml, field.placeholder, field.required,
-            value, false, onLinkClick, onValueChange, navigationDocument)
+            value, onLinkClick, onValueChange, navigationDocument)
+        is IssueFormField.Textarea -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            SoraTextField(
+                state = requireNotNull(textareaState),
+                enabled = enabled,
+                showLineNumbers = field.render != null,
+                label = { IssueFormLabel(AnnotatedString(field.label), field.required) },
+                placeholder = field.placeholder?.let { placeholder -> { Text(placeholder) } },
+            )
+            IssueFormMarkdown(descriptionHtml, onLinkClick, navigationDocument)
+        }
         is IssueFormField.Dropdown -> IssueFormDropdown(field, descriptionHtml, selected, onLinkClick, onSelected, navigationDocument)
         is IssueFormField.Checkboxes -> IssueFormCheckboxes(field, descriptionHtml, templateHtml, selected, onSelected, onLinkClick, navigationDocument)
     }
@@ -339,7 +357,6 @@ private fun IssueFormTextField(
     placeholder: String?,
     required: Boolean,
     value: String,
-    singleLine: Boolean,
     onLinkClick: (String) -> Unit,
     onValueChange: (String) -> Unit,
     navigationDocument: NavigationDocument?,
@@ -350,8 +367,7 @@ private fun IssueFormTextField(
             onValueChange = onValueChange,
             label = { IssueFormLabel(AnnotatedString(label), required) },
             placeholder = placeholder?.let { { Text(it) } },
-            singleLine = singleLine,
-            minLines = if (singleLine) 1 else 4,
+            singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         IssueFormMarkdown(descriptionHtml, onLinkClick, navigationDocument)

@@ -2,6 +2,10 @@ package com.gitmob.app.ui.repoactions
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.view.View
+import androidx.compose.ui.platform.LocalView
+import com.gitmob.app.ui.common.awaitSoraViewer
+import com.gitmob.app.ui.common.awaitSoraLayout
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
@@ -47,6 +51,7 @@ class RepoActionLogsScreenTest {
     private val run = RepoWorkflowRun(42, "CI", "Build", "push", "completed", "failure", 7, 8, 3, "main", "abc", null, "", "", "https://github.com/octo/repo/actions/runs/42")
     private var opened: RepoActionStepLogKey? = null
     private var backed = false
+    private lateinit var root: View
     @After fun close() { runVm?.viewModelScope?.cancel(); logVm?.viewModelScope?.cancel() }
     private fun label(id: Int) = context.getString(id)
 
@@ -94,7 +99,8 @@ class RepoActionLogsScreenTest {
     @Test fun `log toolbar uses icon only wrap and copies raw text at large font scale`() {
         val raw = "\u001B[31mhello\u001B[0m\r\n\tworld\n"
         renderLog(raw, fontScale = 2f)
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("hello").fetchSemanticsNodes().isNotEmpty() }
+        val viewer = compose.awaitSoraViewer(root)
+        compose.runOnIdle { assertEquals("hello\n    world", viewer.text.toString()) }
         val wrap = compose.onNodeWithContentDescription(label(R.string.actions_logs_wrap))
         wrap.assertIsOff().performClick().assertIsOn()
         compose.onNodeWithText(label(R.string.actions_logs_wrap)).assertDoesNotExist()
@@ -125,32 +131,67 @@ class RepoActionLogsScreenTest {
     @Test fun `thousands of lines render lazily and an extremely long line can wrap`() {
         val raw = "x".repeat(100_000) + "\n" + (2..10_000).joinToString("\n") { "line-$it" }
         renderLog(raw)
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("1", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        val initiallyComposed = compose.onAllNodes(hasText("line-", substring = true)).fetchSemanticsNodes().size
-        assertTrue(initiallyComposed < 100)
+        val viewer = compose.awaitSoraViewer(root)
+        compose.runOnIdle {
+            assertEquals(10_000, viewer.text.lineCount)
+            assertTrue(viewer.lastVisibleLine < 100)
+            assertTrue(viewer.height < 2_000)
+        }
         compose.onNodeWithContentDescription(label(R.string.actions_logs_wrap)).performClick().assertIsOn()
-        compose.waitForIdle()
-        compose.onNodeWithText("1", useUnmergedTree = true).assertIsDisplayed()
+        compose.awaitSoraLayout(viewer)
+        compose.runOnIdle {
+            assertTrue(viewer.isWordwrap)
+            assertTrue(viewer.layout.rowCount > viewer.text.lineCount)
+            assertEquals(raw, viewer.text.toString())
+            viewer.setSelection(9_999, 0)
+            viewer.ensurePositionVisible(9_999, 0, true)
+        }
+        compose.awaitSoraLayout(viewer)
+        compose.runOnIdle { assertEquals("Last line after scrolling to the final log row", 9_999, viewer.lastVisibleLine) }
         compose.onNodeWithContentDescription(label(R.string.actions_logs_refresh)).assertIsDisplayed()
     }
 
-
-    @Test fun `wrapped preview keeps original line numbers and Unicode code points`() = kotlinx.coroutines.test.runTest {
-        val paint = android.text.TextPaint().apply { textSize = 28f; typeface = android.graphics.Typeface.MONOSPACE }
+    @Test fun `wrapped preview keeps original line numbers and Unicode code points`() {
         val first = "a😀中文".repeat(100)
-        val result = layoutActionLog(first + "\r\nlast\r\n", true, 60f, paint)
-        assertEquals(first, result.rows.filter { it.number == 1 }.joinToString("") { it.text })
-        assertEquals("last", result.rows.filter { it.number == 2 }.joinToString("") { it.text })
-        assertEquals(listOf(1, 2), result.rows.map { it.number }.distinct())
-        assertTrue(result.rows.all { !it.text.first().isLowSurrogate() && !it.text.last().isHighSurrogate() })
+        renderLog(first + "\r\nlast\r\n")
+        val viewer = compose.awaitSoraViewer(root)
+        compose.onNodeWithContentDescription(label(R.string.actions_logs_wrap)).performClick()
+        compose.awaitSoraLayout(viewer)
+        compose.runOnIdle {
+            assertEquals(2, viewer.text.lineCount)
+            assertEquals(first, viewer.text.getLineString(0))
+            assertEquals("last", viewer.text.getLineString(1))
+            assertTrue(viewer.layout.rowCount > 2)
+            for (index in 0 until viewer.layout.rowCount) {
+                val row = viewer.layout.getRowAt(index)
+                val text = viewer.text.getLineString(row.lineIndex).substring(row.startColumn, row.endColumn)
+                assertTrue(text.isEmpty() || (!text.first().isLowSurrogate() && !text.last().isHighSurrogate()))
+            }
+        }
     }
 
-    @Test fun `one megabyte line wraps in bounded fragments without losing text`() = kotlinx.coroutines.test.runTest {
-        val paint = android.text.TextPaint().apply { textSize = 14f; typeface = android.graphics.Typeface.MONOSPACE }
+    @Test fun `one megabyte line wraps without losing text and refresh retains position`() {
         val raw = "x".repeat(1024 * 1024)
-        val result = layoutActionLog(raw, true, 240f, paint)
-        assertEquals(raw, result.rows.joinToString("") { it.text })
-        assertTrue(result.rows.all { it.number == 1 && paint.measureText(it.text) <= 240f })
+        renderLog(raw)
+        val viewer = compose.awaitSoraViewer(root)
+        compose.onNodeWithContentDescription(label(R.string.actions_logs_wrap)).performClick()
+        compose.awaitSoraLayout(viewer)
+        compose.runOnIdle {
+            assertEquals(raw, viewer.text.toString())
+            assertEquals(1, viewer.text.lineCount)
+            assertTrue(viewer.layout.rowCount > 1000)
+            viewer.setSelection(0, 32_000)
+        }
+        compose.awaitSoraLayout(viewer)
+        val position = compose.runOnIdle { viewer.capturePosition() }
+        compose.onNodeWithContentDescription(label(R.string.actions_logs_refresh)).performClick()
+        val refreshed = compose.awaitSoraViewer(root)
+        compose.awaitSoraLayout(refreshed)
+        compose.runOnIdle {
+            assertEquals(position.line, refreshed.capturePosition().line)
+            assertEquals(position.column, refreshed.capturePosition().column)
+            assertEquals(32_000, refreshed.cursor.leftColumn)
+        }
     }
 
 
@@ -179,7 +220,9 @@ class RepoActionLogsScreenTest {
         coEvery { repository.getStepLog(key) } returns ApiResult.Success(RepoActionStepLog("Build A", "Compile A", ActionLogAvailability.READY, raw, truncated))
         val vm = RepoActionStepLogViewModel(repository, ErrorEventBus(), accounts.session)
         logVm = vm
-        compose.setContent { CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
+        compose.setContent {
+            root = LocalView.current
+            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
             MaterialTheme { RepoActionStepLogScreen(key, { backed = true }, vm) }
         } }
     }

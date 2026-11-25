@@ -26,6 +26,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.translation.*
+import com.gitmob.app.ui.common.MarkdownViewportState
+import com.gitmob.app.ui.common.MarkdownLayoutMode
 import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.common.RepoDocumentResources
 
@@ -130,6 +132,8 @@ fun TranslationHtml(
     onDocumentLink: (RepoDocumentContext) -> Unit = {},
     onExternalLink: ((String) -> Unit)? = null,
     navigationDocument: NavigationDocument? = null,
+    layoutMode: MarkdownLayoutMode = MarkdownLayoutMode.Embedded,
+    viewportState: MarkdownViewportState? = null,
 ) {
     val target = remember(translationKey, bodyHtml) { TranslationTarget(translationKey, bodyHtml, true) }
     val controller = LocalTranslationController.current
@@ -150,7 +154,9 @@ fun TranslationHtml(
     Column(modifier) {
         TranslationStatus(target, Modifier.padding(horizontal = 8.dp))
         document?.let { prepared ->
-            MarkdownWebView(bodyHtml, preparedDocument = prepared, backgroundColor = backgroundColor, documentResources = documentResources,
+            MarkdownWebView(bodyHtml,
+                modifier = if (layoutMode == MarkdownLayoutMode.Viewport) Modifier.weight(1f) else Modifier,
+                layoutMode = layoutMode, viewportState = viewportState, preparedDocument = prepared, backgroundColor = backgroundColor, documentResources = documentResources,
                 onDocumentLink = onDocumentLink, onExternalLink = onExternalLink, translation = presentation,
                 navigationDocument = navigationDocument,
                 displayAttempt = entry?.displayAttempt ?: 0,

@@ -1,7 +1,6 @@
 package com.gitmob.app.ui.gist
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,12 +10,14 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fitInside
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,16 +38,21 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.ui.common.SoraTextEditor
+import com.gitmob.app.ui.common.SoraUndoRedoButtons
+import com.gitmob.app.ui.common.rememberSoraEditorController
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -115,6 +121,7 @@ private fun GistCreateForm(
             OutlinedTextField(
                 value = state.description,
                 onValueChange = viewModel::updateDescription,
+                enabled = !state.isCreating,
                 label = { Text(stringResource(R.string.gist_create_description_optional)) },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
@@ -126,7 +133,7 @@ private fun GistCreateForm(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(stringResource(R.string.gist_create_public), Modifier.weight(1f))
-                Switch(checked = state.isPublic, onCheckedChange = viewModel::updatePublic)
+                Switch(checked = state.isPublic, onCheckedChange = viewModel::updatePublic, enabled = !state.isCreating)
             }
         }
         item {
@@ -139,29 +146,25 @@ private fun GistCreateForm(
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = viewModel::addFile) {
+                TextButton(onClick = viewModel::addFile, enabled = !state.isCreating) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Text(stringResource(R.string.gist_create_add_file), Modifier.padding(start = 4.dp))
                 }
             }
         }
-        item {
-            Column {
-                state.files.forEachIndexed { index, file ->
-                    if (index > 0) {
-                        HorizontalDivider(modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
-                    }
-                    GistCreateFileFields(
-                        number = index + 1,
-                        file = file,
-                        error = state.filenameError(file),
-                        canRemove = state.files.size > 1,
-                        onFilenameChange = { viewModel.updateFilename(file.id, it) },
-                        onContentChange = { viewModel.updateContent(file.id, it) },
-                        onRemove = { viewModel.removeFile(file.id) },
-                    )
-                }
+        itemsIndexed(state.files, key = { _, file -> file.id }) { index, file ->
+            if (index > 0) {
+                HorizontalDivider(modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
             }
+            GistCreateFileFields(
+                number = index + 1,
+                file = file,
+                error = state.filenameError(file),
+                canRemove = state.files.size > 1,
+                enabled = !state.isCreating,
+                onFilenameChange = { viewModel.updateFilename(file.id, it) },
+                onRemove = { viewModel.removeFile(file.id) },
+            )
         }
     }
 }
@@ -173,9 +176,11 @@ private fun GistCreateFileFields(
     error: GistFilenameError?,
     canRemove: Boolean,
     onFilenameChange: (String) -> Unit,
-    onContentChange: (String) -> Unit,
+    enabled: Boolean,
     onRemove: () -> Unit,
 ) {
+    val controller = rememberSoraEditorController(file.editorState)
+    var wrapLines by rememberSaveable(file.id) { mutableStateOf(true) }
     val errorText = when (error) {
         GistFilenameError.REQUIRED -> stringResource(R.string.gist_create_filename_required)
         GistFilenameError.DUPLICATE -> stringResource(R.string.gist_create_filename_duplicate)
@@ -191,13 +196,14 @@ private fun GistCreateFileFields(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = onRemove, enabled = canRemove) {
+            IconButton(onClick = onRemove, enabled = canRemove && enabled) {
                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.gist_delete_file))
             }
         }
         OutlinedTextField(
             value = file.filename,
             onValueChange = onFilenameChange,
+            enabled = enabled,
             label = { Text(stringResource(R.string.gist_filename)) },
             supportingText = { Text(errorText) },
             isError = error != null,
@@ -205,13 +211,18 @@ private fun GistCreateFileFields(
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
             modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
-            value = file.content,
-            onValueChange = onContentChange,
-            label = { Text(stringResource(R.string.gist_file_content)) },
-            minLines = 10,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-            modifier = Modifier.fillMaxWidth(),
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.gist_file_content), modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+            SoraUndoRedoButtons(file.editorState, controller, enabled = enabled)
+            Text(stringResource(R.string.repo_file_wrap_lines), style = MaterialTheme.typography.labelMedium)
+            Switch(checked = wrapLines, onCheckedChange = { wrapLines = it })
+        }
+        SoraTextEditor(
+            state = file.editorState,
+            enabled = enabled,
+            wrapLines = wrapLines,
+            controller = controller,
+            modifier = Modifier.fillMaxWidth().height(320.dp),
         )
     }
 }

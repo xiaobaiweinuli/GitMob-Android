@@ -23,12 +23,11 @@ fun GistFileEditorScreen(
     FileEditorScaffold(
         title = { Text(stringResource(if (filename == null) R.string.gist_add_file else R.string.gist_edit_file)) },
         path = state.path,
-        content = state.content,
+        editorState = state.editorState,
         isSaving = state.isSaving,
         isLoading = state.isLoading,
         loadFailed = state.loadFailed,
         onPathChange = viewModel::updatePath,
-        onContentChange = viewModel::updateContent,
         onBack = onBack,
         onSave = { viewModel.save(gistId, onSaved) },
     )

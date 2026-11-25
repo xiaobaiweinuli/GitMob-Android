@@ -67,10 +67,10 @@ fun ConversationComposerScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val editorState = state.textState
     var confirmDiscard by remember { mutableStateOf(false) }
-    val dirty = state.text != route.initialText
+    val dirty = !editorState.matches(route.initialText)
 
     LaunchedEffect(editorState) {
-        snapshotFlow { editorState.text.toString() }.collect(viewModel::updateText)
+        snapshotFlow { editorState.revision }.collect { viewModel.onTextChanged() }
     }
     LaunchedEffect(state.submitted) { if (state.submitted) onSubmitted() }
 
@@ -97,7 +97,7 @@ fun ConversationComposerScreen(
                 },
                 navigationIcon = { IconButton(onClick = ::requestBack, enabled = !state.isSubmitting) { Icon(Icons.Default.Close, stringResource(R.string.common_cancel)) } },
                 actions = {
-                    IconButton(onClick = viewModel::submit, enabled = (state.text.isNotBlank() || state.allowsEmptySubmission) && !state.isSubmitting) {
+                    IconButton(onClick = viewModel::submit, enabled = (editorState.text.isNotBlank() || state.allowsEmptySubmission) && !state.isSubmitting) {
                         if (state.isSubmitting) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                         else Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.conversation_send))
                     }
@@ -118,6 +118,7 @@ fun ConversationComposerScreen(
                 textState = editorState,
                 state = state.bodyEditor,
                 onTabSelected = viewModel::selectTab,
+                enabled = !state.isSubmitting,
                 modifier = Modifier.weight(1f),
             )
         }

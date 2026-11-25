@@ -1,6 +1,10 @@
 package com.gitmob.app.ui.common
 
 import android.content.Context
+import android.view.View
+import android.view.inputmethod.EditorInfo
+import androidx.compose.ui.platform.LocalView
+import org.robolectric.annotation.GraphicsMode
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -8,7 +12,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
-import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -16,8 +19,6 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.R
@@ -30,6 +31,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class MarkdownBodyEditorTest {
     @get:Rule
     val composeRule = createComposeRule()
@@ -39,7 +41,7 @@ class MarkdownBodyEditorTest {
     fun `editor shows tabs and all markdown toolbar actions`() {
         composeRule.setContent {
             MarkdownBodyEditor(
-                textState = TextFieldState(""),
+                textState = SoraEditorState(""),
                 state = MarkdownEditorUiState(),
                 onTabSelected = {},
             )
@@ -58,7 +60,7 @@ class MarkdownBodyEditorTest {
         val selectedTab = mutableStateOf(MarkdownEditorTab.EDIT)
         composeRule.setContent {
             MarkdownBodyEditor(
-                textState = TextFieldState(""),
+                textState = SoraEditorState(""),
                 state = MarkdownEditorUiState(selectedTab = selectedTab.value),
                 onTabSelected = { selectedTab.value = it },
             )
@@ -70,7 +72,7 @@ class MarkdownBodyEditorTest {
 
     @Test
     fun `selected text is wrapped by markdown action`() {
-        val result = TextFieldState("hello", TextRange(0, 5))
+        val result = SoraEditorState("hello", TextRange(0, 5))
         applyMarkdownEdit(result, MarkdownEditAction.BOLD)
 
         assertEquals("**hello**", result.text.toString())
@@ -78,10 +80,12 @@ class MarkdownBodyEditorTest {
     }
 
     @Test
-    fun `typing and toolbar edits retain text and collapse selection when leaving edit tab`() {
-        val textState = TextFieldState()
+    fun `IME and toolbar edits preserve document selection and undo across preview`() {
+        val textState = SoraEditorState()
+        lateinit var root: View
         val selectedTab = mutableStateOf(MarkdownEditorTab.EDIT)
         composeRule.setContent {
+            root = LocalView.current
             Box(Modifier.size(width = 360.dp, height = 700.dp)) {
                 MarkdownBodyEditor(
                     textState = textState,
@@ -91,7 +95,11 @@ class MarkdownBodyEditorTest {
                 )
             }
         }
-        composeRule.onNode(hasSetTextAction()).performTextInput("hello")
+        val editor = composeRule.awaitSoraEditor(root)
+        composeRule.runOnIdle {
+            editor.requestFocus()
+            editor.onCreateInputConnection(EditorInfo())!!.commitText("hello", 1)
+        }
         composeRule.runOnIdle { textState.edit { selection = TextRange(0, 5) } }
         composeRule.onNodeWithContentDescription(context.getString(R.string.conversation_tool_bold)).performClick()
         composeRule.runOnIdle {
@@ -100,10 +108,15 @@ class MarkdownBodyEditorTest {
         }
         composeRule.onNodeWithText(context.getString(R.string.conversation_preview_tab)).performClick()
         composeRule.onNodeWithText(context.getString(R.string.conversation_edit_tab)).performClick()
+        val restored = composeRule.awaitSoraEditor(root, editor)
         composeRule.runOnIdle {
             assertEquals("**hello**", textState.text.toString())
-            // TextFieldState collapses the selection to its end when the field loses focus.
-            assertEquals(TextRange(7), textState.selection)
+            assertEquals(TextRange(2, 7), textState.selection)
+            org.junit.Assert.assertSame(textState.content, restored.text)
+            restored.undo()
+            assertEquals("hello", textState.snapshot())
+            restored.redo()
+            assertEquals("**hello**", textState.snapshot())
         }
     }
 
@@ -112,7 +125,7 @@ class MarkdownBodyEditorTest {
         composeRule.setContent {
             Box(Modifier.size(width = 360.dp, height = 700.dp)) {
                 MarkdownBodyEditor(
-                    textState = TextFieldState("body"),
+                    textState = SoraEditorState("body"),
                     state = MarkdownEditorUiState(),
                     onTabSelected = {},
                     modifier = Modifier.fillMaxSize(),

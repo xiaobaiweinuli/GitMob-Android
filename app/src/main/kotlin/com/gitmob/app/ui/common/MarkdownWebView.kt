@@ -2,6 +2,8 @@ package com.gitmob.app.ui.common
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Canvas
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -14,6 +16,7 @@ import android.webkit.WebViewClient
 import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +52,9 @@ import com.gitmob.app.data.translation.TranslationDocument
 import com.gitmob.app.data.translation.TranslationPresentation
 import kotlin.math.abs
 
+/** Embedded documents let their parent scroll; viewport documents scroll inside WebView. */
+enum class MarkdownLayoutMode { Embedded, Viewport }
+
 /**
  * 共用的 Markdown/HTML 渲染显示组件——README、Issue/PR/讨论评论都走这个，
  * 不要每个功能各自拼一遍 WebView 逻辑。配合 core/markdown/MarkdownRenderer
@@ -74,6 +80,8 @@ fun MarkdownWebView(
     onTranslationDisplayError: () -> Unit = {},
     onTranslationDisplayed: (TranslationPresentation?) -> Unit = {},
     navigationDocument: NavigationDocument? = null,
+    layoutMode: MarkdownLayoutMode = MarkdownLayoutMode.Embedded,
+    viewportState: MarkdownViewportState? = null,
     linkColor: Color? = null,
     contentPadding: PaddingValues = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
 ) {
@@ -105,8 +113,8 @@ fun MarkdownWebView(
     DisposableEffect(documentResources, navigationDocument) {
         onDispose { if (navigationDocument == null) documentResources?.close() }
     }
-    val viewState = remember(bodyHtml, documentResources, controlled, navigationDocument) {
-        navigationDocument?.renderer() ?: MarkdownWebViewState(documentResources)
+    val viewState = remember(bodyHtml, documentResources, controlled, navigationDocument, layoutMode) {
+        navigationDocument?.renderer(layoutMode) ?: MarkdownWebViewState(documentResources)
     }
     val webViewHolder = viewState.controller
     val client = viewState.client
@@ -126,22 +134,16 @@ fun MarkdownWebView(
 
     key(viewState) {
     AndroidView(
-        modifier = modifier
-            .fillMaxWidth()
-            .wrapContentHeight()
-            .clipToBounds()
+        modifier = if (layoutMode == MarkdownLayoutMode.Viewport) modifier.fillMaxSize().clipToBounds()
+        else modifier.fillMaxWidth().wrapContentHeight().clipToBounds()
             .remeasureOnMarkdownResize {
-                (webViewHolder.webView as? NoVerticalScrollWebView)?.layoutSize?.height ?: 0
+                (webViewHolder.webView as? MarkdownContentWebView)?.layoutSize?.height ?: 0
             }
-            // Compose 的滚动只平移 display list，不会像经典 ScrollView 那样让子 View
-            // 重走 onDraw，Chromium 因此无法感知自己被滚进了屏幕（表现为 WebView
-            // 从底部进入时有一条"死区"空白，静止也不恢复）。位置一变就强制重绘，
-            // 把"滚动即重绘"的 View 世界契约还给 WebView。
-            .onGloballyPositioned {
-                webViewHolder.webView?.postInvalidateOnAnimation()
-            },
+            // Embedded WebViews need a redraw when Compose moves them into the viewport.
+            .onGloballyPositioned { webViewHolder.webView?.postInvalidateOnAnimation() },
         factory = { context ->
-            val webView = webViewHolder.webView ?: NoVerticalScrollWebView(context).apply {
+            val webView = webViewHolder.webView ?: (if (layoutMode == MarkdownLayoutMode.Viewport) MarkdownViewportWebView(context, viewportState)
+                else NoVerticalScrollWebView(context)).apply {
                 settings.javaScriptEnabled = controlled
                 if (controlled) addJavascriptInterface(MarkdownReadyBridge(this, webViewHolder), "gmTranslationHost")
                 settings.javaScriptCanOpenWindowsAutomatically = false
@@ -151,13 +153,13 @@ fun MarkdownWebView(
                 // Chromium 默认不为"已 attach 但不在屏幕上"的 WebView 光栅化，从屏幕外
                 // 滚入时会先露出空白。官方 GitHub App 的 README WebView 也靠这个开关
                 // 让像素在滚入前就准备好（反编译 InternalWebView 确认）。
-                settings.offscreenPreRaster = true
+                settings.offscreenPreRaster = layoutMode == MarkdownLayoutMode.Embedded
                 // 官方同款近全透明底色：加载完成前透出 Compose 背景，规避硬件层白闪；
                 // 页面自身的 CSS 会绘制真正的主题底色。
                 setBackgroundColor(android.graphics.Color.argb(1, 0, 0, 0))
-                isVerticalScrollBarEnabled = false
+                isVerticalScrollBarEnabled = layoutMode == MarkdownLayoutMode.Viewport
                 overScrollMode = View.OVER_SCROLL_NEVER
-                setOnTouchListener(object : View.OnTouchListener {
+                if (layoutMode == MarkdownLayoutMode.Embedded) setOnTouchListener(object : View.OnTouchListener {
                     private var downX = 0f
                     private var downY = 0f
 
@@ -185,14 +187,15 @@ fun MarkdownWebView(
             }
             webViewHolder.webView = webView
             webView.onResume()
-            createMarkdownWebViewHost(webView)
+            createMarkdownWebViewHost(webView, layoutMode)
         },
         update = { host ->
             val webView = host.getChildAt(0) as? WebView ?: return@AndroidView
             viewState.onDocumentLink = { currentDocumentLink(it) }
             viewState.onExternalLink = { currentExternalLink(it) }
             viewState.bindDisplayCallbacks({ currentDisplayError() }, { currentDisplayed(it) })
-            (webView as? NoVerticalScrollWebView)?.onImageClick = { selectedImage = it }
+            (webView as? MarkdownContentWebView)?.onImageClick = { selectedImage = it }
+            (webView as? MarkdownViewportWebView)?.bindViewportState(viewportState)
             if (webView.tag !== page) {
                 webView.tag = page
                 webViewHolder.begin(page, if (controlled) page.documentId else null)
@@ -202,7 +205,7 @@ fun MarkdownWebView(
                 webView.settings.cacheMode = if (documentResources == null) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_NO_CACHE
                 val baseUrl = documentResources?.document?.baseUrl()?.toString()
                     ?: if (controlled) "https://translation.invalid/" else "file:///android_asset/"
-                (webView as? NoVerticalScrollWebView)?.setImageDocument(fullHtml, baseUrl)
+                (webView as? MarkdownContentWebView)?.setImageDocument(fullHtml, baseUrl)
                 webView.loadDataWithBaseURL(
                     baseUrl,
                     fullHtml,
@@ -286,7 +289,7 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
         onExternalLink = null
         onDisplayError = null
         onDisplayed = null
-        (view as? NoVerticalScrollWebView)?.onImageClick = null
+        (view as? MarkdownContentWebView)?.onImageClick = null
         host.removeView(view)
         view.onPause()
     }
@@ -299,7 +302,7 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
         controller.release()
         val view = controller.webView ?: return
         controller.webView = null
-        (view as? NoVerticalScrollWebView)?.onImageClick = null
+        (view as? MarkdownContentWebView)?.onImageClick = null
         (view.parent as? ViewGroup)?.removeView(view)
         view.stopLoading()
         view.destroy()
@@ -490,18 +493,8 @@ internal fun translationPatch(documentId: String, value: TranslationPresentation
     put("values", JSONObject().apply { value?.translations?.forEach { (id, text) -> put(id.toString(), text) } })
 }.toString()
 
-/**
- * 本组件里 WebView 被撑到完整内容高度、由外层 Compose 容器滚动，按设计自身不应滚动；
- * 但图片等资源晚于首次测量加载完成时，contentHeight 会暂时大于视图高度，产生内部
- * 可滚动余量——起手落在 WebView 上的滑动（尤其 UP 之后仍在继续的惯性 fling）会把
- * 文档在视图内部推上去，顶部内容被裁掉，看起来像被上方列表"遮挡"且不断累积。
- *
- * 修正点选在 onScrollChanged：Chromium 胶水层滚动容器时走 super_scrollTo/raw 字段
- * 直写，不经过可重写的 scrollTo；但所有路径（程序调用、触摸拖动、惯性 fling）最终
- * 都会触发 onScrollChanged——在这个唯一必经点把非零垂直偏移立即拉回 0。
- * 代码块/表格的横向滑动是页面内元素级滚动，不产生 View 级垂直偏移，不受影响。
- */
-internal class NoVerticalScrollWebView(context: Context) : WebView(context) {
+/** Shared image interaction for embedded documents and independently scrolling previews. */
+internal open class MarkdownContentWebView(context: Context) : WebView(context) {
     var layoutSize by mutableStateOf(IntSize.Zero)
         private set
     var onImageClick: ((DocumentImageGallery) -> Unit)? = null
@@ -525,6 +518,100 @@ internal class NoVerticalScrollWebView(context: Context) : WebView(context) {
         layoutSize = IntSize(w, h)
     }
 
+}
+
+/** Reapplies saved scroll only after Chromium has enough content, including late image layout. */
+internal open class MarkdownViewportWebView(
+    context: Context,
+    private var viewportState: MarkdownViewportState?,
+) : MarkdownContentWebView(context) {
+    private var restorePending = viewportState?.let { it.xDp != 0f || it.yDp != 0f } == true
+
+    private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+    private var touchStart: android.graphics.PointF? = null
+
+    fun bindViewportState(state: MarkdownViewportState?) {
+        if (viewportState === state) return
+        val previous = viewportState
+        viewportState = state
+        if (previous != null && state?.documentId == previous.documentId) {
+            if (restorePending) {
+                state.xDp = previous.xDp
+                state.yDp = previous.yDp
+            } else savePosition(scrollX, scrollY)
+        } else {
+            restorePending = state != null
+            invalidate()
+        }
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (!restorePending || width == 0 || height == 0) return
+        val saved = viewportState ?: return
+        val density = resources.displayMetrics.density
+        val x = (saved.xDp * density).toInt()
+        val y = (saved.yDp * density).toInt()
+        val maxX = (computeHorizontalScrollRange() - width).coerceAtLeast(0)
+        val maxY = (computeVerticalScrollRange() - height).coerceAtLeast(0)
+        restorePending = maxX < x || maxY < y
+        scrollTo(x.coerceIn(0, maxX), y.coerceIn(0, maxY))
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> touchStart = android.graphics.PointF(event.x, event.y)
+            MotionEvent.ACTION_MOVE -> touchStart?.let { start ->
+                if (kotlin.math.abs(event.x - start.x) > touchSlop || kotlin.math.abs(event.y - start.y) > touchSlop) {
+                    touchStart = null
+                    cancelScrollRestore()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> touchStart = null
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_PAGE_DOWN,
+            KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.KEYCODE_MOVE_END, KeyEvent.KEYCODE_SPACE -> cancelScrollRestore()
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_SCROLL && (
+            event.getAxisValue(MotionEvent.AXIS_VSCROLL) != 0f ||
+                event.getAxisValue(MotionEvent.AXIS_HSCROLL) != 0f ||
+                event.getAxisValue(MotionEvent.AXIS_SCROLL) != 0f
+            )) cancelScrollRestore()
+        return super.onGenericMotionEvent(event)
+    }
+
+    private fun cancelScrollRestore() {
+        restorePending = false
+        savePosition(scrollX, scrollY)
+    }
+
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        if (!restorePending) savePosition(l, t)
+    }
+
+    private fun savePosition(x: Int, y: Int) {
+        viewportState?.let {
+            it.xDp = x / resources.displayMetrics.density
+            it.yDp = y / resources.displayMetrics.density
+        }
+    }
+}
+
+/** Embedded documents are measured to content height and scrolled by their Compose parent. */
+internal class NoVerticalScrollWebView(context: Context) : MarkdownContentWebView(context) {
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
         if (t != 0) scrollTo(l, 0)
@@ -540,15 +627,19 @@ private fun Modifier.remeasureOnMarkdownResize(contentHeight: () -> Int): Modifi
         layout(placeable.width, height) { placeable.placeRelative(0, 0) }
     }
 
-internal fun createMarkdownWebViewHost(webView: WebView): FrameLayout =
+internal fun createMarkdownWebViewHost(
+    webView: WebView,
+    layoutMode: MarkdownLayoutMode = MarkdownLayoutMode.Embedded,
+): FrameLayout =
     FrameLayout(webView.context).apply {
+        val height = if (layoutMode == MarkdownLayoutMode.Viewport) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
         layoutParams = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+            height,
         )
         webView.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
+            height,
         )
         (webView.parent as? ViewGroup)?.removeView(webView)
         addView(webView)

@@ -85,7 +85,7 @@ class RepoIssueEditorViewModelTest {
         viewModel.init("o", "r", null)
         advanceUntilIdle()
         viewModel.editTitle("Title")
-        viewModel.bodyState.edit { replace(0, length, "### Version\n\n1.0") }
+        viewModel.bodyState.content.replace(0, viewModel.bodyState.content.length, "### Version\n\n1.0")
         viewModel.save {}
         advanceUntilIdle()
 
@@ -177,7 +177,7 @@ class RepoIssueEditorViewModelTest {
         assertEquals(setOf(0), original.state.value.draft.selections["os"])
         original.editTitle("")
         original.editText("version", "")
-        original.editText("logs", "user logs")
+        original.textareaStates.getValue("logs").setTextAndPlaceCursorAtEnd("user logs\nsecond line")
         original.editSelection("os", emptySet())
         original.editSelection("terms", setOf(0))
         original.confirmMetadata(emptySet(), setOf("U2"), "M2")
@@ -188,10 +188,37 @@ class RepoIssueEditorViewModelTest {
         restored.init("o", "r", null, "bug.yml")
         advanceUntilIdle()
         assertEquals(expected, restored.state.value.draft)
+        assertEquals("user logs\nsecond line", restored.textareaStates.getValue("logs").snapshot())
         restored.confirmMetadata(emptySet(), emptySet(), null)
         restored.load()
         advanceUntilIdle()
         assertEquals(expected.copy(assigneeIds = emptySet(), milestoneId = null), restored.state.value.draft)
+        restored.viewModelScope.cancel()
+    }
+
+    @Test fun multilineFormDocumentSubmitsLastEditAndRestoresIntentionallyEmptyValue() = runTest {
+        val repository = repositoryMock()
+        val template = IssueTemplate("Bug", null, "Title", "bug.yml", emptyList(), emptyList(), listOf(
+            IssueFormField.Textarea("logs", "Logs", value = "default logs", render = "shell"),
+            IssueFormField.Input("version", "Version", value = "1.0"),
+        ))
+        coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(IssueTemplateLoadResult(true, listOf(template)))
+        coEvery { repository.createIssue(any()) } returns ApiResult.Success(issue())
+        val handle = SavedStateHandle()
+        val original = editor(repository, handle)
+        original.init("o", "r", null, "bug.yml")
+        advanceUntilIdle()
+        assertEquals("default logs", original.textareaStates.getValue("logs").snapshot())
+        original.textareaStates.getValue("logs").setTextAndPlaceCursorAtEnd("")
+        val restored = editor(repository, SavedStateHandle.createHandle(handle.savedStateProvider().saveState(), null))
+        restored.init("o", "r", null, "bug.yml")
+        advanceUntilIdle()
+        assertEquals("", restored.textareaStates.getValue("logs").snapshot())
+        restored.textareaStates.getValue("logs").edit { replace(0, length, "echo 中文\n```\necho last") }
+        restored.save {}
+        advanceUntilIdle()
+        coVerify { repository.createIssue(match { it.body.contains("````shell\necho 中文\n```\necho last\n````") && it.body.contains("1.0") }) }
+        original.viewModelScope.cancel()
         restored.viewModelScope.cancel()
     }
 
@@ -245,6 +272,7 @@ class RepoIssueEditorViewModelTest {
         advanceUntilIdle()
         assertEquals("unsent body", restored.bodyState.text.toString())
         assertEquals(TextRange(2, 6), restored.bodyState.selection)
+        assertFalse(restored.bodyState.canUndo)
         val bodyState = restored.bodyState
         restored.selectBodyEditorTab(MarkdownEditorTab.PREVIEW)
         restored.load()

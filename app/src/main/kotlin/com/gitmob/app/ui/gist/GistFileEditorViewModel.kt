@@ -2,6 +2,7 @@ package com.gitmob.app.ui.gist
 
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
+import com.gitmob.app.ui.common.SoraEditorState
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
@@ -15,16 +16,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class GistFileEditorUiState(
     val originalPath: String? = null,
     val path: String = "",
-    val content: String = "",
+    val editorState: SoraEditorState = SoraEditorState(),
     val isLoading: Boolean = false,
     val loadFailed: Boolean = false,
     val isSaving: Boolean = false,
-)
+) {
+    val content: String get() = editorState.snapshot()
+}
 
 @HiltViewModel
 class GistFileEditorViewModel @Inject constructor(
@@ -47,11 +52,12 @@ class GistFileEditorViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     val file = result.data
                     if (file.isText) {
+                        val document = withContext(Dispatchers.Default) { SoraEditorState(file.content.orEmpty()) }
                         _state.update {
                             it.copy(
                                 originalPath = file.filename,
                                 path = file.filename,
-                                content = file.content.orEmpty(),
+                                editorState = document,
                                 isLoading = false,
                             )
                         }
@@ -68,18 +74,23 @@ class GistFileEditorViewModel @Inject constructor(
         }
     }
 
-    fun updatePath(value: String) = _state.update { it.copy(path = value) }
-    fun updateContent(value: String) = _state.update { it.copy(content = value) }
+    fun updatePath(value: String) {
+        if (!_state.value.isLoading && !_state.value.loadFailed && !_state.value.isSaving) _state.update { it.copy(path = value) }
+    }
+    fun updateContent(value: String) {
+        if (!_state.value.isLoading && !_state.value.loadFailed && !_state.value.isSaving) _state.value.editorState.setTextAndPlaceCursorAtEnd(value)
+    }
 
     fun save(gistId: String, onSaved: () -> Unit) {
         val current = _state.value
         val path = current.path.trim()
         if (path.isBlank() || current.isLoading || current.loadFailed || current.isSaving) return
+        val content = current.editorState.snapshot()
+        _state.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            _state.update { it.copy(isSaving = true) }
             val result = current.originalPath?.let { originalPath ->
-                repository.updateFile(gistId, originalPath, path, current.content)
-            } ?: repository.addFile(gistId, path, current.content)
+                repository.updateFile(gistId, originalPath, path, content)
+            } ?: repository.addFile(gistId, path, content)
             when (result) {
                 is ApiResult.Success -> {
                     gistUpdateEventBus.emit(gistId)

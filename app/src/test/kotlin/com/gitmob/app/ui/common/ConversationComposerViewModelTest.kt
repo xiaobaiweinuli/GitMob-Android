@@ -26,6 +26,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -57,7 +58,7 @@ class ConversationComposerViewModelTest {
         viewModel.updateText("# title")
         viewModel.selectTab(ComposerTab.PREVIEW)
         advanceTimeBy(121)
-        advanceUntilIdle()
+        viewModel.state.first { it.previewHtml.isNotEmpty() || it.previewFailed }
 
         assertEquals("<h1>title</h1>", viewModel.state.value.previewHtml)
         assertFalse(viewModel.state.value.previewFailed)
@@ -194,12 +195,12 @@ class ConversationComposerViewModelTest {
     }
 
     @Test
-    fun immediateSubmitReadsTextFieldStateWithoutAnObserverRoundTrip() = runTest {
+    fun immediateSubmitReadsSoraContentWithoutAnObserverRoundTrip() = runTest {
         val repository = mockk<RepoIssueRepository>()
         coEvery { repository.addComment("I1", "latest input") } returns ApiResult.Success(mockk())
         val vm = viewModel(issueRepository = repository)
         init(vm)
-        vm.state.value.textState.edit { replace(0, length, "latest input") }
+        vm.state.value.textState.content.replace(0, vm.state.value.textState.content.length, "latest input")
         vm.submit()
         advanceUntilIdle()
         coVerify(exactly = 1) { repository.addComment("I1", "latest input") }

@@ -14,7 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.text.input.TextFieldState
+import com.gitmob.app.ui.common.SoraEditorState
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -76,7 +76,7 @@ private fun DiscussionEditorContent(
     categories: List<RepoDiscussionCategory>,
     labels: List<com.gitmob.app.data.model.IssueLabel>,
     draft: RepoDiscussionEditorDraft,
-    bodyState: TextFieldState,
+    bodyState: SoraEditorState,
     bodyEditorState: MarkdownEditorUiState,
     modifier: Modifier,
     onBodyTabSelected: (MarkdownEditorTab) -> Unit,

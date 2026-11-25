@@ -2,8 +2,7 @@ package com.gitmob.app.ui.repoissues
 
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
-import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import com.gitmob.app.ui.common.SoraEditorState
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewmodel.compose.SavedStateHandleSaveableApi
 import androidx.lifecycle.viewmodel.compose.saveable
@@ -24,6 +23,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -64,7 +66,9 @@ class RepoIssueEditorViewModel @Inject constructor(
     session: AccountSession,
     private val savedStateHandle: SavedStateHandle,
 ) : AccountViewModel(session) {
-    val bodyState = savedStateHandle.saveable(key = "editor.body", saver = TextFieldState.Saver) { TextFieldState() }
+    val bodyState = savedStateHandle.saveable(key = "editor.body", saver = SoraEditorState.Saver) { SoraEditorState() }
+    private val formTextareaStates = mutableMapOf<String, SoraEditorState>()
+    val textareaStates: Map<String, SoraEditorState> get() = formTextareaStates
     private var draftInitialized = savedStateHandle.contains("editor.draft")
     private val _state = MutableStateFlow(RepoIssueEditorUiState(
         draft = savedStateHandle["editor.draft"] ?: RepoIssueEditorDraft(),
@@ -109,13 +113,12 @@ class RepoIssueEditorViewModel @Inject constructor(
             val availableLabels = (labels as ApiResult.Success).data
             val availableAssignees = (assignees as ApiResult.Success).data
             if (!draftInitialized) {
-                bodyState.setTextAndPlaceCursorAtEnd(issue?.body.orEmpty())
+                bodyState.loadText(issue?.body.orEmpty())
                 storeDraft(RepoIssueEditorDraft(
                     title = issue?.title ?: template?.title.orEmpty(),
                     textValues = template?.fields.orEmpty().mapNotNull { field ->
                         when (field) {
                             is IssueFormField.Input -> field.id to field.value.orEmpty()
-                            is IssueFormField.Textarea -> field.id to field.value.orEmpty()
                             else -> null
                         }
                     }.toMap(),
@@ -128,6 +131,18 @@ class RepoIssueEditorViewModel @Inject constructor(
                         ?: availableAssignees.filter { it.login in template?.assignees.orEmpty() }.mapNotNull { it.id }.toSet(),
                     milestoneId = issue?.milestone?.id,
                 ))
+            }
+            template?.fields.orEmpty().filterIsInstance<IssueFormField.Textarea>().forEach { field ->
+                formTextareaStates.getOrPut(field.id) {
+                    savedStateHandle.saveable(key = "editor.textarea.${field.id}", saver = SoraEditorState.Saver) {
+                        // Read old string drafts once; future edits stay in the Sora document.
+                        SoraEditorState(_state.value.draft.textValues[field.id] ?: field.value.orEmpty())
+                    }
+                }
+            }
+            val textareaIds = formTextareaStates.keys
+            if (_state.value.draft.textValues.keys.any { it in textareaIds }) {
+                storeDraft(_state.value.draft.copy(textValues = _state.value.draft.textValues - textareaIds))
             }
             val templateHtml = renderTemplate(template)
             _state.update {
@@ -163,8 +178,9 @@ class RepoIssueEditorViewModel @Inject constructor(
         }.filterNotNull().filter(String::isNotBlank).distinct().associateWith(markdownRenderer::renderToHtml)
 
     fun selectBodyEditorTab(tab: MarkdownEditorTab) {
-        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, previewFailed = false)) }
-        if (tab == MarkdownEditorTab.PREVIEW) renderBodyPreview(bodyState.text.toString())
+        previewJob?.cancel()
+        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, previewFailed = false, isRenderingPreview = false)) }
+        if (tab == MarkdownEditorTab.PREVIEW) renderBodyPreview(bodyState.snapshot())
     }
 
     private fun renderBodyPreview(markdown: String) {
@@ -176,9 +192,10 @@ class RepoIssueEditorViewModel @Inject constructor(
         previewJob = viewModelScope.launch {
             kotlinx.coroutines.delay(120)
             _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = true, previewFailed = false)) }
-            runCatching { markdownRenderer.renderToHtml(markdown) }
+            runCatching { withContext(Dispatchers.Default) { markdownRenderer.renderToHtml(markdown) } }
                 .onSuccess { html -> _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = html, isRenderingPreview = false)) } }
                 .onFailure { error ->
+                    if (error is CancellationException) throw error
                     errorEventBus.emit(com.gitmob.app.core.error.ApiError.Unknown(error.message ?: "Markdown preview failed"))
                     _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = false, previewFailed = true)) }
                 }
@@ -207,8 +224,9 @@ class RepoIssueEditorViewModel @Inject constructor(
         val title = draft.title
         if (!draftInitialized || state.isLoading || state.loadFailed || title.isBlank() || state.isSaving) return
         val template = state.templates.firstOrNull { it.filename == templateFilename }.takeIf { state.existing == null }
-        val body = template?.let { IssueFormSubmissionBuilder.build(it, draft.textValues, draft.selections) }
-            ?: bodyState.text.toString()
+        val textValues = draft.textValues + formTextareaStates.mapValues { it.value.snapshot() }
+        val body = template?.let { IssueFormSubmissionBuilder.build(it, textValues, draft.selections) }
+            ?: bodyState.snapshot()
         val labelIds = draft.labelIds.toList()
         val assigneeIds = draft.assigneeIds.toList()
         val milestoneId = draft.milestoneId

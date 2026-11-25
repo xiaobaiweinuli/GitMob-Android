@@ -69,15 +69,15 @@ private class NavigationDocumentOwner {
 
 /** One repository document, including its resource requests and live renderer. */
 class NavigationDocument internal constructor(val resources: RepoDocumentResources?) {
-    private var renderer: MarkdownWebViewState? = null
+    private val renderers = mutableMapOf<MarkdownLayoutMode, MarkdownWebViewState>()
     internal var translationDocument: TranslationDocument? = null
 
-    internal fun renderer(): MarkdownWebViewState =
-        renderer ?: MarkdownWebViewState(resources).also { renderer = it }
+    internal fun renderer(layoutMode: MarkdownLayoutMode = MarkdownLayoutMode.Embedded): MarkdownWebViewState =
+        renderers.getOrPut(layoutMode) { MarkdownWebViewState(resources) }
 
     internal fun close() {
-        renderer?.close()
-        renderer = null
+        renderers.values.forEach { it.close() }
+        renderers.clear()
         translationDocument = null
         resources?.close()
     }

@@ -250,6 +250,42 @@ class RepoGitContentTest {
         assertTrue(repository.getFileContent("owner", "repo", "feature/docs", "only-in-tag.md") is ApiResult.Failure)
     }
 
+    @Test fun commitSerializesHeadlineAndMultilineBodySeparately() = runTest(accounts.context) {
+        server.enqueue(MockResponse(body = commitResponse))
+        val body = "First paragraph\n\n第二段\n- detail\n"
+        val result = repository.createCommit("owner", "repo", "main", "Update README.md",
+            emptyList(), emptyList(), "head", body = body)
+        assertTrue(result is ApiResult.Success)
+        val input = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8())
+            .jsonObject.getValue("variables").jsonObject.getValue("input").jsonObject
+        val message = input.getValue("message").jsonObject
+        assertEquals("Update README.md", message.getValue("headline").jsonPrimitive.content)
+        assertEquals(body, message.getValue("body").jsonPrimitive.content)
+        assertEquals("head", input.getValue("expectedHeadOid").jsonPrimitive.content)
+        assertEquals("main", input.getValue("branch").jsonObject.getValue("branchName").jsonPrimitive.content)
+    }
+
+    @Test fun titleOnlyCommitCallersStillOmitTheOptionalBody() = runTest(accounts.context) {
+        repeat(2) { server.enqueue(MockResponse(body = commitResponse)) }
+        assertTrue(repository.createCommit("owner", "repo", "main", "Delete a.txt",
+            emptyList(), emptyList(), "head") is ApiResult.Success)
+        assertTrue(repository.createCommit("owner", "repo", "main", "Update a.txt",
+            emptyList(), emptyList(), "head", body = "  \n") is ApiResult.Success)
+        repeat(2) {
+            val input = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8())
+                .jsonObject.getValue("variables").jsonObject.getValue("input").jsonObject
+            assertFalse(input.getValue("message").jsonObject.containsKey("body"))
+        }
+    }
+
+    private val commitResponse = """{"data":{"createCommitOnBranch":{"commit":{
+        "__typename":"Commit","oid":"new-head","abbreviatedOid":"new",
+        "messageHeadline":"Update README.md","messageBody":"",
+        "authoredDate":"2026-11-23T00:00:00Z","committedDate":"2026-11-23T00:00:00Z",
+        "author":null,"committer":null,"additions":1,"deletions":0,"changedFilesIfAvailable":1,
+        "url":"https://github.com/owner/repo/commit/new-head"
+    }}}}"""
+
     private val blob = """{"__typename":"Blob","oid":"blob","byteSize":7,"isBinary":false,"isTruncated":false,"text":"# Guide"}"""
 
     private fun response(target: String, branch: String? = "feature/docs", commit: String? = null, permission: String = "READ", snapshotTarget: String = target): String {

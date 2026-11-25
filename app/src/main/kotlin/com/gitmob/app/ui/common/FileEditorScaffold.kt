@@ -3,7 +3,7 @@ package com.gitmob.app.ui.common
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -24,13 +24,17 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
 
@@ -39,17 +43,17 @@ import com.gitmob.app.R
 fun FileEditorScaffold(
     title: @Composable () -> Unit,
     path: String,
-    content: String,
+    editorState: SoraEditorState,
     isSaving: Boolean,
     isLoading: Boolean = false,
     loadFailed: Boolean = false,
     canSave: Boolean = true,
-    middleContent: @Composable ColumnScope.() -> Unit = {},
     onPathChange: (String) -> Unit,
-    onContentChange: (String) -> Unit,
     onBack: () -> Unit,
     onSave: () -> Unit,
 ) {
+    var wrapLines by rememberSaveable { mutableStateOf(true) }
+    val controller = rememberSoraEditorController(editorState)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -87,18 +91,22 @@ fun FileEditorScaffold(
                 OutlinedTextField(
                     value = path,
                     onValueChange = onPathChange,
+                    enabled = !isSaving,
                     label = { Text(stringResource(R.string.repo_file_path)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                middleContent()
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = onContentChange,
-                    label = { Text(stringResource(R.string.repo_file_content)) },
-                    placeholder = { Text(stringResource(R.string.repo_file_content_placeholder)) },
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-                    maxLines = Int.MAX_VALUE,
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.repo_file_content), modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    SoraUndoRedoButtons(editorState, controller, enabled = !isSaving)
+                    Text(stringResource(R.string.repo_file_wrap_lines), style = MaterialTheme.typography.labelMedium)
+                    Switch(checked = wrapLines, onCheckedChange = { wrapLines = it })
+                }
+                SoraTextEditor(
+                    state = editorState,
+                    enabled = !isSaving,
+                    wrapLines = wrapLines,
+                    controller = controller,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             }

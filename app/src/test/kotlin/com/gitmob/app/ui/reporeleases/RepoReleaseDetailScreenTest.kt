@@ -19,6 +19,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.R
+import com.gitmob.app.core.markdown.CommonMarkRenderer
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
@@ -147,6 +148,8 @@ class RepoReleaseDetailScreenTest {
 }
 
 /** Retains the detail ViewModel while the real editor publishes account-scoped changes. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class RepoReleaseDetailRefreshTest {
     private val accounts = AccountSessionRule()
     @get:Rule val rules: RuleChain = RuleChain.outerRule(MainDispatcherRule()).around(accounts)
@@ -181,7 +184,7 @@ class RepoReleaseDetailRefreshTest {
             stored = stored.copy(name = title, body = body)
             ApiResult.Success(stored)
         }
-        val editor = RepoReleaseEditorViewModel(repository, errors, updates, accounts.session, SavedStateHandle())
+        val editor = RepoReleaseEditorViewModel(repository, errors, updates, accounts.session, SavedStateHandle(), CommonMarkRenderer())
         editor.init("o", "r", 7, RepoPermission.WRITE)
         editor.editTitle(title)
         editor.editBody(body)

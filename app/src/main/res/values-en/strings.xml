@@ -720,7 +720,7 @@
     <string name="release_edit_asset">Edit asset</string>
     <string name="release_asset_name">File name</string>
     <string name="release_asset_label">Display label (optional)</string>
-    <string name="release_generate_notes">Generate release notes</string>
+    <string name="release_generate_notes">Generate notes</string>
     <string name="contributors_empty">No contributors</string>
     <plurals name="contributors_count">
         <item quantity="one">%1$d contribution</item>
@@ -1091,4 +1091,11 @@
     <string name="actions_repository_enabled_notice">Actions enabled</string>
     <string name="actions_repository_disabled_notice">Actions disabled</string>
     <string name="actions_repository_change_failed">Could not change Actions settings</string>
+    <string name="editor_undo">Undo</string>
+    <string name="editor_redo">Redo</string>
+    <string name="repo_commit_changes">Commit changes</string>
+    <string name="repo_commit_title">Commit title</string>
+    <string name="repo_commit_description">Description (optional)</string>
+    <string name="repo_commit_default_title">Update %1$s</string>
+    <string name="repo_commit_submit">Commit</string>
 </resources>

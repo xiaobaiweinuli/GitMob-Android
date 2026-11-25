@@ -1,6 +1,16 @@
 package com.gitmob.app.ui.reporeleases
 
+import android.view.View
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.compose.ui.platform.LocalView
+import com.gitmob.app.ui.common.awaitSoraEditor
+import com.gitmob.app.ui.common.awaitSoraLayout
+import org.robolectric.annotation.GraphicsMode
 import android.content.Context
+import com.gitmob.app.ui.common.SoraEditorState
+import com.gitmob.app.core.markdown.CommonMarkRenderer
 import androidx.lifecycle.SavedStateHandle
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
@@ -45,10 +55,17 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class RepoReleaseEditorScreenTest {
     @get:Rule val compose = createComposeRule()
-    private val state = MutableStateFlow(RepoReleaseEditorUiState(phase = ReleaseEditorPhase.EDITABLE, draft = ReleaseEditorDraft(tag = "v1", title = "Unsaved title", body = "Unsaved notes"), capabilities = RepoPermission.WRITE.toCapabilities(), isDirty = true))
-    private val vm = mockk<RepoReleaseEditorViewModel>(relaxed = true) { every { state } returns this@RepoReleaseEditorScreenTest.state }
+    private val state = MutableStateFlow(RepoReleaseEditorUiState(phase = ReleaseEditorPhase.EDITABLE, draft = ReleaseEditorDraft(tag = "v1", title = "Unsaved title"), capabilities = RepoPermission.WRITE.toCapabilities()))
+    private val bodyState = SoraEditorState("Unsaved notes")
+    private val vm = mockk<RepoReleaseEditorViewModel>(relaxed = true) {
+        every { state } returns this@RepoReleaseEditorScreenTest.state
+        every { bodyState } returns this@RepoReleaseEditorScreenTest.bodyState
+        every { isDirty } returns true
+    }
+    private lateinit var root: View
     private lateinit var activity: ComponentActivity
     private val generation = mutableStateOf(0)
     private var back = 0
@@ -58,6 +75,7 @@ class RepoReleaseEditorScreenTest {
     private fun text(id: Int) = ApplicationProvider.getApplicationContext<Context>().getString(id)
     private fun show() {
         compose.setContent {
+            root = LocalView.current
             val currentActivity = LocalActivity.current as ComponentActivity
             SideEffect { activity = currentActivity }
             run {
@@ -70,12 +88,151 @@ class RepoReleaseEditorScreenTest {
         }
     }
 
+    private fun scrollToBody() {
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text(R.string.conversation_edit_tab)))
+    }
+
+    @Test fun focusedReleaseBodyHandsOffFocusBeforeSwitchingPreviewAndRetainsSelection() {
+        every { vm.selectBodyEditorTab(any()) } answers {
+            assertFalse("Native focus must be released before the lazy item changes", root.findFocus() is com.gitmob.app.ui.common.SoraEditingView)
+            val tab = firstArg<com.gitmob.app.ui.common.MarkdownEditorTab>()
+            state.value = state.value.copy(bodyEditor = state.value.bodyEditor.copy(
+                selectedTab = tab, previewHtml = "<p>Unsaved notes</p>"))
+        }
+        show()
+        scrollToBody()
+        repeat(3) {
+            val editor = compose.awaitSoraEditor(root)
+            compose.runOnIdle {
+                editor.requestFocus()
+                editor.setSelection(0, 4)
+                assertTrue(editor.isFocused)
+            }
+            compose.onNodeWithText(text(R.string.conversation_preview_tab)).performScrollTo().performClick()
+            compose.runOnIdle {
+                assertTrue(editor.isReleased)
+                assertEquals("Unsaved notes", bodyState.snapshot())
+                assertEquals(4, bodyState.selection.start)
+            }
+            compose.onNodeWithContentDescription(text(R.string.conversation_tool_bold)).assertDoesNotExist()
+            compose.onNodeWithText(text(R.string.conversation_edit_tab)).performScrollTo().performClick()
+            val restored = compose.awaitSoraEditor(root, editor)
+            compose.runOnIdle { assertEquals(4, restored.cursor.leftColumn) }
+        }
+        val editor = compose.awaitSoraEditor(root)
+        compose.runOnIdle {
+            editor.requestFocus()
+            editor.setSelectionRegion(0, 0, 0, 7)
+        }
+        compose.onAllNodesWithContentDescription(text(R.string.conversation_tool_bold)).assertCountEquals(1)
+        compose.onNodeWithContentDescription(text(R.string.conversation_tool_bold)).performClick()
+        compose.runOnIdle {
+            assertEquals("**Unsaved** notes", bodyState.snapshot())
+            assertEquals(2, editor.cursor.leftColumn)
+            assertEquals(9, editor.cursor.rightColumn)
+        }
+        compose.onNodeWithContentDescription(text(R.string.editor_undo)).performScrollTo().performClick()
+        compose.runOnIdle { assertEquals("Unsaved notes", bodyState.snapshot()) }
+    }
+
+    @Test fun releaseBodyUsesContentHeightAndThePageOwnsScrolling() {
+        show()
+        scrollToBody()
+        val editor = compose.awaitSoraEditor(root)
+        val initialHeight = compose.runOnIdle {
+            val embedded = requireNotNull(editor.embeddedState)
+            assertTrue(embedded.contentHeight >= editor.rowHeight * 6)
+            embedded.contentHeight
+        }
+        val toolbarBounds = compose.onNodeWithContentDescription(text(R.string.conversation_tool_bold)).fetchSemanticsNode().boundsInRoot
+        compose.runOnIdle {
+            bodyState.edit { replace(0, length, (1..100).joinToString("\n") { "release note $it" }) }
+        }
+        compose.awaitSoraLayout(editor)
+        compose.runOnIdle {
+            assertTrue(requireNotNull(editor.embeddedState).contentHeight > initialHeight)
+            assertEquals(editor.layout.layoutHeight, editor.embeddedState!!.contentHeight)
+            assertTrue(editor.height <= root.height)
+        }
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text(R.string.common_save)))
+        compose.onNodeWithText(text(R.string.common_save)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(text(R.string.conversation_tool_bold)).assertIsDisplayed()
+        assertEquals(toolbarBounds, compose.onNodeWithContentDescription(text(R.string.conversation_tool_bold)).fetchSemanticsNode().boundsInRoot)
+    }
+
+    @Test fun releaseOptionsPrecedeBodyAndTheirLabelsToggleIndependently() {
+        state.value = state.value.copy(draft = state.value.draft.copy(draft = false))
+        every { vm.editDraft(any()) } answers {
+            state.value = state.value.copy(draft = state.value.draft.copy(draft = firstArg()))
+        }
+        every { vm.editPrerelease(any()) } answers {
+            state.value = state.value.copy(draft = state.value.draft.copy(prerelease = firstArg()))
+        }
+        show()
+        val draftOption = compose.onNodeWithText(text(R.string.release_draft))
+        val prereleaseOption = compose.onNodeWithText(text(R.string.release_prerelease))
+        val editTab = compose.onNodeWithText(text(R.string.conversation_edit_tab))
+        draftOption.performScrollTo().assertIsOff().performClick().assertIsOn()
+        prereleaseOption.assertIsOff().performClick().assertIsOn()
+        draftOption.assertIsOn()
+        scrollToBody()
+        assertTrue(draftOption.fetchSemanticsNode().boundsInRoot.bottom <= editTab.fetchSemanticsNode().boundsInRoot.top)
+        assertTrue(prereleaseOption.fetchSemanticsNode().boundsInRoot.bottom <= editTab.fetchSemanticsNode().boundsInRoot.top)
+        compose.onNodeWithText(text(R.string.release_generate_notes)).performClick()
+        verify(exactly = 1) { vm.generateNotes() }
+        compose.runOnIdle { state.value = state.value.copy(phase = ReleaseEditorPhase.SAVING) }
+        draftOption.assertIsNotEnabled()
+        prereleaseOption.assertIsNotEnabled()
+        compose.onNodeWithContentDescription(text(R.string.conversation_tool_bold)).assertIsNotEnabled()
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h891dp")
+    fun bottomToolbarAvoidsKeyboardOnceAndTheBodyCaretStaysAboveIt() {
+        bodyState.loadText((1..80).joinToString("\n") { "release note $it" })
+        show()
+        scrollToBody()
+        val editor = compose.awaitSoraEditor(root)
+        fun applyInsets(keyboardHeight: Int) {
+            compose.runOnIdle {
+                ViewCompat.dispatchApplyWindowInsets(root, WindowInsetsCompat.Builder()
+                    .setInsets(WindowInsetsCompat.Type.navigationBars(), Insets.of(0, 0, 0, 24))
+                    .setInsets(WindowInsetsCompat.Type.ime(), Insets.of(0, 0, 0, keyboardHeight))
+                    .setVisible(WindowInsetsCompat.Type.ime(), keyboardHeight > 0).build())
+            }
+            compose.awaitSoraLayout(editor)
+        }
+        applyInsets(0)
+        compose.runOnIdle {
+            editor.requestFocus()
+            editor.setSelection(45, 5)
+        }
+        compose.awaitSoraLayout(editor)
+        val toolbar = compose.onNodeWithContentDescription(text(R.string.conversation_tool_bold))
+        val initialBounds = toolbar.fetchSemanticsNode().boundsInRoot
+        val selection = bodyState.selection
+        for (keyboardHeight in listOf(300, 420, 0)) {
+            applyInsets(keyboardHeight)
+            toolbar.assertIsDisplayed()
+            val bounds = toolbar.fetchSemanticsNode().boundsInRoot
+            assertEquals("Toolbar displacement for keyboard $keyboardHeight in root ${root.width}x${root.height}: $initialBounds -> $bounds",
+                (keyboardHeight - 24).coerceAtLeast(0).toFloat(), initialBounds.top - bounds.top, 2f)
+            compose.runOnIdle {
+                val editorTop = IntArray(2).also(editor::getLocationInWindow)[1]
+                val rootTop = IntArray(2).also(root::getLocationInWindow)[1]
+                val caretBottom = editorTop - rootTop + editor.layout.getCharLayoutOffset(45, 5)[0] - editor.offsetY
+                assertTrue("Caret $caretBottom must stay above toolbar $bounds", caretBottom <= bounds.top)
+                assertEquals(selection, bodyState.selection)
+            }
+        }
+    }
+
     @Test fun toolbarBackAndSystemBackUseTheSameDiscardConfirmation() {
         show()
         compose.onNodeWithContentDescription(text(R.string.common_back)).performClick()
         compose.onNodeWithText(text(R.string.conversation_discard_title)).assertIsDisplayed()
         compose.onNodeWithText(text(R.string.common_cancel)).performClick()
-        compose.runOnIdle { assertEquals(0, back); assertEquals("Unsaved notes", state.value.draft.body); activity.onBackPressedDispatcher.onBackPressed() }
+        compose.runOnIdle { assertEquals(0, back); assertEquals("Unsaved notes", bodyState.snapshot()); activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText(text(R.string.conversation_discard_title)).assertIsDisplayed()
         compose.onNodeWithText(text(R.string.conversation_discard)).performClick()
         compose.runOnIdle { assertEquals(1, back) }
@@ -90,7 +247,7 @@ class RepoReleaseEditorScreenTest {
             activity.onBackPressedDispatcher.dispatchOnBackCancelled()
         }
         compose.onNodeWithText(text(R.string.conversation_discard_title)).assertDoesNotExist()
-        compose.runOnIdle { assertEquals(0, back); assertEquals("Unsaved notes", state.value.draft.body); assertTrue(state.value.isDirty) }
+        compose.runOnIdle { assertEquals(0, back); assertEquals("Unsaved notes", bodyState.snapshot()); assertTrue(vm.isDirty) }
     }
 
     @Test fun remountUsesTheSameDraftAndTextEditsGoToViewModel() {
@@ -99,7 +256,7 @@ class RepoReleaseEditorScreenTest {
         verify { vm.editTitle("New title") }
         compose.runOnIdle { state.value = state.value.copy(draft = state.value.draft.copy(title = "New title")); generation.value++ }
         compose.onNodeWithText("New title").assertIsDisplayed()
-        compose.runOnIdle { assertEquals("Unsaved notes", state.value.draft.body) }
+        compose.runOnIdle { assertEquals("Unsaved notes", bodyState.snapshot()) }
     }
 
     @Test fun loadingAndLoadFailureDoNotExposeEditableBlankDraft() {
@@ -126,7 +283,7 @@ class RepoReleaseEditorScreenTest {
     }
 
     @Test fun cleanDraftReturnsImmediatelyAndSuccessfulSaveUsesCompletionCallbackOnce() {
-        state.value = state.value.copy(isDirty = false)
+        every { vm.isDirty } returns false
         show()
         compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed(); assertEquals(1, back) }
         compose.onNodeWithText(text(R.string.conversation_discard_title)).assertDoesNotExist()
@@ -168,7 +325,7 @@ class RepoReleaseEditorNavigationTest {
                             when (key) {
                                 editorRoute -> {
                                     val editor: RepoReleaseEditorViewModel = viewModel {
-                                        RepoReleaseEditorViewModel(repository, errors, updates, accounts.session, SavedStateHandle())
+                                        RepoReleaseEditorViewModel(repository, errors, updates, accounts.session, SavedStateHandle(), CommonMarkRenderer())
                                     }
                                     SideEffect { latestEditor = editor }
                                     val clicks = rememberEntryNavigation(navigator, editorRoute)
@@ -214,8 +371,8 @@ class RepoReleaseEditorNavigationTest {
         compose.onNodeWithText("Unsaved session title").assertIsDisplayed()
         compose.runOnIdle {
             assertSame(original, latestEditor)
-            assertEquals("Unsaved session notes", latestEditor.state.value.draft.body)
-            assertTrue(latestEditor.state.value.isDirty)
+            assertEquals("Unsaved session notes", latestEditor.bodyState.snapshot())
+            assertTrue(latestEditor.isDirty)
         }
     }
 
@@ -227,7 +384,7 @@ class RepoReleaseEditorNavigationTest {
         compose.runOnIdle {
             assertNotSame(original, latestEditor)
             assertEquals(ReleaseEditorDraft(), latestEditor.state.value.draft)
-            assertFalse(latestEditor.state.value.isDirty)
+            assertFalse(latestEditor.isDirty)
         }
     }
 
@@ -242,8 +399,9 @@ class RepoReleaseEditorNavigationTest {
         compose.onNodeWithText("Server title").assertIsDisplayed()
         compose.runOnIdle {
             assertNotSame(original, latestEditor)
-            assertEquals(ReleaseEditorDraft("v1", "main", "Server title", "Server notes", false, false), latestEditor.state.value.draft)
-            assertFalse(latestEditor.state.value.isDirty)
+            assertEquals(ReleaseEditorDraft("v1", "main", "Server title", false, false), latestEditor.state.value.draft)
+            assertEquals("Server notes", latestEditor.bodyState.snapshot())
+            assertFalse(latestEditor.isDirty)
         }
         coVerify(exactly = 2) { repository.getRelease("o", "r", 7) }
     }
@@ -258,7 +416,7 @@ class RepoReleaseEditorNavigationTest {
         compose.runOnIdle {
             assertEquals(listOf(HomeRoute, editorRoute), navState.backStacks.getValue(HomeRoute).toList())
             assertSame(original, latestEditor)
-            assertTrue(latestEditor.state.value.isDirty)
+            assertTrue(latestEditor.isDirty)
         }
     }
 
@@ -280,7 +438,7 @@ class RepoReleaseEditorNavigationTest {
         }
         compose.runOnIdle {
             assertEquals(ReleaseEditorDraft(), latestEditor.state.value.draft)
-            assertFalse(latestEditor.state.value.isDirty)
+            assertFalse(latestEditor.isDirty)
             assertFalse(latestEditor.state.value.isGenerating)
         }
     }

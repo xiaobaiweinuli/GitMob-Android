@@ -1,13 +1,10 @@
 package com.gitmob.app.ui.gist
 
 import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.foundation.text.selection.SelectionContainer
 import com.gitmob.app.ui.translation.*
 import com.gitmob.app.data.translation.TranslationTarget
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +17,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -64,6 +61,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.layout.height
+import com.gitmob.app.ui.common.SoraTextViewer
+import com.gitmob.app.ui.common.rememberSoraViewerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -494,6 +494,7 @@ internal fun GistFileCard(
     onDownload: () -> Unit,
     onShare: () -> Unit,
 ) {
+    val readingState = rememberSoraViewerState(file.filename)
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column {
             Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -513,12 +514,14 @@ internal fun GistFileCard(
             }
             if (expanded) {
                 HorizontalDivider()
-                if (file.isText) SelectionContainer { Text(
-                    file.content.orEmpty(),
-                    Modifier.fillMaxWidth().padding(16.dp).horizontalScroll(rememberScrollState()),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                ) } else Text(
+                if (file.isText) SoraTextViewer(
+                    text = file.content.orEmpty(),
+                    wrapLines = false,
+                    state = readingState,
+                    modifier = Modifier.fillMaxWidth(),
+                    embedded = true,
+                    lineNumbersAtStart = true,
+                ) else Text(
                     stringResource(if (file.isTruncated) R.string.gist_file_truncated else R.string.gist_file_binary),
                     Modifier.padding(16.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

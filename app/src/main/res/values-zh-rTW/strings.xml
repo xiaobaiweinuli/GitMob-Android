@@ -702,7 +702,7 @@
     <string name="release_edit_asset">編輯資產</string>
     <string name="release_asset_name">檔案名稱</string>
     <string name="release_asset_label">顯示標籤（選填）</string>
-    <string name="release_generate_notes">自動產生發行說明</string>
+    <string name="release_generate_notes">自動產生</string>
     <string name="contributors_empty">沒有貢獻者</string>
     <plurals name="contributors_count">
         <item quantity="other">%1$d 次貢獻</item>
@@ -1066,4 +1066,11 @@
     <string name="actions_repository_enabled_notice">已啟用 Actions</string>
     <string name="actions_repository_disabled_notice">已停用 Actions</string>
     <string name="actions_repository_change_failed">無法變更 Actions 設定</string>
+    <string name="editor_undo">復原</string>
+    <string name="editor_redo">重做</string>
+    <string name="repo_commit_changes">提交變更</string>
+    <string name="repo_commit_title">提交標題</string>
+    <string name="repo_commit_description">詳細說明（選填）</string>
+    <string name="repo_commit_default_title">更新 %1$s</string>
+    <string name="repo_commit_submit">提交</string>
 </resources>

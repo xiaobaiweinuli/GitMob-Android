@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,6 +34,10 @@ import com.gitmob.app.ui.translation.TranslationHtml
 import com.gitmob.app.ui.translation.TranslationMenuItem
 import com.gitmob.app.ui.translation.TranslationText
 import com.gitmob.app.ui.common.RepositoryContextTitle
+import com.gitmob.app.ui.common.MarkdownBodyEditor
+import com.gitmob.app.ui.common.MarkdownEditorTab
+import com.gitmob.app.ui.common.MarkdownEditorToolbar
+import com.gitmob.app.ui.common.rememberSoraEditorController
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -123,15 +129,18 @@ fun RepoReleaseEditorScreen(owner: String, name: String, releaseId: Long?, permi
     LaunchedEffect(owner, name, releaseId, permission) { viewModel.init(owner, name, releaseId, permission) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val draft = state.draft
+    val bodyController = rememberSoraEditorController(viewModel.bodyState)
+    val enabled = !state.isSaving && state.savedRelease == null
     var showDiscardConfirmation by remember { mutableStateOf(false) }
     fun requestExit() {
         if (state.isSaving) return
-        if (state.isDirty) showDiscardConfirmation = true else onBack()
+        if (viewModel.isDirty) showDiscardConfirmation = true else onBack()
     }
     // BackHandler is invoked only for a completed back action; cancelling a gesture leaves the draft intact.
     BackHandler { requestExit() }
     LaunchedEffect(state.savedRelease) { state.savedRelease?.let { onSaved(it.tagName) } }
     Scaffold(
+        modifier = Modifier.imePadding(),
         topBar = {
             TopAppBar(
                 title = {
@@ -145,26 +154,65 @@ fun RepoReleaseEditorScreen(owner: String, name: String, releaseId: Long?, permi
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
         },
-        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+        bottomBar = {
+            if ((state.phase == ReleaseEditorPhase.EDITABLE || state.phase == ReleaseEditorPhase.SAVING) &&
+                state.bodyEditor.selectedTab == MarkdownEditorTab.EDIT
+            ) {
+                MarkdownEditorToolbar(
+                    textState = viewModel.bodyState,
+                    controller = bodyController,
+                    enabled = enabled,
+                    modifier = Modifier.windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
+                    ),
+                )
+            }
+        },
+        contentWindowInsets = WindowInsets.safeDrawing,
     ) { padding ->
         when (state.phase) {
             ReleaseEditorPhase.LOADING -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             ReleaseEditorPhase.LOAD_FAILED -> Box(Modifier.fillMaxSize().padding(padding)) { ReleaseRetry(viewModel::retry) }
             ReleaseEditorPhase.EDITABLE, ReleaseEditorPhase.SAVING -> {
-                val enabled = !state.isSaving && state.savedRelease == null
-                LazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item { OutlinedTextField(draft.tag, viewModel::editTag, enabled = enabled, label = { Text(stringResource(R.string.release_tag)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
                     item { OutlinedTextField(draft.target, viewModel::editTarget, enabled = enabled, label = { Text(stringResource(R.string.release_target)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
                     item { OutlinedTextField(draft.title, viewModel::editTitle, enabled = enabled, label = { Text(stringResource(R.string.release_title)) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
                     item {
-                        TextButton(onClick = viewModel::generateNotes, enabled = enabled && state.capabilities.canPush && draft.tag.isNotBlank() && !state.isGenerating) {
-                            if (state.isGenerating) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.AutoAwesome, null)
-                            Text(stringResource(R.string.release_generate_notes))
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            itemVerticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            TextButton(onClick = viewModel::generateNotes, enabled = enabled && state.capabilities.canPush && draft.tag.isNotBlank() && !state.isGenerating) {
+                                if (state.isGenerating) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.AutoAwesome, null)
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.release_generate_notes))
+                            }
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                itemVerticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                ReleaseOption(draft.draft, viewModel::editDraft, stringResource(R.string.release_draft), enabled)
+                                ReleaseOption(draft.prerelease, viewModel::editPrerelease, stringResource(R.string.release_prerelease), enabled)
+                            }
                         }
                     }
-                    item { OutlinedTextField(draft.body, viewModel::editBody, enabled = enabled, label = { Text(stringResource(R.string.release_notes)) }, minLines = 10, modifier = Modifier.fillMaxWidth()) }
-                    item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.draft, viewModel::editDraft, enabled = enabled); Text(stringResource(R.string.release_draft)) } }
-                    item { Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(draft.prerelease, viewModel::editPrerelease, enabled = enabled); Text(stringResource(R.string.release_prerelease)) } }
+                    item {
+                        Text(stringResource(R.string.release_notes), style = MaterialTheme.typography.titleSmall)
+                        MarkdownBodyEditor(
+                            textState = viewModel.bodyState,
+                            state = state.bodyEditor,
+                            onTabSelected = viewModel::selectBodyEditorTab,
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                            embedded = true,
+                            minLines = 6,
+                            controller = bodyController,
+                            showToolbar = false,
+                        )
+                    }
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             TextButton(onClick = { requestExit() }, enabled = enabled) { Text(stringResource(R.string.common_cancel)) }
@@ -186,6 +234,21 @@ fun RepoReleaseEditorScreen(owner: String, name: String, releaseId: Long?, permi
             dismissButton = { TextButton(onClick = { showDiscardConfirmation = false }) { Text(stringResource(R.string.common_cancel)) } },
             confirmButton = { TextButton(onClick = { showDiscardConfirmation = false; onBack() }) { Text(stringResource(R.string.conversation_discard), color = MaterialTheme.colorScheme.error) } },
         )
+    }
+}
+
+@Composable
+private fun ReleaseOption(checked: Boolean, onCheckedChange: (Boolean) -> Unit, label: String, enabled: Boolean) {
+    Row(
+        modifier = Modifier
+            .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+        Text(label)
     }
 }
 

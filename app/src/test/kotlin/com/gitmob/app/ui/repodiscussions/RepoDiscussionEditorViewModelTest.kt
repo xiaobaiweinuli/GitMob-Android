@@ -97,6 +97,7 @@ class RepoDiscussionEditorViewModelTest {
         advanceUntilIdle()
         assertEquals("Server title", restored.state.value.draft.title)
         assertEquals("Server body", restored.bodyState.text.toString())
+        assertFalse(restored.bodyState.canUndo)
         restored.viewModelScope.cancel()
     }
 
@@ -109,7 +110,7 @@ class RepoDiscussionEditorViewModelTest {
         advanceUntilIdle()
         vm.editTitle("Title")
         vm.confirmMetadata("C2", setOf("L1"))
-        vm.bodyState.edit { replace(0, length, "Latest body") }
+        vm.bodyState.content.replace(0, vm.bodyState.content.length, "Latest body")
         vm.save {}
         vm.bodyState.edit { replace(0, length, "Later edit") }
         advanceUntilIdle()

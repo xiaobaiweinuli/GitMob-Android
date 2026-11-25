@@ -1,10 +1,17 @@
 package com.gitmob.app.ui.common
 
+import android.view.MotionEvent
 import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.compose.runtime.saveable.SaverScope
 import android.webkit.WebResourceRequest
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
@@ -68,6 +75,153 @@ import org.robolectric.util.ReflectionHelpers
 @Config(sdk = [35], shadows = [MarkdownWebViewTest.CountingWebViewShadow::class])
 class MarkdownWebViewTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun embeddedAndFullScreenPreviewsBindTheCurrentImageGallery() {
+        val mode = mutableStateOf(MarkdownLayoutMode.Embedded)
+        val body = mutableStateOf("<p><img src='https://example.test/first.png'><img src='https://example.test/second.png'></p>")
+        lateinit var root: View
+        composeRule.setContent {
+            root = androidx.compose.ui.platform.LocalView.current
+            MaterialTheme { MarkdownWebView(body.value, layoutMode = mode.value) }
+        }
+        fun imageSources(): List<String> {
+            val view = requireNotNull(findWebView(root)) as MarkdownContentWebView
+            val handler = ReflectionHelpers.getField<MarkdownImageTapHandler>(view, "images")
+            val images = ReflectionHelpers.getField<Lazy<List<com.gitmob.app.data.model.DocumentImage>>>(handler, "documentImages")
+            return images.value.map { it.source }
+        }
+        val initial = listOf("https://example.test/first.png", "https://example.test/second.png")
+        composeRule.runOnIdle { assertEquals(initial, imageSources()) }
+        composeRule.runOnIdle { mode.value = MarkdownLayoutMode.Viewport }
+        composeRule.runOnIdle {
+            assertTrue(findWebView(root) is MarkdownViewportWebView)
+            assertEquals(initial, imageSources())
+        }
+        composeRule.runOnIdle { body.value = "<p><img src='https://example.test/third.png'></p>" }
+        composeRule.runOnIdle { assertEquals(listOf("https://example.test/third.png"), imageSources()) }
+        composeRule.runOnIdle { mode.value = MarkdownLayoutMode.Embedded }
+        composeRule.runOnIdle { assertEquals(listOf("https://example.test/third.png"), imageSources()) }
+    }
+    @Test fun bindingAnotherDocumentAtZeroClearsThePreviousScroll() {
+        val previous = MarkdownViewportState("old")
+        val view = ScrollRestoreWebView(previous)
+        val bitmap = Bitmap.createBitmap(260, 180, Bitmap.Config.ARGB_8888)
+        try {
+            view.scrollTo(0, 200)
+            val next = MarkdownViewportState("new")
+            view.bindViewportState(next)
+            view.drawFrame(Canvas(bitmap))
+            assertEquals(0, view.scrollY)
+            assertEquals(0f, next.yDp)
+            assertEquals(200f / view.resources.displayMetrics.density, previous.yDp)
+        } finally { bitmap.recycle(); view.destroy() }
+    }
+
+    @Test fun tapsAndCanceledTouchesKeepDelayedScrollRestoration() {
+        for (finish in listOf(MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL)) {
+            val saved = MarkdownViewportState("file", 0f, 800f)
+            val view = ScrollRestoreWebView(saved)
+            val bitmap = Bitmap.createBitmap(260, 180, Bitmap.Config.ARGB_8888)
+            try {
+                view.documentHeight = 380
+                view.drawFrame(Canvas(bitmap))
+                assertEquals(200, view.scrollY)
+                view.touch(MotionEvent.ACTION_DOWN, 20f)
+                view.touch(MotionEvent.ACTION_MOVE, 21f)
+                view.touch(finish, 21f)
+                assertEquals(800f, saved.yDp)
+                val rebound = MarkdownViewportState("file")
+                view.bindViewportState(rebound)
+                assertEquals(800f, rebound.yDp)
+                view.documentHeight = 10_000
+                view.drawFrame(Canvas(bitmap))
+                assertEquals((800 * view.resources.displayMetrics.density).toInt(), view.scrollY)
+            } finally { bitmap.recycle(); view.destroy() }
+        }
+    }
+
+    @Test fun draggingTakesPriorityOverDelayedScrollRestoration() {
+        val saved = MarkdownViewportState("file", 0f, 800f)
+        val view = ScrollRestoreWebView(saved)
+        val bitmap = Bitmap.createBitmap(260, 180, Bitmap.Config.ARGB_8888)
+        try {
+            view.documentHeight = 380
+            view.drawFrame(Canvas(bitmap))
+            view.touch(MotionEvent.ACTION_DOWN, 20f)
+            view.touch(MotionEvent.ACTION_MOVE, 150f)
+            view.scrollTo(0, 100)
+            view.touch(MotionEvent.ACTION_UP, 150f)
+            view.documentHeight = 10_000
+            view.drawFrame(Canvas(bitmap))
+            assertEquals(100, view.scrollY)
+            assertEquals(100f / view.resources.displayMetrics.density, saved.yDp)
+        } finally { bitmap.recycle(); view.destroy() }
+    }
+
+    @Test fun keyboardScrollTakesPriorityOverUnreachableSavedPosition() {
+        val saved = MarkdownViewportState("file", 0f, 800f)
+        val view = ScrollRestoreWebView(saved)
+        val bitmap = Bitmap.createBitmap(260, 180, Bitmap.Config.ARGB_8888)
+        try {
+            view.documentHeight = 380
+            view.drawFrame(Canvas(bitmap))
+            view.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_PAGE_UP))
+            // ShadowWebView has no Chromium keyboard handler; apply its resulting native scroll.
+            view.scrollTo(0, 100)
+            view.drawFrame(Canvas(bitmap))
+            assertEquals(100, view.scrollY)
+            assertEquals(100f / view.resources.displayMetrics.density, saved.yDp)
+            view.documentHeight = 10_000
+            view.drawFrame(Canvas(bitmap))
+            assertEquals(100, view.scrollY)
+        } finally { bitmap.recycle(); view.destroy() }
+    }
+
+    @Test fun mouseWheelScrollTakesPriorityOverDelayedRestoration() {
+        val saved = MarkdownViewportState("file", 0f, 800f)
+        val view = ScrollRestoreWebView(saved)
+        val bitmap = Bitmap.createBitmap(260, 180, Bitmap.Config.ARGB_8888)
+        val event = MotionEvent.obtain(0, 10, MotionEvent.ACTION_SCROLL, 1,
+            arrayOf(MotionEvent.PointerProperties().apply { id = 0 }),
+            arrayOf(MotionEvent.PointerCoords().apply { setAxisValue(MotionEvent.AXIS_VSCROLL, 1f) }),
+            0, 0, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_MOUSE, 0)
+        try {
+            view.documentHeight = 380
+            view.drawFrame(Canvas(bitmap))
+            view.onGenericMotionEvent(event)
+            view.scrollTo(0, 100)
+            view.documentHeight = 10_000
+            view.drawFrame(Canvas(bitmap))
+            assertEquals(100, view.scrollY)
+            assertEquals(100f / view.resources.displayMetrics.density, saved.yDp)
+        } finally { event.recycle(); bitmap.recycle(); view.destroy() }
+    }
+
+    @Test fun nonScrollingKeysKeepDelayedRestoration() {
+        val saved = MarkdownViewportState("file", 0f, 800f)
+        val view = ScrollRestoreWebView(saved)
+        val bitmap = Bitmap.createBitmap(260, 180, Bitmap.Config.ARGB_8888)
+        try {
+            view.documentHeight = 380
+            view.drawFrame(Canvas(bitmap))
+            view.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_SHIFT_LEFT))
+            view.documentHeight = 10_000
+            view.drawFrame(Canvas(bitmap))
+            assertEquals((800 * view.resources.displayMetrics.density).toInt(), view.scrollY)
+        } finally { bitmap.recycle(); view.destroy() }
+    }
+
+    private class ScrollRestoreWebView(state: MarkdownViewportState) : MarkdownViewportWebView(RuntimeEnvironment.getApplication(), state) {
+        var documentHeight = 10_000
+        init { right = 260; bottom = 180 }
+        override fun computeVerticalScrollRange() = documentHeight
+        override fun computeHorizontalScrollRange() = width
+        fun drawFrame(canvas: Canvas) = onDraw(canvas)
+        fun touch(action: Int, y: Float) {
+            val event = MotionEvent.obtain(0, 10, action, 20f, y, 0)
+            try { onTouchEvent(event) } finally { event.recycle() }
+        }
+    }
 
     @Test fun genericMarkdownDelegatesLinksExternallyAfterRepositoryContent() {
         val resources = mockk<RepoDocumentResources>(relaxed = true) {
@@ -853,6 +1007,118 @@ class MarkdownWebViewTest {
             shown.value = false
         }
         composeRule.runOnIdle { navigation.close() }
+    }
+
+    @Test fun fullscreenTranslationKeepsABoundedScrollingWebViewAcrossNavigation() {
+        val body = "<p>long document</p>".repeat(30_000)
+        val target = TranslationTarget("file-preview", body, true)
+        val navigation = NavigationDocument(null)
+        val vm = mockk<TranslationViewModel>(relaxed = true)
+        val state = mutableStateOf(TranslationUiState())
+        val shown = mutableStateOf(true)
+        lateinit var root: View
+        lateinit var original: WebView
+        composeRule.setContent {
+            root = LocalView.current.rootView
+            MaterialTheme {
+                CompositionLocalProvider(LocalTranslationController provides TranslationController(state.value, vm) {}) {
+                    Box(Modifier.size(260.dp, 180.dp)) {
+                        if (shown.value) TranslationHtml(target.key, body,
+                            modifier = Modifier.fillMaxSize(), navigationDocument = navigation,
+                            layoutMode = MarkdownLayoutMode.Viewport)
+                    }
+                }
+            }
+        }
+        composeRule.waitUntil(10_000) { findWebView(root) != null }
+        composeRule.runOnIdle {
+            original = requireNotNull(findWebView(root))
+            assertTrue(original is MarkdownContentWebView)
+            assertFalse(original is NoVerticalScrollWebView)
+            // Chromium is not run by Robolectric; the real Compose host supplies the bounded viewport.
+            val host = original.parent as View
+            assertTrue(host.height in 1..1_000)
+            assertEquals((180 * host.resources.displayMetrics.density).toInt(), host.height)
+            assertEquals(ViewGroup.LayoutParams.MATCH_PARENT, original.layoutParams.height)
+            assertTrue(original.isVerticalScrollBarEnabled)
+            original.scrollTo(0, 1200)
+            assertEquals(1200, original.scrollY)
+            val prepared = requireNotNull(navigation.translationDocument)
+            state.value = TranslationUiState(entries = mapOf(target.identity to TranslationEntry(
+                document = prepared, translations = mapOf(0 to "译文"), generation = 1, version = 1)))
+        }
+        composeRule.runOnIdle {
+            assertSame(original, findWebView(root))
+            assertEquals(1200, original.scrollY)
+            assertEquals(1, (shadowOf(original) as CountingWebViewShadow).pageLoads)
+            shown.value = false
+        }
+        composeRule.runOnIdle { shown.value = true }
+        composeRule.runOnIdle {
+            assertSame(original, findWebView(root))
+            assertEquals(1200, original.scrollY)
+            assertEquals(1, (shadowOf(original) as CountingWebViewShadow).pageLoads)
+            shown.value = false
+        }
+        composeRule.runOnIdle { navigation.close() }
+    }
+
+    @Test fun viewportScrollRestoresOnlyWhenContentCanAccommodateIt() {
+        val saved = MarkdownViewportState("file", 0f, 300f)
+        val view = object : MarkdownViewportWebView(RuntimeEnvironment.getApplication(), saved) {
+            var documentHeight = 100
+            override fun computeVerticalScrollRange() = documentHeight
+            override fun computeHorizontalScrollRange() = width
+            fun drawFrame(canvas: Canvas) = onDraw(canvas)
+        }
+        // ShadowWebView has no Chromium provider to apply setFrame during layout.
+        view.right = 260
+        view.bottom = 180
+        assertEquals(260, view.width)
+        assertEquals(180, view.height)
+        val bitmap = Bitmap.createBitmap(260, 180, Bitmap.Config.ARGB_8888)
+        try {
+            // Drive a Chromium draw callback explicitly; ShadowWebView has no renderer.
+            view.drawFrame(Canvas(bitmap))
+            assertEquals(0, view.scrollY)
+            assertEquals(300f, saved.yDp)
+            view.documentHeight = 280
+            view.drawFrame(Canvas(bitmap))
+            assertEquals(100, view.scrollY)
+            assertEquals(300f, saved.yDp)
+            view.documentHeight = 10_000
+            // Drive a Chromium draw callback explicitly; ShadowWebView has no renderer.
+            view.drawFrame(Canvas(bitmap))
+            assertEquals((300 * view.resources.displayMetrics.density).toInt(), view.scrollY)
+            view.scrollTo(0, 100)
+            val saver = MarkdownViewportState.saver("file")
+            val data = with(saver) { SaverScope { true }.save(saved) }!!
+            assertEquals(saved.yDp, saver.restore(data)!!.yDp)
+            assertEquals(0f, MarkdownViewportState.saver("other-file").restore(data)!!.yDp)
+            val reentered = MarkdownViewportState("file")
+            view.bindViewportState(reentered)
+            assertEquals(saved.yDp, reentered.yDp)
+            view.scrollTo(0, 200)
+            assertEquals(200f / view.resources.displayMetrics.density, reentered.yDp)
+        } finally {
+            bitmap.recycle()
+            view.destroy()
+        }
+    }
+
+    @Test fun layoutModesHaveSeparateRenderersWithOneDocumentLifetime() {
+        val navigation = NavigationDocument(null)
+        val embedded = navigation.renderer()
+        val viewport = navigation.renderer(MarkdownLayoutMode.Viewport)
+        assertTrue(embedded !== viewport)
+        assertSame(viewport, navigation.renderer(MarkdownLayoutMode.Viewport))
+        val first = NoVerticalScrollWebView(RuntimeEnvironment.getApplication())
+        val second = MarkdownContentWebView(RuntimeEnvironment.getApplication())
+        embedded.controller.webView = first
+        viewport.controller.webView = second
+        navigation.close()
+        assertTrue(shadowOf(first).wasDestroyCalled())
+        assertTrue(shadowOf(second).wasDestroyCalled())
     }
 
     @Implements(WebView::class)

@@ -88,7 +88,7 @@ fun GistRevisionDetailScreen(
                                     stringResource(reason.labelRes),
                                     Modifier.padding(16.dp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                ) else UnifiedDiffViewer(file.diff)
+                                ) else UnifiedDiffViewer(file.diff, documentId = file.filename)
                             }
                         }
                     }

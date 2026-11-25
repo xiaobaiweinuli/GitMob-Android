@@ -544,13 +544,17 @@ class RepoGitRepository @Inject constructor(
         additions: List<RepoPendingFileChange.Addition>,
         deletions: List<RepoPendingFileChange.Deletion>,
         expectedHeadOid: String,
+        body: String? = null,
     ): ApiResult<RepoCommitSummary> {
         val input = CreateCommitOnBranchInput(
             branch = CommittableBranch(
                 repositoryNameWithOwner = Optional.present("$owner/$name"),
                 branchName = Optional.present(branch),
             ),
-            message = CommitMessage(headline = message),
+            message = CommitMessage(
+                headline = message,
+                body = Optional.presentIfNotNull(body?.takeIf { it.isNotBlank() }),
+            ),
             fileChanges = Optional.present(FileChanges(
                 additions = Optional.present(additions.map { FileAddition(path = it.path, contents = it.contentBase64) }),
                 deletions = Optional.present(deletions.map { FileDeletion(path = it.path) }),

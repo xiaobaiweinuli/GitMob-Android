@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -130,7 +132,7 @@ class RepoFileDetailViewModel @Inject constructor(
                     val html = when {
                         !supported -> null
                         extension == "html" || extension == "htm" -> file.text
-                        else -> markdownRenderer.renderToHtml(file.text)
+                        else -> withContext(Dispatchers.Default) { markdownRenderer.renderToHtml(file.text) }
                     }
                     _state.update {
                         it.copy(

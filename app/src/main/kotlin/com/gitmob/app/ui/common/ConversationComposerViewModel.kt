@@ -5,8 +5,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewmodel.compose.SavedStateHandleSaveableApi
 import androidx.lifecycle.viewmodel.compose.saveable
 import androidx.lifecycle.viewModelScope
-import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -21,6 +19,9 @@ import com.gitmob.app.data.repository.RepoPullRequestRepository
 import com.gitmob.app.data.repository.GistRepository
 import com.gitmob.app.navigation.ConversationComposerTarget
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,13 +34,13 @@ import javax.inject.Inject
 typealias ComposerTab = MarkdownEditorTab
 
 data class ConversationComposerUiState(
-    val textState: TextFieldState = TextFieldState(),
+    val textState: SoraEditorState = SoraEditorState(),
     val bodyEditor: MarkdownEditorUiState = MarkdownEditorUiState(),
     val isSubmitting: Boolean = false,
     val submitted: Boolean = false,
     val allowsEmptySubmission: Boolean = false,
 ) {
-    val text: String get() = textState.text.toString()
+    val text: String get() = textState.snapshot()
     val selectedTab: MarkdownEditorTab get() = bodyEditor.selectedTab
     val previewHtml: String get() = bodyEditor.previewHtml
     val isRenderingPreview: Boolean get() = bodyEditor.isRenderingPreview
@@ -62,7 +63,7 @@ class ConversationComposerViewModel @Inject constructor(
     private val hasRestoredDraft = savedStateHandle.contains("draft")
     @OptIn(SavedStateHandleSaveableApi::class)
     private val _state = MutableStateFlow(ConversationComposerUiState(
-        textState = savedStateHandle.saveable(key = "draft", saver = TextFieldState.Saver) { TextFieldState() },
+        textState = savedStateHandle.saveable(key = "draft", saver = SoraEditorState.Saver) { SoraEditorState() },
     ))
     val state: StateFlow<ConversationComposerUiState> = _state.asStateFlow()
     private var previewJob: Job? = null
@@ -97,7 +98,7 @@ class ConversationComposerViewModel @Inject constructor(
         this.commentId = commentId
         this.replyToId = replyToId
         this.reviewEvent = reviewEvent?.let { runCatching { RepoPullRequestReviewEvent.valueOf(it) }.getOrNull() }
-        if (!hasRestoredDraft) _state.value.textState.setTextAndPlaceCursorAtEnd(initialText)
+        if (!hasRestoredDraft) _state.value.textState.loadText(initialText)
         _state.update {
             it.copy(
                 allowsEmptySubmission = target == ConversationComposerTarget.PULL_REQUEST_REVIEW,
@@ -107,12 +108,17 @@ class ConversationComposerViewModel @Inject constructor(
 
     fun updateText(value: String) {
         if (_state.value.text != value) _state.value.textState.setTextAndPlaceCursorAtEnd(value)
+        onTextChanged()
+    }
+
+    fun onTextChanged() {
         _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewFailed = false)) }
         if (_state.value.bodyEditor.selectedTab == MarkdownEditorTab.PREVIEW) renderPreview()
     }
 
     fun selectTab(tab: ComposerTab) {
-        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab)) }
+        previewJob?.cancel()
+        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, isRenderingPreview = false)) }
         if (tab == MarkdownEditorTab.PREVIEW) renderPreview()
     }
 
@@ -126,9 +132,10 @@ class ConversationComposerViewModel @Inject constructor(
         previewJob = viewModelScope.launch {
             delay(120)
             _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = true, previewFailed = false)) }
-            runCatching { markdownRenderer.renderToHtml(markdown) }
+            runCatching { withContext(Dispatchers.Default) { markdownRenderer.renderToHtml(markdown) } }
                 .onSuccess { html -> _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = html, isRenderingPreview = false)) } }
                 .onFailure { error ->
+                    if (error is CancellationException) throw error
                     errorEventBus.emit(com.gitmob.app.core.error.ApiError.Unknown(error.message ?: "Markdown preview failed"))
                     _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = false, previewFailed = true)) }
                 }

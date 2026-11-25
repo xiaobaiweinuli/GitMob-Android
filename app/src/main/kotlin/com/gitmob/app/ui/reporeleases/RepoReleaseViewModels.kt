@@ -1,6 +1,14 @@
 package com.gitmob.app.ui.reporeleases
 
 import android.net.Uri
+import android.os.Bundle
+import androidx.compose.runtime.saveable.SaverScope
+import com.gitmob.app.core.markdown.MarkdownRenderer
+import com.gitmob.app.ui.common.SoraEditorState
+import com.gitmob.app.ui.common.MarkdownEditorTab
+import com.gitmob.app.ui.common.MarkdownEditorUiState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -154,20 +162,19 @@ data class ReleaseEditorDraft(
     val tag: String = "",
     val target: String = "",
     val title: String = "",
-    val body: String = "",
     val draft: Boolean = true,
     val prerelease: Boolean = false,
 ) : Serializable {
-    fun toInput() = SaveRepoReleaseInput(tag, target, title.ifBlank { null }, body, draft, prerelease)
+    fun toInput(body: String) = SaveRepoReleaseInput(tag, target, title.ifBlank { null }, body, draft, prerelease)
 }
 
 data class RepoReleaseEditorUiState(
     val phase: ReleaseEditorPhase = ReleaseEditorPhase.LOADING,
     val draft: ReleaseEditorDraft = ReleaseEditorDraft(),
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
-    val isDirty: Boolean = false,
     val isGenerating: Boolean = false,
     val savedRelease: RepoRelease? = null,
+    val bodyEditor: MarkdownEditorUiState = MarkdownEditorUiState(),
 ) {
     val isSaving: Boolean get() = phase == ReleaseEditorPhase.SAVING
 }
@@ -179,9 +186,15 @@ class RepoReleaseEditorViewModel @Inject constructor(
     private val repoUpdateEventBus: RepoUpdateEventBus,
     session: AccountSession,
     private val savedStateHandle: SavedStateHandle,
+    private val markdownRenderer: MarkdownRenderer,
 ) : AccountViewModel(session) {
+    private val restoredDraft = savedStateHandle.get<Bundle>("editor.snapshot")
+    @Suppress("DEPRECATION")
+    val bodyState = restoredDraft?.getSerializable("body")?.let { SoraEditorState.Saver.restore(it) }
+        ?: SoraEditorState()
+    @Suppress("DEPRECATION")
     private val _state = MutableStateFlow(RepoReleaseEditorUiState(
-        draft = savedStateHandle["editor.draft"] ?: ReleaseEditorDraft(),
+        draft = restoredDraft?.getSerializable("draft") as? ReleaseEditorDraft ?: ReleaseEditorDraft(),
     ))
     val state: StateFlow<RepoReleaseEditorUiState> = _state.asStateFlow()
     private var owner = ""
@@ -190,6 +203,23 @@ class RepoReleaseEditorViewModel @Inject constructor(
     private var initialized = false
     private var notesJob: Job? = null
     private var baseline = ReleaseEditorDraft()
+    private var baselineBody = ""
+    private var previewJob: Job? = null
+    val isDirty: Boolean get() = _state.value.draft != baseline || !bodyState.matches(baselineBody)
+
+    init {
+        // Snapshot at saved-state boundaries, never copy the entire body on each keystroke.
+        // A clean editor stores no draft so reopening reads the latest server content.
+        savedStateHandle.setSavedStateProvider("editor.snapshot") {
+            Bundle().apply {
+                if (_state.value.savedRelease == null && isDirty) {
+                    putSerializable("draft", _state.value.draft)
+                    val body = with(SoraEditorState.Saver) { SaverScope { true }.save(bodyState) }
+                    putSerializable("body", body as Serializable)
+                }
+            }
+        }
+    }
     private var revision = 0L
 
     fun init(owner: String, name: String, releaseId: Long?, permission: RepoPermission?) {
@@ -206,8 +236,7 @@ class RepoReleaseEditorViewModel @Inject constructor(
             }
         }
         if (releaseId == null) {
-            persistDraft(_state.value.draft)
-            _state.update { it.copy(phase = ReleaseEditorPhase.EDITABLE, isDirty = it.draft != baseline) }
+            _state.update { it.copy(phase = ReleaseEditorPhase.EDITABLE) }
         } else load()
     }
 
@@ -226,10 +255,11 @@ class RepoReleaseEditorViewModel @Inject constructor(
             when (result) {
                 is ApiResult.Success -> {
                     val release = result.data
-                    baseline = ReleaseEditorDraft(release.tagName, release.targetCommitish, release.name.orEmpty(), release.body, release.draft, release.prerelease)
-                    val draft = savedStateHandle.get<ReleaseEditorDraft>("editor.draft") ?: baseline
-                    persistDraft(draft)
-                    _state.update { it.copy(phase = ReleaseEditorPhase.EDITABLE, draft = draft, isDirty = draft != baseline) }
+                    baseline = ReleaseEditorDraft(release.tagName, release.targetCommitish, release.name.orEmpty(), release.draft, release.prerelease)
+                    baselineBody = release.body
+                    val hasRestoredDraft = restoredDraft?.containsKey("draft") == true
+                    if (!hasRestoredDraft) bodyState.loadText(baselineBody)
+                    _state.update { it.copy(phase = ReleaseEditorPhase.EDITABLE, draft = if (hasRestoredDraft) it.draft else baseline) }
                 }
                 is ApiResult.Failure -> {
                     _state.update { it.copy(phase = ReleaseEditorPhase.LOAD_FAILED) }
@@ -242,7 +272,11 @@ class RepoReleaseEditorViewModel @Inject constructor(
     fun editTag(value: String) = edit { it.copy(tag = value) }
     fun editTarget(value: String) = edit { it.copy(target = value) }
     fun editTitle(value: String) = edit { it.copy(title = value) }
-    fun editBody(value: String) = edit { it.copy(body = value) }
+    fun editBody(value: String) {
+        val state = _state.value
+        if (!accountEpoch.isCurrent || state.phase != ReleaseEditorPhase.EDITABLE || state.savedRelease != null) return
+        bodyState.setTextAndPlaceCursorAtEnd(value)
+    }
     fun editDraft(value: Boolean) = edit { it.copy(draft = value) }
     fun editPrerelease(value: Boolean) = edit { it.copy(prerelease = value) }
 
@@ -253,20 +287,34 @@ class RepoReleaseEditorViewModel @Inject constructor(
         val draft = transform(previous)
         if (draft == previous) return
         // Publishing flags do not change the generated text or its input parameters.
-        if (draft.tag != previous.tag || draft.target != previous.target || draft.title != previous.title || draft.body != previous.body) revision++
-        persistDraft(draft)
-        _state.update { it.copy(draft = draft, isDirty = draft != baseline) }
+        if (draft.tag != previous.tag || draft.target != previous.target || draft.title != previous.title) revision++
+        _state.update { it.copy(draft = draft) }
     }
 
-    private fun persistDraft(draft: ReleaseEditorDraft) {
-        if (draft == baseline) savedStateHandle.remove<ReleaseEditorDraft>("editor.draft")
-        else savedStateHandle["editor.draft"] = draft
+    fun selectBodyEditorTab(tab: MarkdownEditorTab) {
+        previewJob?.cancel()
+        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, previewFailed = false, isRenderingPreview = false)) }
+        if (tab != MarkdownEditorTab.PREVIEW) return
+        val markdown = bodyState.snapshot()
+        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = true)) }
+        previewJob = viewModelScope.launch {
+            try {
+                val html = withContext(Dispatchers.Default) { markdownRenderer.renderToHtml(markdown) }
+                _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = html, isRenderingPreview = false)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = false, previewFailed = true)) }
+                errorEventBus.emit(com.gitmob.app.core.error.ApiError.Unknown(error.message ?: "Markdown preview failed"))
+            }
+        }
     }
 
     fun generateNotes() {
         val state = _state.value
         if (!accountEpoch.isCurrent || state.phase != ReleaseEditorPhase.EDITABLE || !state.capabilities.canPush || state.draft.tag.isBlank() || state.isGenerating || state.savedRelease != null) return
         val requestedRevision = revision
+        val requestedBodyRevision = bodyState.revision
         _state.update { it.copy(isGenerating = true) }
         notesJob = viewModelScope.launch {
             try {
@@ -275,9 +323,10 @@ class RepoReleaseEditorViewModel @Inject constructor(
                 accountEpoch.ensureCurrent()
                 when (result) {
                     is ApiResult.Success -> {
-                        if (revision == requestedRevision && _state.value.phase == ReleaseEditorPhase.EDITABLE) {
+                        if (revision == requestedRevision && bodyState.revision == requestedBodyRevision && _state.value.phase == ReleaseEditorPhase.EDITABLE) {
                             editBody(result.data.body)
                             if (_state.value.draft.title.isBlank()) editTitle(result.data.name.orEmpty())
+                            if (_state.value.bodyEditor.selectedTab == MarkdownEditorTab.PREVIEW) selectBodyEditorTab(MarkdownEditorTab.PREVIEW)
                         } else errorEventBus.emitNotice(R.string.release_notes_draft_changed)
                     }
                     is ApiResult.Failure -> errorEventBus.emit(result.error)
@@ -293,7 +342,8 @@ class RepoReleaseEditorViewModel @Inject constructor(
         if (!accountEpoch.isCurrent || !state.capabilities.canPush || state.draft.tag.isBlank() || state.phase != ReleaseEditorPhase.EDITABLE || state.savedRelease != null) return
         notesJob?.cancel()
         _state.update { it.copy(phase = ReleaseEditorPhase.SAVING, isGenerating = false) }
-        val input = state.draft.toInput()
+        val body = bodyState.snapshot()
+        val input = state.draft.toInput(body)
         viewModelScope.launch {
             val id = releaseId
             val result = if (id == null) repository.createRelease(owner, name, input) else repository.updateRelease(owner, name, id, input)
@@ -302,10 +352,11 @@ class RepoReleaseEditorViewModel @Inject constructor(
             when (result) {
                 is ApiResult.Success -> {
                     baseline = state.draft
-                    savedStateHandle.remove<ReleaseEditorDraft>("editor.draft")
+                    baselineBody = body
+                    savedStateHandle.remove<Bundle>("editor.snapshot")
                     // Publish completion after the account-scoped event, so navigation observes a fully saved result.
                     repoUpdateEventBus.emit(RepoUpdateEvent.ReleaseChanged(owner, name, -1, result.data.name, result.data.tagName))
-                    _state.update { it.copy(phase = ReleaseEditorPhase.EDITABLE, isDirty = false, savedRelease = result.data) }
+                    _state.update { it.copy(phase = ReleaseEditorPhase.EDITABLE, savedRelease = result.data) }
                 }
                 is ApiResult.Failure -> {
                     _state.update { it.copy(phase = ReleaseEditorPhase.EDITABLE) }

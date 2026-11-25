@@ -4,6 +4,11 @@ import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.markdown.CommonMarkRenderer
+import com.gitmob.app.core.markdown.MarkdownRenderer
+import kotlinx.coroutines.runBlocking
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.job
 import com.gitmob.app.core.permission.RepoCapabilities
 import com.gitmob.app.core.permission.toCapabilities
 import com.gitmob.app.core.permission.RepoPermission
@@ -21,6 +26,7 @@ import com.gitmob.app.core.event.RepoUpdateEvent
 import io.mockk.verify
 import io.mockk.coVerify
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import com.gitmob.app.testutil.AccountSessionRule
 import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.coEvery
@@ -39,8 +45,8 @@ class RepoFileDetailViewModelTest {
     private val updates = RepoUpdateEventBus()
     private val ref = "feature/docs"
 
-    private fun viewModel() = RepoFileDetailViewModel(
-        repository, CommonMarkRenderer(), ErrorEventBus(), mockk(), updates, accounts.session, documentRepository,
+    private fun viewModel(renderer: MarkdownRenderer = CommonMarkRenderer()) = RepoFileDetailViewModel(
+        repository, renderer, ErrorEventBus(), mockk(), updates, accounts.session, documentRepository,
     )
 
     @Test fun `unresolved link uses page loading and retries resolution before reading content`() = runTest {
@@ -59,6 +65,7 @@ class RepoFileDetailViewModelTest {
         assertFalse(vm.state.value.isLoading)
         coEvery { repository.resolveLink("owner", "repo", RepoLinkKind.FILE, source.refAndPath) } returns ApiResult.Success(target)
         vm.retry()
+        vm.awaitLoaded()
         assertFalse(vm.state.value.isLoading)
         assertFalse(vm.state.value.loadFailed)
         assertEquals(target, vm.state.value.target)
@@ -76,8 +83,10 @@ class RepoFileDetailViewModelTest {
         )
         val vm = viewModel()
         vm.init("owner", "repo", source)
+        vm.awaitLoaded()
         assertTrue(vm.state.value.loadFailed)
         vm.retry()
+        vm.awaitLoaded()
         assertTrue(vm.state.value.isDirectory)
         assertFalse(vm.state.value.isLoading)
         assertEquals(target, vm.state.value.target)
@@ -94,6 +103,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", commit, "Main.kt") } returns ApiResult.Success(content)
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(commit, "Main.kt"))
+        vm.awaitLoaded()
         assertTrue(vm.state.value.file!!.isCommitSnapshot)
         vm.deleteFile("delete") { fail("Snapshot deletion must not run") }
         coVerify(exactly = 1) { repository.getPathContent("owner", "repo", commit, "Main.kt") }
@@ -105,6 +115,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", commit, "docs") } returns ApiResult.Success(RepoPathContent.Directory)
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(commit, "docs"))
+        vm.awaitLoaded()
         assertTrue(vm.state.value.isDirectory)
         assertFalse(vm.state.value.loadFailed)
         assertNull(vm.state.value.file)
@@ -117,10 +128,14 @@ class RepoFileDetailViewModelTest {
             ApiResult.Success(file(path, "[Docs](docs)").copy(ref = commit, headOid = commit, isCommitSnapshot = true))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(commit, path))
+        vm.awaitLoaded()
         assertEquals(RepoDocumentContext("owner", "repo", commit, path), vm.state.value.previewContext)
         withContext(accounts.context) { updates.emit(RepoUpdateEvent.CodeChanged("owner", "repo", "main", "new-head", listOf(path))) }
+        vm.awaitLoaded()
         coVerify(exactly = 1) { repository.getPathContent("owner", "repo", commit, path) }
     }
+
+    private suspend fun RepoFileDetailViewModel.awaitLoaded() = state.first { !it.isLoading }
 
     private fun file(path: String, text: String) = RepoFileContent(
         repositoryId = "R_repo", permission = RepoPermission.READ, capabilities = RepoCapabilities.NONE,
@@ -133,6 +148,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "[Next](../next.md)\n\n![Picture](images/图.png)"))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         val state = vm.state.value
         assertFalse(state.isLoading)
         assertTrue(state.previewMode)
@@ -146,6 +162,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, "docs") } returns ApiResult.Success(RepoPathContent.Directory)
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, "docs"))
+        vm.awaitLoaded()
         assertTrue(vm.state.value.isDirectory)
         assertFalse(vm.state.value.isLoading)
         assertFalse(vm.state.value.loadFailed)
@@ -159,9 +176,11 @@ class RepoFileDetailViewModelTest {
         )
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, "docs"))
+        vm.awaitLoaded()
         assertTrue(vm.state.value.loadFailed)
         assertFalse(vm.state.value.isDirectory)
         vm.retry()
+        vm.awaitLoaded()
         assertTrue(vm.state.value.isDirectory)
         assertFalse(vm.state.value.loadFailed)
     }
@@ -182,6 +201,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "# Guide"))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         assertTrue(vm.state.value.previewMode)
         assertTrue(vm.state.value.previewSupported)
     }
@@ -192,6 +212,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, html))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         assertEquals(html, vm.state.value.previewHtml)
         assertEquals(RepoDocumentContext("owner", "repo", ref, path), vm.state.value.previewContext)
     }
@@ -201,6 +222,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "fun main() {}"))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         assertFalse(vm.state.value.previewSupported)
         assertNull(vm.state.value.previewHtml)
         assertNull(vm.state.value.previewContext)
@@ -213,6 +235,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(image)
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         assertTrue(vm.state.value.imagePreview)
         assertTrue(vm.state.value.previewMode)
         assertTrue(vm.state.value.previewSupported)
@@ -224,12 +247,14 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "<svg/>"))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         assertTrue(vm.state.value.previewMode)
         assertTrue(vm.state.value.imagePreview)
         vm.setPreviewMode(false)
         assertFalse(vm.state.value.previewMode)
         assertEquals("<svg/>", vm.state.value.file!!.text)
         vm.retry()
+        vm.awaitLoaded()
         assertFalse(vm.state.value.previewMode)
     }
 
@@ -239,6 +264,7 @@ class RepoFileDetailViewModelTest {
             ApiResult.Success(file(path, "").copy(isBinary = true, text = null))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         assertFalse(vm.state.value.imagePreview)
         assertFalse(vm.state.value.previewSupported)
         assertNull(vm.state.value.previewContext)
@@ -249,9 +275,11 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "![Image](a.png)"))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         val previous = vm.state.value
         verify(exactly = 0) { documentRepository.invalidate(any(), any()) }
         vm.load()
+        vm.awaitLoaded()
         verify(exactly = 1) { documentRepository.invalidate(RepoDocumentContext("owner", "repo", ref, path), null) }
         assertEquals(previous.previewHtml, vm.state.value.previewHtml)
         assertTrue(vm.state.value.previewRevision > previous.previewRevision)
@@ -262,8 +290,10 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "![Image](images/a.png)"))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         val previous = vm.state.value.previewRevision
         withContext(accounts.context) { updates.emit(RepoUpdateEvent.CodeChanged("owner", "repo", ref, "commit", listOf("docs/images/a.png"))) }
+        vm.awaitLoaded()
         coVerify(exactly = 2) { repository.getPathContent("owner", "repo", ref, path) }
         assertTrue(vm.state.value.previewRevision > previous)
     }
@@ -275,6 +305,7 @@ class RepoFileDetailViewModelTest {
             coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "Document"))
             val vm = viewModel()
             vm.init("owner", "repo", RepoLinkTarget(ref, path))
+            vm.awaitLoaded()
             assertTrue(extension, vm.state.value.previewMode)
             assertTrue(vm.state.value.canSwitchDisplayMode)
             assertFalse(vm.state.value.wrapLines)
@@ -287,21 +318,25 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(content)
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         vm.setPreviewMode(false)
         vm.setWrapLines(true)
         vm.setPreviewMode(true)
         vm.setPreviewMode(false)
         coVerify(exactly = 1) { repository.getPathContent("owner", "repo", ref, path) }
         withContext(accounts.context) { updates.emit(RepoUpdateEvent.CodeChanged("owner", "repo", ref, "next", listOf(path))) }
+        vm.awaitLoaded()
         assertFalse(vm.state.value.previewMode)
         assertTrue(vm.state.value.wrapLines)
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Failure(ApiError.NetworkError)
         vm.retry()
+        vm.awaitLoaded()
         assertTrue(vm.state.value.loadFailed)
         assertFalse(vm.state.value.previewMode)
         assertTrue(vm.state.value.wrapLines)
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(content)
         vm.retry()
+        vm.awaitLoaded()
         assertFalse(vm.state.value.previewMode)
         assertTrue(vm.state.value.wrapLines)
     }
@@ -310,13 +345,13 @@ class RepoFileDetailViewModelTest {
         for (extension in listOf("md", "html", "kt")) {
             val path = "file.$extension"
             coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "").copy(text = null))
-            val missing = viewModel().apply { init("owner", "repo", RepoLinkTarget(ref, path)) }.state.value
+            val missing = viewModel().apply { init("owner", "repo", RepoLinkTarget(ref, path)); awaitLoaded() }.state.value
             assertFalse(missing.sourceAvailable)
             assertFalse(missing.previewSupported)
             assertNull(missing.previewHtml)
             for (content in listOf(file(path, ""), file(path, "partial").copy(isTruncated = true))) {
                 coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(content)
-                val state = viewModel().apply { init("owner", "repo", RepoLinkTarget(ref, path)) }.state.value
+                val state = viewModel().apply { init("owner", "repo", RepoLinkTarget(ref, path)); awaitLoaded() }.state.value
                 assertTrue(state.sourceAvailable)
                 assertEquals(extension != "kt", state.previewMode)
                 assertEquals(content, state.file)
@@ -332,9 +367,48 @@ class RepoFileDetailViewModelTest {
         )
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         assertFalse(vm.state.value.previewSupported)
         vm.retry()
+        vm.awaitLoaded()
         assertTrue(vm.state.value.previewMode)
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun markdownRenderRunsOffCallerThreadAndCancelledRenderCannotReplaceNewContent() = runTest {
+        val started = CompletableDeferred<Thread>()
+        val release = CompletableDeferred<Unit>()
+        lateinit var oldLoad: Job
+        val callerThread = Thread.currentThread()
+        val renderer = object : MarkdownRenderer {
+            override fun renderToHtml(markdown: String): String {
+                if (markdown == "old") {
+                    started.complete(Thread.currentThread())
+                    runBlocking { release.await() }
+                }
+                return "<p>$markdown</p>"
+            }
+        }
+        coEvery { repository.getPathContent("owner", "repo", ref, "README.md") } returnsMany listOf(
+            ApiResult.Success(file("README.md", "old")),
+            ApiResult.Success(file("README.md", "new")),
+        )
+        val vm = viewModel(renderer)
+        try {
+            vm.init("owner", "repo", RepoLinkTarget(ref, "README.md"))
+            assertNotSame(callerThread, started.await())
+            assertTrue(vm.state.value.isLoading)
+            val initialJobs = vm.viewModelScope.coroutineContext.job.children.toList()
+            vm.retry()
+            oldLoad = initialJobs.single { it.isCancelled }
+            vm.awaitLoaded()
+            assertEquals("<p>new</p>", vm.state.value.previewHtml)
+        } finally {
+            release.complete(Unit)
+        }
+        oldLoad.join()
+        assertEquals("new", vm.state.value.file!!.text)
+        assertEquals("<p>new</p>", vm.state.value.previewHtml)
     }
 
     @Test fun binaryImagesCannotSwitchToUnavailableSource() = runTest {
@@ -342,6 +416,7 @@ class RepoFileDetailViewModelTest {
         coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "").copy(isBinary = true, text = null))
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
         vm.setPreviewMode(false)
         assertFalse(vm.state.value.canSwitchDisplayMode)
         assertTrue(vm.state.value.previewMode)

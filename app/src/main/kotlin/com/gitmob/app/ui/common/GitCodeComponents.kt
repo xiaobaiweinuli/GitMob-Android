@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -33,10 +35,19 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
 import com.gitmob.app.core.diff.DiffLineType
+import com.gitmob.app.core.diff.UnifiedDiffParser
 import com.gitmob.app.core.diff.UnifiedDiff
 import com.gitmob.app.data.model.RepoChangedFile
 import com.gitmob.app.data.model.RepoCommitSummary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.CircularProgressIndicator
 import coil3.compose.AsyncImage
+import io.github.rosemoe.sora.text.Content
+import io.github.rosemoe.sora.lang.styling.Styles
+import io.github.rosemoe.sora.lang.styling.color.ConstColor
+import io.github.rosemoe.sora.lang.styling.line.LineBackground
 
 @Composable
 fun GitCommitRow(
@@ -112,28 +123,71 @@ fun CommitStats(additions: Int, deletions: Int, changedFiles: Int?, modifier: Mo
     Text(stringResource(R.string.git_commit_stats, additions, deletions, changedFiles?.toString() ?: stringResource(R.string.git_commit_files_unknown)), modifier.padding(16.dp), style = MaterialTheme.typography.labelLarge)
 }
 
+/** Raw patches from PR pages are parsed off the UI thread once per payload. */
 @Composable
-fun UnifiedDiffViewer(diff: UnifiedDiff?, modifier: Modifier = Modifier) {
+fun UnifiedDiffViewer(patch: String?, modifier: Modifier = Modifier, documentId: String = "diff") {
+    val parsed by produceState<UnifiedDiff?>(null, patch) {
+        value = withContext(Dispatchers.Default) { UnifiedDiffParser.parse(patch) ?: UnifiedDiff(emptyList()) }
+    }
+    if (parsed == null) {
+        Box(modifier.fillMaxWidth().height(96.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    } else UnifiedDiffViewer(parsed, modifier, documentId)
+}
+
+@Composable
+fun UnifiedDiffViewer(diff: UnifiedDiff?, modifier: Modifier = Modifier, documentId: String = "diff") {
     if (diff == null || diff.hunks.isEmpty()) {
         Text(stringResource(R.string.git_commit_no_diff), modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
-    Column(modifier.fillMaxWidth()) {
-        diff.hunks.forEach { hunk ->
-            Text(hunk.header, modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 12.dp, vertical = 6.dp), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
-            hunk.lines.forEach { line ->
-                val background = when (line.type) {
-                    DiffLineType.ADDITION -> Color(0x332E7D32)
-                    DiffLineType.DELETION -> Color(0x33C62828)
-                    else -> Color.Transparent
-                }
-                Row(Modifier.fillMaxWidth().background(background).padding(vertical = 1.dp)) {
-                    Text(line.oldLine?.toString().orEmpty(), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(line.newLine?.toString().orEmpty(), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.width(8.dp))
-                    Text(line.text, modifier = Modifier.weight(1f).padding(end = 8.dp), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-                }
+    // Identity avoids hashing every patch line on every recomposition.
+    val documentKey = remember(diff) { Any() }
+    SoraTextViewer(
+        documentKey = documentKey,
+        wrapLines = true,
+        state = rememberSoraViewerState(documentId),
+        modifier = modifier.fillMaxWidth(),
+        embedded = true,
+        lineNumbersAtStart = true,
+    ) { diff.toSoraDocument() }
+}
+
+/** Build one immutable document; gutters and backgrounds use Sora's visible-row renderer. */
+internal fun UnifiedDiff.toSoraDocument(): SoraViewerDocument {
+    val labels = mutableListOf<String>()
+    val content = Content().apply { isUndoEnabled = false }
+    val styles = Styles()
+    val digits = hunks.maxOfOrNull { maxOf(it.oldStart + it.oldCount, it.newStart + it.newCount) }
+        ?.toString()?.length ?: 1
+    val hasOldLines = hunks.any { hunk -> hunk.lines.any { it.oldLine != null } }
+    val hasNewLines = hunks.any { hunk -> hunk.lines.any { it.newLine != null } }
+    fun append(text: String, oldLine: Int? = null, newLine: Int? = null, background: Int? = null) {
+        if (labels.isNotEmpty()) content.insert(content.lineCount - 1, content.getColumnCount(content.lineCount - 1), "\n")
+        content.insert(content.lineCount - 1, content.getColumnCount(content.lineCount - 1), text)
+        background?.let { styles.addLineStyle(LineBackground(labels.size, ConstColor(it))) }
+        labels += if (oldLine == null && newLine == null) "" else buildList {
+            if (hasOldLines) add((oldLine?.toString() ?: "–").padEnd(digits))
+            if (hasNewLines) add((newLine?.toString() ?: "–").padEnd(digits))
+        }.joinToString("  ")
+    }
+    metadata.forEach { append(it) }
+    hunks.forEach { hunk ->
+        append(hunk.header, background = 0x18808080)
+        hunk.lines.forEach { line ->
+            val prefix = when (line.type) {
+                DiffLineType.ADDITION -> "+"
+                DiffLineType.DELETION -> "-"
+                DiffLineType.CONTEXT -> " "
+                DiffLineType.META -> ""
             }
+            val background = when (line.type) {
+                DiffLineType.ADDITION -> 0x332E7D32
+                DiffLineType.DELETION -> 0x33C62828
+                else -> null
+            }
+            append(prefix + line.text, line.oldLine, line.newLine, background)
         }
     }
+    styles.finishBuilding()
+    return SoraViewerDocument(content, labels, styles)
 }

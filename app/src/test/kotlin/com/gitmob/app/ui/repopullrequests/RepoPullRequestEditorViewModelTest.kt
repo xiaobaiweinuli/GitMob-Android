@@ -98,6 +98,7 @@ class RepoPullRequestEditorViewModelTest {
         restored.init("o", "r", 7)
         advanceUntilIdle()
         assertEquals("Server body", restored.bodyState.text.toString())
+        assertFalse(restored.bodyState.canUndo)
         restored.bodyState.edit { replace(0, length, "") }
         restored.editTitle("")
         val cleared = restoredHandle.savedStateProvider().saveState()
@@ -118,7 +119,7 @@ class RepoPullRequestEditorViewModelTest {
         init(vm)
         advanceUntilIdle()
         vm.editTitle("Title")
-        vm.bodyState.edit { replace(0, length, "Latest body") }
+        vm.bodyState.content.replace(0, vm.bodyState.content.length, "Latest body")
         vm.save {}
         vm.bodyState.edit { replace(0, length, "Later edit") }
         advanceUntilIdle()

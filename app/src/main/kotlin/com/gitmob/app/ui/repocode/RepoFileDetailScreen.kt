@@ -1,5 +1,8 @@
 package com.gitmob.app.ui.repocode
 
+import com.gitmob.app.ui.common.SoraTextViewer
+import com.gitmob.app.ui.common.rememberSoraViewerState
+
 import com.gitmob.app.ui.common.rememberNavigationDocument
 
 import androidx.compose.foundation.clickable
@@ -16,9 +19,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Code
@@ -63,6 +64,8 @@ import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.translation.TranslationTarget
 import com.gitmob.app.ui.translation.TranslationFileMenuItem
 import com.gitmob.app.ui.translation.TranslationHtml
+import com.gitmob.app.ui.common.rememberMarkdownViewportState
+import com.gitmob.app.ui.common.MarkdownLayoutMode
 import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.RepositoryImagePreview
 
@@ -92,9 +95,6 @@ fun RepoFileDetailScreen(
         state.previewHtml?.takeIf { !file.isBinary && !file.isTruncated && file.text != null && !state.imagePreview }
             ?.let { TranslationTarget("file:$owner/$name/${file.ref}/${file.path}", it, html = true) }
     }
-    val previewScroll = rememberScrollState()
-    val sourceScroll = rememberScrollState()
-    val sourceHorizontalScroll = rememberScrollState()
     val deleteCommitMessage = stringResource(R.string.repo_delete_file_title)
     Scaffold(
         topBar = {
@@ -133,6 +133,9 @@ fun RepoFileDetailScreen(
             else -> {
                 val file = requireNotNull(state.file)
                 val previewHtml = state.previewHtml
+                val documentId = "${file.repositoryId}/${file.ref}/${file.path}/${file.oid}"
+                val sourceState = rememberSoraViewerState(documentId)
+                val previewState = rememberMarkdownViewportState(documentId)
                 Column(Modifier.fillMaxSize().padding(padding)) {
                     when {
                         file.text == "" && !state.imagePreview -> {
@@ -147,22 +150,22 @@ fun RepoFileDetailScreen(
                             val document = rememberNavigationDocument(
                                 previewHtml, state.previewContext, state.previewRevision, viewModel::createDocumentResources,
                             )
-                            Column(Modifier.weight(1f).verticalScroll(previewScroll)) {
-                                TranslationHtml(
-                                    translationKey = "file:$owner/$name/${file.ref}/${file.path}",
-                                    bodyHtml = previewHtml,
-                                    documentResources = document.resources,
-                                    navigationDocument = document,
-                                    onDocumentLink = onDocumentLink,
-                                    onExternalLink = onDocumentExternalLink,
-                                )
-                            }
+                            TranslationHtml(
+                                modifier = Modifier.weight(1f),
+                                layoutMode = MarkdownLayoutMode.Viewport,
+                                viewportState = previewState,
+                                translationKey = "file:$owner/$name/${file.ref}/${file.path}",
+                                bodyHtml = previewHtml,
+                                documentResources = document.resources,
+                                navigationDocument = document,
+                                onDocumentLink = onDocumentLink,
+                                onExternalLink = onDocumentExternalLink,
+                            )
                         }
-                        state.sourceAvailable -> RepoFileSource(
+                        state.sourceAvailable -> SoraTextViewer(
                             text = requireNotNull(file.text),
                             wrapLines = state.wrapLines,
-                            verticalScrollState = sourceScroll,
-                            horizontalScrollState = sourceHorizontalScroll,
+                            state = sourceState,
                             modifier = Modifier.weight(1f),
                         )
                         else -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {

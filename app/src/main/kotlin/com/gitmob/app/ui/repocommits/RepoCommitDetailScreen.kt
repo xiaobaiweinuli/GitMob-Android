@@ -163,7 +163,7 @@ fun RepoCommitDetailScreen(
                             } else null,
                         )
                         if (state.selectedFile?.filename == file.filename) {
-                            UnifiedDiffViewer(state.selectedDiff)
+                            UnifiedDiffViewer(patch = file.patch, documentId = file.filename)
                         }
                         HorizontalDivider()
                     }

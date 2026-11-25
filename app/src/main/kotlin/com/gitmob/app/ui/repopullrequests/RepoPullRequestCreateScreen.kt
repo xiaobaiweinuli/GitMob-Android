@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
-import com.gitmob.app.core.diff.UnifiedDiffParser
 import com.gitmob.app.data.model.ExistingRepoPullRequest
 import com.gitmob.app.data.model.RepoPullRequestCreateSelection
 import com.gitmob.app.data.model.toListItem
@@ -284,7 +283,7 @@ private fun ColumnScope.FilesPage(state: RepoPullRequestCreateUiState, onBack: (
         items(state.comparison?.files.orEmpty(), key = { it.filename }) { file ->
             GitChangedFileRow(file, onClick = { expanded[file.filename] = expanded[file.filename] != true })
             if (expanded[file.filename] == true) {
-                file.patch?.let { UnifiedDiffViewer(UnifiedDiffParser.parse(it), Modifier.padding(horizontal = 16.dp)) }
+                file.patch?.let { UnifiedDiffViewer(it, Modifier.padding(horizontal = 16.dp), documentId = file.filename) }
                     ?: Text(stringResource(R.string.pr_create_no_text_diff), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             HorizontalDivider()

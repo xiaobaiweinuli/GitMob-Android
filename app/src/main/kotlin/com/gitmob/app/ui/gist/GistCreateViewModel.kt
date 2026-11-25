@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.gist
 
 import com.gitmob.app.core.auth.AccountSession
+import com.gitmob.app.ui.common.SoraEditorState
 import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
@@ -23,7 +24,7 @@ enum class GistFilenameError { REQUIRED, DUPLICATE }
 data class GistCreateFileUiState(
     val id: Long,
     val filename: String = "",
-    val content: String = "",
+    val editorState: SoraEditorState = SoraEditorState(),
 )
 
 data class GistCreateUiState(
@@ -61,31 +62,30 @@ class GistCreateViewModel @Inject constructor(
     val createdEvents: SharedFlow<String> = _createdEvents.asSharedFlow()
     private var nextFileId = 1L
 
-    fun updateDescription(description: String) = _state.update { it.copy(description = description) }
+    fun updateDescription(description: String) = _state.update { if (it.isCreating) it else it.copy(description = description) }
 
-    fun updatePublic(isPublic: Boolean) = _state.update { it.copy(isPublic = isPublic) }
+    fun updatePublic(isPublic: Boolean) = _state.update { if (it.isCreating) it else it.copy(isPublic = isPublic) }
 
     fun addFile() = _state.update {
-        it.copy(files = it.files + GistCreateFileUiState(id = nextFileId++))
+        if (it.isCreating) it else it.copy(files = it.files + GistCreateFileUiState(id = nextFileId++))
     }
 
     fun removeFile(id: Long) = _state.update {
-        if (it.files.size == 1) it else it.copy(files = it.files.filterNot { file -> file.id == id })
+        if (it.isCreating || it.files.size == 1) it else it.copy(files = it.files.filterNot { file -> file.id == id })
     }
 
     fun updateFilename(id: Long, filename: String) = updateFile(id) { it.copy(filename = filename) }
 
-    fun updateContent(id: Long, content: String) = updateFile(id) { it.copy(content = content) }
-
     fun create() {
         val snapshot = _state.value
         if (!snapshot.canCreate) return
+        val files = snapshot.files.associate { it.filename.trim() to it.editorState.snapshot() }
         _state.update { it.copy(isCreating = true) }
         viewModelScope.launch {
             val result = repository.createGist(
                 description = snapshot.description.takeIf(String::isNotBlank),
                 isPublic = snapshot.isPublic,
-                files = snapshot.files.associate { it.filename.trim() to it.content },
+                files = files,
             )
             _state.update { it.copy(isCreating = false) }
             when (result) {
@@ -102,6 +102,6 @@ class GistCreateViewModel @Inject constructor(
         id: Long,
         transform: (GistCreateFileUiState) -> GistCreateFileUiState,
     ) = _state.update { state ->
-        state.copy(files = state.files.map { if (it.id == id) transform(it) else it })
+        if (state.isCreating) state else state.copy(files = state.files.map { if (it.id == id) transform(it) else it })
     }
 }

@@ -91,7 +91,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
-import com.gitmob.app.core.diff.UnifiedDiffParser
 import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.PullRequestState
 import com.gitmob.app.data.model.RepoPullRequest
@@ -498,8 +497,9 @@ fun RepoPullRequestDetailScreen(
                             HorizontalDivider()
                             if (selectedFilePath == file.path) {
                                 UnifiedDiffViewer(
-                                    UnifiedDiffParser.parse(file.patch),
+                                    file.patch,
                                     Modifier.padding(bottom = 16.dp),
+                                    documentId = file.path,
                                 )
                             }
                         }
@@ -714,9 +714,6 @@ private fun MergeDialog(methods: Set<RepoPullRequestMergeMethod>, autoMergeEnabl
     var body by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.pr_merge)) }, text = { Column { methods.forEach { item -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(method == item, { method = item }); Text(stringResource(item.label)) } }; OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.pr_commit_title)) }); OutlinedTextField(body, { body = it }, label = { Text(stringResource(R.string.pr_commit_message)) }, minLines = 3); TextButton(onClick = { onAutoMerge(method); onDismiss() }) { Text(stringResource(if (autoMergeEnabled) R.string.pr_disable_auto_merge else R.string.pr_enable_auto_merge)) } } }, dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { Button(onClick = { onMerge(method, title, body, onDismiss) }) { Text(stringResource(R.string.pr_merge)) } })
 }
-
-@Composable
-private fun TextEditDialog(@StringRes title: Int, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) { var text by remember(initial) { mutableStateOf(initial) }; AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(title)) }, text = { OutlinedTextField(text, { text = it }, minLines = 5, modifier = Modifier.fillMaxWidth()) }, dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { Button(onClick = { onSave(text) }, enabled = text.isNotBlank()) { Text(stringResource(R.string.common_save)) } }) }
 
 @Composable
 private fun RetryContent(onRetry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = onRetry, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) } } }

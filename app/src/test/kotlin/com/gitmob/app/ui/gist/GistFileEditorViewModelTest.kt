@@ -11,6 +11,7 @@ import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -59,13 +60,13 @@ class GistFileEditorViewModelTest {
         var saved = false
 
         viewModel.init("gist-id", "old.txt")
-        advanceUntilIdle()
+        viewModel.state.first { !it.isLoading }
         assertEquals("old.txt", viewModel.state.value.path)
         assertEquals("hello", viewModel.state.value.content)
 
         eventBus.eventsFor(accounts.session.epoch).test {
             viewModel.updatePath("new.txt")
-            viewModel.updateContent("updated")
+            viewModel.state.value.editorState.content.replace(0, viewModel.state.value.editorState.content.length, "updated")
             viewModel.save("gist-id") { saved = true }
             advanceUntilIdle()
 

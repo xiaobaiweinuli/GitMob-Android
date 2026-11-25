@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.gitmob.app.ui.common.SoraEditorState
 import com.gitmob.app.core.markdown.CommonMarkRenderer
 import com.gitmob.app.data.model.IssueFormCheckboxOption
 import com.gitmob.app.data.model.IssueFormField
@@ -112,7 +113,7 @@ class IssueFormContentTest {
             val view = LocalView.current
             SideEffect { root = view.rootView }
             MaterialTheme {
-                Column { fields.forEach { IssueFormFieldContent(it, html, "", emptySet(), {}, {}, {}) } }
+                Column { fields.forEach { IssueFormFieldContent(it, html, "", emptySet(), {}, {}, {}, textareaState = androidx.compose.runtime.remember(it.id) { SoraEditorState() }) } }
             }
         }
         composeRule.runOnIdle {

@@ -11,6 +11,7 @@ import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -51,9 +52,10 @@ class GistCreateViewModelTest {
     @Test
     fun `创建成功保留空内容并通知列表和详情导航`() = runTest {
         val repository = mockk<GistRepository>()
+        val response = CompletableDeferred<ApiResult<String>>()
         coEvery {
             repository.createGist("sample", false, linkedMapOf("a.txt" to "", "b.md" to "# b"))
-        } returns ApiResult.Success("created-id")
+        } coAnswers { response.await() }
         val updateBus = GistUpdateEventBus()
         val viewModel = viewModel(repository, gistUpdateEventBus = updateBus)
         viewModel.updateDescription("sample")
@@ -61,11 +63,18 @@ class GistCreateViewModelTest {
         viewModel.addFile()
         val second = viewModel.state.value.files.last()
         viewModel.updateFilename(second.id, "b.md")
-        viewModel.updateContent(second.id, "# b")
+        second.editorState.content.insert(0, 0, "# b")
         val listChanged = async(start = CoroutineStart.UNDISPATCHED) { updateBus.listEventsFor(accounts.session.epoch).first() }
         val created = async(start = CoroutineStart.UNDISPATCHED) { viewModel.createdEvents.first() }
 
         viewModel.create()
+        assertTrue(viewModel.state.value.isCreating)
+        second.editorState.content.insert(0, second.editorState.content.length, " after submit")
+        viewModel.addFile()
+        viewModel.removeFile(0)
+        viewModel.updateFilename(0, "changed.txt")
+        assertEquals(listOf("a.txt", "b.md"), viewModel.state.value.files.map { it.filename })
+        response.complete(ApiResult.Success("created-id"))
         advanceUntilIdle()
 
         listChanged.await()
@@ -91,6 +100,27 @@ class GistCreateViewModelTest {
 
         assertEquals(BannerEvent.Error(ApiError.Forbidden), error.await())
         assertFalse(viewModel.state.value.isCreating)
+    }
+
+    @Test
+    fun fileDocumentsKeepIndependentUndoHistoryWhenRenamingOrRemovingOtherFiles() {
+        val viewModel = viewModel()
+        val first = viewModel.state.value.files.first()
+        first.editorState.content.insert(0, 0, "first")
+        viewModel.addFile()
+        val second = viewModel.state.value.files.last()
+        second.editorState.content.insert(0, 0, "second")
+        viewModel.updateFilename(second.id, "renamed.txt")
+        viewModel.removeFile(first.id)
+
+        val remaining = viewModel.state.value.files.single()
+        assertTrue(remaining.editorState === second.editorState)
+        assertEquals("second", remaining.editorState.snapshot())
+        remaining.editorState.undo()
+        assertEquals("", remaining.editorState.snapshot())
+        remaining.editorState.redo()
+        assertEquals("second", remaining.editorState.snapshot())
+        assertEquals("first", first.editorState.snapshot())
     }
 
     private fun viewModel(

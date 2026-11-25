@@ -2,8 +2,7 @@ package com.gitmob.app.ui.repodiscussions
 
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
-import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import com.gitmob.app.ui.common.SoraEditorState
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewmodel.compose.SavedStateHandleSaveableApi
 import androidx.lifecycle.viewmodel.compose.saveable
@@ -23,6 +22,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -54,7 +56,7 @@ class RepoDiscussionEditorViewModel @Inject constructor(
     session: AccountSession,
     private val savedStateHandle: SavedStateHandle,
 ) : AccountViewModel(session) {
-    val bodyState = savedStateHandle.saveable(key = "editor.body", saver = TextFieldState.Saver) { TextFieldState() }
+    val bodyState = savedStateHandle.saveable(key = "editor.body", saver = SoraEditorState.Saver) { SoraEditorState() }
     private var draftInitialized = savedStateHandle.contains("editor.draft")
     private val _state = MutableStateFlow(RepoDiscussionEditorUiState(
         draft = savedStateHandle["editor.draft"] ?: RepoDiscussionEditorDraft(),
@@ -87,7 +89,7 @@ class RepoDiscussionEditorViewModel @Inject constructor(
             val pageData = (page as ApiResult.Success).data
             val discussion = (detail as? ApiResult.Success)?.data?.discussion
             if (!draftInitialized) {
-                bodyState.setTextAndPlaceCursorAtEnd(discussion?.body.orEmpty())
+                bodyState.loadText(discussion?.body.orEmpty())
                 storeDraft(RepoDiscussionEditorDraft(
                     title = discussion?.title.orEmpty(),
                     categoryId = discussion?.category?.id ?: pageData.categories.firstOrNull()?.id.orEmpty(),
@@ -99,8 +101,9 @@ class RepoDiscussionEditorViewModel @Inject constructor(
     }
 
     fun selectBodyEditorTab(tab: MarkdownEditorTab) {
-        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, previewFailed = false)) }
-        if (tab == MarkdownEditorTab.PREVIEW) renderBodyPreview(bodyState.text.toString())
+        previewJob?.cancel()
+        _state.update { it.copy(bodyEditor = it.bodyEditor.copy(selectedTab = tab, previewFailed = false, isRenderingPreview = false)) }
+        if (tab == MarkdownEditorTab.PREVIEW) renderBodyPreview(bodyState.snapshot())
     }
 
     private fun renderBodyPreview(markdown: String) {
@@ -112,9 +115,10 @@ class RepoDiscussionEditorViewModel @Inject constructor(
         previewJob = viewModelScope.launch {
             kotlinx.coroutines.delay(120)
             _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = true, previewFailed = false)) }
-            runCatching { markdownRenderer.renderToHtml(markdown) }
+            runCatching { withContext(Dispatchers.Default) { markdownRenderer.renderToHtml(markdown) } }
                 .onSuccess { html -> _state.update { it.copy(bodyEditor = it.bodyEditor.copy(previewHtml = html, isRenderingPreview = false)) } }
                 .onFailure { error ->
+                    if (error is CancellationException) throw error
                     errorEventBus.emit(com.gitmob.app.core.error.ApiError.Unknown(error.message ?: "Markdown preview failed"))
                     _state.update { it.copy(bodyEditor = it.bodyEditor.copy(isRenderingPreview = false, previewFailed = true)) }
                 }
@@ -137,7 +141,7 @@ class RepoDiscussionEditorViewModel @Inject constructor(
         val title = draft.title
         val categoryId = draft.categoryId
         if (!draftInitialized || state.isLoading || state.loadFailed || title.isBlank() || categoryId.isBlank() || state.isSaving) return
-        val body = bodyState.text.toString()
+        val body = bodyState.snapshot()
         val labelIds = draft.labelIds.toList()
         if (state.existing != null && !state.existing.viewerCanUpdate) return
         _state.update { it.copy(isSaving = true) }

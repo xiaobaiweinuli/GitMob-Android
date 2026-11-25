@@ -100,10 +100,11 @@ coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 
+sora-editor = { module = "io.github.rosemoe:editor", version.ref = "soraEditor" }
+
 # 预留（尚未在代码里接入，等对应功能开发时再用）
 appiconloader = { module = "me.zhanghai.android.appiconloader:appiconloader", version.ref = "appiconloader" }
 parcelablelist = { module = "com.github.STAR-ZERO:ParcelableList", version.ref = "parcelablelist" }
-sora-editor = { module = "io.github.Rosemoe.sora-editor:editor", version.ref = "soraEditor" }
 kotaml = { module = "io.heapy.kotaml:kotaml", version.ref = "kotaml" }
 
 junit4 = { module = "junit:junit", version.ref = "junit" }

@@ -1,5 +1,15 @@
 package com.gitmob.app.ui.gist
 
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Text
+import android.view.View
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.mutableStateOf
+import com.gitmob.app.ui.common.awaitSoraViewer
+import com.gitmob.app.ui.common.awaitSoraLayout
+import org.robolectric.annotation.GraphicsMode
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -22,9 +32,45 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class GistDetailScreenTest {
     @get:Rule val composeRule = createComposeRule()
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+
+    @Test fun largeGistExpandsInThePageAndRetainsSelectionWhenCollapsed() {
+        val text = (1..20_000).joinToString("\n") { "row $it" }
+        val file = GistFile("large.txt", "text/plain", "Text", "https://example/raw", text.length, false, text)
+        val expanded = mutableStateOf(true)
+        lateinit var root: View
+        lateinit var page: LazyListState
+        composeRule.setContent {
+            page = rememberLazyListState()
+            root = LocalView.current
+            MaterialTheme {
+                LazyColumn(state = page) {
+                    item { GistFileCard(file, expanded.value, false, false, false, { expanded.value = !expanded.value }, {}, {}, {}, {}, {}) }
+                    item { Text("NEXT FILE") }
+                }
+            }
+        }
+        val viewer = composeRule.awaitSoraViewer(root)
+        composeRule.runOnIdle {
+            assertEquals(android.graphics.Paint.Align.LEFT, viewer.lineNumberAlign)
+            assertEquals(0f, viewer.lineNumberMarginLeft, 0f)
+            assertEquals(20_000, viewer.text.lineCount)
+            assertTrue(viewer.height <= root.height)
+            assertTrue(page.layoutInfo.visibleItemsInfo.first().size >= viewer.rowHeight * 20_000)
+            viewer.setSelection(10_000, 2)
+        }
+        composeRule.awaitSoraLayout(viewer)
+        composeRule.runOnIdle { expanded.value = false }
+        composeRule.runOnIdle { assertTrue(viewer.isReleased) }
+        composeRule.onNodeWithText("large.txt").performClick()
+        val reopened = composeRule.awaitSoraViewer(root, viewer)
+        composeRule.runOnIdle {
+            assertEquals(10_000, reopened.cursor.leftLine)
+        }
+    }
 
     @Test
     fun `折叠文件仍显示三点菜单但会关闭已展开菜单`() {
@@ -99,11 +145,11 @@ class GistDetailScreenTest {
             context.getString(R.string.gist_star),
             context.getString(R.string.gist_fork),
         )
-        val leadingEdges = labels.take(3).map { composeRule.onNodeWithText(it).fetchSemanticsNode().boundsInRoot.left }
+        val leadingEdges = labels.take(3).map { composeRule.onNodeWithText(it).fetchSemanticsNode().positionInRoot.x }
         assertTrue(leadingEdges.zipWithNext().all { (left, right) -> left < right })
         composeRule.onNodeWithText(labels.last()).performScrollTo()
-        val starLeft = composeRule.onNodeWithText(labels[2]).fetchSemanticsNode().boundsInRoot.left
-        val forkLeft = composeRule.onNodeWithText(labels[3]).fetchSemanticsNode().boundsInRoot.left
+        val starLeft = composeRule.onNodeWithText(labels[2]).fetchSemanticsNode().positionInRoot.x
+        val forkLeft = composeRule.onNodeWithText(labels[3]).fetchSemanticsNode().positionInRoot.x
         assertTrue(starLeft < forkLeft)
     }
 

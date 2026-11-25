@@ -3,7 +3,6 @@ package com.gitmob.app.ui.repocommits
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
-import com.gitmob.app.core.diff.UnifiedDiffParser
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.share.ShareLinkLauncher
@@ -26,7 +25,6 @@ import javax.inject.Inject
 data class RepoCommitDetailUiState(
     val detail: RepoCommitDetail? = null,
     val selectedFile: RepoChangedFile? = null,
-    val selectedDiff: com.gitmob.app.core.diff.UnifiedDiff? = null,
     val permission: RepoPermission = RepoPermission.NONE,
     val capabilities: RepoCapabilities = RepoCapabilities.NONE,
     val isLoading: Boolean = false,
@@ -79,9 +77,9 @@ class RepoCommitDetailViewModel @Inject constructor(
 
     fun toggleFile(file: RepoChangedFile) = _state.update { current ->
         if (current.selectedFile?.filename == file.filename) {
-            current.copy(selectedFile = null, selectedDiff = null)
+            current.copy(selectedFile = null)
         } else {
-            current.copy(selectedFile = file, selectedDiff = UnifiedDiffParser.parse(file.patch))
+            current.copy(selectedFile = file)
         }
     }
 
