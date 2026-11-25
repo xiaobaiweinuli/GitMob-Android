@@ -1,9 +1,11 @@
 package com.gitmob.app.ui.common
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Typeface
 import android.text.InputType
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
@@ -18,7 +20,6 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
@@ -31,11 +32,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
@@ -139,26 +140,44 @@ internal fun SoraTextField(
     var focused by remember { mutableStateOf(false) }
     var labelHeight by remember { mutableIntStateOf(0) }
     val colors = MaterialTheme.colorScheme
-    val borderColor = when {
-        !enabled -> colors.onSurface.copy(alpha = 0.12f)
-        focused -> colors.primary
-        else -> colors.outline
-    }
+    val shape = MaterialTheme.shapes.medium
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            !enabled -> colors.onSurface.copy(alpha = 0.12f)
+            focused -> colors.primary
+            else -> colors.outline
+        },
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "Editor border color",
+    )
+    val labelColor by animateColorAsState(
+        targetValue = if (focused && enabled) colors.primary else colors.onSurfaceVariant,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "Editor label color",
+    )
     Layout(
-        modifier = Modifier.fillMaxWidth().drawBehind {
+        modifier = Modifier.fillMaxWidth().drawWithCache {
             val stroke = (if (focused && enabled) 2.dp else 1.dp).toPx()
             val top = labelHeight / 2f
-            drawRoundRect(
-                borderColor, Offset(stroke / 2, top + stroke / 2),
-                Size(size.width - stroke, (size.height - top - stroke).coerceAtLeast(0f)),
-                CornerRadius(4.dp.toPx()), style = Stroke(stroke),
+            val outline = shape.createOutline(
+                size = Size(
+                    (size.width - stroke).coerceAtLeast(0f),
+                    (size.height - top - stroke).coerceAtLeast(0f),
+                ),
+                layoutDirection = layoutDirection,
+                density = this,
             )
+            onDrawBehind {
+                translate(left = stroke / 2, top = top + stroke / 2) {
+                    drawOutline(outline, borderColor, style = Stroke(stroke))
+                }
+            }
         },
         content = {
             Box(Modifier.background(colors.surface).padding(horizontal = 4.dp)) {
                 CompositionLocalProvider(
                     LocalTextStyle provides MaterialTheme.typography.bodySmall,
-                    LocalContentColor provides if (focused && enabled) colors.primary else colors.onSurfaceVariant,
+                    LocalContentColor provides labelColor,
                 ) { label() }
             }
             Box {
@@ -205,6 +224,8 @@ internal open class SoraDocumentView(context: Context) : CodeEditor(context) {
         if (restoringSelection) isFocused else super.requestFocus(direction, previouslyFocusedRect)
 }
 
+// Created programmatically with document state; not inflated from XML.
+@SuppressLint("ViewConstructor")
 internal class SoraEditingView(context: Context, private val state: SoraEditorState) : SoraDocumentView(context) {
     internal var embeddedState: SoraEmbeddedState? = null
     internal var focusChanged: ((Boolean) -> Unit)? = null
@@ -332,10 +353,10 @@ internal class SoraEditingView(context: Context, private val state: SoraEditorSt
 
 @Composable
 internal fun SoraUndoRedoButtons(state: SoraEditorState, controller: SoraEditorController, enabled: Boolean) {
-    IconButton(onClick = controller::undo, enabled = enabled && state.canUndo) {
+    ActionIconButton(onClick = controller::undo, enabled = enabled && state.canUndo) {
         Icon(Icons.AutoMirrored.Filled.Undo, stringResource(R.string.editor_undo))
     }
-    IconButton(onClick = controller::redo, enabled = enabled && state.canRedo) {
+    ActionIconButton(onClick = controller::redo, enabled = enabled && state.canRedo) {
         Icon(Icons.AutoMirrored.Filled.Redo, stringResource(R.string.editor_redo))
     }
 }

@@ -1,10 +1,8 @@
 package com.gitmob.app.ui.home
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,33 +12,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Scaffold
-import androidx.compose.material.icons.filled.Bookmarks
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallSplit
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Adjust
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Adjust
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.repeatOnLifecycle
-import com.gitmob.app.ui.library.AccountLibraryViewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,18 +41,25 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.gitmob.app.ui.icons.Octicon
+import androidx.lifecycle.repeatOnLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.data.model.ViewerProfile
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.EntryGroup
+import com.gitmob.app.ui.common.EntryRow
 import com.gitmob.app.ui.common.OrganizationsBottomSheet
 import com.gitmob.app.ui.common.PinnedReposSection
 import com.gitmob.app.ui.common.ProfilePersonHeader
 import com.gitmob.app.ui.common.ProfileStatsRow
 import com.gitmob.app.ui.common.StatItem
+import com.gitmob.app.ui.icons.Octicon
 import com.gitmob.app.ui.icons.OcticonName
+import com.gitmob.app.ui.library.AccountLibraryViewModel
 
 /**
  * 底部 Tab「主页」——当前登录用户自己的个人资料页。
@@ -105,12 +104,12 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.nav_tab_home)) },
                 actions = {
-                    IconButton(onClick = onSearchClick) {
+                    ActionIconButton(onClick = onSearchClick) {
                         Octicon(OcticonName.SEARCH, contentDescription = stringResource(R.string.search_title))
                     }
                     if (state.profile != null) {
-                        IconButton(onClick = {
-                            val profile = state.profile ?: return@IconButton
+                        ActionIconButton(onClick = {
+                            val profile = state.profile ?: return@ActionIconButton
                             onCreateRepository(
                                 RepositoryCreateOwner(
                                     id = profile.user.id,
@@ -151,6 +150,7 @@ fun HomeScreen(
                             profile = state.profile!!,
                             topPadding = 0.dp,
                             onFollowClick = viewModel::toggleFollow,
+                            isUpdatingFollow = state.isUpdatingFollow,
                             onFollowersClick = { onFollowersClick(state.profile!!.user.login) },
                             onFollowingClick = { onFollowingClick(state.profile!!.user.login) },
                             onReposClick = { onReposClick(state.profile!!.user.login) },
@@ -213,7 +213,7 @@ private fun RetryContent(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
         )
-        Button(onClick = onRetry) { Text(stringResource(R.string.common_retry)) }
+        Button(onClick = onRetry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
     }
 }
 
@@ -228,6 +228,7 @@ private fun ProfileContent(
     profile: ViewerProfile,
     topPadding: androidx.compose.ui.unit.Dp = 0.dp,
     onFollowClick: () -> Unit,
+    isUpdatingFollow: Boolean,
     onFollowersClick: () -> Unit,
     onFollowingClick: () -> Unit,
     onReposClick: () -> Unit,
@@ -265,6 +266,7 @@ private fun ProfileContent(
             onFollowingClick = onFollowingClick,
             followState = profile.followState,
             onFollowClick = onFollowClick,
+            isUpdatingFollow = isUpdatingFollow,
             status = profile.extra?.status,
             bio = profile.user.bio,
             location = profile.user.location,
@@ -297,30 +299,18 @@ private fun ProfileContent(
 
         // ---- 事务入口：议题/PR/讨论带数字（involves:@me 聚合，只对当前登录用户有意义），
         // 收件箱纯入口不带数字（REST 通知接口没有现成的 count 端点，不强求精确数字） ----
-        HorizontalDivider(modifier = Modifier.padding(top = 20.dp, bottom = 4.dp))
+        EntryGroup(Modifier.padding(top = 20.dp)) {
         if (showFavorites) WorkEntryRow(Icons.Default.Bookmarks, stringResource(R.string.favorites_title), null, onFavoritesClick)
         WorkEntryRow(Icons.Default.Adjust, stringResource(R.string.common_issues), profile.involvedIssueCount, onWorkIssuesClick)
         WorkEntryRow(Icons.AutoMirrored.Filled.CallSplit, stringResource(R.string.common_pull_requests), profile.involvedPrCount, onWorkPullRequestsClick)
         WorkEntryRow(Icons.Default.ChatBubble, stringResource(R.string.common_discussions), profile.involvedDiscussionCount, onWorkDiscussionsClick)
         WorkEntryRow(Icons.Default.Inbox, stringResource(R.string.inbox_title), count = null, onInboxClick)
         if (showHistory) WorkEntryRow(Icons.Default.History, stringResource(R.string.history_title), null, onHistoryClick)
+        }
     }
 }
 
 @Composable
 private fun WorkEntryRow(icon: ImageVector, label: String, count: Int?, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Text(label, modifier = Modifier
-            .padding(start = 16.dp)
-            .weight(1f))
-        count?.let { Text("$it", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
-    }
+    EntryRow(icon = icon, label = label, count = count?.toString(), onClick = onClick)
 }

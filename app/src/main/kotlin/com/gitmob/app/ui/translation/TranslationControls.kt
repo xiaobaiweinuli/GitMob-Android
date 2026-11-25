@@ -1,24 +1,31 @@
 package com.gitmob.app.ui.translation
 
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
 import com.gitmob.app.data.translation.*
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionStateIcon
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
+import com.gitmob.app.ui.settings.SelectionRow
 import com.gitmob.app.ui.settings.SettingsDropdownRow
 import com.gitmob.app.ui.settings.SettingsNavigationRow
 import com.gitmob.app.ui.settings.SettingsSection
-import com.gitmob.app.ui.settings.SelectionRow
 
 @Composable
 fun translationProviderName(provider: TranslationProvider): String = when (provider) {
@@ -91,7 +98,7 @@ internal fun TranslationOptionsSection(value: TranslationPreferences, onChange: 
 @Composable
 internal fun TranslationProviderSheet(selected: TranslationProvider, onSelect: (TranslationProvider) -> Unit, onDismiss: () -> Unit) {
     val providers = TranslationProvider.entries
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)), containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.translation_provider), style = MaterialTheme.typography.titleLarge)
             providers.forEach { provider ->
@@ -111,8 +118,8 @@ internal fun TranslationProviderSheet(selected: TranslationProvider, onSelect: (
 internal fun TranslationErrorRow(problem: TranslationProblem, retry: () -> Unit, switch: () -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(translationProblemText(problem), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-        TextButton(onClick = retry, contentPadding = PaddingValues(horizontal = 8.dp)) { Text(stringResource(R.string.common_retry), maxLines = 1) }
-        TextButton(onClick = switch, contentPadding = PaddingValues(horizontal = 8.dp)) { Text(stringResource(R.string.translation_switch), maxLines = 1) }
+        TextButton(onClick = retry, contentPadding = PaddingValues(horizontal = 8.dp), shapes = ButtonDefaults.shapes()) { Text(stringResource(R.string.common_retry), maxLines = 1) }
+        TextButton(onClick = switch, contentPadding = PaddingValues(horizontal = 8.dp), shapes = ButtonDefaults.shapes()) { Text(stringResource(R.string.translation_switch), maxLines = 1) }
     }
 }
 
@@ -126,40 +133,71 @@ internal fun TranslationCredentialsSheet(provider: TranslationProvider, initial:
     var visible by remember { mutableStateOf(false) }
     var methodOpen by remember { mutableStateOf(false) }
     var authOpen by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!state.saving) onDismiss() }, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))) {
+    ModalBottomSheet(onDismissRequest = { if (!state.saving) onDismiss() }, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)), containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(translationProviderName(provider), style = MaterialTheme.typography.titleLarge)
-            if (provider in setOf(TranslationProvider.BAIDU, TranslationProvider.YOUDAO_OPEN)) OutlinedTextField(value.appId, { value = value.copy(appId = it) }, label = { Text(stringResource(R.string.translation_app_id)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            if (provider in setOf(TranslationProvider.BAIDU, TranslationProvider.YOUDAO_OPEN)) OutlinedTextField(value.appId, { value = value.copy(appId = it) }, label = { Text(stringResource(R.string.translation_app_id)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
             if (provider == TranslationProvider.CUSTOM) {
-                OutlinedTextField(value.endpoint, { value = value.copy(endpoint = it) }, label = { Text(stringResource(R.string.translation_endpoint)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value.endpoint, { value = value.copy(endpoint = it) }, label = { Text(stringResource(R.string.translation_endpoint)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
                 Box {
-                    OutlinedButton(onClick = { methodOpen = true }) { Text(stringResource(R.string.translation_method) + ": " + value.method) }
-                    DropdownMenu(methodOpen, { methodOpen = false }) { listOf("GET", "POST").forEach { method -> DropdownMenuItem(text = { Text(method) }, onClick = { value = value.copy(method = method); methodOpen = false }) } }
+                    OutlinedButton(onClick = { methodOpen = true }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.translation_method) + ": " + value.method) }
+                    DropdownMenu(methodOpen, { methodOpen = false }, modifier = Modifier.selectableGroup()) {
+                        val methods = listOf("GET", "POST")
+                        methods.forEachIndexed { index, method ->
+                            SelectableDropdownMenuItem(
+                                selected = value.method == method,
+                                shapes = MenuDefaults.itemShape(index, methods.size),
+                                text = { Text(method) },
+                                onClick = { value = value.copy(method = method); methodOpen = false },
+                                leadingIcon = { Spacer(Modifier.size(24.dp)) },
+                                selectedLeadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
+                            )
+                        }
+                    }
                 }
                 Box {
-                    OutlinedButton(onClick = { authOpen = true }) { Text(stringResource(R.string.translation_auth) + ": " + when (value.auth) { TranslationAuth.NONE -> stringResource(R.string.translation_no_auth); TranslationAuth.BEARER -> "Bearer"; TranslationAuth.BODY_KEY -> "api_key"; TranslationAuth.HEADER -> stringResource(R.string.translation_header) }) }
-                    DropdownMenu(authOpen, { authOpen = false }) { TranslationAuth.entries.forEach { auth -> DropdownMenuItem(text = { Text(when (auth) { TranslationAuth.NONE -> stringResource(R.string.translation_no_auth); TranslationAuth.BEARER -> "Bearer"; TranslationAuth.BODY_KEY -> "api_key"; TranslationAuth.HEADER -> stringResource(R.string.translation_header) }) }, onClick = { value = value.copy(auth = auth); authOpen = false }) } }
+                    OutlinedButton(onClick = { authOpen = true }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.translation_auth) + ": " + when (value.auth) { TranslationAuth.NONE -> stringResource(R.string.translation_no_auth); TranslationAuth.BEARER -> "Bearer"; TranslationAuth.BODY_KEY -> "api_key"; TranslationAuth.HEADER -> stringResource(R.string.translation_header) }) }
+                    DropdownMenu(authOpen, { authOpen = false }, modifier = Modifier.selectableGroup()) {
+                        TranslationAuth.entries.forEachIndexed { index, auth ->
+                            SelectableDropdownMenuItem(
+                                selected = value.auth == auth,
+                                shapes = MenuDefaults.itemShape(index, TranslationAuth.entries.size),
+                                text = { Text(when (auth) { TranslationAuth.NONE -> stringResource(R.string.translation_no_auth); TranslationAuth.BEARER -> "Bearer"; TranslationAuth.BODY_KEY -> "api_key"; TranslationAuth.HEADER -> stringResource(R.string.translation_header) }) },
+                                onClick = { value = value.copy(auth = auth); authOpen = false },
+                                leadingIcon = { Spacer(Modifier.size(24.dp)) },
+                                selectedLeadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
+                            )
+                        }
+                    }
                 }
-                if (value.auth == TranslationAuth.HEADER) OutlinedTextField(value.header, { value = value.copy(header = it) }, label = { Text(stringResource(R.string.translation_header)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                if (value.auth == TranslationAuth.HEADER) OutlinedTextField(value.header, { value = value.copy(header = it) }, label = { Text(stringResource(R.string.translation_header)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
             }
             if (provider in setOf(TranslationProvider.BAIDU, TranslationProvider.YOUDAO_OPEN) || provider == TranslationProvider.CUSTOM && value.auth != TranslationAuth.NONE) {
                 OutlinedSecureTextField(state = secretState, label = { Text(stringResource(R.string.translation_secret)) },
                     textObfuscationMode = if (visible) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
-                    trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, stringResource(R.string.translation_show_secret)) } }, modifier = Modifier.fillMaxWidth())
+                    trailingIcon = {
+                        IconToggleButton(
+                            checked = visible,
+                            onCheckedChange = { visible = it },
+                            shapes = IconButtonDefaults.toggleableShapes(),
+                            colors = IconButtonDefaults.iconToggleButtonColors(),
+                        ) {
+                            ActionStateIcon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, stringResource(R.string.translation_show_secret))
+                        }
+                    }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
             }
             if (provider == TranslationProvider.CUSTOM) {
-                TextButton(onClick = { value = value.copy(method = "POST", template = TranslationCredentials().template, responsePath = "translatedText") }) { Text(stringResource(R.string.translation_libre)) }
-                OutlinedTextField(value.template, { value = value.copy(template = it) }, label = { Text(stringResource(R.string.translation_template)) }, minLines = 4, modifier = Modifier.fillMaxWidth())
+                TextButton(onClick = { value = value.copy(method = "POST", template = TranslationCredentials().template, responsePath = "translatedText") }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.translation_libre)) }
+                OutlinedTextField(value.template, { value = value.copy(template = it) }, label = { Text(stringResource(R.string.translation_template)) }, minLines = 4, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
                 Text(stringResource(R.string.translation_template_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(value.responsePath, { value = value.copy(responsePath = it) }, label = { Text(stringResource(R.string.translation_response_path)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value.responsePath, { value = value.copy(responsePath = it) }, label = { Text(stringResource(R.string.translation_response_path)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
             }
             state.notice?.let { Text(translationProblemText(it), color = MaterialTheme.colorScheme.error) }
-            if (state.testing) LinearProgressIndicator(Modifier.fillMaxWidth())
             state.testProblem?.let { Text(translationProblemText(it), color = MaterialTheme.colorScheme.error) }
             state.testResult?.let { Text(stringResource(R.string.translation_test_success, it), style = MaterialTheme.typography.bodySmall) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { viewModel.test(preferences.copy(provider = provider), value.copy(secret = secretState.text.toString())) }, enabled = !state.testing && !state.saving) { Text(stringResource(R.string.translation_test)) }
-                Button(onClick = { viewModel.saveCredentials(provider, value.copy(secret = secretState.text.toString()), onDismiss) }, enabled = !state.saving) { Text(stringResource(R.string.common_save)) }
+                TextButton(onClick = { viewModel.test(preferences.copy(provider = provider), value.copy(secret = secretState.text.toString())) }, enabled = !state.testing && !state.saving, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.testing, label = stringResource(R.string.translation_test)) }
+                Button(onClick = { viewModel.saveCredentials(provider, value.copy(secret = secretState.text.toString()), onDismiss) }, enabled = !state.saving, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { ActionButtonContent(busy = state.saving, label = stringResource(R.string.common_save)) }
             }
             Spacer(Modifier.height(12.dp))
         }

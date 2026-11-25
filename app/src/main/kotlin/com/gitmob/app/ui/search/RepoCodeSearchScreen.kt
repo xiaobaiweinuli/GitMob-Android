@@ -1,6 +1,5 @@
 package com.gitmob.app.ui.search
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -12,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -41,6 +40,8 @@ import com.gitmob.app.data.model.SearchItem
 import com.gitmob.app.data.repository.repositoryCodeSearchInput
 import com.gitmob.app.data.repository.repositoryCodeSearchQuery
 import com.gitmob.app.data.repository.unquotedSearchTokens
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.pressClickable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -116,15 +117,14 @@ fun RepoCodeSearchScreen(
                         onValueChange = { input = it; scopeConflict = false },
                         placeholder = { Text(stringResource(R.string.repo_code_search), maxLines = 1) },
                         singleLine = true,
-                        textStyle = MaterialTheme.typography.titleLarge,
+                        textStyle = MaterialTheme.typography.bodyLarge,
                         isError = scopeConflict,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                        ),
+                        shape = TextFieldDefaults.roundedShape,
+                        colors = TextFieldDefaults.tonalColors(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { submit() }),
                         trailingIcon = if (input.text.isNotEmpty()) {{
-                            IconButton(onClick = {
+                            ActionIconButton(onClick = {
                                 input = TextFieldValue()
                                 submittedInput = ""
                                 viewModel.clearQuery()
@@ -149,7 +149,7 @@ fun RepoCodeSearchScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back))
                     }
                 },
@@ -220,7 +220,7 @@ fun RepoCodeSearchScreen(
                                     scopeConflict = false
                                     focusRequester.requestFocus()
                                     keyboard?.show()
-                                }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                }, modifier = Modifier.heightIn(min = 48.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                                     Text(syntax.token, fontFamily = FontFamily.Monospace)
                                 }
                             }
@@ -249,7 +249,7 @@ private fun RepoCodeResult(item: SearchItem.Code, terms: List<String>, onClick: 
         }
     }
     val label = stringResource(R.string.search_open_file, item.path)
-    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = label, onClick = onClick)
+    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressClickable(onClickLabel = label, onClick = onClick)
         .padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(path, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium)
         if (item.snippets.isNotEmpty()) CodeSnippets(item.snippets)

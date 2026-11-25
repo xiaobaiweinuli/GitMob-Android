@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
@@ -47,19 +46,22 @@ import kotlinx.coroutines.flow.collectLatest
 @Composable
 fun ErrorBannerHost(errorEventBus: ErrorEventBus, epoch: AccountEpoch, modifier: Modifier = Modifier) {
     var current by remember(epoch) { mutableStateOf<BannerEvent?>(null) }
+    var visible by remember(epoch) { mutableStateOf(false) }
+    val motion = MaterialTheme.motionScheme
 
     LaunchedEffect(errorEventBus, epoch) {
         errorEventBus.eventsFor(epoch).collectLatest { event ->
             current = event
+            visible = true
             delay(3000)
-            current = null
+            visible = false
         }
     }
 
     AnimatedVisibility(
-        visible = current != null,
-        enter = slideInVertically() + fadeIn(),
-        exit = slideOutVertically() + fadeOut(),
+        visible = visible,
+        enter = slideInVertically(motion.defaultSpatialSpec()) { -it } + fadeIn(motion.defaultEffectsSpec()),
+        exit = slideOutVertically(motion.fastSpatialSpec()) { -it } + fadeOut(motion.fastEffectsSpec()),
         modifier = modifier.fillMaxWidth(),
     ) {
         current?.let { event ->
@@ -68,7 +70,7 @@ fun ErrorBannerHost(errorEventBus: ErrorEventBus, epoch: AccountEpoch, modifier:
             Surface(
                 color = containerColor,
                 modifier = Modifier.padding(8.dp),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.large,
             ) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(event.icon(), contentDescription = null, tint = contentColor)

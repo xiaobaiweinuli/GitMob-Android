@@ -1,6 +1,5 @@
 package com.gitmob.app.ui.gist
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,11 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -40,6 +36,11 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.GistRevision
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
 
 @Composable
 fun GistRevisionsScreen(
@@ -55,19 +56,23 @@ fun GistRevisionsScreen(
         topBar = { GistTopBar(R.string.gist_revisions, onBack) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
     ) { innerPadding ->
-        when {
-            state.isLoading && state.items.isEmpty() -> Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            state.loadFailed && state.items.isEmpty() -> LoadFailed(Modifier.fillMaxSize().padding(innerPadding), viewModel::load)
-            state.items.isEmpty() -> Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) { Text(stringResource(R.string.gist_no_revisions)) }
-            else -> LazyColumn(
-                Modifier.fillMaxSize().padding(innerPadding),
-                contentPadding = PaddingValues(vertical = 8.dp),
+        Box(Modifier.fillMaxSize().padding(innerPadding)) {
+            val feedback = when {
+                state.isLoading && state.items.isEmpty() -> ListFeedbackState.LOADING
+                state.loadFailed && state.items.isEmpty() -> ListFeedbackState.ERROR
+                state.items.isEmpty() -> ListFeedbackState.EMPTY
+                else -> ListFeedbackState.CONTENT
+            }
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 itemsIndexed(state.items, key = { _, item -> item.version }) { index, revision ->
                     val previous = state.items.getOrNull(index + 1)?.version
                     val canOpen = previous != null || (index == state.items.lastIndex && state.nextPage == null)
                     Column(
-                        Modifier.fillMaxWidth().clickable {
+                        Modifier.animateItem().fillMaxWidth().informationItem().pressClickable {
                             if (canOpen) onRevisionClick(revision, previous) else viewModel.loadMore()
                         }.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -76,7 +81,7 @@ fun GistRevisionsScreen(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(
                                 revision.user?.login ?: stringResource(R.string.common_unknown),
-                                modifier = revision.user?.login?.let { login -> Modifier.clickable { onUserClick(login) } } ?: Modifier,
+                                modifier = revision.user?.login?.let { login -> Modifier.pressClickable { onUserClick(login) } } ?: Modifier,
                             )
                             Text(revision.committedAt.take(19), style = MaterialTheme.typography.bodySmall)
                         }
@@ -91,11 +96,11 @@ fun GistRevisionsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    HorizontalDivider()
                     if (index == state.items.lastIndex && state.nextPage != null) LaunchedEffect(state.items.size) { viewModel.loadMore() }
                 }
                 if (state.isLoadingMore) item("loading-more") { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
             }
+            ListFeedback(feedback, viewModel::load, emptyMessage = stringResource(R.string.gist_no_revisions))
         }
     }
 }
@@ -105,7 +110,7 @@ fun GistRevisionsScreen(
 internal fun GistTopBar(titleRes: Int, onBack: () -> Unit) {
     TopAppBar(
         title = { Text(stringResource(titleRes)) },
-        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+        navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
         windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     )
 }

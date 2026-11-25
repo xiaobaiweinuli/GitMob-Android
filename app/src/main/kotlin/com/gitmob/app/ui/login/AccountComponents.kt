@@ -9,14 +9,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +33,8 @@ import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.AccountAuthMethod
 import com.gitmob.app.data.model.GitHubAccount
+import com.gitmob.app.ui.common.ActionProgressIcon
+import com.gitmob.app.ui.common.pressSelectable
 
 @Composable
 internal fun AccountIdentity(name: String?, login: String, avatarUrl: String?, modifier: Modifier = Modifier) {
@@ -55,9 +56,9 @@ internal fun AccountIdentity(name: String?, login: String, avatarUrl: String?, m
 @Composable
 internal fun AccountOption(account: GitHubAccount, selected: Boolean, switching: Boolean, enabled: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
             .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
-            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .pressSelectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .heightIn(min = 76.dp).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -76,19 +77,20 @@ internal fun AccountOption(account: GitHubAccount, selected: Boolean, switching:
                 modifier = Modifier.padding(start = 64.dp),
             )
         }
-        if (switching) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-        else if (selected) Icon(Icons.Default.Check, contentDescription = stringResource(R.string.accounts_current), tint = MaterialTheme.colorScheme.primary)
+        ActionProgressIcon(busy = switching) {
+            if (selected) Icon(Icons.Default.Check, contentDescription = stringResource(R.string.accounts_current), tint = MaterialTheme.colorScheme.primary)
+        }
     }
 }
 
 @Composable
 internal fun AccountAuthActions(enabled: Boolean, onPat: () -> Unit, onDevice: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        OutlinedButton(onClick = onPat, enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+        OutlinedButton(onClick = onPat, enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
             Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(stringResource(R.string.accounts_pat), Modifier.padding(start = 6.dp))
         }
-        OutlinedButton(onClick = onDevice, enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+        OutlinedButton(onClick = onDevice, enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
             Icon(Icons.Default.Computer, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(stringResource(R.string.accounts_device_flow), Modifier.padding(start = 6.dp))
         }

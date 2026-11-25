@@ -1,5 +1,8 @@
 package com.gitmob.app.ui.common
 
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.test.core.app.ApplicationProvider
@@ -42,7 +45,8 @@ class ConversationContentCardTest {
     }
 
     @Test
-    fun `author badges render without wrapping`() {
+    fun `author badges remain informational while edit history stays actionable`() {
+        var historyOpened = 0
         composeRule.setContent {
             Box(Modifier.width(240.dp)) {
                 ConversationContentCard(
@@ -59,13 +63,17 @@ class ConversationContentCardTest {
                     isThreadAuthor = true,
                     onQuoteReply = {},
                     editSummary = ConversationEditSummary(lastEditedAt = "2026-08-25T00:00:00Z"),
-                    onEditHistoryClick = {},
+                    onEditHistoryClick = { historyOpened++ },
                 )
             }
         }
 
         composeRule.onNodeWithText("a-very-long-user-name").assertExists()
-        composeRule.onNodeWithText(context.getString(com.gitmob.app.R.string.conversation_edited)).assertExists()
+        composeRule.onNodeWithText(context.getString(com.gitmob.app.R.string.conversation_author)).assertHasNoClickAction()
+        composeRule.onNodeWithText(context.getString(com.gitmob.app.R.string.conversation_owner)).assertHasNoClickAction()
+        composeRule.onNodeWithText(context.getString(com.gitmob.app.R.string.conversation_edited))
+            .assertHasClickAction().performScrollTo().performClick()
+        assertEquals(1, historyOpened)
     }
 
     @Test

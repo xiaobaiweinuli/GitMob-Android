@@ -1,25 +1,28 @@
 package com.gitmob.app.ui.repoactions
 
+import androidx.compose.foundation.selection.selectableGroup
+import com.gitmob.app.ui.common.ExpansionArrow
 import android.text.format.Formatter
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -31,11 +34,11 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -43,7 +46,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ActionProgressIcon
+import com.gitmob.app.ui.common.ActionStateIcon
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
 import com.gitmob.app.ui.common.RepositoryContextTitle
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
+import com.gitmob.app.ui.common.pressToggleable
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,7 +70,7 @@ fun RepoActionsScreen(owner: String, name: String, permission: RepoPermission?, 
         topBar = {
             TopAppBar(
                 title = { RepositoryContextTitle(owner, name, stringResource(R.string.repo_actions), onOwnerClick, onRepositoryClick) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = { ActionsOverflowMenu(state, viewModel::onActionsMenuOpened, viewModel::shareActions, viewModel::setRepositoryActionsEnabled) },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
@@ -66,14 +80,47 @@ fun RepoActionsScreen(owner: String, name: String, permission: RepoPermission?, 
         Column(Modifier.fillMaxSize().padding(padding)) {
             SecondaryTabRow(tab) { Tab(tab == 0, { tab = 0 }, text = { Text(stringResource(R.string.actions_runs)) }); Tab(tab == 1, { tab = 1 }, text = { Text(stringResource(R.string.actions_workflows)) }) }
             PullToRefreshBox(state.isLoading && (state.runs.isNotEmpty() || state.workflows.isNotEmpty()), viewModel::refresh, Modifier.fillMaxSize()) {
-                when {
-                    state.isLoading && state.runs.isEmpty() && state.workflows.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    state.loadFailed -> ActionsRetry(viewModel::refresh)
-                    tab == 0 && state.runs.isEmpty() -> Text(stringResource(R.string.actions_empty_runs), modifier = Modifier.align(Alignment.Center))
-                    tab == 1 && state.workflows.isEmpty() -> Text(stringResource(R.string.actions_empty_workflows), modifier = Modifier.align(Alignment.Center))
-                    tab == 0 -> LazyColumn { items(state.runs, key = { it.id }) { run -> SwipeableRunRow(run, state.capabilities.canDeleteActionRuns, run.id in state.deletingRunIds, { onRunClick(run.id) }, { viewModel.requestDelete(run) }); HorizontalDivider() }; if (state.hasNextPage) item { LaunchedEffect(state.runs.size) { viewModel.loadMore() }; Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp)) } } }
-                    else -> LazyColumn { items(state.workflows, key = { it.id }) { workflow -> WorkflowRow(workflow, state.capabilities.canPush, state.canDispatch, { viewModel.prepareDispatch(workflow) }, { enabled -> viewModel.setWorkflowEnabled(workflow, enabled) }); HorizontalDivider() } }
+                val feedback = when {
+                    state.isLoading && state.runs.isEmpty() && state.workflows.isEmpty() -> ListFeedbackState.LOADING
+                    state.loadFailed -> ListFeedbackState.ERROR
+                    tab == 0 && state.runs.isEmpty() -> ListFeedbackState.EMPTY
+                    tab == 1 && state.workflows.isEmpty() -> ListFeedbackState.EMPTY
+                    else -> ListFeedbackState.CONTENT
                 }
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp, end = 16.dp, top = 8.dp,
+                        bottom = 8.dp + WindowInsets.navigationBars.union(WindowInsets.captionBar)
+                            .asPaddingValues().calculateBottomPadding(),
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (feedback == ListFeedbackState.CONTENT) {
+                        if (tab == 0) {
+                            items(state.runs, key = { "run:${it.id}" }) { run ->
+                                Box(Modifier.animateItem().informationItem()) {
+                                    SwipeableRunRow(run, state.capabilities.canDeleteActionRuns, run.id in state.deletingRunIds,
+                                        { onRunClick(run.id) }, { viewModel.requestDelete(run) })
+                                }
+                            }
+                            if (state.hasNextPage) item(key = "more") {
+                                LaunchedEffect(state.runs.size) { viewModel.loadMore() }
+                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp)) }
+                            }
+                        } else {
+                            items(state.workflows, key = { "workflow:${it.id}" }) { workflow ->
+                                Box(Modifier.animateItem().informationItem()) {
+                                    WorkflowRow(workflow, state.capabilities.canPush, state.canDispatch, workflow.id in state.updatingWorkflowIds, { viewModel.prepareDispatch(workflow) },
+                                        { enabled -> viewModel.setWorkflowEnabled(workflow, enabled) })
+                                }
+                            }
+                        }
+                    }
+
+                }
+                ListFeedback(feedback, viewModel::refresh,
+                    emptyMessage = stringResource(if (tab == 0) R.string.actions_empty_runs else R.string.actions_empty_workflows))
             }
         }
     }
@@ -86,8 +133,8 @@ fun RepoActionsScreen(owner: String, name: String, permission: RepoPermission?, 
             onDismissRequest = viewModel::dismissDelete,
             title = { Text(stringResource(R.string.actions_delete_run)) },
             text = { Text(stringResource(R.string.actions_delete_run_message, run.runNumber, run.displayTitle)) },
-            dismissButton = { TextButton(onClick = viewModel::dismissDelete) { Text(stringResource(R.string.common_cancel)) } },
-            confirmButton = { TextButton(onClick = viewModel::deletePendingRun) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = viewModel::dismissDelete, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
+            confirmButton = { TextButton(onClick = viewModel::deletePendingRun, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } },
         )
     }
 }
@@ -136,7 +183,7 @@ private fun SwipeableRunRow(run: RepoWorkflowRun, canDelete: Boolean, deleting: 
 
 @Composable
 private fun RunRow(run: RepoWorkflowRun, deleting: Boolean, click: () -> Unit, modifier: Modifier) {
-    Row(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).clickable(enabled = !deleting, onClick = click).padding(16.dp), verticalAlignment = Alignment.Top) {
+    Row(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).pressClickable(enabled = !deleting, onClick = click).padding(16.dp), verticalAlignment = Alignment.Top) {
         Icon(runIcon(run), null, tint = runColor(run), modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -162,7 +209,7 @@ private fun ActionsOverflowMenu(
     val shareTextWidth = rememberTextMeasurer().measure(AnnotatedString(shareLabel), MaterialTheme.typography.bodyLarge).size.width
     val shareMenuWidth = with(LocalDensity.current) { shareTextWidth.toDp() + 32.dp }.coerceAtLeast(48.dp)
     Box {
-        IconButton(onClick = { expanded = true; opened() }) {
+        ActionIconButton(onClick = { expanded = true; opened() }) {
             Icon(Icons.Default.MoreVert, stringResource(R.string.common_more))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -191,7 +238,7 @@ private fun ActionsOverflowMenu(
 }
 
 @Composable
-private fun WorkflowRow(workflow: RepoWorkflow, canManage: Boolean, canDispatch: Boolean, dispatch: () -> Unit, enable: (Boolean) -> Unit) {
+private fun WorkflowRow(workflow: RepoWorkflow, canManage: Boolean, canDispatch: Boolean, busy: Boolean, dispatch: () -> Unit, enable: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Default.AccountTree, null)
         Spacer(Modifier.width(12.dp))
@@ -201,12 +248,20 @@ private fun WorkflowRow(workflow: RepoWorkflow, canManage: Boolean, canDispatch:
             Text(workflowStateLabel(workflow.state), style = MaterialTheme.typography.labelSmall)
         }
         if (canManage) {
-            IconButton(onClick = dispatch, enabled = workflow.state == "active" && canDispatch) {
+            ActionIconButton(onClick = dispatch, enabled = !busy && workflow.state == "active" && canDispatch) {
                 Icon(Icons.Default.PlayArrow, stringResource(R.string.actions_run_workflow))
             }
-            IconButton(onClick = { enable(workflow.state != "active") }) {
-                Icon(if (workflow.state == "active") Icons.Default.Pause else Icons.Default.PlayCircle,
-                    stringResource(if (workflow.state == "active") R.string.actions_disable_workflow else R.string.actions_enable_workflow))
+            IconToggleButton(
+                checked = workflow.state == "active",
+                onCheckedChange = enable,
+                shapes = IconButtonDefaults.toggleableShapes(),
+                colors = IconButtonDefaults.iconToggleButtonColors(),
+                enabled = !busy,
+            ) {
+                val label = stringResource(if (workflow.state == "active") R.string.actions_disable_workflow else R.string.actions_enable_workflow)
+                ActionProgressIcon(busy, busyDescription = label) {
+                    ActionStateIcon(if (workflow.state == "active") Icons.Default.Pause else Icons.Default.PlayCircle, label)
+                }
             }
         }
     }
@@ -221,6 +276,8 @@ private fun DispatchDialog(
     dispatch: (String, Map<String, String>) -> Unit,
 ) {
     var ref by remember(workflow.id) { mutableStateOf(state.dispatchRef) }
+    val busy = state.isDispatching
+    val loading = state.isLoadingInputs
     val definitions = state.dispatchInputs
     val values = remember(workflow.id, definitions) {
         mutableStateMapOf<String, String>().apply { definitions.forEach { put(it.name, it.defaultValue.orEmpty()) } }
@@ -231,39 +288,67 @@ private fun DispatchDialog(
     }
     val definitionsCurrent = state.dispatchInputsRef == ref.trim()
     AlertDialog(
-        onDismissRequest = dismiss,
+        onDismissRequest = { if (!busy) dismiss() },
         title = { Text(stringResource(R.string.actions_run_workflow)) },
         text = {
             LazyColumn(Modifier.heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item { Text(workflow.name, fontWeight = FontWeight.SemiBold) }
-                item {
-                    OutlinedTextField(ref, { ref = it }, label = { Text(stringResource(R.string.actions_ref)) },
-                        singleLine = true, enabled = !state.isDispatching, modifier = Modifier.fillMaxWidth())
-                }
-                if (state.isLoadingInputs) item {
-                    Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                } else if (!definitionsCurrent) item {
-                    Button(onClick = { loadInputs(ref) }, enabled = ref.isNotBlank() && !state.isDispatching, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Refresh, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.actions_load_inputs))
+                item { OutlinedTextField(ref, { ref = it }, enabled = !busy, label = { Text(stringResource(R.string.actions_ref)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) }
+                if (loading || !definitionsCurrent) item {
+                    Button(onClick = { loadInputs(ref) }, enabled = !busy && !loading && ref.isNotBlank(), modifier = Modifier.fillMaxWidth(), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
+                        ActionButtonContent(busy = loading, label = stringResource(R.string.actions_load_inputs), icon = Icons.Default.Refresh)
                     }
                 }
                 if (definitionsCurrent) items(definitions, key = { it.name }) { input ->
-                    DispatchInputField(input, values[input.name].orEmpty()) { values[input.name] = it }
+                    DispatchInputField(input, values[input.name].orEmpty(), enabled = !busy) { values[input.name] = it }
                 }
             }
         },
-        dismissButton = { TextButton(onClick = dismiss, enabled = !state.isDispatching) { Text(stringResource(R.string.common_cancel)) } },
+        dismissButton = { TextButton(onClick = dismiss, enabled = !busy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
         confirmButton = {
-            Button(onClick = { dispatch(ref.trim(), values.toMap()) }, enabled = state.canDispatch && !state.isLoadingInputs && definitionsCurrent && ref.isNotBlank() && valid) {
-                Text(stringResource(R.string.actions_run_workflow))
+            Button(onClick = { dispatch(ref.trim(), values.toMap()) }, enabled = state.canDispatch && !busy && !loading && definitionsCurrent && ref.isNotBlank() && valid, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
+                ActionButtonContent(busy = busy, label = stringResource(R.string.actions_run_workflow))
             }
         },
     )
 }
 
-@Composable private fun DispatchInputField(input: WorkflowDispatchInput, value: String, change: (String) -> Unit) { when (input.type) { WorkflowDispatchInputType.BOOLEAN -> Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(value.equals("true", true), { change(it.toString()) }); Column { Text(input.name); input.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) } } }; WorkflowDispatchInputType.CHOICE -> { var open by remember { mutableStateOf(false) }; Box { OutlinedTextField(value, {}, label = { Text(input.name + if (input.required) " *" else "") }, supportingText = { input.description?.let { Text(it) } }, readOnly = true, trailingIcon = { IconButton(onClick = { open = true }) { Icon(Icons.Default.ArrowDropDown, null) } }, modifier = Modifier.fillMaxWidth().clickable { open = true }); DropdownMenu(open, { open = false }) { input.options.forEach { option -> DropdownMenuItem(text = { Text(option) }, onClick = { open = false; change(option) }) } } } }; else -> OutlinedTextField(value, change, label = { Text(input.name + if (input.required) " *" else "") }, supportingText = { input.description?.let { Text(it) } }, singleLine = input.type == WorkflowDispatchInputType.ENVIRONMENT || input.type == WorkflowDispatchInputType.NUMBER, keyboardOptions = if (input.type == WorkflowDispatchInputType.NUMBER) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default, modifier = Modifier.fillMaxWidth()) } }
+@Composable
+private fun DispatchInputField(input: WorkflowDispatchInput, value: String, enabled: Boolean, change: (String) -> Unit) {
+    when (input.type) {
+        WorkflowDispatchInputType.BOOLEAN -> {
+            val checked = value.equals("true", true)
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressToggleable(checked, enabled = enabled, role = Role.Checkbox) { change(it.toString()) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked, onCheckedChange = null, enabled = enabled)
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text(input.name)
+                    input.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+        }
+        WorkflowDispatchInputType.CHOICE -> {
+            var open by remember { mutableStateOf(false) }
+            Box {
+                OutlinedTextField(value, {}, enabled = enabled, label = { Text(input.name + if (input.required) " *" else "") }, supportingText = { input.description?.let { Text(it) } }, readOnly = true,
+                    trailingIcon = { ActionIconButton(onClick = { open = !open }, enabled = enabled) { ExpansionArrow(open) } },
+                    modifier = Modifier.fillMaxWidth().pressClickable(enabled = enabled) { open = true }, shape = MaterialTheme.shapes.medium)
+                DropdownMenu(open && enabled, { open = false }, modifier = Modifier.selectableGroup()) {
+                    input.options.forEachIndexed { index, option ->
+                        SelectableDropdownMenuItem(
+                            selected = value == option,
+                            shapes = MenuDefaults.itemShape(index, input.options.size),
+                            text = { Text(option) },
+                            onClick = { open = false; change(option) },
+                            leadingIcon = { Spacer(Modifier.size(24.dp)) },
+                            selectedLeadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
+                        )
+                    }
+                }
+            }
+        }
+        else -> OutlinedTextField(value, change, enabled = enabled, label = { Text(input.name + if (input.required) " *" else "") }, supportingText = { input.description?.let { Text(it) } }, singleLine = input.type == WorkflowDispatchInputType.ENVIRONMENT || input.type == WorkflowDispatchInputType.NUMBER, keyboardOptions = if (input.type == WorkflowDispatchInputType.NUMBER) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -284,10 +369,10 @@ fun RepoWorkflowRunScreen(
         topBar = {
             TopAppBar(
                 title = { RepositoryContextTitle(owner, name, stringResource(R.string.actions_run_number, runId), onOwnerClick, onRepositoryClick) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     if (state.detail != null) Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
+                        ActionIconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.conversation_share)) }, leadingIcon = { Icon(Icons.Default.Share, null) }, onClick = { menu = false; viewModel.share() })
                             if (state.capabilities.canPush) {
@@ -323,21 +408,23 @@ fun RepoWorkflowRunScreen(
                         item(key = "artifacts") { Text(stringResource(R.string.actions_artifacts), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }
                         items(detail.artifacts, key = { "artifact-${it.id}" }) { artifact ->
                             val opening = artifact.id in state.openingArtifactIds
-                            ListItem(content = { Text(artifact.name) }, supportingContent = { Text(Formatter.formatShortFileSize(context, artifact.sizeInBytes)) }, trailingContent = {
-                                IconButton(onClick = { viewModel.downloadArtifact(artifact) }, enabled = !artifact.expired && !opening) {
-                                    if (opening) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                    else Icon(Icons.Default.Download, stringResource(R.string.common_download))
+                            androidx.compose.foundation.layout.Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                ListItem(content = { Text(artifact.name) }, supportingContent = { Text(Formatter.formatShortFileSize(context, artifact.sizeInBytes)) }, trailingContent = {
+                                ActionIconButton(onClick = { viewModel.downloadArtifact(artifact) }, enabled = !artifact.expired && !opening) {
+                                    ActionProgressIcon(busy = opening, busyDescription = stringResource(R.string.common_download)) { Icon(Icons.Default.Download, stringResource(R.string.common_download)) }
                                 }
-                            })
+                            },
+    shapes = ListItemDefaults.shapes(shape = MaterialTheme.shapes.large), colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                                )
+                            }
                         }
                     }
                     item(key = "jobs") {
                         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.actions_jobs), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                             ActionLogTooltip(stringResource(R.string.actions_logs_download_zip)) {
-                                TextButton(onClick = viewModel::downloadLogs, enabled = !state.openingLogs && !state.isLoading, modifier = Modifier.heightIn(min = 48.dp)) {
-                                    if (state.openingLogs) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                    else Icon(Icons.Default.Download, stringResource(R.string.actions_logs_download_zip))
+                                TextButton(onClick = viewModel::downloadLogs, enabled = !state.openingLogs && !state.isLoading, modifier = Modifier.heightIn(min = 48.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
+                                    ActionProgressIcon(busy = state.openingLogs, busyDescription = stringResource(R.string.actions_logs_download_zip)) { Icon(Icons.Default.Download, stringResource(R.string.actions_logs_download_zip)) }
                                     Spacer(Modifier.width(8.dp))
                                     Text(stringResource(R.string.actions_logs_zip_label))
                                 }
@@ -357,10 +444,10 @@ fun RepoWorkflowRunScreen(
                             val focusRequester = remember { FocusRequester() }
                             LaunchedEffect(focusedStep) { if (focusedStep == identity) focusRequester.requestFocus() }
                             Row(
-                                Modifier.fillMaxWidth().focusRequester(focusRequester).clickable(onClick = {
+                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).informationItem().focusRequester(focusRequester).pressClickable(onClick = {
                                     focusedStep = identity
                                     onStepClick(RepoActionStepLogKey(owner, name, runId, detail.run.runAttempt, job.id, step.number))
-                                }).heightIn(min = 48.dp).padding(start = 48.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                                }).heightIn(min = 48.dp).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
@@ -382,7 +469,7 @@ fun RepoWorkflowRunScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(if (failedOnly) R.string.actions_rerun_failed_scope else R.string.actions_rerun_all_scope))
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(state.enableDebugLogging, enabled = !state.isMutating, role = Role.Checkbox, onValueChange = viewModel::setDebugLogging), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressToggleable(state.enableDebugLogging, enabled = !state.isMutating, role = Role.Checkbox, onValueChange = viewModel::setDebugLogging), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = state.enableDebugLogging, onCheckedChange = null)
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.actions_debug_logging))
@@ -390,20 +477,20 @@ fun RepoWorkflowRunScreen(
                     Text(stringResource(R.string.actions_debug_logging_description), style = MaterialTheme.typography.bodySmall)
                 }
             },
-            confirmButton = { TextButton(onClick = viewModel::confirmRerun, enabled = !state.isMutating) { Text(stringResource(R.string.common_confirm)) } },
-            dismissButton = { TextButton(onClick = viewModel::dismissRerun, enabled = !state.isMutating) { Text(stringResource(R.string.common_cancel)) } },
+            confirmButton = { TextButton(onClick = viewModel::confirmRerun, enabled = !state.isMutating, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isMutating, label = stringResource(R.string.common_confirm)) } },
+            dismissButton = { TextButton(onClick = viewModel::dismissRerun, enabled = !state.isMutating, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
     if (state.pendingDelete) AlertDialog(
         onDismissRequest = { viewModel.confirmDelete(false) },
         title = { Text(stringResource(R.string.actions_delete_run_title)) },
         text = { Text(stringResource(R.string.common_cannot_be_undone)) },
-        dismissButton = { TextButton(onClick = { viewModel.confirmDelete(false) }) { Text(stringResource(R.string.common_cancel)) } },
-        confirmButton = { TextButton(onClick = { viewModel.delete(onBack) }, enabled = !state.isMutating) { Text(stringResource(R.string.common_delete)) } },
+        dismissButton = { TextButton(onClick = { viewModel.confirmDelete(false) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
+        confirmButton = { TextButton(onClick = { viewModel.delete(onBack) }, enabled = !state.isMutating, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isMutating, label = stringResource(R.string.common_delete)) } },
     )
 }
 
-@Composable private fun ActionsRetry(retry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = retry) { Text(stringResource(R.string.common_retry)) } } }
+@Composable private fun ActionsRetry(retry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } } }
 @Composable private fun runColor(run: RepoWorkflowRun) = when (run.conclusion) { "success" -> MaterialTheme.colorScheme.primary; "failure", "cancelled" -> MaterialTheme.colorScheme.error; else -> MaterialTheme.colorScheme.tertiary }
 private fun runIcon(run: RepoWorkflowRun) = when (run.conclusion) { "success" -> Icons.Default.CheckCircle; "failure" -> Icons.Default.Cancel; "cancelled" -> Icons.Default.StopCircle; else -> Icons.Default.Schedule }
 @Composable private fun actionStateLabel(value: String?): String = when (value) { null, "" -> ""; "queued" -> stringResource(R.string.actions_state_queued); "in_progress" -> stringResource(R.string.actions_state_in_progress); "completed" -> stringResource(R.string.actions_state_completed); "waiting" -> stringResource(R.string.actions_state_waiting); "requested" -> stringResource(R.string.actions_state_requested); "pending" -> stringResource(R.string.actions_state_pending); "success" -> stringResource(R.string.actions_conclusion_success); "failure" -> stringResource(R.string.actions_conclusion_failure); "neutral" -> stringResource(R.string.actions_conclusion_neutral); "cancelled" -> stringResource(R.string.actions_conclusion_cancelled); "skipped" -> stringResource(R.string.actions_conclusion_skipped); "timed_out" -> stringResource(R.string.actions_conclusion_timed_out); "action_required" -> stringResource(R.string.actions_conclusion_action_required); "startup_failure" -> stringResource(R.string.actions_conclusion_startup_failure); "stale" -> stringResource(R.string.actions_conclusion_stale); else -> value }

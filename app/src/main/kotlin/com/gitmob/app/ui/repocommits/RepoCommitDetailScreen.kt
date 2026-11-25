@@ -3,31 +3,28 @@ package com.gitmob.app.ui.repocommits
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,13 +42,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import com.gitmob.app.ui.common.CommitStats
 import com.gitmob.app.ui.common.GitChangedFileRow
 import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.UnifiedDiffViewer
-import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,11 +87,11 @@ fun RepoCommitDetailScreen(
                         onRepositoryClick = onRepositoryClick,
                     )
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     if (state.detail != null) {
                         androidx.compose.foundation.layout.Box {
-                            IconButton(onClick = { commitMenuExpanded = true }, enabled = !state.isReverting) {
+                            ActionIconButton(onClick = { commitMenuExpanded = true }, enabled = !state.isReverting) {
                                 Icon(Icons.Default.MoreVert, stringResource(R.string.common_more))
                             }
                             DropdownMenu(expanded = commitMenuExpanded, onDismissRequest = { commitMenuExpanded = false }) {
@@ -101,7 +102,7 @@ fun RepoCommitDetailScreen(
                                 )
                                 if (state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && !state.detail!!.isArchived) {
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.git_revert_commit)) },
+                                        text = { ActionButtonContent(busy = state.isReverting, label = stringResource(R.string.git_revert_commit)) },
                                         enabled = !state.detail!!.commit.isMergeCommit,
                                         onClick = { commitMenuExpanded = false; commitRevertRequested = true },
                                     )
@@ -117,7 +118,7 @@ fun RepoCommitDetailScreen(
     ) { padding ->
         when {
             state.isLoading -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { CircularProgressIndicator() }
-            state.loadFailed || state.detail == null -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); androidx.compose.material3.TextButton(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) } }
+            state.loadFailed || state.detail == null -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); androidx.compose.material3.TextButton(onClick = viewModel::retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) } }
             else -> {
                 val detail = requireNotNull(state.detail)
                 LazyColumn(Modifier.fillMaxSize().padding(padding)) {
@@ -177,7 +178,7 @@ fun RepoCommitDetailScreen(
             title = { Text(stringResource(R.string.git_revert_file_title, file.filename)) },
             text = { Text(stringResource(R.string.git_revert_file_message)) },
             dismissButton = {
-                TextButton(onClick = { fileToRevert = null }, enabled = !state.isReverting) {
+                TextButton(onClick = { fileToRevert = null }, enabled = !state.isReverting, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },
@@ -186,7 +187,8 @@ fun RepoCommitDetailScreen(
                     onClick = { viewModel.revertFile(file, revertMessage) { fileToRevert = null } },
                     enabled = !state.isReverting,
                     colors = ButtonDefaults.textButtonColors(contentColor = androidx.compose.material3.MaterialTheme.colorScheme.error),
-                ) { Text(stringResource(R.string.git_revert_file)) }
+                    shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
+                ) { ActionButtonContent(busy = state.isReverting, label = stringResource(R.string.git_revert_file)) }
             },
         )
     }
@@ -196,7 +198,7 @@ fun RepoCommitDetailScreen(
             title = { Text(stringResource(R.string.git_revert_commit_title, sha.take(7))) },
             text = { Text(stringResource(R.string.git_revert_commit_message_body)) },
             dismissButton = {
-                TextButton(onClick = { commitRevertRequested = false }, enabled = !state.isReverting) {
+                TextButton(onClick = { commitRevertRequested = false }, enabled = !state.isReverting, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },
@@ -205,7 +207,8 @@ fun RepoCommitDetailScreen(
                     onClick = { viewModel.revertCommit(commitRevertMessage) { commitRevertRequested = false } },
                     enabled = !state.isReverting && !state.detail!!.commit.isMergeCommit,
                     colors = ButtonDefaults.textButtonColors(contentColor = androidx.compose.material3.MaterialTheme.colorScheme.error),
-                ) { Text(stringResource(R.string.git_revert_commit)) }
+                    shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
+                ) { ActionButtonContent(busy = state.isReverting, label = stringResource(R.string.git_revert_commit)) }
             },
         )
     }

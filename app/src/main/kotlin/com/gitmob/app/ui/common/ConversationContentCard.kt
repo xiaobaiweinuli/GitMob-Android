@@ -1,11 +1,9 @@
 package com.gitmob.app.ui.common
 
-import com.gitmob.app.ui.translation.TranslationMenuItem
-import com.gitmob.app.ui.translation.TranslationHtml
-import com.gitmob.app.data.translation.TranslationTarget
-
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,10 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -26,11 +22,8 @@ import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,6 +44,11 @@ import com.gitmob.app.R
 import com.gitmob.app.data.model.CommentAuthorAssociation
 import com.gitmob.app.data.model.ConversationEditSummary
 import com.gitmob.app.data.model.SimpleUser
+import com.gitmob.app.data.translation.TranslationTarget
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
+import com.gitmob.app.ui.translation.TranslationHtml
+import com.gitmob.app.ui.translation.TranslationMenuItem
 
 data class ConversationMenuItem(
     val label: String,
@@ -84,7 +82,7 @@ fun ConversationContentCard(
     } else {
         Modifier
     }
-    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
+    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 0.dp) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
@@ -106,12 +104,10 @@ fun ConversationContentCard(
                             softWrap = false,
                             modifier = authorClickModifier,
                         )
-                        if (isThreadAuthor) AssistChip(
-                            onClick = {},
+                        if (isThreadAuthor) StatusBadge(
                             label = { Text(stringResource(R.string.conversation_author), maxLines = 1, softWrap = false) },
                         )
-                        if (authorAssociation == CommentAuthorAssociation.OWNER) AssistChip(
-                            onClick = {},
+                        if (authorAssociation == CommentAuthorAssociation.OWNER) StatusBadge(
                             label = { Text(stringResource(R.string.conversation_owner), maxLines = 1, softWrap = false) },
                         )
                         if (editSummary.lastEditedAt != null) {
@@ -131,7 +127,7 @@ fun ConversationContentCard(
                     Text(createdAt.take(10), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Box {
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
+                    ActionIconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         TranslationMenuItem(TranslationTarget(url, bodyHtml.orEmpty(), true), { menuOpen = false })
                         if (url.isNotBlank()) DropdownMenuItem(

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -123,7 +124,7 @@ private fun LoginHero(returning: Boolean, modifier: Modifier = Modifier) {
 private fun LoginAuthMethods(enabled: Boolean, onDevice: () -> Unit, onPat: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onDevice, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            Button(onClick = onDevice, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
                 Icon(Icons.Default.Computer, contentDescription = null, modifier = Modifier.size(20.dp))
                 Text(stringResource(R.string.login_device_action), Modifier.padding(start = 8.dp), textAlign = TextAlign.Center)
             }
@@ -135,7 +136,7 @@ private fun LoginAuthMethods(enabled: Boolean, onDevice: () -> Unit, onPat: () -
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onPat, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            OutlinedButton(onClick = onPat, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
                 Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(20.dp))
                 Text(stringResource(R.string.login_pat_action), Modifier.padding(start = 8.dp), textAlign = TextAlign.Center)
             }

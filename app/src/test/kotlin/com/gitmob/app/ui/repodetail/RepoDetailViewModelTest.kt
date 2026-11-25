@@ -117,7 +117,7 @@ class RepoDetailViewModelTest {
         )
         coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
         val library = libraryRepositoryStub()
-        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, library, mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, library, mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("octo", "greetings")
         advanceUntilIdle()
         coVerify(exactly = 0) { library.recordVisit(any(), any(), any()) }
@@ -142,7 +142,7 @@ class RepoDetailViewModelTest {
         val pendingRefresh = CompletableDeferred<ApiResult<Unit>>()
         coEvery { library.refreshFavorite(any(), any(), any()) } coAnswers { pendingRefresh.await() }
         val errors = ErrorEventBus()
-        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), errors, mockk(), RepoTransferPendingStore(), accounts.session, library, mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), errors, mockk(), RepoTransferPendingStore(), accounts.session, library, mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         errors.eventsFor(accounts.session.epoch).test {
             vm.init("octo", "greetings")
             advanceUntilIdle()
@@ -175,7 +175,7 @@ class RepoDetailViewModelTest {
         val md = mockk<MarkdownRenderer>()
         every { md.renderToHtml(fakeMd) } returns fakeHtml
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), md, RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), md, RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("octo", "greetings")
         val loadedState = withTimeout(5_000) {
             vm.state.first { it.readmeHtml == fakeHtml }
@@ -196,7 +196,7 @@ class RepoDetailViewModelTest {
         coEvery { detailRepo.getReadme("a", "b", "main") } returns
                 ApiResult.Success(null)
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("a", "b")
         assertNotNull(vm.state.value.detail)
         assertNull(vm.state.value.readmeHtml)
@@ -213,7 +213,7 @@ class RepoDetailViewModelTest {
         coEvery { detailRepo.getReadme(any(), any(), any()) } returns
                 ApiResult.Failure(ApiError.Unknown("no"))
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("x", "y")
         assertTrue(vm.state.value.loadFailed)
         assertNull(vm.state.value.detail)
@@ -239,7 +239,7 @@ class RepoDetailViewModelTest {
         coEvery { starRepo.getListsContaining(any()) } returns ApiResult.Success(emptySet())
         val bus = RepoUpdateEventBus()
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("o", "n")
         assertFalse(vm.state.value.detail!!.viewerHasStarred)
         assertEquals(907, vm.state.value.detail!!.stargazerCount)
@@ -276,7 +276,7 @@ class RepoDetailViewModelTest {
         coEvery { details.getRepoDetail("o", "n") } returns ApiResult.Success(fakeDetail(viewerHasStarred = true))
         coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
         val bus = RepoUpdateEventBus()
-        val vm = RepoDetailViewModel(details, mockk(), listRepository(), makeFakeRenderer(), bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(details, mockk(), listRepository(), makeFakeRenderer(), bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("o", "n")
 
         bus.emit(RepoUpdateEvent.StarChanged("other", "n", false, 999))
@@ -299,7 +299,7 @@ class RepoDetailViewModelTest {
         val starRepo = mockk<StarRepository>()
         coEvery { starRepo.starRepo(any()) } returns ApiResult.Failure(ApiError.Forbidden)
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("o", "n")
         vm.toggleStar()
         // 失败时 Success 分支的 update 不执行，保持原值
@@ -322,7 +322,7 @@ class RepoDetailViewModelTest {
         every { md.renderToHtml("# dev") } returns "<h1>dev</h1>"
 
         val bus = RepoUpdateEventBus()
-        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), md, bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), md, bus, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("a", "b")
         withTimeout(5_000) {
             vm.state.first { it.readmeHtml == "<h1>main</h1>" }
@@ -350,7 +350,7 @@ class RepoDetailViewModelTest {
         coEvery { starRepo.getLists() } returns ApiResult.Success(emptyList())
         coEvery { starRepo.getListsContaining(any()) } returns ApiResult.Success(emptySet())
 
-        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val vm = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("c", "d")
         vm.toggleStar()
         vm.retry()
@@ -444,6 +444,7 @@ class RepoDetailViewModelTest {
         )
         return RepoDetailViewModel(
             repository, owners, mockk(relaxed = true), makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true),
+            savedStateHandle = SavedStateHandle(),
         ).apply {
             init("octo", "greetings")
             openManagement(RepoManagementAction.TRANSFER)
@@ -462,12 +463,12 @@ class RepoDetailViewModelTest {
             mark(PendingRepositoryTransfer("R_123", "octo", "greetings", "new-owner", "greetings"))
         }
 
-        val first = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val first = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         first.init("octo", "greetings")
         assertTrue(first.state.value.transferPending)
         first.viewModelScope.cancel()
 
-        val reopened = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        val reopened = RepoDetailViewModel(detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         reopened.init("octo", "greetings")
         assertTrue(reopened.state.value.transferPending)
         reopened.toggleStar()
@@ -487,7 +488,7 @@ class RepoDetailViewModelTest {
         }
         val vm = RepoDetailViewModel(details, mockk(relaxed = true), mockk(relaxed = true), makeFakeRenderer(),
             RepoUpdateEventBus(), ErrorEventBus(), mockk(), store, accounts.session,
-            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+            libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("octo", "greetings")
         advanceUntilIdle()
         val oldAddress = CompletableDeferred<ApiResult<RepoDetail>>()
@@ -543,6 +544,7 @@ class RepoDetailViewModelTest {
             accounts.session,
             library = libraryRepositoryStub(),
             documentRepository = mockk(relaxUnitFun = true),
+            savedStateHandle = SavedStateHandle(),
         )
         viewModel.init("octo", "greetings")
         advanceUntilIdle()
@@ -574,6 +576,7 @@ class RepoDetailViewModelTest {
         coEvery { starRepo.getListsContaining("R_123") } returns ApiResult.Success(setOf("L1"))
         val viewModel = RepoDetailViewModel(
             detailRepo, mockk(), starRepo, makeFakeRenderer(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true),
+            savedStateHandle = SavedStateHandle(),
         )
         viewModel.init("octo", "greetings")
         advanceUntilIdle()
@@ -1173,6 +1176,7 @@ class RepoDetailViewModelTest {
         coEvery { details.getReadme(any(), any(), any()) } returns ApiResult.Success(null)
         return RepoDetailViewModel(
             details, mockk(relaxed = true), stars, makeFakeRenderer(), RepoUpdateEventBus(), errors, mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true),
+            savedStateHandle = SavedStateHandle(),
         ).apply { init("octo", "greetings") }
     }
 
@@ -1185,7 +1189,7 @@ class RepoDetailViewModelTest {
         coEvery { detailRepo.getReadme("octo", "greetings", "main") } returns ApiResult.Success(readme)
         val renderer = mockk<MarkdownRenderer>()
         every { renderer.renderToHtml(fakeMd) } returns fakeHtml
-        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), renderer, updates, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), images)
+        val vm = RepoDetailViewModel(detailRepo, mockk(), mockk(), renderer, updates, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), images, savedStateHandle = SavedStateHandle())
         vm.init("octo", "greetings")
         val initial = withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
         advanceUntilIdle()
@@ -1213,7 +1217,7 @@ class RepoDetailViewModelTest {
         )
         val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(),
             RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
-            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+            libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("o", "r")
         assertEquals(ApiError.NetworkError, vm.state.value.readmeError)
         assertNotNull(vm.state.value.detail)
@@ -1239,7 +1243,7 @@ class RepoDetailViewModelTest {
         val updates = RepoUpdateEventBus()
         val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(),
             updates, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
-            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+            libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("o", "r")
         assertTrue(vm.state.value.isLoadingReadme)
         updates.emit(RepoUpdateEvent.BranchSwitched("o", "r", "dev"))
@@ -1262,7 +1266,7 @@ class RepoDetailViewModelTest {
         every { renderer.renderToHtml(fakeMd) } returns fakeHtml
         val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), renderer,
             RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
-            libraryRepositoryStub(), resources)
+            libraryRepositoryStub(), resources, savedStateHandle = SavedStateHandle())
         vm.init("o", "r")
         val initial = withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
         advanceUntilIdle()
@@ -1308,7 +1312,7 @@ class RepoDetailViewModelTest {
         every { renderer.renderToHtml("# Updated") } returns "<h1>Updated</h1>"
         val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), renderer,
             RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
-            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+            libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("o", "r")
         withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
         advanceUntilIdle()
@@ -1336,7 +1340,7 @@ class RepoDetailViewModelTest {
         every { renderer.renderToHtml(fakeMd) } returns fakeHtml
         val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), renderer,
             RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
-            libraryRepositoryStub(), resources)
+            libraryRepositoryStub(), resources, savedStateHandle = SavedStateHandle())
         vm.init("o", "r")
         val initial = withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
         advanceUntilIdle()
@@ -1367,7 +1371,7 @@ class RepoDetailViewModelTest {
         val updates = RepoUpdateEventBus()
         val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), renderer,
             updates, ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
-            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+            libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("o", "r")
         withTimeout(5_000) { vm.state.first { it.readmeHtml == fakeHtml } }
         advanceUntilIdle()
@@ -1397,7 +1401,7 @@ class RepoDetailViewModelTest {
         coEvery { details.getReadme("o", "r", "main") } returns ApiResult.Success(null)
         val vm = RepoDetailViewModel(details, mockk(), mockk(relaxed = true), makeFakeRenderer(),
             RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session,
-            libraryRepositoryStub(), mockk(relaxUnitFun = true))
+            libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         vm.init("o", "r")
         advanceUntilIdle()
         coEvery { details.getReadme("o", "r", "main") } coAnswers { kotlinx.coroutines.awaitCancellation() }

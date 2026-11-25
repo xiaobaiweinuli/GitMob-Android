@@ -134,8 +134,8 @@
     <string name="settings_palette_neutral_desc">降低彩度，更接近灰階介面</string>
     <string name="settings_palette_vibrant">鮮明</string>
     <string name="settings_palette_vibrant_desc">提高主色與輔助色的鮮豔程度</string>
-    <string name="settings_palette_expressive">表現力</string>
-    <string name="settings_palette_expressive_desc">使用更活潑、對比更明顯的色相組合</string>
+    <string name="settings_palette_expressive">表現力配色</string>
+    <string name="settings_palette_expressive_desc">使用更活潑的色相組合；僅改變配色，不控制元件的表現力樣式</string>
     <string name="settings_palette_rainbow">彩虹</string>
     <string name="settings_palette_rainbow_desc">生成更豐富的多色調色板</string>
     <string name="settings_palette_fruit_salad">果味</string>
@@ -165,6 +165,7 @@
     <string name="about_developer_sub">點選檢視 GitHub 主頁</string>
     <string name="about_section_project">專案</string>
     <string name="about_repo_label">GitHub 儲存庫</string>
+    <string name="about_license_label">授權條款</string>
     <string name="about_section_permissions">權限</string>
     <string name="about_auth_label">GitHub 授權管理</string>
     <string name="about_auth_sub">檢視、撤銷 GitMob 對你帳號的授權</string>
@@ -263,7 +264,6 @@
     <string name="repo_star_lists_summary">%1$s +%2$d</string>
     <string name="repo_star_lists_saved">星標清單已儲存</string>
     <string name="repo_fork">復刻</string>
-    <string name="repo_fork_accepted">復刻申請已受理，正在非同步建立</string>
     <string name="repo_actions">操作</string>
     <string name="repo_releases">發行版本</string>
     <string name="repo_contributors">貢獻者</string>
@@ -525,7 +525,6 @@
     <string name="pr_create_compare_footer">與其他人討論並查看此比較中的變更。</string>
     <string name="pr_create_submit">建立拉取請求</string>
     <string name="pr_create_draft">建立為草稿</string>
-    <string name="pr_merged">已合併</string>
     <string name="pr_close">關閉提取要求</string>
     <string name="pr_reopen">重新開啟提取要求</string>
     <string name="pr_mark_ready">標記為準備好審查</string>
@@ -763,9 +762,7 @@
     <string name="common_empty">暫無內容</string>
     <string name="repo_add_file">新增檔案</string>
     <string name="repo_file_path">檔案路徑</string>
-    <string name="repo_commit_message">提交說明</string>
     <string name="repo_file_content">檔案內容</string>
-    <string name="repo_file_content_placeholder">輸入檔案內容…</string>
     <string name="repo_delete_file_title">刪除檔案？</string>
     <string name="repo_delete_file_message">此操作會建立一個刪除該檔案的新提交。</string>
     <string name="repo_upload_files">上傳檔案</string>

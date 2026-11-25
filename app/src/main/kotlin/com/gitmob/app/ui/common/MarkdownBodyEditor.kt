@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
@@ -189,7 +188,7 @@ private fun MarkdownToolbar(enabled: Boolean, onAction: (MarkdownEditAction) -> 
 
 @Composable
 private fun MarkdownToolButton(icon: ImageVector, label: Int, enabled: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled) {
+    ActionIconButton(onClick = onClick, enabled = enabled) {
         Icon(icon, stringResource(label))
     }
 }

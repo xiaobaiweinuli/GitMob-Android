@@ -65,7 +65,7 @@ class RepoPullRequestCreateViewModelTest {
 
         viewModel.openHeadBranches()
         advanceUntilIdle()
-        viewModel.selectBranch(viewModel.state.value.branches.single())
+        viewModel.selectBranch(viewModel.state.value.branches.single(), sourcePage = RepoPullRequestCreatePage.SELECT_HEAD)
         advanceUntilIdle()
 
         assertEquals(true, viewModel.state.value.sameBranch)

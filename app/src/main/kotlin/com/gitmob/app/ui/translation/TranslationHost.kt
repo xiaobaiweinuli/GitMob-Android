@@ -1,13 +1,13 @@
 package com.gitmob.app.ui.translation
 
-import com.gitmob.app.ui.common.NavigationDocument
-
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,7 +28,10 @@ import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.translation.*
 import com.gitmob.app.ui.common.MarkdownViewportState
 import com.gitmob.app.ui.common.MarkdownLayoutMode
+import com.gitmob.app.ui.common.ActionStateContent
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.ui.common.NavigationDocument
 import com.gitmob.app.ui.common.RepoDocumentResources
 
 class TranslationController(val state: TranslationUiState, val viewModel: TranslationViewModel, val hint: (Int) -> Unit) {
@@ -44,23 +47,23 @@ fun TranslationHost(viewModel: TranslationViewModel = hiltViewModel(), content: 
     var hint by remember { mutableStateOf<Int?>(null) }
     var configure by remember { mutableStateOf<TranslationProvider?>(null) }
     CompositionLocalProvider(LocalTranslationController provides TranslationController(state, viewModel) { hint = it }) { content() }
-    if (state.optionsOpen && configure == null) ModalBottomSheet(onDismissRequest = viewModel::dismiss, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))) {
+    if (state.optionsOpen && configure == null) ModalBottomSheet(onDismissRequest = viewModel::dismiss, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)), containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Text(stringResource(R.string.translation_options), style = MaterialTheme.typography.titleLarge)
             TranslationPreferencesEditor(state.options, viewModel::options) { configure = it }
             state.notice?.let { Text(translationProblemText(it), color = MaterialTheme.colorScheme.error) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 state.selected?.takeIf { it.identity in state.entries }?.let { target ->
-                    TextButton(onClick = { viewModel.restore(target) }) { Text(stringResource(R.string.translation_restore)) }
+                    TextButton(onClick = { viewModel.restore(target) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.translation_restore)) }
                 }
-                Button(onClick = { viewModel.request() }) { Text(stringResource(R.string.translation_start)) }
+                Button(onClick = { viewModel.request() }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.translation_start)) }
             }
         }
     }
     configure?.let { provider ->
         TranslationCredentialsSheet(provider, state.configuration?.credentialsFor(provider) ?: TranslationCredentials(), state, state.options, viewModel) { configure = null }
     }
-    hint?.let { message -> AlertDialog(onDismissRequest = { hint = null }, text = { Text(stringResource(message)) }, confirmButton = { TextButton(onClick = { hint = null }) { Text(stringResource(R.string.common_confirm)) } }) }
+    hint?.let { message -> AlertDialog(onDismissRequest = { hint = null }, text = { Text(stringResource(message)) }, confirmButton = { TextButton(onClick = { hint = null }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_confirm)) } }) }
 }
 
 @Composable
@@ -94,6 +97,21 @@ fun translationProgressText(entry: TranslationEntry): String {
 }
 
 @Composable
+fun TranslationActionLabel(entry: TranslationEntry?) {
+    val running = entry?.running == true
+    val labelResource = when {
+        entry == null || entry.showOriginal -> R.string.translation_start
+        entry.problem != null || entry.displayProblem || entry.phase == TranslationPhase.CANCELLED || entry.completed < entry.total -> R.string.translation_partial
+        else -> R.string.translation_options
+    }
+    val label = if (running) translationProgressText(requireNotNull(entry)) else stringResource(labelResource)
+    ActionStateContent(
+        targetState = (if (running) 0 else labelResource) to label,
+        contentKey = { it.first },
+    ) { (_, text) -> Text(text) }
+}
+
+@Composable
 fun TranslationStatus(target: TranslationTarget, modifier: Modifier = Modifier, completedOnly: Boolean = false) {
     val controller = LocalTranslationController.current ?: return
     val entry = controller.state.entries[target.identity] ?: return
@@ -106,17 +124,17 @@ fun TranslationStatus(target: TranslationTarget, modifier: Modifier = Modifier, 
             entry.running -> Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                 Text(translationProgressText(entry), Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { controller.viewModel.cancel(target) }) { Text(stringResource(R.string.common_cancel)) }
+                TextButton(onClick = { controller.viewModel.cancel(target) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) }
             }
             entry.problem != null -> TranslationErrorRow(entry.problem, { controller.viewModel.retry(target) }, { controller.open(target) })
             entry.phase == TranslationPhase.CANCELLED || entry.completed < entry.total -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.translation_cancelled), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { controller.viewModel.retry(target) }) { Text(stringResource(R.string.common_retry)) }
-                TextButton(onClick = { controller.open(target) }) { Text(stringResource(R.string.translation_switch)) }
+                TextButton(onClick = { controller.viewModel.retry(target) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
+                TextButton(onClick = { controller.open(target) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.translation_switch)) }
             }
             else -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.translation_done, translationProviderName(entry.preferences.provider)), Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = { controller.open(target) }) { Text(stringResource(R.string.translation_options)) }
+                TextButton(onClick = { controller.open(target) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.translation_options)) }
             }
         }
     }

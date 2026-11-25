@@ -1,13 +1,14 @@
 package com.gitmob.app.ui.login
 
+import com.gitmob.app.ui.common.ActionStateContent
+import com.gitmob.app.ui.common.pressClickable
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.SystemClock
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
-import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,31 +17,33 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedSecureTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,12 +53,9 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.input.TextObfuscationMode
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.drop
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.core.net.toUri
@@ -66,7 +66,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.DeviceFlowState
 import com.gitmob.app.data.model.DeviceFlowStatus
+import com.gitmob.app.ui.common.ActionButtonContent
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 
 /** 选择页和设置页共用；PAT 只在 ViewModel 内存中，不写入保存状态或日志。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,8 +100,8 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
         sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         sheetGesturesEnabled = false,
         sheetMaxWidth = 640.dp,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.extraLarge.copy(bottomStart = androidx.compose.foundation.shape.CornerSize(0.dp), bottomEnd = androidx.compose.foundation.shape.CornerSize(0.dp)),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         properties = ModalBottomSheetProperties(securePolicy = if (kind == AuthSheet.PAT) SecureFlagPolicy.SecureOn else SecureFlagPolicy.Inherit),
     ) {
         Row(
@@ -111,7 +113,7 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = viewModel::cancelAuthorization) { Text(stringResource(R.string.common_cancel)) }
+            TextButton(onClick = viewModel::cancelAuthorization, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) }
         }
         Column(
             Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(20.dp),
@@ -133,6 +135,7 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
                     enabled = !state.isLoading,
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
                 )
                 state.operationErrorRes?.let { messageRes ->
                     Text(
@@ -141,9 +144,8 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
-                Button(onClick = viewModel::login, enabled = !state.isLoading, modifier = Modifier.fillMaxWidth()) {
-                    if (state.isLoading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else Text(stringResource(R.string.auth_add_account))
+                Button(onClick = viewModel::login, enabled = !state.isLoading, modifier = Modifier.fillMaxWidth(), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
+                    ActionButtonContent(busy = state.isLoading, label = stringResource(R.string.auth_add_account))
                 }
                 HorizontalDivider()
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -154,6 +156,7 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                                 openInBrowser(CLASSIC_PAT_URL, R.string.deep_link_browser_unavailable)
                             },
                             enabled = !state.isLoading,
+                            shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
                         ) { Text(stringResource(R.string.auth_create_classic_pat)) }
                     }
                     Text(stringResource(R.string.auth_create_classic_pat_help), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -189,19 +192,20 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                         val codeLabel = stringResource(R.string.auth_device_code)
                         val copyLabel = stringResource(R.string.auth_device_copy)
                         Card(
-                            shape = RoundedCornerShape(20.dp),
+                            shape = MaterialTheme.shapes.large,
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                         ) {
                             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(
-                                    text = if (copied) stringResource(R.string.auth_device_copied) else codeLabel,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                                )
+                                ActionStateContent(copied, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) { isCopied ->
+                                    Text(
+                                        text = if (isCopied) stringResource(R.string.auth_device_copied) else codeLabel,
+                                        style = MaterialTheme.typography.labelLarge,
+                                    )
+                                }
                                 Text(
                                     text = device.userCode,
                                     style = MaterialTheme.typography.headlineMedium.copy(fontFamily = FontFamily.Monospace),
-                                    modifier = Modifier.fillMaxWidth().clickable(
+                                    modifier = Modifier.fillMaxWidth().pressClickable(
                                         enabled = remainingSeconds > 0,
                                         role = Role.Button,
                                         onClickLabel = copyLabel,
@@ -218,6 +222,7 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                                     onClick = { openInBrowser(device.verificationUri, R.string.auth_browser_unavailable) },
                                     enabled = remainingSeconds > 0,
                                     modifier = Modifier.fillMaxWidth(),
+                                    shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding,
                                 ) { Text(stringResource(R.string.auth_open_browser)) }
                             }
                         }
@@ -233,7 +238,7 @@ internal fun AccountAuthSheet(viewModel: LoginViewModel) {
                     }
                     is DeviceFlowState.Failed -> {
                         Text(stringResource(state.operationErrorRes ?: R.string.error_request_failed), color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                        Button(onClick = viewModel::retryDeviceFlow, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.auth_device_restart)) }
+                        Button(onClick = viewModel::retryDeviceFlow, modifier = Modifier.fillMaxWidth(), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.auth_device_restart)) }
                     }
                     else -> {
                         Column(

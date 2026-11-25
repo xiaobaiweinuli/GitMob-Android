@@ -1,31 +1,34 @@
 package com.gitmob.app.ui.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.HistoryLimitResult
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.pressToggleable
 import com.gitmob.app.ui.library.*
 
 @Composable
@@ -85,7 +88,7 @@ internal fun AdvancedSettingsContent(
                                 summary = count.value?.let { stringResource(R.string.history_count, it) },
                                 icon = Icons.Default.Delete, contentColor = MaterialTheme.colorScheme.error,
                                 enabled = !clearBusy && (count.value?.let { it > 0 } == true), onClick = { showClear = true })
-                            if (count.failed) TextButton(onClick = retryCount, modifier = Modifier.padding(start = 56.dp)) { Text(stringResource(R.string.common_retry)) }
+                            if (count.failed) TextButton(onClick = retryCount, modifier = Modifier.padding(start = 56.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
                         }
                     }
                 }
@@ -99,9 +102,9 @@ internal fun AdvancedSettingsContent(
         val valid = value != null && value in 1..1000
         AlertDialog(onDismissRequest = { if (!limitBusy) showLimit = false }, title = { Text(stringResource(R.string.history_limit)) },
             text = { Column {
-                OutlinedTextField(limitText, { limitText = it }, singleLine = true, enabled = !limitBusy, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), isError = !valid, supportingText = { Text(stringResource(if (valid) R.string.history_limit_hint else R.string.library_limit_invalid)) })
+                OutlinedTextField(limitText, { limitText = it }, singleLine = true, enabled = !limitBusy, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), isError = !valid, supportingText = { Text(stringResource(if (valid) R.string.history_limit_hint else R.string.library_limit_invalid)) }, shape = MaterialTheme.shapes.medium)
             } },
-            dismissButton = { TextButton(onClick = { showLimit = false }, enabled = !limitBusy) { Text(stringResource(R.string.library_cancel)) } },
+            dismissButton = { TextButton(onClick = { showLimit = false }, enabled = !limitBusy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.library_cancel)) } },
             confirmButton = { Button(onClick = {
                 val target = value ?: return@Button
                 limit(target, false) { result ->
@@ -110,7 +113,7 @@ internal fun AdvancedSettingsContent(
                         is HistoryLimitResult.NeedsConfirmation -> { trimLimit = target; trimCount = result.count }
                     }
                 }
-            }, enabled = valid && !limitBusy) { Text(stringResource(R.string.library_save)) } },
+            }, enabled = valid && !limitBusy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { ActionButtonContent(busy = limitBusy, label = stringResource(R.string.library_save)) } },
         )
     }
     trimLimit?.let { target ->
@@ -135,7 +138,7 @@ internal fun AdvancedSettingsContent(
 @Composable
 internal fun AdvancedSwitch(title: String, summary: String?, icon: ImageVector, checked: Boolean, enabled: Boolean, change: (Boolean) -> Unit) {
     val haptic = LocalHapticFeedback.current
-    Row(Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Switch) {
+    Row(Modifier.fillMaxWidth().pressToggleable(value = checked, enabled = enabled, role = Role.Switch) {
         haptic.performHapticFeedback(HapticFeedbackType.ToggleOn)
         change(it)
     }.heightIn(min = 76.dp).padding(horizontal = 16.dp, vertical = 14.dp),

@@ -136,8 +136,8 @@
     <string name="settings_palette_neutral_desc">Lower chroma, closer to a grayscale interface</string>
     <string name="settings_palette_vibrant">Vibrant</string>
     <string name="settings_palette_vibrant_desc">More saturated primary and secondary colors</string>
-    <string name="settings_palette_expressive">Expressive</string>
-    <string name="settings_palette_expressive_desc">Livelier hue combinations with stronger contrast</string>
+    <string name="settings_palette_expressive">Expressive palette</string>
+    <string name="settings_palette_expressive_desc">Livelier hue combinations; changes colors only, not the expressive component style</string>
     <string name="settings_palette_rainbow">Rainbow</string>
     <string name="settings_palette_rainbow_desc">Generates a richer multi-color palette</string>
     <string name="settings_palette_fruit_salad">Fruit Salad</string>
@@ -167,6 +167,7 @@
     <string name="about_developer_sub">Tap to view GitHub profile</string>
     <string name="about_section_project">Project</string>
     <string name="about_repo_label">GitHub repository</string>
+    <string name="about_license_label">License</string>
     <string name="about_section_permissions">Permissions</string>
     <string name="about_auth_label">GitHub authorization</string>
     <string name="about_auth_sub">View or revoke GitMob\'s access to your account</string>
@@ -266,7 +267,6 @@
     <string name="repo_star_lists_summary">%1$s +%2$d</string>
     <string name="repo_star_lists_saved">Star lists saved</string>
     <string name="repo_fork">Fork</string>
-    <string name="repo_fork_accepted">Fork accepted and being created asynchronously</string>
     <string name="repo_actions">Actions</string>
     <string name="repo_releases">Releases</string>
     <string name="repo_contributors">Contributors</string>
@@ -534,7 +534,6 @@
     <string name="pr_create_compare_footer">Discuss with others and review the changes in this comparison.</string>
     <string name="pr_create_submit">Create pull request</string>
     <string name="pr_create_draft">Create as draft</string>
-    <string name="pr_merged">Merged</string>
     <string name="pr_close">Close pull request</string>
     <string name="pr_reopen">Reopen pull request</string>
     <string name="pr_mark_ready">Mark ready for review</string>
@@ -782,9 +781,7 @@
     <string name="common_empty">Nothing here</string>
     <string name="repo_add_file">Add file</string>
     <string name="repo_file_path">File path</string>
-    <string name="repo_commit_message">Commit message</string>
     <string name="repo_file_content">File content</string>
-    <string name="repo_file_content_placeholder">Enter file content…</string>
     <string name="repo_delete_file_title">Delete file?</string>
     <string name="repo_delete_file_message">This creates a new commit that deletes the file.</string>
     <string name="repo_upload_files">Upload files</string>

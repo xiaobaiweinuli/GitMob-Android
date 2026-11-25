@@ -21,6 +21,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import com.gitmob.app.R
 
 /** Shared title-slot input; the screen owns expansion and the ViewModel owns the submitted query. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RepositorySearchField(
     value: TextFieldValue,
@@ -33,7 +34,7 @@ fun RepositorySearchField(
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(Unit) {
+    LaunchedEffect(focusOnExpand) {
         if (!focusOnExpand) return@LaunchedEffect
         focusRequester.requestFocus()
         keyboard?.show()
@@ -49,11 +50,12 @@ fun RepositorySearchField(
         placeholder = { Text(placeholder, maxLines = 1) },
         singleLine = true,
         textStyle = MaterialTheme.typography.titleLarge,
-        colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent),
+        shape = TextFieldDefaults.roundedShape,
+        colors = TextFieldDefaults.tonalColors(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { submit() }),
         trailingIcon = if (value.text.isNotEmpty() || hasSubmittedQuery) {{
-            IconButton(onClick = {
+            ActionIconButton(onClick = {
                 onValueChange(TextFieldValue())
                 onSubmit("")
                 focusRequester.requestFocus()
@@ -71,11 +73,11 @@ fun RepositorySearchField(
 
 @Composable
 fun RepositorySearchButton(active: Boolean, onClick: () -> Unit) {
-    IconButton(
+    ActionIconButton(
         onClick = onClick,
         colors = IconButtonDefaults.iconButtonColors(
-            containerColor = if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-            contentColor = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+            containerColor = if (active) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         ),
     ) { Icon(Icons.Default.Search, stringResource(R.string.repo_list_search)) }
 }

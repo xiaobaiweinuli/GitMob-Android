@@ -1,19 +1,36 @@
 package com.gitmob.app.ui.repoissues
 
-import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.style.TextDecoration
+
+import androidx.compose.ui.text.withStyle
+
+import androidx.compose.ui.text.fromHtml
+
+import androidx.compose.animation.animateContentSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectableGroup
+import com.gitmob.app.ui.common.pressToggleable
+import com.gitmob.app.ui.common.pressSelectable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.fitInside
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.WindowInsetsRulers
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -21,27 +38,23 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.fromHtml
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.core.net.toUri
 import androidx.compose.ui.text.font.FontWeight
 import com.gitmob.app.ui.common.SoraTextField
 import com.gitmob.app.ui.common.SoraEditorState
-import androidx.compose.ui.layout.WindowInsetsRulers
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.*
-import com.gitmob.app.ui.common.MarkdownWebView
-import com.gitmob.app.ui.common.NavigationDocument
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.MarkdownBodyEditor
 import com.gitmob.app.ui.common.MarkdownEditorTab
 import com.gitmob.app.ui.common.MarkdownEditorUiState
+import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.ui.common.NavigationDocument
 import com.gitmob.app.ui.common.RepositoryContextTitle
 
 private enum class IssueMetadataSheet { LABELS, ASSIGNEES, MILESTONE }
@@ -74,10 +87,10 @@ fun RepoIssueEditorScreen(
                         onRepositoryClick = onRepositoryClick,
                     )
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    IconButton(onClick = { viewModel.save { onSaved(it.number) } }, enabled = state.repositoryId != null && !state.isLoading && !state.loadFailed && !state.isSaving) {
-                        if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.common_save))
+                    TextButton(onClick = { viewModel.save { onSaved(it.number) } }, enabled = state.repositoryId != null && !state.isLoading && !state.loadFailed && !state.isSaving, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
+                        ActionButtonContent(busy = state.isSaving, label = stringResource(R.string.common_save))
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -166,6 +179,7 @@ private fun IssueEditor(
                 label = { Text(stringResource(R.string.issue_editor_title_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                shape = MaterialTheme.shapes.medium,
             )
             MarkdownBodyEditor(
                 textState = bodyState,
@@ -176,7 +190,7 @@ private fun IssueEditor(
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MetadataChip(stringResource(R.string.issue_labels), selectedLabels.size) { openMetadata(IssueMetadataSheet.LABELS) }
                         MetadataChip(stringResource(R.string.issue_assignees), selectedAssignees.size) { openMetadata(IssueMetadataSheet.ASSIGNEES) }
-                        MetadataChip(stringResource(R.string.issue_milestone), value = milestones.firstOrNull { it.id == selectedMilestone }?.title ?: stringResource(R.string.issue_no_milestone)) { openMetadata(IssueMetadataSheet.MILESTONE) }
+                        MetadataChip(stringResource(R.string.issue_milestone), selected = selectedMilestone != null, value = milestones.firstOrNull { it.id == selectedMilestone }?.title ?: stringResource(R.string.issue_no_milestone)) { openMetadata(IssueMetadataSheet.MILESTONE) }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -202,7 +216,7 @@ private fun IssueEditor(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "form-title", contentType = "title") {
-                OutlinedTextField(title, onTitleChange, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(title, onTitleChange, label = { Text(stringResource(R.string.issue_editor_title_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium)
             }
             itemsIndexed(
                 template.fields,
@@ -231,6 +245,7 @@ private fun IssueEditor(
         ModalBottomSheet(
             onDismissRequest = { metadataSheet = null },
             sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Text(
@@ -241,34 +256,34 @@ private fun IssueEditor(
                     },
                     style = MaterialTheme.typography.titleLarge,
                 )
-                LazyColumn(Modifier.weight(1f, fill = false), contentPadding = PaddingValues(vertical = 12.dp)) {
+                LazyColumn(Modifier.weight(1f, fill = false).then(if (sheet == IssueMetadataSheet.MILESTONE) Modifier.selectableGroup() else Modifier), contentPadding = PaddingValues(vertical = 12.dp)) {
                     when (sheet) {
                         IssueMetadataSheet.LABELS -> items(labels, key = { "sheet-label-${it.id}" }) { label ->
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(label.id in draftLabels, { checked -> draftLabels = if (checked) draftLabels + label.id else draftLabels - label.id })
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressToggleable(label.id in draftLabels, role = Role.Checkbox, onValueChange = { checked -> draftLabels = if (checked) draftLabels + label.id else draftLabels - label.id }).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(label.id in draftLabels, onCheckedChange = null)
                                 Text(label.name)
                             }
                         }
                         IssueMetadataSheet.ASSIGNEES -> items(assignees, key = { "sheet-assignee-${it.login}" }) { user ->
-                            user.id?.let { id -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(id in draftAssignees, { checked -> draftAssignees = if (checked) draftAssignees + id else draftAssignees - id })
+                            user.id?.let { id -> Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressToggleable(id in draftAssignees, role = Role.Checkbox, onValueChange = { checked -> draftAssignees = if (checked) draftAssignees + id else draftAssignees - id }).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(id in draftAssignees, onCheckedChange = null)
                                 Text(user.login)
                             } }
                         }
                         IssueMetadataSheet.MILESTONE -> {
-                            item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(draftMilestone == null, { draftMilestone = null }); Text(stringResource(R.string.issue_no_milestone))
+                            item { Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressSelectable(draftMilestone == null, role = Role.RadioButton, onClick = { draftMilestone = null }).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(draftMilestone == null, onClick = null); Text(stringResource(R.string.issue_no_milestone))
                             } }
                             items(milestones, key = { "sheet-milestone-${it.id}" }) { milestone ->
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    RadioButton(draftMilestone == milestone.id, { draftMilestone = milestone.id }); Text(milestone.title)
+                                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressSelectable(draftMilestone == milestone.id, role = Role.RadioButton, onClick = { draftMilestone = milestone.id }).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(draftMilestone == milestone.id, onClick = null); Text(milestone.title)
                                 }
                             }
                         }
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.End) {
-                    Button(onClick = { onMetadataConfirmed(draftLabels, draftAssignees, draftMilestone); metadataSheet = null }) { Text(stringResource(R.string.common_done)) }
+                    Button(onClick = { onMetadataConfirmed(draftLabels, draftAssignees, draftMilestone); metadataSheet = null }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_done)) }
                 }
             }
         }
@@ -369,6 +384,7 @@ private fun IssueFormTextField(
             placeholder = placeholder?.let { { Text(it) } },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
         )
         IssueFormMarkdown(descriptionHtml, onLinkClick, navigationDocument)
     }
@@ -383,16 +399,18 @@ private fun IssueFormDropdown(
     onSelected: (Set<Int>) -> Unit,
     navigationDocument: NavigationDocument?,
 ) {
-    Column {
+    Column(if (field.multiple) Modifier else Modifier.selectableGroup()) {
         IssueFormLabel(AnnotatedString(field.label), field.required, FontWeight.SemiBold)
         IssueFormMarkdown(descriptionHtml, onLinkClick, navigationDocument)
         field.options.forEachIndexed { index, option ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (field.multiple) {
-                    Checkbox(index in selected, { onSelected(if (it) selected + index else selected - index) })
-                } else {
-                    RadioButton(index in selected, { onSelected(setOf(index)) })
-                }
+            val selection = if (field.multiple) {
+                Modifier.pressToggleable(index in selected, role = Role.Checkbox) { onSelected(if (it) selected + index else selected - index) }
+            } else {
+                Modifier.pressSelectable(index in selected, role = Role.RadioButton) { onSelected(setOf(index)) }
+            }
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).then(selection).padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (field.multiple) Checkbox(index in selected, onCheckedChange = null)
+                else RadioButton(index in selected, onClick = null)
                 Text(option)
             }
         }
@@ -430,19 +448,28 @@ private fun IssueFormCheckboxes(
                     },
                 ).let { it.subSequence(0, it.text.trimEnd().length) }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(index in selected, { onSelected(if (it) selected + index else selected - index) })
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressToggleable(index in selected, role = Role.Checkbox) { onSelected(if (it) selected + index else selected - index) }.padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(index in selected, onCheckedChange = null)
                 IssueFormLabel(label, option.required)
             }
         }
     }
 }
 
-@Composable private fun MetadataChip(label: String, count: Int? = null, value: String? = null, onClick: () -> Unit) {
+@Composable
+private fun MetadataChip(
+    label: String,
+    count: Int? = null,
+    value: String? = null,
+    selected: Boolean = count != null && count > 0,
+    onClick: () -> Unit,
+) {
     FilterChip(
-        selected = false,
+        selected = selected,
+        shapes = FilterChipDefaults.shapes(),
+        modifier = Modifier.animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec(), alignment = Alignment.CenterStart),
         onClick = onClick,
         label = { Text(if (value != null) "$label · $value" else "$label · ${count ?: 0}") },
     )
 }
-@Composable private fun EditorRetry(modifier: Modifier, retry: () -> Unit) { Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = retry) { Text(stringResource(R.string.common_retry)) } } }
+@Composable private fun EditorRetry(modifier: Modifier, retry: () -> Unit) { Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } } }

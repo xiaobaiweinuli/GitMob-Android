@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,6 +30,8 @@ import com.gitmob.app.BuildConfig
 import com.gitmob.app.R
 import com.gitmob.app.core.auth.AccountEpoch
 import com.gitmob.app.data.model.AppUpdate
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionProgressIcon
 import com.gitmob.app.ui.common.MarkdownWebView
 import com.gitmob.app.ui.settings.AdvancedSwitch
 import com.gitmob.app.ui.settings.SettingsNavigationRow
@@ -69,9 +74,11 @@ internal fun AppUpdateSettingsContent(
             icon = Icons.Default.SystemUpdateAlt,
             onClick = onCheck,
             // 自动检查运行时仍允许手动加入请求，以便获得明确反馈。
-            trailingContent = if (state.checking) {
-                { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) }
-            } else null,
+            trailingContent = {
+                ActionProgressIcon(state.checking) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                }
+            },
         )
     }
 }
@@ -117,10 +124,10 @@ internal fun AppUpdateDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onIgnore, enabled = !busy) { Text(stringResource(R.string.app_update_ignore)) }
+            TextButton(onClick = onIgnore, enabled = !busy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.app_update_ignore)) }
         },
         confirmButton = {
-            TextButton(onClick = onDownload, enabled = !busy) { Text(stringResource(R.string.app_update_download)) }
+            TextButton(onClick = onDownload, enabled = !busy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = busy, label = stringResource(R.string.app_update_download)) }
         },
     )
 }

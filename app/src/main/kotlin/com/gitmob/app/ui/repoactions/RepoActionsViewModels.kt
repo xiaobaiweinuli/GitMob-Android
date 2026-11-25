@@ -49,6 +49,7 @@ data class RepoActionsUiState(
     val repositoryActionsNeedsConfirmation: Boolean = false,
     val dispatchRejectedByRepository: Boolean = false,
     val isDispatching: Boolean = false,
+    val updatingWorkflowIds: Set<Long> = emptySet(),
     val pendingDeleteRun: RepoWorkflowRun? = null,
     val deletingRunIds: Set<Long> = emptySet(),
 ) {
@@ -244,6 +245,7 @@ class RepoActionsViewModel @Inject constructor(
     }
 
     fun loadDispatchInputs(ref: String) {
+        if (_state.value.isDispatching) return
         val workflow = _state.value.dispatchWorkflow ?: return
         val normalizedRef = ref.trim()
         if (normalizedRef.isEmpty() || !accountEpoch.isCurrent) return
@@ -297,18 +299,25 @@ class RepoActionsViewModel @Inject constructor(
     }
 
     fun setWorkflowEnabled(workflow: RepoWorkflow, enabled: Boolean) {
-        if (!_state.value.capabilities.canPush || !accountEpoch.isCurrent) return
+        val state = _state.value
+        if (!state.capabilities.canPush || workflow.id in state.updatingWorkflowIds || !accountEpoch.isCurrent) return
         val generation = repositoryGeneration
+        _state.update { it.copy(updatingWorkflowIds = it.updatingWorkflowIds + workflow.id) }
         viewModelScope.launch {
-            val result = repository.enableWorkflow(owner, name, workflow.id, enabled)
-            if (!isCurrentRepository(generation)) return@launch
-            when (result) {
-                is ApiResult.Success -> _state.update { it.copy(workflows = it.workflows.map { value -> if (value.id == workflow.id) value.copy(state = if (enabled) "active" else "disabled_manually") else value }) }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            try {
+                val result = repository.enableWorkflow(owner, name, workflow.id, enabled)
+                if (!isCurrentRepository(generation)) return@launch
+                when (result) {
+                    is ApiResult.Success -> _state.update { it.copy(workflows = it.workflows.map { value -> if (value.id == workflow.id) value.copy(state = if (enabled) "active" else "disabled_manually") else value }) }
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                }
+            } finally {
+                if (isCurrentRepository(generation)) {
+                    _state.update { it.copy(updatingWorkflowIds = it.updatingWorkflowIds - workflow.id) }
+                }
             }
         }
     }
-
     fun requestDelete(run: RepoWorkflowRun) {
         if (!_state.value.capabilities.canDeleteActionRuns || run.id in _state.value.deletingRunIds) return
         if (run.status != "completed") {

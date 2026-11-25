@@ -38,6 +38,7 @@ data class StarsUiState(
     val isCreatingList: Boolean = false,
     val editingList: UserListSummary? = null,
     val isSavingListEdit: Boolean = false,
+    val unstarringRepoIds: Set<String> = emptySet(),
     // "添加到列表"弹窗状态
     val addToListTarget: StarredRepo? = null,
     val addToListSelection: Set<String> = emptySet(),
@@ -166,74 +167,86 @@ class StarsViewModel @Inject constructor(
 
     // ---- 编辑 / 删除列表 ----
 
-    fun openEditListDialog(list: UserListSummary) = _state.update { it.copy(editingList = list) }
-    fun dismissEditListDialog() = _state.update { it.copy(editingList = null) }
+    fun openEditListDialog(list: UserListSummary) { if (!_state.value.isSavingListEdit) _state.update { it.copy(editingList = list) } }
+    fun dismissEditListDialog() { if (!_state.value.isSavingListEdit) _state.update { it.copy(editingList = null) } }
 
     fun saveListEdit(name: String, description: String?, isPrivate: Boolean) {
         val editing = _state.value.editingList ?: return
+        if (_state.value.isSavingListEdit) return
+        _state.update { it.copy(isSavingListEdit = true) }
         viewModelScope.launch {
-            _state.update { it.copy(isSavingListEdit = true) }
-            when (val result = starRepository.updateList(editing.id, name, description, isPrivate)) {
-                is ApiResult.Success -> _state.update { state ->
-                    state.copy(
-                        lists = state.lists.map { if (it.id == editing.id) result.data else it },
-                        isSavingListEdit = false,
-                        editingList = null,
-                    )
+            try {
+                when (val result = starRepository.updateList(editing.id, name, description, isPrivate)) {
+                    is ApiResult.Success -> _state.update { state ->
+                        state.copy(
+                            lists = state.lists.map { if (it.id == editing.id) result.data else it },
+                            editingList = null,
+                        )
+                    }
+                    is ApiResult.Failure -> {
+                        errorEventBus.emit(result.error)
+                    }
                 }
-                is ApiResult.Failure -> {
-                    errorEventBus.emit(result.error)
-                    _state.update { it.copy(isSavingListEdit = false) }
-                }
+            } finally {
+                _state.update { it.copy(isSavingListEdit = false) }
             }
         }
     }
 
     fun deleteList(listId: String) {
+        if (_state.value.isSavingListEdit) return
+        _state.update { it.copy(isSavingListEdit = true) }
         viewModelScope.launch {
-            _state.update { it.copy(isSavingListEdit = true) }
-            when (val result = starRepository.deleteList(listId)) {
-                is ApiResult.Success -> _state.update { state ->
-                    val stillOnDeletedList = (state.selectedFilter as? StarFilter.ByList)?.list?.id == listId
-                    state.copy(
-                        lists = state.lists.filterNot { it.id == listId },
-                        isSavingListEdit = false,
-                        editingList = null,
-                        selectedFilter = if (stillOnDeletedList) StarFilter.All else state.selectedFilter,
-                    )
+            try {
+                when (val result = starRepository.deleteList(listId)) {
+                    is ApiResult.Success -> _state.update { state ->
+                        val stillOnDeletedList = (state.selectedFilter as? StarFilter.ByList)?.list?.id == listId
+                        state.copy(
+                            lists = state.lists.filterNot { it.id == listId },
+                            editingList = null,
+                            selectedFilter = if (stillOnDeletedList) StarFilter.All else state.selectedFilter,
+                        )
+                    }
+                    is ApiResult.Failure -> {
+                        errorEventBus.emit(result.error)
+                    }
                 }
-                is ApiResult.Failure -> {
-                    errorEventBus.emit(result.error)
-                    _state.update { it.copy(isSavingListEdit = false) }
-                }
+                if ((_state.value.selectedFilter as? StarFilter.ByList)?.list?.id == null) loadRepos()
+            } finally {
+                _state.update { it.copy(isSavingListEdit = false) }
             }
-            if ((_state.value.selectedFilter as? StarFilter.ByList)?.list?.id == null) loadRepos()
         }
     }
 
     // ---- 取消星标 ----
 
     fun unstarRepo(repo: StarredRepo) {
+        if (repo.id in _state.value.unstarringRepoIds) return
+        _state.update { it.copy(unstarringRepoIds = it.unstarringRepoIds + repo.id) }
         viewModelScope.launch {
-            when (val result = starRepository.unstarRepo(repo.id)) {
-                is ApiResult.Success -> {
-                    _state.update { state ->
-                        state.copy(repos = if (result.data.viewerHasStarred) {
-                            state.repos.map { if (it.id == repo.id) it.copy(stargazerCount = result.data.stargazerCount) else it }
-                        } else {
-                            state.repos.filterNot { it.id == repo.id }
-                        })
+            try {
+                when (val result = starRepository.unstarRepo(repo.id)) {
+                    is ApiResult.Success -> {
+                        _state.update { state ->
+                            state.copy(repos = if (result.data.viewerHasStarred) {
+                                state.repos.map { if (it.id == repo.id) it.copy(stargazerCount = result.data.stargazerCount) else it }
+                            } else {
+                                state.repos.filterNot { it.id == repo.id }
+                            })
+                        }
+                        repoUpdateEventBus.emit(
+                            RepoUpdateEvent.StarChanged(
+                                owner = repo.ownerLogin,
+                                name = repo.name,
+                                isStarred = result.data.viewerHasStarred,
+                                stargazerCount = result.data.stargazerCount,
+                            ),
+                        )
                     }
-                    repoUpdateEventBus.emit(
-                        RepoUpdateEvent.StarChanged(
-                            owner = repo.ownerLogin,
-                            name = repo.name,
-                            isStarred = result.data.viewerHasStarred,
-                            stargazerCount = result.data.stargazerCount,
-                        ),
-                    )
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
                 }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            } finally {
+                _state.update { it.copy(unstarringRepoIds = it.unstarringRepoIds - repo.id) }
             }
         }
     }

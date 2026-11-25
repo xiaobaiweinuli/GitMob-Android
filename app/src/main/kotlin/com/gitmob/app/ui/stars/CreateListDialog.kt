@@ -1,10 +1,14 @@
 package com.gitmob.app.ui.stars
 
+import com.gitmob.app.ui.common.pressToggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -20,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
+import com.gitmob.app.ui.common.ActionButtonContent
 
 @Composable
 fun CreateListDialog(
@@ -42,6 +47,7 @@ fun CreateListDialog(
                     placeholder = { Text(stringResource(R.string.stars_list_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
                 )
                 OutlinedTextField(
                     value = description,
@@ -50,14 +56,17 @@ fun CreateListDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 12.dp),
+                    shape = MaterialTheme.shapes.medium,
                 )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp),
+                        .padding(top = 12.dp)
+                        .heightIn(min = 48.dp)
+                        .pressToggleable(isPrivate, enabled = !isSaving, role = Role.Checkbox) { isPrivate = it },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Checkbox(checked = isPrivate, onCheckedChange = { isPrivate = it })
+                    Checkbox(checked = isPrivate, onCheckedChange = null, enabled = !isSaving)
                     Column {
                         Text(stringResource(R.string.stars_list_private))
                         Text(stringResource(R.string.stars_list_private_desc), style = MaterialTheme.typography.bodySmall)
@@ -69,12 +78,13 @@ fun CreateListDialog(
             TextButton(
                 onClick = { onConfirm(name.trim(), description.trim().ifBlank { null }, isPrivate) },
                 enabled = name.isNotBlank() && !isSaving,
+                shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
             ) {
-                Text(stringResource(R.string.common_confirm))
+                ActionButtonContent(busy = isSaving, label = stringResource(R.string.common_confirm))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            TextButton(onClick = onDismiss, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

@@ -16,6 +16,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.HistoryItem
 import com.gitmob.app.data.model.LibraryContent
+import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.GistCard
 import com.gitmob.app.ui.common.RepoCard
 import java.text.DateFormat
@@ -34,7 +35,7 @@ fun HistoryScreen(accountLibrary: AccountLibraryViewModel, onBack: () -> Unit, o
     var remove by remember { mutableStateOf<HistoryItem?>(null) }
     var clear by remember { mutableStateOf(false) }
     LibraryScaffold(stringResource(R.string.history_title), onBack, actions = {
-        IconButton(onClick = { clear = true }, enabled = settings.value?.historyEnabled == true && state.history.isNotEmpty() && !busy && !clearing) {
+        ActionIconButton(onClick = { clear = true }, enabled = settings.value?.historyEnabled == true && state.history.isNotEmpty() && !busy && !clearing) {
             Icon(Icons.Default.Delete, stringResource(R.string.history_clear), tint = MaterialTheme.colorScheme.error)
         }
     }) { padding ->
@@ -42,7 +43,7 @@ fun HistoryScreen(accountLibrary: AccountLibraryViewModel, onBack: () -> Unit, o
             when {
                 settings.value?.historyEnabled == false -> LibraryEmpty(stringResource(R.string.library_disabled))
                 state.history.isEmpty() -> LibraryEmpty(stringResource(R.string.library_no_history))
-                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(state.history, key = { it.key }) { item ->
                         Column(Modifier.animateItem()) {
                             item.visitedAt.let { timestamp ->
@@ -51,7 +52,7 @@ fun HistoryScreen(accountLibrary: AccountLibraryViewModel, onBack: () -> Unit, o
                                     modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
                             }
                             val deleteAction: @Composable () -> Unit = {
-                                IconButton(onClick = { remove = item }, enabled = !busy, modifier = Modifier.size(48.dp)) {
+                                ActionIconButton(onClick = { remove = item }, enabled = !busy, modifier = Modifier.size(48.dp)) {
                                     Icon(Icons.Default.Delete, stringResource(R.string.history_delete_description, item.title), tint = MaterialTheme.colorScheme.error)
                                 }
                             }

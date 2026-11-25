@@ -1,6 +1,5 @@
 package com.gitmob.app.ui.common
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,7 +48,7 @@ fun IconStat(
 ) {
     Column(
         modifier = modifier.then(
-            if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
+            if (onClick != null) Modifier.pressClickable(onClick = onClick) else Modifier,
         ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -115,17 +114,19 @@ fun ProfileStatsRow(
     stats: List<StatItem>,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-    ) {
-        stats.forEach { stat ->
-            IconStat(
-                icon = stat.icon,
-                count = stat.count,
-                label = stat.label,
-                onClick = stat.onClick,
-            )
+    EntryGroup(modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            stats.forEach { stat ->
+                IconStat(
+                    icon = stat.icon,
+                    count = stat.count,
+                    label = stat.label,
+                    onClick = stat.onClick,
+                )
+            }
         }
     }
 }
@@ -161,6 +162,8 @@ fun StatusChip(
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
         )
     }

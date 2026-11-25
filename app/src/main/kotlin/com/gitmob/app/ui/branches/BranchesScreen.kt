@@ -1,10 +1,9 @@
 package com.gitmob.app.ui.branches
 
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -27,11 +26,10 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -51,9 +49,15 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
-import com.gitmob.app.data.model.RepoBranch
 import com.gitmob.app.data.model.BranchCreationSpec
+import com.gitmob.app.data.model.RepoBranch
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import com.gitmob.app.ui.common.RepositoryContextTitle
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
 
 /**
  * 合并后的"分支"页面：整行点击 = 轻量切换当前分支（能直接返回上一页）；
@@ -94,7 +98,7 @@ fun BranchesScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -103,7 +107,7 @@ fun BranchesScreen(
                 },
                 actions = {
                     if (canPush) {
-                        IconButton(onClick = { createDialogOpen = true }) {
+                        ActionIconButton(onClick = { createDialogOpen = true }) {
                             Icon(
                                 Icons.Default.Add,
                                 contentDescription = stringResource(R.string.branches_create),
@@ -140,12 +144,13 @@ fun BranchesScreen(
                         Button(
                             onClick = viewModel::retry,
                             modifier = Modifier.padding(top = 12.dp),
+                            shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding,
                         ) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
                 else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(state.branches) { branch ->
+                    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(state.branches, key = { it.id }) { branch ->
                             val canRename = canPush && (!branch.isDefault || canManageBranchProtection)
                             val canSetDefault = canManageBranchProtection && !branch.isDefault
                             val canDelete = canPush && !branch.isDefault
@@ -215,6 +220,7 @@ fun BranchesScreen(
                     TextButton(
                         onClick = { selectedCreationSpec = BranchCreationSpec.FromExisting(selectedRef) },
                         modifier = Modifier.fillMaxWidth(),
+                        shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
                     ) {
                         Column(Modifier.fillMaxWidth()) {
                             Text(stringResource(R.string.branches_create_from_existing_title))
@@ -228,6 +234,7 @@ fun BranchesScreen(
                     TextButton(
                         onClick = { selectedCreationSpec = BranchCreationSpec.Empty },
                         modifier = Modifier.fillMaxWidth(),
+                        shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
                     ) {
                         Column(Modifier.fillMaxWidth()) {
                             Text(stringResource(R.string.branches_create_empty_title))
@@ -242,7 +249,7 @@ fun BranchesScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { createDialogOpen = false }) {
+                TextButton(onClick = { createDialogOpen = false }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },
@@ -298,17 +305,26 @@ private fun BranchRow(
             title = { Text(stringResource(R.string.branches_delete_branch_title, branch.name)) },
             text = { Text(stringResource(R.string.common_cannot_be_undone)) },
             confirmButton = {
-                Text(
-                    stringResource(R.string.common_delete),
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.clickable {
+                TextButton(
+                    onClick = {
                         confirmingDelete = false
                         onDelete()
-                    }.padding(12.dp),
-                )
+                    },
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = ButtonDefaults.TextButtonContentPadding,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text(stringResource(R.string.common_delete))
+                }
             },
             dismissButton = {
-                Text(stringResource(R.string.common_cancel), modifier = Modifier.clickable { confirmingDelete = false }.padding(12.dp))
+                TextButton(
+                    onClick = { confirmingDelete = false },
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = ButtonDefaults.TextButtonContentPadding,
+                ) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             },
         )
     }
@@ -316,7 +332,8 @@ private fun BranchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .informationItem()
+            .pressClickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -341,7 +358,7 @@ private fun BranchRow(
         }
         if (showOverflowMenu) {
             Box {
-                IconButton(onClick = { menuExpanded = true }) {
+                ActionIconButton(onClick = { menuExpanded = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.branches_more_actions))
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -420,6 +437,7 @@ private fun BranchNameDialog(
                     label = { Text(stringResource(R.string.branches_name)) },
                     singleLine = true,
                     enabled = !isSubmitting,
+                    shape = MaterialTheme.shapes.medium,
                 )
             }
         },
@@ -430,13 +448,13 @@ private fun BranchNameDialog(
                     onConfirm(normalized) { success -> if (!success) isSubmitting = false }
                 },
                 enabled = normalized.isNotEmpty() && normalized != initialValue && !isSubmitting,
+                shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding,
             ) {
-                if (isSubmitting) CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp)
-                else Text(confirmLabel)
+                ActionButtonContent(busy = isSubmitting, label = confirmLabel)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSubmitting) {
+            TextButton(onClick = onDismiss, enabled = !isSubmitting, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                 Text(stringResource(R.string.common_cancel))
             }
         },

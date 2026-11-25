@@ -12,27 +12,28 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
 import com.gitmob.app.data.model.ConversationEdit
-import androidx.compose.ui.res.stringResource
 
 data class ConversationEditHistoryUiState(
     val targetNodeId: String? = null,
@@ -64,11 +65,12 @@ fun ConversationEditHistorySheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         if (selectedEdit != null) {
             Column(Modifier.fillMaxWidth().fillMaxHeight().padding(bottom = 24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onClearSelected) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) }
+                    ActionIconButton(onClick = onClearSelected) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) }
                     Text(stringResource(R.string.conversation_edit_history), style = MaterialTheme.typography.titleLarge)
                 }
                 Text(selectedEdit.editedAt.take(19), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
@@ -91,11 +93,11 @@ fun ConversationEditHistorySheet(
             Text(stringResource(R.string.conversation_edit_history), style = MaterialTheme.typography.titleLarge)
             when {
                 isLoading && edits.isEmpty() -> Box(Modifier.fillMaxWidth().heightIn(min = 180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                loadFailed && edits.isEmpty() -> Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(stringResource(R.string.common_load_failed)); Button(onClick = onRetry) { Text(stringResource(R.string.common_retry)) } }
+                loadFailed && edits.isEmpty() -> Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(stringResource(R.string.common_load_failed)); Button(onClick = onRetry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } }
                 edits.isEmpty() -> Text(stringResource(R.string.conversation_no_edit_diff), Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> LazyColumn(contentPadding = PaddingValues(vertical = 12.dp), modifier = Modifier.heightIn(max = 560.dp)) {
                     items(edits, key = { it.id }) { edit ->
-                        TextButton(onClick = { onSelect(edit) }, modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { onSelect(edit) }, modifier = Modifier.fillMaxWidth(), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
                                 Text(edit.editor?.login ?: stringResource(R.string.common_deleted_user))
                                 Text(edit.editedAt.take(19), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

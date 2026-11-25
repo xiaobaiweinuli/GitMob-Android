@@ -1,5 +1,7 @@
 package com.gitmob.app.data.repository
 
+import android.content.res.AssetFileDescriptor
+import com.gitmob.app.testutil.asAssetInputStream
 import android.content.ContentResolver
 import android.database.MatrixCursor
 import android.net.Uri
@@ -164,7 +166,9 @@ class RepoReleaseRepositoryTest {
     private fun attachment(bytes: ByteArray = byteArrayOf(0, 1, 2, 127, -1)) {
         every { resolver.query(uri, any(), null, null, null) } answers { MatrixCursor(arrayOf(OpenableColumns.DISPLAY_NAME)).apply { addRow(arrayOf("release asset+#.zip")) } }
         every { resolver.getType(uri) } returns "application/zip"
-        every { resolver.openInputStream(uri) } answers { ByteArrayInputStream(bytes) }
+        val descriptor = mockk<AssetFileDescriptor>(relaxed = true)
+        every { resolver.openAssetFileDescriptor(uri, "r", any()) } returns descriptor
+        every { descriptor.createInputStream() } answers { ByteArrayInputStream(bytes).asAssetInputStream() }
     }
 
     @Test fun uploadUsesReturnedUrlRawBinaryLengthAndExistingAuthentication() = runTest(accounts.context) {

@@ -2,6 +2,7 @@ package com.gitmob.app.ui.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -12,8 +13,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.Density
 import com.materialkolor.PaletteStyle
-import com.materialkolor.material3.dynamicColorScheme
 import com.materialkolor.dynamiccolor.ColorSpec
+import com.materialkolor.material3.dynamicColorScheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -137,6 +138,42 @@ class GitMobThemeTest {
         composeRule.runOnIdle {
             assertEquals(1.6f, observed.density, 0.0001f)
             assertEquals(1.3f, observed.fontScale, 0.0001f)
+        }
+    }
+
+    @Test
+    fun `switching palette changes colors while retaining expressive motion`() {
+        var preference by mutableStateOf(ThemePreference(mode = ThemeMode.LIGHT, useDynamicColor = false))
+        lateinit var colors: ColorScheme
+        lateinit var motion: MotionScheme
+        composeRule.setContent {
+            GitMobTheme(preference) {
+                val currentColors = MaterialTheme.colorScheme
+                val currentMotion = MaterialTheme.motionScheme
+                SideEffect {
+                    colors = currentColors
+                    motion = currentMotion
+                }
+            }
+        }
+        lateinit var initialColors: ColorScheme
+        lateinit var initialMotion: MotionScheme
+        composeRule.runOnIdle {
+            initialColors = colors
+            initialMotion = motion
+            preference = preference.copy(paletteStyle = PaletteStyle.Expressive)
+        }
+        composeRule.runOnIdle {
+            assertSame(initialMotion, motion)
+            assertFalse(initialColors.toString() == colors.toString())
+            val expected = dynamicColorScheme(
+                seedColor = Coral,
+                isDark = false,
+                isAmoled = false,
+                style = PaletteStyle.Expressive,
+                specVersion = preference.colorSpec,
+            )
+            assertEquals(expected.toString(), colors.toString())
         }
     }
 }

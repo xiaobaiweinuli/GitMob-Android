@@ -1,18 +1,18 @@
 package com.gitmob.app.ui.search
 
 import android.net.Uri
-import androidx.activity.compose.LocalActivity
-import com.gitmob.app.navigation.tryOpenBrowser
 import android.text.format.DateUtils
+import androidx.activity.compose.LocalActivity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -32,16 +32,19 @@ import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.displayMessageRes
 import com.gitmob.app.data.model.*
+import com.gitmob.app.navigation.tryOpenBrowser
 import com.gitmob.app.ui.common.IssueStateIcon
 import com.gitmob.app.ui.common.PullRequestStateIcon
 import com.gitmob.app.ui.common.RepoCard
+import com.gitmob.app.ui.common.informationItem
 import com.gitmob.app.ui.common.issueStateVisual
+import com.gitmob.app.ui.common.pressClickable
 import com.gitmob.app.ui.common.pullRequestStateVisual
 import com.gitmob.app.ui.icons.Octicon
 import com.gitmob.app.ui.icons.OcticonName
 import com.gitmob.app.ui.work.WorkDiscussionRow
-import java.time.Instant
 import java.text.NumberFormat
+import java.time.Instant
 
 class SearchResultActions(
     val repository: (String, String) -> Unit,
@@ -74,7 +77,7 @@ internal val SearchCategory.icon: OcticonName get() = when (this) {
 
 @Composable
 internal fun SearchCategoryRow(category: SearchCategory, query: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 62.dp)
+    Row(Modifier.fillMaxWidth().pressClickable(onClick = onClick).heightIn(min = 62.dp)
         .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Octicon(category.icon, null, size = 24.dp)
@@ -104,13 +107,14 @@ internal fun SearchResult(item: SearchItem, actions: SearchResultActions) {
         is SearchItem.Repository -> RepoCard(item.repo,
             onClick = { actions.repository(item.repo.ownerLogin, item.repo.name) },
             onForkSourceClick = actions.repository, onHomepageClick = actions.homepage,
-            showOwner = true, modifier = Modifier.padding(bottom = 12.dp))
+            showOwner = true, modifier = Modifier.padding(bottom = 10.dp))
         is SearchItem.Code -> CodeResult(item, actions)
         is SearchItem.Work -> WorkResult(item.item) { actions.work(item.item) }
         is SearchItem.Account -> AccountResult(item) { actions.account(item.login) }
         is SearchItem.Discussion -> {
-            WorkDiscussionRow(item.item, onClick = { actions.discussion(item.item) }, horizontalPadding = 0.dp)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Box(Modifier.padding(bottom = 10.dp)) {
+                WorkDiscussionRow(item.item, onClick = { actions.discussion(item.item) })
+            }
         }
     }
 }
@@ -119,15 +123,15 @@ internal fun SearchResult(item: SearchItem, actions: SearchResultActions) {
 private fun CodeResult(item: SearchItem.Code, actions: SearchResultActions) {
     val repoLabel = stringResource(R.string.search_open_repo, item.owner + "/" + item.repository)
     val fileLabel = stringResource(R.string.search_open_file, item.path)
-    Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 10.dp).informationItem().padding(16.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            .clickable(onClickLabel = repoLabel) { actions.repository(item.owner, item.repository) },
+            .pressClickable(onClickLabel = repoLabel) { actions.repository(item.owner, item.repository) },
             horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Octicon(OcticonName.REPO, null)
             Text(item.owner + " / " + item.repository, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = fileLabel) { actions.file(item) },
+        Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressClickable(onClickLabel = fileLabel) { actions.file(item) },
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(item.name, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (item.snippets.isNotEmpty()) CodeSnippets(item.snippets)
@@ -136,7 +140,6 @@ private fun CodeResult(item: SearchItem.Code, actions: SearchResultActions) {
             }
             Spacer(Modifier.height(4.dp))
         }
-        HorizontalDivider(Modifier.padding(top = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
@@ -145,8 +148,8 @@ internal fun CodeSnippets(snippets: List<SearchSnippet>) {
     val highlight = MaterialTheme.colorScheme.tertiaryContainer
     val highlightText = MaterialTheme.colorScheme.onTertiaryContainer
     val codeStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh,
-        RoundedCornerShape(12.dp)).padding(12.dp)) {
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer,
+        MaterialTheme.shapes.medium).padding(12.dp)) {
         snippets.forEach { snippet ->
             val text = remember(snippet, highlight, highlightText) {
                 buildAnnotatedString {
@@ -166,7 +169,7 @@ private fun WorkResult(item: WorkIssueItem, onClick: () -> Unit) {
     val visual = if (item.isPullRequest) pullRequestStateVisual(requireNotNull(item.pullRequestState), item.isDraft, item.locked)
         else issueStateVisual(requireNotNull(item.issueState), item.issueStateReason, item.locked)
     val updated = remember(item.updatedAt) { runCatching { Instant.parse(item.updatedAt).toEpochMilli() }.getOrNull() }
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 16.dp),
+    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).informationItem().pressClickable(onClick = onClick).padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (item.isPullRequest) PullRequestStateIcon(requireNotNull(item.pullRequestState), item.isDraft, item.locked, size = 20.dp)
         else IssueStateIcon(requireNotNull(item.issueState), item.issueStateReason, item.locked, size = 20.dp)
@@ -180,12 +183,11 @@ private fun WorkResult(item: WorkIssueItem, onClick: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
 private fun AccountResult(item: SearchItem.Account, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 16.dp),
+    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).informationItem().pressClickable(onClick = onClick).padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
         AsyncImage(item.avatarUrl, null, Modifier.size(44.dp).clip(CircleShape))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -195,7 +197,6 @@ private fun AccountResult(item: SearchItem.Account, onClick: () -> Unit) {
             item.location?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -215,7 +216,7 @@ internal fun SearchFailure(error: ApiError, retry: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
         Text(stringResource(error.displayMessageRes()), style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (error !is ApiError.UserVisible) TextButton(onClick = retry) { Text(stringResource(R.string.common_retry)) }
+        if (error !is ApiError.UserVisible) TextButton(onClick = retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
     }
 }
 
@@ -227,5 +228,5 @@ internal fun CodeSearchWebButton(query: String, viewModel: SearchViewModel, owne
             if (owner != null && name != null) appendPath(owner).appendPath(name)
         }.appendPath("search").appendQueryParameter("q", query).appendQueryParameter("type", "code").build()
         if (activity?.tryOpenBrowser(url) != true) viewModel.browserUnavailable()
-    }) { Text(stringResource(R.string.code_search_on_web)) }
+    }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.code_search_on_web)) }
 }

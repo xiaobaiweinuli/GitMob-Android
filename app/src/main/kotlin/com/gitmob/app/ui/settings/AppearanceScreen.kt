@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.settings
 
 import android.os.Build
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -34,25 +35,23 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
-import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,9 +71,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.annotation.StringRes
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.gitmob.app.R
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.PressableSurface
+import com.gitmob.app.ui.common.pressToggleable
 import com.gitmob.app.ui.theme.Coral
 import com.gitmob.app.ui.theme.ThemeMode
 import com.gitmob.app.ui.theme.ThemePreference
@@ -141,7 +142,7 @@ fun AppearanceScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_appearance)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -414,7 +415,7 @@ private fun PreferenceSwitchRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(
+            .pressToggleable(
                 value = checked,
                 role = Role.Switch,
                 onValueChange = {
@@ -472,17 +473,20 @@ private fun SeedColorSwatch(
     )
     val primaryContainer by animateColorAsState(
         targetValue = previewScheme.primaryContainer,
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "seed-primary-container",
     )
     val tertiaryContainer by animateColorAsState(
         targetValue = previewScheme.tertiaryContainer,
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "seed-tertiary-container",
     )
     val scale by animateFloatAsState(
         targetValue = if (selected) 1.08f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "seed-scale",
     )
-    Surface(
+    PressableSurface(
         onClick = onClick,
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -525,8 +529,8 @@ private fun SeedColorSwatch(
             }
             AnimatedVisibility(
                 visible = selected,
-                enter = fadeIn() + scaleIn(initialScale = 0.7f),
-                exit = fadeOut() + scaleOut(targetScale = 0.7f),
+                enter = fadeIn(MaterialTheme.motionScheme.fastEffectsSpec()) + scaleIn(MaterialTheme.motionScheme.fastSpatialSpec(), initialScale = 0.7f),
+                exit = fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) + scaleOut(MaterialTheme.motionScheme.fastSpatialSpec(), targetScale = 0.7f),
             ) {
                 Icon(
                     imageVector = Icons.Default.Check,

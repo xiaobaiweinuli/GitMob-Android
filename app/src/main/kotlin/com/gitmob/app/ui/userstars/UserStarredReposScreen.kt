@@ -2,16 +2,13 @@ package com.gitmob.app.ui.userstars
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -23,12 +20,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -43,6 +37,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
 import com.gitmob.app.ui.common.StarredRepoCard
 
 /**
@@ -79,7 +76,7 @@ fun UserStarredReposScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.userstars_title, login)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
@@ -95,76 +92,52 @@ fun UserStarredReposScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            when {
-                state.isLoading && state.repos.isEmpty() -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-                state.loadFailed && state.repos.isEmpty() -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
-                        Button(
-                            onClick = viewModel::retry,
-                            modifier = Modifier.padding(top = 12.dp),
-                        ) {
-                            Text(stringResource(R.string.common_retry))
-                        }
+            val feedback = when {
+                state.isLoading && state.repos.isEmpty() -> ListFeedbackState.LOADING
+                state.loadFailed && state.repos.isEmpty() -> ListFeedbackState.ERROR
+                state.repos.isEmpty() -> ListFeedbackState.EMPTY
+                else -> ListFeedbackState.CONTENT
+            }
+            PullToRefreshBox(
+                isRefreshing = state.isRefreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp, end = 16.dp, top = 8.dp,
+                        bottom = 8.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                            WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(if (feedback == ListFeedbackState.CONTENT) state.repos else emptyList(), key = { it.id }) { repo ->
+                        // 查看他人星标：隐藏 viewer 专属操作（添加到列表 + 取消星标）
+                        StarredRepoCard(
+                            repo = repo,
+                            modifier = Modifier.animateItem(),
+                            onClick = { onRepoClick(repo.ownerLogin, repo.name) },
+                            onForkSourceClick = onForkSourceClick,
+                            onHomepageClick = onHomepageClick,
+                            showViewerActions = false,
+                        )
                     }
-                }
-                else -> {
-                    PullToRefreshBox(
-                        isRefreshing = state.isRefreshing,
-                        onRefresh = viewModel::refresh,
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            items(state.repos) { repo ->
-                                // 查看他人星标：隐藏 viewer 专属操作（添加到列表 + 取消星标）
-                                StarredRepoCard(
-                                    repo = repo,
-                                    onClick = { onRepoClick(repo.ownerLogin, repo.name) },
-                                    onForkSourceClick = onForkSourceClick,
-                                    onHomepageClick = onHomepageClick,
-                                    showViewerActions = false,
-                                )
-                            }
-                            if (state.hasNextPage) {
-                                item {
-                                    LaunchedEffect(state.repos.size) { viewModel.loadMore() }
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
-                            // Push route 底部：navigationBars + captionBar 高度
-                            item(key = "bottom_spacer") {
-                                Spacer(
-                                    Modifier.height(
-                                        WindowInsets.navigationBars.asPaddingValues()
-                                            .calculateBottomPadding() +
-                                            WindowInsets.captionBar.asPaddingValues()
-                                                .calculateBottomPadding(),
-                                    ),
-                                )
+                    if (feedback == ListFeedbackState.CONTENT && state.hasNextPage) {
+                        item {
+                            LaunchedEffect(state.repos.size) { viewModel.loadMore() }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp))
                             }
                         }
                     }
                 }
+                ListFeedback(feedback, viewModel::retry)
             }
         }
     }

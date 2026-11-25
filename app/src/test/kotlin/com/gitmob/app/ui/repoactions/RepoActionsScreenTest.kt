@@ -17,6 +17,10 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -38,6 +42,7 @@ import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.RepoActionsPage
+import com.gitmob.app.data.model.RepoWorkflow
 import com.gitmob.app.data.model.RepoWorkflowRun
 import com.gitmob.app.data.repository.RepoActionsRepository
 import com.gitmob.app.testutil.MainDispatcherRule
@@ -241,6 +246,52 @@ class RepoActionsScreenTest {
         coVerify(exactly = 0) { repository.cancel(any(), any(), any(), any()) }
     }
 
+    @Test
+    fun `workflow toggle waits for success and supports disabling then enabling`() {
+        val workflow = workflow("active")
+        val pending = CompletableDeferred<ApiResult<Unit>>()
+        coEvery { repository.enableWorkflow("octo", "repo", workflow.id, false) } coAnswers { pending.await() }
+        coEvery { repository.enableWorkflow("octo", "repo", workflow.id, true) } returns ApiResult.Success(Unit)
+        render(workflows = listOf(workflow))
+        composeRule.onNodeWithText(context.getString(R.string.actions_workflows)).performClick()
+
+        val disable = composeRule.onNodeWithContentDescription(context.getString(R.string.actions_disable_workflow))
+        disable.assertIsOn().performClick()
+        disable.assertIsOn().assertIsNotEnabled().performClick()
+        coVerify(exactly = 1) { repository.enableWorkflow("octo", "repo", workflow.id, false) }
+
+        composeRule.runOnIdle { pending.complete(ApiResult.Success(Unit)) }
+        composeRule.onNodeWithContentDescription(context.getString(R.string.actions_enable_workflow))
+            .assertIsOff().assertIsEnabled().performClick()
+        disable.assertIsOn().assertIsEnabled()
+        coVerify(exactly = 1) { repository.enableWorkflow("octo", "repo", workflow.id, true) }
+    }
+
+    @Test
+    fun `failed workflow toggle retains checked state and permits retry`() {
+        val workflow = workflow("disabled_manually")
+        val pending = CompletableDeferred<ApiResult<Unit>>()
+        coEvery { repository.enableWorkflow("octo", "repo", workflow.id, true) } coAnswers { pending.await() }
+        render(workflows = listOf(workflow))
+        composeRule.onNodeWithText(context.getString(R.string.actions_workflows)).performClick()
+
+        val enable = composeRule.onNodeWithContentDescription(context.getString(R.string.actions_enable_workflow))
+        enable.assertIsOff().performClick()
+        enable.assertIsOff().assertIsNotEnabled()
+        composeRule.runOnIdle { pending.complete(ApiResult.Failure(ApiError.Forbidden)) }
+        enable.assertIsOff().assertIsEnabled()
+
+        coEvery { repository.enableWorkflow("octo", "repo", workflow.id, true) } returns ApiResult.Success(Unit)
+        enable.performClick()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.actions_disable_workflow)).assertIsOn()
+        coVerify(exactly = 2) { repository.enableWorkflow("octo", "repo", workflow.id, true) }
+    }
+
+    private fun workflow(state: String) = RepoWorkflow(
+        id = 7, nodeId = "workflow-7", name = "CI", path = ".github/workflows/ci.yml",
+        state = state, createdAt = null, updatedAt = null,
+    )
+
     private fun swipeToConfirm() {
         composeRule.onNodeWithText(run.displayTitle).performTouchInput { swipeLeft() }
         composeRule.waitForIdle()
@@ -266,9 +317,13 @@ class RepoActionsScreenTest {
 
     private fun deleteEntries() = composeRule.onAllNodesWithContentDescription(context.getString(R.string.actions_delete_run))
 
-    private fun render(permission: RepoPermission = RepoPermission.WRITE, record: RepoWorkflowRun = run) {
+    private fun render(
+        permission: RepoPermission = RepoPermission.WRITE,
+        record: RepoWorkflowRun = run,
+        workflows: List<RepoWorkflow> = emptyList(),
+    ) {
         coEvery { repository.getActions("octo", "repo") } returns ApiResult.Success(
-            RepoActionsPage(1, emptyList(), listOf(record), 1, false),
+            RepoActionsPage(1, workflows, listOf(record), 1, false),
         )
         viewModel = RepoActionsViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(relaxed = true), accounts.session)
         composeRule.setContent {

@@ -55,7 +55,7 @@ class RepoPullRequestListViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     session: AccountSession,
     private val repoUpdateEventBus: RepoUpdateEventBus,
-    private val savedSearch: SavedStateHandle = SavedStateHandle(),
+    private val savedSearch: SavedStateHandle,
 ) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoPullRequestListUiState())
     val state: StateFlow<RepoPullRequestListUiState> = _state.asStateFlow()
@@ -203,6 +203,11 @@ data class RepoPullRequestDetailUiState(
     val hasMoreComments: Boolean = false,
     val loadFailed: Boolean = false,
     val pendingDeleteComment: RepoPullRequestComment? = null,
+    val isDeletingComment: Boolean = false,
+    val isMerging: Boolean = false,
+    val isUpdatingAutoMerge: Boolean = false,
+    val isUpdatingSubscription: Boolean = false,
+    val updatingThreadIds: Set<String> = emptySet(),
     val editHistory: ConversationEditHistoryUiState = ConversationEditHistoryUiState(),
 )
 
@@ -364,24 +369,32 @@ class RepoPullRequestDetailViewModel @Inject constructor(
         }
     }
 
-    fun confirmDeleteComment(comment: RepoPullRequestComment?) = _state.update { it.copy(pendingDeleteComment = comment) }
+    fun confirmDeleteComment(comment: RepoPullRequestComment?) {
+        if (!_state.value.isDeletingComment) _state.update { it.copy(pendingDeleteComment = comment) }
+    }
 
     fun deletePendingComment() {
         val comment = _state.value.pendingDeleteComment ?: return
         if (!comment.viewerCanDelete) return
+        if (_state.value.isDeletingComment) return
+        _state.update { it.copy(isDeletingComment = true) }
         viewModelScope.launch {
-            when (val result = repository.deleteComment(comment.id)) {
-                is ApiResult.Success -> _state.update {
-                    it.copy(
-                        comments = it.comments.filterNot { item -> item.id == comment.id },
-                        pendingDeleteComment = null,
-                        pullRequest = it.pullRequest?.copy(commentCount = (it.pullRequest.commentCount - 1).coerceAtLeast(0)),
-                    )
+            try {
+                when (val result = repository.deleteComment(comment.id)) {
+                    is ApiResult.Success -> _state.update {
+                        it.copy(
+                            comments = it.comments.filterNot { item -> item.id == comment.id },
+                            pendingDeleteComment = null,
+                            pullRequest = it.pullRequest?.copy(commentCount = (it.pullRequest.commentCount - 1).coerceAtLeast(0)),
+                        )
+                    }
+                    is ApiResult.Failure -> {
+                        errorEventBus.emit(result.error)
+                        _state.update { it.copy(pendingDeleteComment = null) }
+                    }
                 }
-                is ApiResult.Failure -> {
-                    errorEventBus.emit(result.error)
-                    _state.update { it.copy(pendingDeleteComment = null) }
-                }
+            } finally {
+                _state.update { it.copy(isDeletingComment = false) }
             }
         }
     }
@@ -409,27 +422,48 @@ class RepoPullRequestDetailViewModel @Inject constructor(
     fun merge(method: RepoPullRequestMergeMethod, headline: String?, body: String?, done: () -> Unit) {
         val pullRequest = _state.value.pullRequest ?: return
         if (!_state.value.capabilities.canPush || method !in _state.value.allowedMergeMethods) return
+        if (_state.value.isMerging || _state.value.isUpdatingAutoMerge) return
+        _state.update { it.copy(isMerging = true) }
         viewModelScope.launch {
-            when (val result = repository.mergePullRequest(pullRequest.id, method, headline, body)) {
-                is ApiResult.Success -> {
-                    _state.update { it.copy(pullRequest = result.data) }
-                    emitCount()
-                    done()
+            val merged = try {
+                when (val result = repository.mergePullRequest(pullRequest.id, method, headline, body)) {
+                    is ApiResult.Success -> {
+                        _state.update { it.copy(pullRequest = result.data) }
+                        true
+                    }
+                    is ApiResult.Failure -> {
+                        errorEventBus.emit(result.error)
+                        false
+                    }
                 }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            } finally {
+                _state.update { it.copy(isMerging = false) }
+            }
+            if (merged) {
+                done()
+                emitCount()
             }
         }
     }
 
-    fun toggleAutoMerge(method: RepoPullRequestMergeMethod) {
+    fun toggleAutoMerge(method: RepoPullRequestMergeMethod, done: () -> Unit = {}) {
         val pullRequest = _state.value.pullRequest ?: return
         val enabled = !pullRequest.autoMergeEnabled
         if (enabled && !pullRequest.viewerCanEnableAutoMerge) return
         if (!enabled && !pullRequest.viewerCanDisableAutoMerge) return
+        if (_state.value.isMerging || _state.value.isUpdatingAutoMerge) return
+        _state.update { it.copy(isUpdatingAutoMerge = true) }
         viewModelScope.launch {
-            when (val result = repository.setAutoMerge(pullRequest.id, enabled, method)) {
-                is ApiResult.Success -> _state.update { it.copy(pullRequest = result.data) }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            try {
+                when (val result = repository.setAutoMerge(pullRequest.id, enabled, method)) {
+                    is ApiResult.Success -> {
+                        _state.update { it.copy(pullRequest = result.data) }
+                        done()
+                    }
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                }
+            } finally {
+                _state.update { it.copy(isUpdatingAutoMerge = false) }
             }
         }
     }
@@ -438,10 +472,16 @@ class RepoPullRequestDetailViewModel @Inject constructor(
         val pullRequest = _state.value.pullRequest ?: return
         if (!pullRequest.viewerCanSubscribe) return
         val subscribed = pullRequest.viewerSubscription != "SUBSCRIBED"
+        if (_state.value.isUpdatingSubscription) return
+        _state.update { it.copy(isUpdatingSubscription = true) }
         viewModelScope.launch {
-            when (val result = repository.updateSubscription(pullRequest.id, subscribed)) {
-                is ApiResult.Success -> _state.update { it.copy(pullRequest = it.pullRequest?.copy(viewerSubscription = result.data)) }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            try {
+                when (val result = repository.updateSubscription(pullRequest.id, subscribed)) {
+                    is ApiResult.Success -> _state.update { it.copy(pullRequest = it.pullRequest?.copy(viewerSubscription = result.data)) }
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                }
+            } finally {
+                _state.update { it.copy(isUpdatingSubscription = false) }
             }
         }
     }
@@ -467,12 +507,18 @@ class RepoPullRequestDetailViewModel @Inject constructor(
         val resolved = !thread.isResolved
         if (resolved && !thread.viewerCanResolve) return
         if (!resolved && !thread.viewerCanUnresolve) return
+        if (thread.id in _state.value.updatingThreadIds) return
+        _state.update { it.copy(updatingThreadIds = it.updatingThreadIds + thread.id) }
         viewModelScope.launch {
-            when (val result = repository.setThreadResolved(thread.id, resolved)) {
-                is ApiResult.Success -> _state.update { state ->
-                    state.copy(threads = state.threads.map { if (it.id == thread.id) it.copy(isResolved = resolved) else it })
+            try {
+                when (val result = repository.setThreadResolved(thread.id, resolved)) {
+                    is ApiResult.Success -> _state.update { state ->
+                        state.copy(threads = state.threads.map { if (it.id == thread.id) it.copy(isResolved = resolved) else it })
+                    }
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
                 }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            } finally {
+                _state.update { it.copy(updatingThreadIds = it.updatingThreadIds - thread.id) }
             }
         }
     }

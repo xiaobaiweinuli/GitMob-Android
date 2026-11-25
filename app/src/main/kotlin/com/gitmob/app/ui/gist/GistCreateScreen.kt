@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.gist
 
+import com.gitmob.app.ui.common.pressToggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,11 +25,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -53,6 +55,8 @@ import com.gitmob.app.R
 import com.gitmob.app.ui.common.SoraTextEditor
 import com.gitmob.app.ui.common.SoraUndoRedoButtons
 import com.gitmob.app.ui.common.rememberSoraEditorController
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,7 +75,7 @@ fun GistCreateScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.gist_create_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -79,12 +83,8 @@ fun GistCreateScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = viewModel::create, enabled = state.canCreate) {
-                        if (state.isCreating) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                        } else {
-                            Text(stringResource(R.string.repo_create_action))
-                        }
+                    TextButton(onClick = viewModel::create, enabled = state.canCreate, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
+                        ActionButtonContent(busy = state.isCreating, label = stringResource(R.string.repo_create_action))
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(
@@ -125,15 +125,17 @@ private fun GistCreateForm(
                 label = { Text(stringResource(R.string.gist_create_description_optional)) },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
             )
         }
         item {
             Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .pressToggleable(state.isPublic, enabled = !state.isCreating, role = Role.Switch, onValueChange = viewModel::updatePublic),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(stringResource(R.string.gist_create_public), Modifier.weight(1f))
-                Switch(checked = state.isPublic, onCheckedChange = viewModel::updatePublic, enabled = !state.isCreating)
+                Switch(checked = state.isPublic, onCheckedChange = null, enabled = !state.isCreating)
             }
         }
         item {
@@ -146,7 +148,7 @@ private fun GistCreateForm(
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = viewModel::addFile, enabled = !state.isCreating) {
+                TextButton(onClick = viewModel::addFile, enabled = !state.isCreating, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Text(stringResource(R.string.gist_create_add_file), Modifier.padding(start = 4.dp))
                 }
@@ -196,7 +198,7 @@ private fun GistCreateFileFields(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = onRemove, enabled = canRemove && enabled) {
+            ActionIconButton(onClick = onRemove, enabled = canRemove && enabled) {
                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.gist_delete_file))
             }
         }
@@ -210,6 +212,7 @@ private fun GistCreateFileFields(
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
             modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.gist_file_content), modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)

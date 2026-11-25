@@ -4,7 +4,6 @@ import androidx.compose.ui.res.pluralStringResource
 import com.gitmob.app.ui.translation.*
 import com.gitmob.app.data.translation.TranslationTarget
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,11 +23,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
@@ -45,21 +44,18 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.layout.height
 import com.gitmob.app.ui.common.SoraTextViewer
@@ -75,29 +71,38 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
-import com.gitmob.app.data.model.FavoriteItem
-import com.gitmob.app.data.model.LibraryContent
-import com.gitmob.app.data.model.cardData
-import com.gitmob.app.ui.library.AccountLibraryViewModel
-import com.gitmob.app.ui.library.LibraryViewModel
-import com.gitmob.app.ui.library.FavoriteSheet
 import com.gitmob.app.data.model.ConversationEditSummary
+import com.gitmob.app.data.model.FavoriteItem
 import com.gitmob.app.data.model.GistComment
 import com.gitmob.app.data.model.GistDetail
 import com.gitmob.app.data.model.GistFile
+import com.gitmob.app.data.model.LibraryContent
 import com.gitmob.app.data.model.SimpleUser
+import com.gitmob.app.data.model.cardData
 import com.gitmob.app.navigation.ConversationComposerTarget
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionFloatingButton
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
 import com.gitmob.app.ui.common.ConversationEditHistorySheet
+import com.gitmob.app.ui.common.PressableSurface
 import com.gitmob.app.ui.common.RepoMetadataLinkRow
+import com.gitmob.app.ui.common.StateActionButton
+import com.gitmob.app.ui.common.pressClickable
 import com.gitmob.app.ui.common.quoteMarkdown
+import com.gitmob.app.ui.library.AccountLibraryViewModel
+import com.gitmob.app.ui.library.FavoriteSheet
+import com.gitmob.app.ui.library.LibraryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -138,16 +143,16 @@ fun GistDetailScreen(
             TopAppBar(
                 title = { Text(detail?.description ?: stringResource(R.string.gist_detail_title), maxLines = 1) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back))
                     }
                 },
                 actions = {
-                    IconButton(onClick = viewModel::share, enabled = detail != null) {
+                    ActionIconButton(onClick = viewModel::share, enabled = detail != null) {
                         Icon(Icons.Default.Share, stringResource(R.string.conversation_share))
                     }
                     Box {
-                        IconButton(onClick = { topMenuOpen = true }) {
+                        ActionIconButton(onClick = { topMenuOpen = true }) {
                             Icon(Icons.Default.MoreVert, stringResource(R.string.common_more))
                         }
                         DropdownMenu(expanded = topMenuOpen, onDismissRequest = { topMenuOpen = false }) {
@@ -184,7 +189,7 @@ fun GistDetailScreen(
             )
         },
         floatingActionButton = {
-            if (detail?.commentsEnabled == true) ExtendedFloatingActionButton(
+            if (detail?.commentsEnabled == true) ActionFloatingButton(
                 onClick = {
                     onCompose(
                         ConversationComposeRequest(
@@ -256,24 +261,31 @@ fun GistDetailScreen(
         title = stringResource(R.string.gist_edit_description),
         initialText = detail.description.orEmpty(),
         singleLine = false,
-        isSaving = state.isMutating,
+        isSaving = state.pendingMutation == GistMutation.EDIT_DESCRIPTION,
+        enabled = !state.isMutating,
         onDismiss = { descriptionDialog = false },
         onSave = { viewModel.updateDescription(it) { descriptionDialog = false } },
     )
     deletingFile?.let { file -> ConfirmDialog(
         title = stringResource(R.string.gist_delete_file),
+        busy = state.pendingMutation == GistMutation.DELETE_FILE,
+        enabled = !state.isMutating,
         message = stringResource(R.string.gist_delete_file_confirm, file.filename),
         onDismiss = { deletingFile = null },
         onConfirm = { viewModel.deleteFile(file) { deletingFile = null } },
     ) }
     if (deleteGistDialog) ConfirmDialog(
         title = stringResource(R.string.gist_delete),
+        busy = state.pendingMutation == GistMutation.DELETE_GIST,
+        enabled = !state.isMutating,
         message = stringResource(R.string.gist_delete_confirm),
         onDismiss = { deleteGistDialog = false },
         onConfirm = { viewModel.deleteGist(onDeleted) },
     )
     deletingComment?.let { comment -> ConfirmDialog(
         title = stringResource(R.string.gist_delete_comment),
+        busy = state.pendingMutation == GistMutation.DELETE_COMMENT,
+        enabled = !state.isMutating,
         message = stringResource(R.string.gist_delete_comment_confirm),
         onDismiss = { deletingComment = null },
         onConfirm = { viewModel.deleteComment(comment) { deletingComment = null } },
@@ -326,11 +338,11 @@ internal fun GistDetailContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item("summary") {
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     detail.owner?.let { owner ->
                         Row(
-                            Modifier.clickable { onOwnerClick(owner.login) },
+                            Modifier.pressClickable { onOwnerClick(owner.login) },
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
@@ -365,29 +377,27 @@ internal fun GistDetailContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = onStargazers) {
+                        OutlinedButton(onClick = onStargazers, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
                             Icon(Icons.Default.Star, null)
                             Text(stringResource(R.string.gist_stargazers_count, detail.stargazerCount), Modifier.padding(start = 6.dp))
                         }
-                        OutlinedButton(onClick = onForks) {
+                        OutlinedButton(onClick = onForks, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
                             Icon(Icons.AutoMirrored.Filled.CallSplit, null)
                             Text(stringResource(R.string.gist_forks_count, detail.forkCount), Modifier.padding(start = 6.dp))
                         }
-                        if (detail.isStarred) {
-                            Button(onClick = onToggleStar, enabled = !state.isMutating) {
-                                Icon(Icons.Default.Star, null)
-                                Text(stringResource(R.string.gist_unstar), Modifier.padding(start = 6.dp))
-                            }
-                        } else {
-                            OutlinedButton(onClick = onToggleStar, enabled = !state.isMutating) {
-                                Icon(Icons.Outlined.StarOutline, null)
-                                Text(stringResource(R.string.gist_star), Modifier.padding(start = 6.dp))
-                            }
-                        }
+                        StateActionButton(
+                            selected = detail.isStarred,
+                            busy = state.pendingMutation == GistMutation.STAR,
+                            onClick = onToggleStar,
+                            label = stringResource(R.string.gist_star),
+                            selectedLabel = stringResource(R.string.gist_unstar),
+                            enabled = !state.isMutating,
+                            icon = Icons.Outlined.StarOutline,
+                            selectedIcon = Icons.Default.Star,
+                        )
                         if (!detail.isOwnedByViewer) {
-                            OutlinedButton(onClick = onFork, enabled = !state.isMutating) {
-                                Icon(Icons.AutoMirrored.Filled.CallSplit, null)
-                                Text(stringResource(R.string.gist_fork), Modifier.padding(start = 6.dp))
+                            OutlinedButton(onClick = onFork, enabled = !state.isMutating, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
+                                ActionButtonContent(busy = state.pendingMutation == GistMutation.FORK, label = stringResource(R.string.gist_fork), icon = Icons.AutoMirrored.Filled.CallSplit)
                             }
                         }
                     }
@@ -395,10 +405,11 @@ internal fun GistDetailContent(
             }
         }
         item("revisions") {
-            Surface(
-                modifier = Modifier.fillMaxWidth().clickable(onClick = onRevisions),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            PressableSurface(
+                onClick = onRevisions,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -420,7 +431,7 @@ internal fun GistDetailContent(
         item("files-title") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.gist_files), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                if (detail.isOwnedByViewer) TextButton(onClick = onAddFile) {
+                if (detail.isOwnedByViewer) TextButton(onClick = onAddFile, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                     Icon(Icons.Default.Add, null)
                     Text(stringResource(R.string.gist_add_file), Modifier.padding(start = 4.dp))
                 }
@@ -474,7 +485,7 @@ internal fun GistDetailContent(
         if (state.nextCommentPage != null) item("comments-more") {
             Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
                 if (state.isLoadingMoreComments) CircularProgressIndicator(Modifier.size(24.dp))
-                else TextButton(onClick = onLoadMoreComments) { Text(stringResource(R.string.common_more)) }
+                else TextButton(onClick = onLoadMoreComments, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_more)) }
             }
         }
     }
@@ -495,15 +506,15 @@ internal fun GistFileCard(
     onShare: () -> Unit,
 ) {
     val readingState = rememberSoraViewerState(file.filename)
-    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column {
-            Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().pressClickable(onClick = onToggle).padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(file.filename, fontWeight = FontWeight.SemiBold)
                     Text(pluralStringResource(R.plurals.gist_file_metadata, file.size, file.language ?: file.type.orEmpty(), file.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Box {
-                    IconButton(onClick = { onMenuChange(true) }) { Icon(Icons.Default.MoreVert, stringResource(R.string.common_more)) }
+                    ActionIconButton(onClick = { onMenuChange(true) }) { Icon(Icons.Default.MoreVert, stringResource(R.string.common_more)) }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { onMenuChange(false) }) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.conversation_share)) }, leadingIcon = { Icon(Icons.Default.Share, null) }, onClick = { onMenuChange(false); onShare() })
                         DropdownMenuItem(text = { Text(stringResource(R.string.common_download)) }, leadingIcon = { Icon(Icons.Default.Download, null) }, onClick = { onMenuChange(false); onDownload() })
@@ -537,27 +548,39 @@ private fun TextEditorDialog(
     initialText: String,
     singleLine: Boolean,
     isSaving: Boolean,
+    enabled: Boolean,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
 ) {
     var text by remember(title, initialText) { mutableStateOf(initialText) }
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSaving) onDismiss() },
         title = { Text(title) },
-        text = { TextField(text, { text = it }, singleLine = singleLine, minLines = if (singleLine) 1 else 6, modifier = Modifier.fillMaxWidth()) },
-        confirmButton = { TextButton(onClick = { onSave(text) }, enabled = !isSaving) { Text(stringResource(R.string.common_save)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                enabled = !isSaving,
+                label = { Text(title) },
+                singleLine = singleLine,
+                minLines = if (singleLine) 1 else 6,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+            )
+        },
+        confirmButton = { TextButton(onClick = { onSave(text) }, enabled = enabled && !isSaving, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = isSaving, label = stringResource(R.string.common_save)) } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !isSaving, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
 @Composable
-private fun ConfirmDialog(title: String, message: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+private fun ConfirmDialog(title: String, message: String, busy: Boolean, enabled: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(title) },
         text = { Text(message) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.common_confirm), color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+        confirmButton = { TextButton(onClick = onConfirm, enabled = enabled, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = busy, label = stringResource(R.string.common_confirm)) } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
@@ -566,6 +589,6 @@ internal fun LoadFailed(modifier: Modifier, onRetry: () -> Unit) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text(stringResource(R.string.common_load_failed))
         Spacer(Modifier.height(12.dp))
-        Button(onClick = onRetry) { Text(stringResource(R.string.common_retry)) }
+        Button(onClick = onRetry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
     }
 }

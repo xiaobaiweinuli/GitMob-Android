@@ -1,23 +1,28 @@
 package com.gitmob.app.ui.common
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CheckableDropdownMenuItem
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.SelectableDropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,22 +31,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.gitmob.app.R
 
-/**
- * 胶囊筛选菜单族：
- * - [FilterCapsuleMenu]：单选下拉胶囊；未筛选时可显示维度名，选中后显示完整值；
- * - [FilterMultiCapsuleMenu]：多选勾选胶囊（标签类），未选显示维度名，已选显示「已选 N」。
- *
- * 二者共用文件内私有外壳 [FilterCapsuleSurface]：
- * 背景 [MaterialTheme.colorScheme.primaryContainer]，随主题（浅色/深色/种子色/调色板/动态取色）变化。
- * 胶囊最大宽度为 280dp，长文字通过换行完整显示，不使用省略号。
- * 单选 options/多选 options 为调用方的动态数据（里程碑标题、用户 login 等）。
- */
+/** Single-select filter menu. Neutral values remain unselected; long labels wrap within 280dp. */
 @Composable
 fun <T> FilterCapsuleMenu(
     selected: T,
@@ -59,25 +56,23 @@ fun <T> FilterCapsuleMenu(
     val selectedLabel = if (neutralLabel != null && isNeutral(selected)) neutralLabel else selectedOptionLabel
     FilterCapsuleSurface(
         label = selectedLabel,
+        selected = !isNeutral(selected),
         selectedText = selectedOptionLabel,
         filterLabel = filterLabel,
         labelContent = selectedContent?.let { content -> { content(selected) } },
         modifier = modifier,
     ) { dismiss ->
-        options.forEach { option ->
-            DropdownMenuItem(
+        options.forEachIndexed { index, option ->
+            SelectableDropdownMenuItem(
+                selected = option == selected,
+                shapes = MenuDefaults.itemShape(index, options.size),
                 text = { optionContent?.invoke(option) ?: Text(optionLabel(option)) },
                 onClick = {
                     dismiss()
                     onSelected(option)
                 },
-                leadingIcon = {
-                    if (option == selected) {
-                        Icon(Icons.Filled.Check, contentDescription = null)
-                    } else {
-                        Spacer(Modifier.size(24.dp))
-                    }
-                },
+                leadingIcon = { Spacer(Modifier.size(24.dp)) },
+                selectedLeadingIcon = { Icon(Icons.Filled.Check, contentDescription = null) },
             )
         }
     }
@@ -97,22 +92,27 @@ fun FilterMultiCapsuleMenu(
     val label = if (selected.isEmpty()) emptyLabel else stringResource(selectedCountRes, selected.size)
     FilterCapsuleSurface(
         label = if (selected.isEmpty()) filterLabel else label,
+        selected = selected.isNotEmpty(),
         selectedText = label,
         filterLabel = filterLabel,
         modifier = modifier,
     ) { dismiss ->
         DropdownMenuItem(
+            shape = MenuDefaults.itemShape(0, options.size + 1).shape,
+            leadingIcon = { Spacer(Modifier.size(24.dp)) },
             text = { Text(clearLabel) },
             onClick = {
                 dismiss()
                 onSelect(emptySet())
             },
         )
-        options.forEach { option ->
-            DropdownMenuItem(
+        options.forEachIndexed { index, option ->
+            CheckableDropdownMenuItem(
+                checked = option in selected,
+                shapes = MenuDefaults.itemShape(index + 1, options.size + 1),
                 text = { Text(option) },
-                onClick = {
-                    onSelect(if (option in selected) selected - option else selected + option)
+                onCheckedChange = { checked ->
+                    onSelect(if (checked) selected + option else selected - option)
                 },
                 leadingIcon = { Checkbox(checked = option in selected, onCheckedChange = null) },
             )
@@ -120,13 +120,11 @@ fun FilterMultiCapsuleMenu(
     }
 }
 
-/**
- * 胶囊外壳：圆形主题容器 + 气泡弹层锚点。单选/多选各自向 [content] 提供菜单项；
- * 需要关闭菜单的操作通过 [content] 的 [dismiss] 回调显式收起弹层。
- */
+/** Shared chip anchor. The menu controls whether a selection dismisses the popup. */
 @Composable
 private fun FilterCapsuleSurface(
     label: String,
+    selected: Boolean,
     selectedText: String,
     filterLabel: String,
     modifier: Modifier = Modifier,
@@ -134,34 +132,61 @@ private fun FilterCapsuleSurface(
     content: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectDescription = stringResource(R.string.work_select_filter_value, filterLabel, selectedText)
     Box(modifier) {
-        Surface(
+        FilterMenuChip(
+            label = label,
+            selected = selected,
+            expanded = expanded,
+            selectedText = selectedText,
+            filterLabel = filterLabel,
             onClick = { expanded = true },
-            modifier = Modifier.semantics { contentDescription = selectDescription },
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ) {
-            Row(
-                modifier = Modifier
-                    .widthIn(max = 280.dp)
-                    .padding(start = 12.dp, end = 6.dp, top = 7.dp, bottom = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            labelContent = labelContent,
+        )
+        DropdownMenuPopup(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuGroup(
+                shapes = MenuDefaults.groupShape(0, 1),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
-                Box(Modifier.weight(1f, fill = false)) {
-                    labelContent?.invoke() ?: Text(label, style = MaterialTheme.typography.bodyMedium)
-                }
-                Icon(
-                    Icons.Filled.ArrowDropDown,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
+                content { expanded = false }
             }
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            content { expanded = false }
-        }
     }
+}
+
+/** Chip anchor shared by flat and nested selection menus. */
+@Composable
+internal fun FilterMenuChip(
+    label: String,
+    selected: Boolean,
+    expanded: Boolean,
+    selectedText: String,
+    filterLabel: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    labelContent: (@Composable () -> Unit)? = null,
+) {
+    val motionScheme = MaterialTheme.motionScheme
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = motionScheme.fastSpatialSpec(),
+        label = "Filter menu arrow",
+    )
+    val selectDescription = stringResource(R.string.work_select_filter_value, filterLabel, selectedText)
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        shapes = FilterChipDefaults.shapes(),
+        modifier = modifier
+            .animateContentSize(motionScheme.defaultSpatialSpec(), alignment = Alignment.CenterStart)
+            .widthIn(max = 280.dp)
+            .semantics { contentDescription = selectDescription },
+        label = { labelContent?.invoke() ?: Text(label) },
+        trailingIcon = {
+            Icon(
+                Icons.Filled.ArrowDropDown,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp).rotate(arrowRotation),
+            )
+        },
+    )
 }

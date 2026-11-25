@@ -40,6 +40,9 @@ data class RepoIssueDetailUiState(
     val hasMoreComments: Boolean = false,
     val pendingDeleteComment: IssueComment? = null,
     val pendingDeleteIssue: Boolean = false,
+    val isDeletingIssue: Boolean = false,
+    val isDeletingComment: Boolean = false,
+    val isUpdatingSubscription: Boolean = false,
     val editHistory: ConversationEditHistoryUiState = ConversationEditHistoryUiState(),
 )
 
@@ -152,11 +155,19 @@ class RepoIssueDetailViewModel @Inject constructor(
         }
     }
 
-    fun confirmDeleteComment(value: IssueComment?) { _state.update { it.copy(pendingDeleteComment = value) } }
+    fun confirmDeleteComment(value: IssueComment?) { if (_state.value.isDeletingComment) return; _state.update { it.copy(pendingDeleteComment = value) } }
     fun deletePendingComment() {
         val comment = _state.value.pendingDeleteComment ?: return
         if (!comment.viewerCanDelete) return
-        viewModelScope.launch { when (val result = repository.deleteComment(comment.id)) { is ApiResult.Success -> _state.update { it.copy(comments = it.comments.filterNot { c -> c.id == comment.id }, issue = it.issue?.copy(commentCount = (it.issue.commentCount.orZero() - 1).coerceAtLeast(0)), pendingDeleteComment = null) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteComment = null) } } } }
+        if (_state.value.isDeletingComment) return
+        _state.update { it.copy(isDeletingComment = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.deleteComment(comment.id)) { is ApiResult.Success -> _state.update { it.copy(comments = it.comments.filterNot { c -> c.id == comment.id }, issue = it.issue?.copy(commentCount = (it.issue.commentCount.orZero() - 1).coerceAtLeast(0)), pendingDeleteComment = null) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteComment = null) } } }
+            } finally {
+                _state.update { it.copy(isDeletingComment = false) }
+            }
+        }
     }
 
     fun updateIssue(title: String, body: String, labelIds: List<String>, assigneeIds: List<String>, milestoneId: String?, done: () -> Unit) {
@@ -181,14 +192,30 @@ class RepoIssueDetailViewModel @Inject constructor(
         val issue = _state.value.issue ?: return
         if (!issue.viewerCanSubscribe) return
         val subscribed = issue.viewerSubscription != "SUBSCRIBED"
-        viewModelScope.launch { when (val result = repository.updateSubscription(issue.id, subscribed)) { is ApiResult.Success -> _state.update { it.copy(issue = it.issue?.copy(viewerSubscription = result.data)) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } }
+        if (_state.value.isUpdatingSubscription) return
+        _state.update { it.copy(isUpdatingSubscription = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.updateSubscription(issue.id, subscribed)) { is ApiResult.Success -> _state.update { it.copy(issue = it.issue?.copy(viewerSubscription = result.data)) }; is ApiResult.Failure -> errorEventBus.emit(result.error) }
+            } finally {
+                _state.update { it.copy(isUpdatingSubscription = false) }
+            }
+        }
     }
 
-    fun confirmDeleteIssue(value: Boolean) { _state.update { it.copy(pendingDeleteIssue = value) } }
+    fun confirmDeleteIssue(value: Boolean) { if (_state.value.isDeletingIssue) return; _state.update { it.copy(pendingDeleteIssue = value) } }
     fun deleteIssue(onDeleted: () -> Unit) {
         val issue = _state.value.issue ?: return
         if (!_state.value.capabilities.canDeleteIssues || !issue.viewerCanDelete) return
-        viewModelScope.launch { when (val result = repository.deleteIssue(issue.id)) { is ApiResult.Success -> { emitIssueCount(); onDeleted() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteIssue = false) } } } }
+        if (_state.value.isDeletingIssue) return
+        _state.update { it.copy(isDeletingIssue = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.deleteIssue(issue.id)) { is ApiResult.Success -> { _state.update { it.copy(pendingDeleteIssue = false) }; emitIssueCount(); onDeleted() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteIssue = false) } } }
+            } finally {
+                _state.update { it.copy(isDeletingIssue = false) }
+            }
+        }
     }
 
     private fun apply(detail: RepoIssueDetail) { cursor = detail.comments.endCursor; _state.update { it.copy(issue = detail.issue, comments = detail.comments.items, permission = detail.permission, capabilities = detail.capabilities, repositoryId = detail.repositoryId, hasMoreComments = detail.comments.hasNextPage, isLoading = false, loadFailed = false) } }

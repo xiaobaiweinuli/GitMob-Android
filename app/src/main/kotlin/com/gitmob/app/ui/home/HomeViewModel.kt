@@ -21,6 +21,7 @@ import javax.inject.Inject
 
 data class HomeUiState(
     val profile: ViewerProfile? = null,
+    val isUpdatingFollow: Boolean = false,
     val isLoading: Boolean = false,   // 首次加载（全屏 loading）
     val isRefreshing: Boolean = false, // 下拉刷新（保留旧数据，只显示刷新指示器）
     val loadFailed: Boolean = false,   // 首次加载失败，展示"重试"按钮
@@ -119,30 +120,29 @@ class HomeViewModel @Inject constructor(
      * 返回值会慢一拍。
      */
     fun toggleFollow() {
-        val profile = _state.value.profile ?: return
+        val state = _state.value
+        val profile = state.profile ?: return
+        if (state.isUpdatingFollow || profile.followState.isViewer || !profile.followState.viewerCanFollow) return
         val wasFollowing = profile.followState.viewerIsFollowing
+        _state.update { it.copy(isUpdatingFollow = true) }
         viewModelScope.launch {
-            val result = if (wasFollowing) {
-                userRepository.unfollowUser(profile.user.id)
-            } else {
-                userRepository.followUser(profile.user.id)
-            }
-            when (result) {
-                is ApiResult.Success -> _state.update { state ->
-                    state.profile?.let { p ->
+            try {
+                val result = if (wasFollowing) userRepository.unfollowUser(profile.user.id) else userRepository.followUser(profile.user.id)
+                when (result) {
+                    is ApiResult.Success -> _state.update { current ->
+                        val p = current.profile ?: return@update current
+                        if (p.user.id != profile.user.id) return@update current
                         val newFollowing = !wasFollowing
-                        val delta = if (newFollowing) 1 else -1
-                        state.copy(
-                            profile = p.copy(
-                                followState = p.followState.copy(viewerIsFollowing = newFollowing),
-                                user = p.user.copy(
-                                    followers = (p.user.followers + delta).coerceAtLeast(0),
-                                ),
-                            ),
-                        )
-                    } ?: state
+                        val delta = if (p.followState.viewerIsFollowing == newFollowing) 0 else if (newFollowing) 1 else -1
+                        current.copy(profile = p.copy(
+                            followState = p.followState.copy(viewerIsFollowing = newFollowing),
+                            user = p.user.copy(followers = (p.user.followers + delta).coerceAtLeast(0)),
+                        ))
+                    }
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
                 }
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            } finally {
+                _state.update { it.copy(isUpdatingFollow = false) }
             }
         }
     }

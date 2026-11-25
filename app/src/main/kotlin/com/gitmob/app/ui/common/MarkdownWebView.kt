@@ -521,6 +521,8 @@ internal open class MarkdownContentWebView(context: Context) : WebView(context) 
 }
 
 /** Reapplies saved scroll only after Chromium has enough content, including late image layout. */
+// Created programmatically with document state; not inflated from XML.
+@SuppressLint("ViewConstructor")
 internal open class MarkdownViewportWebView(
     context: Context,
     private var viewportState: MarkdownViewportState?,

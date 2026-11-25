@@ -26,12 +26,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -40,17 +43,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
@@ -58,6 +58,8 @@ import com.gitmob.app.data.model.GistCategory
 import com.gitmob.app.data.model.GistListItem
 import com.gitmob.app.data.model.GistSort
 import com.gitmob.app.data.model.GistVisibility
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.GistCard
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -88,14 +90,14 @@ fun GistScreen(
                 },
                 navigationIcon = {
                     if (onBack != null) {
-                        IconButton(onClick = onBack) {
+                        ActionIconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                         }
                     }
                 },
                 actions = {
                     if (login == null && onCreateGist != null) {
-                        IconButton(onClick = onCreateGist) {
+                        ActionIconButton(onClick = onCreateGist) {
                             Icon(Icons.Default.Add, contentDescription = stringResource(R.string.gist_create_title))
                         }
                     }
@@ -173,6 +175,7 @@ private fun GistControls(
             optionLabel = { stringResource(it.labelRes) },
             onSelected = onCategorySelected,
             filterLabel = stringResource(R.string.gist_filter_category),
+            isNeutral = { it == GistCategory.ALL },
         )
         FilterCapsuleMenu(
             selected = selectedSort,
@@ -242,8 +245,8 @@ private fun GistList(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             when {
                 state.isLoading && state.items.isEmpty() -> item(key = "loading") {
@@ -257,6 +260,7 @@ private fun GistList(
                         Button(
                             onClick = onRetry,
                             modifier = Modifier.padding(top = 12.dp),
+                            shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding,
                         ) {
                             Text(stringResource(R.string.common_retry))
                         }
@@ -282,12 +286,9 @@ private fun GistList(
                                 onClick = onLoadMore,
                                 enabled = !state.isLoadingMore,
                                 modifier = Modifier.padding(top = 12.dp),
+                                shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding,
                             ) {
-                                if (state.isLoadingMore) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                                } else {
-                                    Text(stringResource(R.string.gist_continue_search))
-                                }
+                                ActionButtonContent(busy = state.isLoadingMore, label = stringResource(R.string.gist_continue_search))
                             }
                         }
                     }
@@ -295,6 +296,7 @@ private fun GistList(
                 else -> items(state.items, key = { it.id }) { gist ->
                     GistCard(
                         gist = gist,
+                        modifier = Modifier.animateItem(),
                         onClick = { onGistClick(gist) },
                         onForkSourceClick = onForkSourceClick,
                     )

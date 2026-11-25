@@ -1,11 +1,13 @@
 package com.gitmob.app.ui.library
 
+import com.gitmob.app.ui.common.ActionStateContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -41,8 +43,8 @@ fun FavoriteGroupScreen(
     var remove by remember { mutableStateOf<FavoriteItem?>(null) }
     BackHandler(editing) { editing = false }
     LibraryScaffold(group?.let { groupLabel(it) } ?: if (groupId == com.gitmob.app.data.model.DEFAULT_FAVORITE_GROUP) stringResource(R.string.favorites_default_group) else initialName, onBack, actions = {
-        TextButton(onClick = { editing = !editing }, enabled = group != null && favorites.isNotEmpty() && !busy) {
-            Text(stringResource(if (editing) R.string.library_done else R.string.library_edit))
+        TextButton(onClick = { editing = !editing }, enabled = group != null && favorites.isNotEmpty() && !busy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
+            ActionStateContent(editing) { inEditMode -> Text(stringResource(if (inEditMode) R.string.library_done else R.string.library_edit)) }
         }
     }) { padding ->
         LibraryLoading(settings.value != null && (settings.value?.favoritesEnabled == false || (state.loaded && groupsState.value != null)),
@@ -56,7 +58,7 @@ fun FavoriteGroupScreen(
                 ) { item, modifier ->
                     FavoriteSwipeRow(editing, !busy, { remove = item }, modifier) {
                         val moveAction: (@Composable () -> Unit)? = if (editing) ({
-                            TextButton(onClick = { move = item }, enabled = !busy) { Text(stringResource(R.string.favorites_move)) }
+                            TextButton(onClick = { move = item }, enabled = !busy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.favorites_move)) }
                         }) else null
                         when (item) {
                             is FavoriteItem.Repository -> RepoCard(item.card,
@@ -91,7 +93,7 @@ private fun FavoriteSwipeRow(editing: Boolean, enabled: Boolean, remove: () -> U
     }
     val swipe = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
-    SwipeToDismissBox(state = swipe, modifier = modifier.clip(CardDefaults.shape),
+    SwipeToDismissBox(state = swipe, modifier = modifier.clip(MaterialTheme.shapes.large),
         enableDismissFromStartToEnd = false, enableDismissFromEndToStart = enabled && !editing,
         onDismiss = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart && enabled && !editing) remove()

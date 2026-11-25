@@ -1,17 +1,24 @@
 package com.gitmob.app.ui.repopullrequests
 
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,9 +33,12 @@ import com.gitmob.app.R
 import com.gitmob.app.data.model.ExistingRepoPullRequest
 import com.gitmob.app.data.model.RepoPullRequestCreateSelection
 import com.gitmob.app.data.model.toListItem
+import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.GitChangedFileRow
 import com.gitmob.app.ui.common.GitCommitRow
+import com.gitmob.app.ui.common.PressableCard
 import com.gitmob.app.ui.common.UnifiedDiffViewer
+import com.gitmob.app.ui.common.pressClickable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,35 +61,54 @@ fun RepoPullRequestCreateScreen(
     ModalBottomSheet(
         onDismissRequest = ::dismissSheet,
         sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight().navigationBarsPadding()) {
-            when (state.page) {
-                RepoPullRequestCreatePage.TARGET -> TargetPage(state, ::dismissSheet, viewModel::selectForkTarget)
-                RepoPullRequestCreatePage.COMPARE -> ComparePage(state, viewModel, ::dismissSheet, onCreate = { selection -> viewModel.resetCreateSession(); onCreate(selection) }, onExistingPullRequestClick = onExistingPullRequestClick)
-                RepoPullRequestCreatePage.SELECT_BASE -> BranchPage(state, stringResource(R.string.pr_base_branch), viewModel, onBack = viewModel::showCompare)
-                RepoPullRequestCreatePage.SELECT_HEAD -> BranchPage(state, stringResource(R.string.pr_head_branch), viewModel, onBack = viewModel::showCompare)
-                RepoPullRequestCreatePage.FILES -> FilesPage(state, viewModel::showCompare)
-                RepoPullRequestCreatePage.COMMITS -> CommitsPage(
-                    state,
-                    viewModel::showCompare,
-                    viewModel::loadMoreCommits,
-                    onCommitClick = { commitOwner, commitName, ref, sha ->
-                        viewModel.resetCreateSession()
-                        onCommitClick(commitOwner, commitName, ref, sha)
-                    },
-                    onUserClick = onUserClick,
-                )
+        val motion = MaterialTheme.motionScheme
+        AnimatedContent(
+            targetState = state,
+            contentKey = { it.page },
+            modifier = Modifier.fillMaxWidth().fillMaxHeight().navigationBarsPadding(),
+            transitionSpec = {
+                val direction = if (targetState.page.depth() > initialState.page.depth()) 1 else -1
+                (slideInHorizontally(motion.defaultSpatialSpec()) { direction * it / 8 } +
+                    fadeIn(motion.defaultEffectsSpec())) togetherWith
+                    (slideOutHorizontally(motion.fastSpatialSpec()) { -direction * it / 8 } +
+                        fadeOut(motion.fastEffectsSpec()))
+            },
+            label = "Pull request creation page",
+        ) { pageState ->
+            val page = pageState.page
+            Column(Modifier.fillMaxSize()) {
+                when (page) {
+                    RepoPullRequestCreatePage.TARGET -> TargetPage(pageState, ::dismissSheet, viewModel::selectForkTarget)
+                    RepoPullRequestCreatePage.COMPARE -> ComparePage(pageState, viewModel, ::dismissSheet, onCreate = { selection -> viewModel.resetCreateSession(); onCreate(selection) }, onExistingPullRequestClick = onExistingPullRequestClick)
+                    RepoPullRequestCreatePage.SELECT_BASE -> BranchPage(pageState, stringResource(R.string.pr_base_branch), viewModel, onBack = viewModel::showCompare, active = page == state.page)
+                    RepoPullRequestCreatePage.SELECT_HEAD -> BranchPage(pageState, stringResource(R.string.pr_head_branch), viewModel, onBack = viewModel::showCompare, active = page == state.page)
+                    RepoPullRequestCreatePage.FILES -> FilesPage(pageState, viewModel::showCompare)
+                    RepoPullRequestCreatePage.COMMITS -> CommitsPage(
+                        pageState,
+                        viewModel::showCompare,
+                        viewModel::loadMoreCommits,
+                        onCommitClick = { commitOwner, commitName, ref, sha ->
+                            viewModel.resetCreateSession()
+                            onCommitClick(commitOwner, commitName, ref, sha)
+                        },
+                        onUserClick = onUserClick,
+                        active = page == state.page,
+                    )
+                }
+
             }
         }
     }
 }
 
 @Composable
-private fun SheetHeader(title: String, onBack: (() -> Unit)? = null, onClose: (() -> Unit)? = null) {
+private fun SheetHeader(title: String, onBack: (() -> Unit)? = null, onClose: (() -> Unit)? = null, backEnabled: Boolean = true) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } else Spacer(Modifier.size(48.dp))
+        if (onBack != null) ActionIconButton(onClick = onBack, enabled = backEnabled) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } else Spacer(Modifier.size(48.dp))
         Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-        if (onClose != null) IconButton(onClick = onClose) { Icon(Icons.Default.Close, stringResource(R.string.common_cancel)) } else Spacer(Modifier.size(48.dp))
+        if (onClose != null) ActionIconButton(onClick = onClose) { Icon(Icons.Default.Close, stringResource(R.string.common_cancel)) } else Spacer(Modifier.size(48.dp))
     }
 }
 
@@ -97,7 +126,7 @@ private fun TargetPage(state: RepoPullRequestCreateUiState, onDismiss: () -> Uni
 
 @Composable
 private fun TargetRepositoryCard(title: String, description: String, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    PressableCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.AccountTree, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.padding(start = 16.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -135,7 +164,7 @@ private fun ColumnScope.ComparePage(
                 state.sameBranch -> item { CompareEmptyState(R.string.pr_create_same_branch_title, R.string.pr_create_same_branch_description) }
                 state.headBranch == null -> item { CompareEmptyState(R.string.pr_create_select_head_hint, R.string.pr_create_select_head_description) }
                 state.noCommonAncestor -> item { CompareEmptyState(R.string.pr_create_no_common_ancestor_title, R.string.pr_create_no_common_ancestor_description) }
-                state.compareFailed -> item { Row(Modifier.fillMaxWidth().padding(vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.common_load_failed), Modifier.weight(1f)); TextButton(onClick = viewModel::retryCompare) { Text(stringResource(R.string.common_retry)) } } }
+                state.compareFailed -> item { Row(Modifier.fillMaxWidth().padding(vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text(stringResource(R.string.common_load_failed), Modifier.weight(1f)); TextButton(onClick = viewModel::retryCompare, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) } } }
                 state.comparison?.aheadBy == 0 -> item { CompareEmptyState(R.string.pr_create_no_ahead_title, R.string.pr_create_no_ahead_description) }
                 state.comparison != null -> {
                     val comparison = state.comparison
@@ -187,7 +216,7 @@ private fun ColumnScope.ComparePage(
         if (state.canCreate && state.existingPullRequest == null) {
             HorizontalDivider()
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = { state.selection?.let(onCreate) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.pr_create_submit)) }
+                Button(onClick = { state.selection?.let(onCreate) }, modifier = Modifier.fillMaxWidth(), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.pr_create_submit)) }
                 Text(stringResource(R.string.pr_create_compare_footer), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
             }
         }
@@ -197,7 +226,7 @@ private fun ColumnScope.ComparePage(
 @Composable
 private fun CompareHeader(state: RepoPullRequestCreateUiState, onDismiss: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 16.dp, top = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.Top) {
-        IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Close, stringResource(R.string.common_cancel)) }
+        ActionIconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Close, stringResource(R.string.common_cancel)) }
         Column(Modifier.padding(start = 8.dp, top = 4.dp)) {
             Text(state.baseRepository?.let { "${it.ownerLogin}/${it.name}" } ?: stringResource(R.string.pr_new), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(R.string.pr_create_compare_title), style = MaterialTheme.typography.headlineMedium)
@@ -209,15 +238,17 @@ private fun CompareHeader(state: RepoPullRequestCreateUiState, onDismiss: () -> 
 private fun BranchSelectorRow(label: String, value: String, onClick: () -> Unit, placeholder: Boolean = false) {
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge)
-        Surface(
+        OutlinedButton(
             onClick = onClick,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(top = 6.dp).semantics { contentDescription = "$label: $value" },
+            shapes = ButtonDefaults.shapes(),
+            contentPadding = ButtonDefaults.ContentPadding,
+            modifier = Modifier.padding(top = 6.dp)
+                .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec(), alignment = Alignment.CenterStart)
+                .widthIn(max = 320.dp)
+                .semantics { contentDescription = "$label: $value" },
         ) {
-            Row(Modifier.widthIn(max = 320.dp).padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(value, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyLarge, color = if (placeholder) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(value, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyLarge, color = if (placeholder) MaterialTheme.colorScheme.onSurfaceVariant else LocalContentColor.current)
                 Spacer(Modifier.width(4.dp))
                 Icon(Icons.Default.ArrowDropDown, contentDescription = null)
             }
@@ -227,7 +258,7 @@ private fun BranchSelectorRow(label: String, value: String, onClick: () -> Unit,
 
 @Composable
 private fun CompareEmptyState(titleRes: Int, descriptionRes: Int) {
-    Card(Modifier.fillMaxWidth().padding(vertical = 24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    Card(Modifier.fillMaxWidth().padding(vertical = 24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(titleRes), style = MaterialTheme.typography.titleLarge)
             Text(stringResource(descriptionRes), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -237,7 +268,7 @@ private fun CompareEmptyState(titleRes: Int, descriptionRes: Int) {
 
 @Composable
 private fun CompareSummaryRow(icon: @Composable () -> Unit, title: String, onClick: () -> Unit, trailing: @Composable RowScope.() -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().pressClickable(onClick = onClick).padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         icon()
         Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 16.dp).weight(1f))
         trailing()
@@ -262,16 +293,16 @@ private fun ExistingPullRequestCard(pr: ExistingRepoPullRequest, onClick: () -> 
 }
 
 @Composable
-private fun ColumnScope.BranchPage(state: RepoPullRequestCreateUiState, title: String, viewModel: RepoPullRequestCreateViewModel, onBack: () -> Unit) {
-    SheetHeader(title, onBack = onBack)
-    OutlinedTextField(state.branchSearch, viewModel::setBranchSearch, label = { Text(stringResource(R.string.pr_create_search_branch)) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+private fun ColumnScope.BranchPage(state: RepoPullRequestCreateUiState, title: String, viewModel: RepoPullRequestCreateViewModel, onBack: () -> Unit, active: Boolean) {
+    SheetHeader(title, onBack = onBack, backEnabled = active)
+    OutlinedTextField(state.branchSearch, viewModel::setBranchSearch, enabled = active, label = { Text(stringResource(R.string.pr_create_search_branch)) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = MaterialTheme.shapes.medium)
     if (state.isLoadingBranches) Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-    else if (state.branchLoadFailed) Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { TextButton(onClick = viewModel::retryBranches) { Text(stringResource(R.string.common_retry)) } }
+    else if (state.branchLoadFailed) Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { TextButton(onClick = viewModel::retryBranches, enabled = active, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) } }
     else LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) {
         items(state.filteredBranches, key = { it.id }) { branch ->
-            Text(branch.name, Modifier.fillMaxWidth().clickable { viewModel.selectBranch(branch) }.padding(horizontal = 20.dp, vertical = 14.dp))
+            Text(branch.name, Modifier.fillMaxWidth().pressClickable(enabled = active) { viewModel.selectBranch(branch, sourcePage = state.page) }.padding(horizontal = 20.dp, vertical = 14.dp))
         }
-        if (state.branchesHasNextPage) item { LaunchedEffect(state.filteredBranches.size) { viewModel.loadMoreBranches() }; Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp)) } }
+        if (active && state.branchesHasNextPage) item { LaunchedEffect(state.filteredBranches.size) { viewModel.loadMoreBranches() }; Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp)) } }
     }
 }
 
@@ -292,7 +323,7 @@ private fun ColumnScope.FilesPage(state: RepoPullRequestCreateUiState, onBack: (
 }
 
 @Composable
-private fun ColumnScope.CommitsPage(state: RepoPullRequestCreateUiState, onBack: () -> Unit, onLoadMore: () -> Unit, onCommitClick: (String, String, String, String) -> Unit, onUserClick: (String) -> Unit) {
+private fun ColumnScope.CommitsPage(state: RepoPullRequestCreateUiState, onBack: () -> Unit, onLoadMore: () -> Unit, onCommitClick: (String, String, String, String) -> Unit, onUserClick: (String) -> Unit, active: Boolean) {
     SheetHeader(stringResource(R.string.pr_create_compare_commits), onBack = onBack)
     val comparison = state.comparison
     LazyColumn(Modifier.weight(1f)) {
@@ -303,6 +334,12 @@ private fun ColumnScope.CommitsPage(state: RepoPullRequestCreateUiState, onBack:
                 onAuthorClick = onUserClick,
             )
         }
-        if (comparison?.commitsHasNextPage == true) item { LaunchedEffect(comparison.commits.size) { onLoadMore() }; CircularProgressIndicator(Modifier.padding(16.dp)) }
+        if (active && comparison?.commitsHasNextPage == true) item { LaunchedEffect(comparison.commits.size) { onLoadMore() }; CircularProgressIndicator(Modifier.padding(16.dp)) }
     }
+}
+
+private fun RepoPullRequestCreatePage.depth(): Int = when (this) {
+    RepoPullRequestCreatePage.TARGET -> 0
+    RepoPullRequestCreatePage.COMPARE -> 1
+    else -> 2
 }

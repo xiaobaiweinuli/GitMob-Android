@@ -20,8 +20,6 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -35,7 +33,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -68,6 +65,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.ProfileField
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.pressToggleable
 import com.gitmob.app.ui.login.AccountIdentity
 import kotlinx.coroutines.launch
 
@@ -96,14 +96,17 @@ fun ProfileEditorScreen(onBack: () -> Unit, viewModel: ProfileEditorViewModel = 
             TopAppBar(
                 title = { Text(stringResource(R.string.profile_edit_title)) },
                 navigationIcon = {
-                    IconButton(onClick = ::requestBack, enabled = !state.isSaving) {
+                    ActionIconButton(onClick = ::requestBack, enabled = !state.isSaving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
-                    FilledTonalButton(onClick = viewModel::save, enabled = state.canSave, modifier = Modifier.padding(end = 12.dp).heightIn(min = 48.dp)) {
-                        if (state.isSaving) CircularProgressIndicator(Modifier.size(18.dp).padding(end = 4.dp), strokeWidth = 2.dp)
-                        Text(stringResource(if (state.isSaving) R.string.profile_saving else R.string.common_save))
+                    FilledTonalButton(onClick = viewModel::save, enabled = state.canSave, modifier = Modifier.padding(end = 12.dp).heightIn(min = 48.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
+                        ActionButtonContent(
+                            busy = state.isSaving,
+                            label = stringResource(R.string.common_save),
+                            busyLabel = stringResource(R.string.profile_saving),
+                        )
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -116,7 +119,7 @@ fun ProfileEditorScreen(onBack: () -> Unit, viewModel: ProfileEditorViewModel = 
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 if (state.loadFailed) Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.common_load_failed))
-                    Button(onClick = viewModel::load) { Text(stringResource(R.string.common_retry)) }
+                    Button(onClick = viewModel::load, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
                 } else CircularProgressIndicator()
             }
         } else {
@@ -132,9 +135,9 @@ fun ProfileEditorScreen(onBack: () -> Unit, viewModel: ProfileEditorViewModel = 
                 ProfileField.entries.forEach { field ->
                     ProfileEditorField(field, state, focus.getValue(field), relocation.getValue(field), viewModel)
                 }
-                Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Card(shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
                     Row(
-                        Modifier.fillMaxWidth().toggleable(value = state.draft.hireable, enabled = !state.isSaving, role = Role.Switch, onValueChange = viewModel::setHireable)
+                        Modifier.fillMaxWidth().pressToggleable(value = state.draft.hireable, enabled = !state.isSaving, role = Role.Switch, onValueChange = viewModel::setHireable)
                             .heightIn(min = 76.dp).padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -149,7 +152,7 @@ fun ProfileEditorScreen(onBack: () -> Unit, viewModel: ProfileEditorViewModel = 
                 if (state.saveErrorRes != null) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(stringResource(state.saveErrorRes!!), color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                        Button(onClick = viewModel::save, enabled = state.canSave) { Text(stringResource(R.string.common_retry)) }
+                        Button(onClick = viewModel::save, enabled = state.canSave, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
                 Text(
@@ -170,15 +173,15 @@ fun ProfileEditorScreen(onBack: () -> Unit, viewModel: ProfileEditorViewModel = 
         val safeFocus = remember { FocusRequester() }
         AlertDialog(
             onDismissRequest = { confirmDiscard = false },
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.large,
             title = { Text(stringResource(R.string.profile_discard_title)) },
             text = { Text(stringResource(R.string.profile_discard_message)) },
             dismissButton = {
-                TextButton(onClick = { confirmDiscard = false }, modifier = Modifier.focusRequester(safeFocus).focusProperties { canFocus = true }) { Text(stringResource(R.string.profile_keep_editing)) }
+                TextButton(onClick = { confirmDiscard = false }, modifier = Modifier.focusRequester(safeFocus).focusProperties { canFocus = true }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.profile_keep_editing)) }
                 LaunchedEffect(safeFocus) { safeFocus.requestFocus() }
             },
             confirmButton = {
-                TextButton(onClick = { confirmDiscard = false; onBack() }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.profile_discard)) }
+                TextButton(onClick = { confirmDiscard = false; onBack() }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.profile_discard)) }
             },
         )
     }
@@ -221,7 +224,7 @@ private fun ProfileEditorField(
             enabled = !state.isSaving,
             singleLine = field != ProfileField.BIO,
             minLines = if (field == ProfileField.BIO) 3 else 1,
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.large,
             isError = error != null,
             keyboardOptions = KeyboardOptions(keyboardType = when (field) {
                 ProfileField.EMAIL -> KeyboardType.Email

@@ -3,10 +3,12 @@ package com.gitmob.app.ui.common
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -14,12 +16,14 @@ import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.Adjust
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,30 +32,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import com.gitmob.app.R
-import com.gitmob.app.data.model.RepoListItem
 import com.gitmob.app.data.model.RepoCardData
+import com.gitmob.app.data.model.RepoListItem
 import com.gitmob.app.data.model.cardData
 
-/**
- * 仓库卡片（"仓库"Tab、用户仓库列表通用）。
- *
- * 抽自 ReposScreen.kt / UserReposScreen.kt 中两份结构完全相同的私有 RepoCard，
- * 统一使用 ui/common/StatusChip.kt 的公共胶囊标签组件，避免 UI 样式漂移。
- *
- * 卡片结构（自上而下）：
- *   1. 仓库名（粗体标题）
- *   2. Fork 来源行（isFork 才显示：复刻自 owner/name）
- *   3. 简介（最多 2 行截断）
- *   4. 主页链接（homepageUrl 非空才显示）
- *   5. 统计行：左侧（语言点/星标/fork/Issues）可横向滚动；右侧（私有/归档/分支）固定
- *   6. Topics 行：独立横向滚动
- *
- * @param repo 仓库数据
- * @param onClick 点击整张卡片的回调（一般跳仓库详情页）
- * @param onForkSourceClick 点击复刻来源时打开源仓库
- * @param onHomepageClick 点击项目主页链接时打开外部 URL
- * @param modifier Modifier
- */
+/** Repository summary shared by lists, search, history, and saved groups. */
 @Composable
 fun RepoCard(
     repo: RepoListItem,
@@ -74,24 +59,26 @@ fun RepoCard(
     showOwner: Boolean = false,
     titleAction: (@Composable () -> Unit)? = null,
 ) {
-    Card(
+    PressableCard(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // ---- 1. 仓库名 ----
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     if (showOwner) "${repo.ownerLogin}/${repo.name}" else repo.name,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = if (titleAction != null) 1 else Int.MAX_VALUE,
                     modifier = if (titleAction != null) Modifier.weight(1f).horizontalScroll(rememberScrollState()) else Modifier,
                 )
                 titleAction?.invoke()
             }
-
-            // ---- 2. Fork 来源（复刻自）----
             val forkOwner = repo.forkedFromOwner
             val forkName = repo.forkedFromName
             if (repo.isFork && forkOwner != null && forkName != null) {
@@ -100,109 +87,86 @@ fun RepoCard(
                     text = stringResource(R.string.common_forked_from, forkOwner, forkName),
                     contentDescription = stringResource(R.string.common_open_source_repo),
                     onClick = { onForkSourceClick(forkOwner, forkName) },
-                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
-
-            // ---- 3. 简介 ----
-            repo.description?.let {
+            repo.description?.takeIf { it.isNotBlank() }?.let {
                 GitHubEmojiText(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
-                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
-
-            // ---- 4. 主页链接 ----
             repo.homepageUrl?.takeIf { it.isNotBlank() }?.let { homepageUrl ->
                 RepoMetadataLinkRow(
                     icon = Icons.Default.Link,
                     text = homepageUrl,
                     contentDescription = stringResource(R.string.common_open_homepage),
                     onClick = { onHomepageClick(homepageUrl) },
-                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
-
-            // ---- 5. 统计行：左侧滚动 + 右侧固定 ----
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // 左侧：语言点 / 星标 / fork / Issues → 可横向滚动
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    repo.languageName?.let { lang ->
-                        val dotColor = repo.languageColor
-                            ?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }
-                            ?: MaterialTheme.colorScheme.outline
-                        Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(10.dp)) {}
-                        Text(
-                            lang,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(start = 4.dp, end = 12.dp),
-                        )
-                    }
-                    Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Text(
-                        "${repo.stargazerCount}",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 2.dp, end = 12.dp),
-                    )
-                    Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Text(
-                        "${repo.forkCount}",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 2.dp, end = 12.dp),
-                    )
-                    if (repo.openIssueCount > 0) {
-                        Icon(Icons.Default.Adjust, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Text(
-                            "${repo.openIssueCount}",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(start = 2.dp),
-                        )
+                CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant) {
+                    FlowRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        repo.languageName?.let { lang ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                val dotColor = repo.languageColor
+                                    ?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }
+                                    ?: MaterialTheme.colorScheme.outline
+                                Surface(color = dotColor, shape = CircleShape, modifier = Modifier.size(10.dp)) {}
+                                Text(lang, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Text("${repo.stargazerCount}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Text("${repo.forkCount}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (repo.openIssueCount > 0) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Default.Adjust, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Text("${repo.openIssueCount}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                     }
                 }
-
-                // 右侧：私有 / 归档 / 分支胶囊 → 固定不滚动
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                repo.defaultBranchName?.let {
+                    StatusChip(
+                        it,
+                        MaterialTheme.colorScheme.secondaryContainer,
+                        MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.widthIn(max = 120.dp),
+                    )
+                }
+            }
+            if (repo.visibility != "PUBLIC" || repo.isArchived) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     if (repo.visibility != "PUBLIC") {
-                        StatusChip(
-                            stringResource(if (repo.visibility == "INTERNAL") R.string.work_visibility_internal else R.string.common_private),
-                            MaterialTheme.colorScheme.errorContainer,
-                            MaterialTheme.colorScheme.onErrorContainer,
-                        )
+                        StatusChip(stringResource(
+                            if (repo.visibility == "INTERNAL") R.string.work_visibility_internal else R.string.common_private,
+                        ))
                     }
                     if (repo.isArchived) {
-                        StatusChip(
-                            stringResource(R.string.common_archived),
-                            MaterialTheme.colorScheme.errorContainer,
-                            MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    }
-                    repo.defaultBranchName?.let {
-                        StatusChip(
-                            it,
-                            MaterialTheme.colorScheme.secondaryContainer,
-                            MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
+                        StatusChip(stringResource(R.string.common_archived))
                     }
                 }
             }
-
-            // ---- 6. Topics 行（主题色 + 独立横向滚动）----
-            RepositoryTopicsRow(
-                topics = repo.topics,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            if (repo.topics.isNotEmpty()) {
+                RepositoryTopicsRow(topics = repo.topics)
+            }
         }
     }
 }

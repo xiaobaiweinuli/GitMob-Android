@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.repoissues
 
+import androidx.lifecycle.SavedStateHandle
+
 import android.content.Context
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -97,7 +99,7 @@ class RepoIssueListScreenTest {
         coEvery { repository.getMilestones("o", "r") } returns ApiResult.Success(emptyList())
         coEvery { repository.getAssignableUsers("o", "r") } returns ApiResult.Success(emptyList())
         coEvery { repository.getIssueTemplates("o", "r") } coAnswers { pending.await() }
-        val viewModel = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val viewModel = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         composeRule.setContent {
             MaterialTheme {
                 RepoIssueListScreen(

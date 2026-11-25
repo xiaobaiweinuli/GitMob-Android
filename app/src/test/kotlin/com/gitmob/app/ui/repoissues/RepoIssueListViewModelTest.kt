@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.repoissues
 
+import androidx.lifecycle.SavedStateHandle
+
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -97,7 +99,7 @@ class RepoIssueListViewModelTest {
     fun `initial load and filter change request first page`() = runTest {
         val repository = repositoryMock()
         coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.ADMIN, true); advanceUntilIdle()
         vm.setState(RepoIssueStateFilter.CLOSED); advanceUntilIdle()
         assertEquals(RepoIssueStateFilter.CLOSED, vm.state.value.filter.state)
@@ -111,7 +113,7 @@ class RepoIssueListViewModelTest {
         val repository = repositoryMock()
         coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
         coEvery { repository.deleteIssue("I1") } returns ApiResult.Success(Unit)
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.ADMIN, true); advanceUntilIdle()
         vm.confirmDelete(vm.state.value.items.single()); vm.deletePending(); advanceUntilIdle()
         assertEquals(0, vm.state.value.items.size)
@@ -124,7 +126,7 @@ class RepoIssueListViewModelTest {
         val repository = repositoryMock()
         coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
         coEvery { repository.deleteIssue("I1") } returns ApiResult.Failure(ApiError.NetworkError)
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.ADMIN, true); advanceUntilIdle()
         vm.confirmDelete(vm.state.value.items.single()); vm.deletePending(); advanceUntilIdle()
         assertEquals(1, vm.state.value.items.size)
@@ -138,7 +140,7 @@ class RepoIssueListViewModelTest {
         val pending = CompletableDeferred<ApiResult<IssueTemplateLoadResult>>()
         coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
         coEvery { repository.getIssueTemplates("o", "r") } coAnswers { pending.await() }
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.ADMIN, true)
         advanceUntilIdle()
 
@@ -171,7 +173,7 @@ class RepoIssueListViewModelTest {
             ApiResult.Failure(ApiError.NetworkError),
             ApiResult.Success(IssueTemplateLoadResult(true, emptyList())),
         )
-        val vm = RepoIssueListViewModel(repository, errors, RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, errors, RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.ADMIN, true)
         advanceUntilIdle()
 
@@ -198,7 +200,7 @@ class RepoIssueListViewModelTest {
         coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(
             IssueTemplateLoadResult(true, listOf(IssueTemplate("Bug", "About", null, "bug.yml", emptyList(), emptyList(), emptyList()))),
         )
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.ADMIN, true)
         advanceUntilIdle()
         vm.beginCreate()
@@ -214,7 +216,7 @@ class RepoIssueListViewModelTest {
         val repository = repositoryMock()
         coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
         coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(IssueTemplateLoadResult(true, emptyList()))
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.ADMIN, true)
         advanceUntilIdle()
         vm.beginCreate()
@@ -229,7 +231,7 @@ class RepoIssueListViewModelTest {
         val repository = repositoryMock()
         coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
         coEvery { repository.getIssueTemplates("o", "r") } returns ApiResult.Success(IssueTemplateLoadResult(false, emptyList()))
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.ADMIN, true)
         advanceUntilIdle()
         vm.beginCreate()
@@ -247,7 +249,7 @@ class RepoIssueListViewModelTest {
         coEvery { repository.searchIssues("o", "r", "fix", filter, null) } returnsMany listOf(
             ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(page()), ApiResult.Success(page()),
         )
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r")
         vm.submitSearch("  fix ")
         advanceUntilIdle()
@@ -274,7 +276,7 @@ class RepoIssueListViewModelTest {
         coEvery { repository.getIssues("o", "r", any(), null) } returns ApiResult.Success(page())
         coEvery { repository.searchIssues("o", "r", "fix", any(), null) } returns ApiResult.Success(first)
         coEvery { repository.searchIssues("o", "r", "fix", any(), next) } returnsMany listOf(ApiResult.Failure(ApiError.NetworkError), ApiResult.Success(last))
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r")
         vm.submitSearch("fix")
         vm.loadMore()
@@ -305,7 +307,7 @@ class RepoIssueListViewModelTest {
         coEvery { repository.searchIssues("o", "r", "old", closed, null) } returns result("closed")
         lateinit var pending: Continuation<ApiResult<RepoIssuePage>>
         coEvery { repository.searchIssues("o", "r", "old", open, next) } coAnswers { suspendCoroutine { pending = it } }
-        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoIssueListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r")
         vm.setFilter(open)
         fun checkChange(expectedId: String, change: () -> Unit) {

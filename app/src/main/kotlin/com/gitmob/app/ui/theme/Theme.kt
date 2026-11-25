@@ -2,17 +2,24 @@ package com.gitmob.app.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MotionScheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import com.materialkolor.material3.rememberDynamicColorScheme
+
+private val GitMobShapes = Shapes(large = RoundedCornerShape(20.dp))
+private val GitMobMotionScheme = MotionScheme.expressive()
 
 /**
  * 设计参照 KernelSU 管理器真实实现（github.com/tiann/KernelSU，
@@ -46,7 +53,12 @@ fun GitMobTheme(
     }
 
     CompositionLocalProvider(LocalDensity provides scaledDensity) {
-        MaterialTheme(colorScheme = colorScheme, content = content)
+        MaterialExpressiveTheme(
+            colorScheme = colorScheme,
+            motionScheme = GitMobMotionScheme,
+            shapes = GitMobShapes,
+            content = content,
+        )
     }
 }
 

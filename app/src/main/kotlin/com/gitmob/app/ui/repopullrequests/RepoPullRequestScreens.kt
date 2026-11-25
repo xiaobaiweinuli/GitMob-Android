@@ -1,19 +1,17 @@
 package com.gitmob.app.ui.repopullrequests
 
-import androidx.compose.ui.res.pluralStringResource
-import com.gitmob.app.ui.translation.TranslationMenuItem
-import com.gitmob.app.ui.translation.TranslationText
-import com.gitmob.app.data.translation.TranslationTarget
-
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.input.TextFieldValue
-import com.gitmob.app.ui.common.RepositorySearchField
-import com.gitmob.app.ui.common.RepositorySearchButton
 import com.gitmob.app.core.network.PageSize
+
+import com.gitmob.app.ui.common.StatusBadge
+import com.gitmob.app.ui.common.ActionButtonContent
+
+import com.gitmob.app.ui.common.ActionProgressIcon
+import com.gitmob.app.ui.common.ActionStateContent
+import com.gitmob.app.ui.common.pressSelectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,35 +32,27 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Difference
-import androidx.compose.material.icons.filled.FilePresent
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsNone
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -83,8 +73,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -94,7 +88,6 @@ import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.PullRequestCreationPolicy
 import com.gitmob.app.data.model.PullRequestState
 import com.gitmob.app.data.model.RepoPullRequest
-import com.gitmob.app.data.model.RepoPullRequestCreateMetadata
 import com.gitmob.app.data.model.RepoPullRequestListItem
 import com.gitmob.app.data.model.RepoPullRequestMergeMethod
 import com.gitmob.app.data.model.RepoPullRequestReviewEvent
@@ -102,24 +95,39 @@ import com.gitmob.app.data.model.RepoPullRequestReviewThread
 import com.gitmob.app.data.model.RepoPullRequestSort
 import com.gitmob.app.data.model.RepoPullRequestState
 import com.gitmob.app.data.model.RepoPullRequestStateFilter
+import com.gitmob.app.data.model.toListItem
 import com.gitmob.app.data.model.toRepoChangedFile
 import com.gitmob.app.data.model.toRepoCommitSummary
-import com.gitmob.app.data.model.toListItem
+import com.gitmob.app.data.translation.TranslationTarget
 import com.gitmob.app.navigation.ConversationComposerTarget
+import com.gitmob.app.ui.common.ActionFloatingButton
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ActionStateIcon
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
+import com.gitmob.app.ui.common.CommitStats
 import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
 import com.gitmob.app.ui.common.ConversationEditHistorySheet
-import com.gitmob.app.ui.common.CommitStats
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.FilterMultiCapsuleMenu
 import com.gitmob.app.ui.common.GitChangedFileRow
 import com.gitmob.app.ui.common.GitCommitRow
-import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
 import com.gitmob.app.ui.common.PullRequestStateIcon
 import com.gitmob.app.ui.common.RepositoryContextTitle
+import com.gitmob.app.ui.common.RepositorySearchButton
+import com.gitmob.app.ui.common.RepositorySearchField
+import com.gitmob.app.ui.common.SearchActions
+import com.gitmob.app.ui.common.SearchTitle
 import com.gitmob.app.ui.common.UnifiedDiffViewer
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
 import com.gitmob.app.ui.common.pullRequestStateVisual
 import com.gitmob.app.ui.common.quoteMarkdown
+import com.gitmob.app.ui.translation.TranslationMenuItem
+import com.gitmob.app.ui.translation.TranslationText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -162,18 +170,20 @@ fun RepoPullRequestListScreen(
         (state.creationPolicy == PullRequestCreationPolicy.ALL || state.capabilities.canPush)
     var showCreateSheet by rememberSaveable { mutableStateOf(false) }
 
+    BackHandler(enabled = searchExpanded) { leaveList {} }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
-                    if (searchExpanded) {
+                    SearchTitle(searchExpanded) { expanded ->
+                    if (expanded) {
                         RepositorySearchField(
                             value = searchInput,
                             onValueChange = { searchInput = it },
                             placeholder = stringResource(R.string.repo_pr_search_hint),
                             hasSubmittedQuery = state.submittedQuery.isNotEmpty(),
-                            focusOnExpand = focusSearch,
+                            focusOnExpand = focusSearch && searchExpanded,
                             onSubmit = { value ->
                                 viewModel.submitSearch(value)
                                 searchInput = TextFieldValue(viewModel.state.value.submittedQuery)
@@ -186,11 +196,14 @@ fun RepoPullRequestListScreen(
                         onOwnerClick = { login -> leaveList { onOwnerClick(login) } },
                         onRepositoryClick = { repoOwner, repoName -> leaveList { onRepositoryClick(repoOwner, repoName) } },
                     )
+                                    }
                 },
-                navigationIcon = { IconButton(onClick = { leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = { if (searchExpanded) leaveList {} else leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
-                    if (canCreate) IconButton(onClick = { keyboard?.hide(); focusManager.clearFocus(); showCreateSheet = true }) { Icon(Icons.Default.Add, stringResource(R.string.pr_new)) }
+                    SearchActions(visible = !searchExpanded) {
+                        RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
+                    }
+                    if (canCreate) ActionIconButton(onClick = { keyboard?.hide(); focusManager.clearFocus(); showCreateSheet = true }) { Icon(Icons.Default.Add, stringResource(R.string.pr_new)) }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
@@ -204,33 +217,40 @@ fun RepoPullRequestListScreen(
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                when {
-                    state.isLoading && state.items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    state.loadFailed && state.items.isEmpty() -> RetryContent(viewModel::retry)
-                    !state.hasPullRequestsEnabled -> Text(stringResource(R.string.pr_disabled), modifier = Modifier.align(Alignment.Center))
-                    state.items.isEmpty() && !state.hasNextPage && !state.searchLimitReached -> Text(stringResource(R.string.pr_empty), modifier = Modifier.align(Alignment.Center))
-                    else -> LazyColumn(Modifier.fillMaxSize(), state = listState) {
-                        items(state.items, key = { it.id }) { pullRequest ->
+                val feedback = when {
+                    state.isLoading && state.items.isEmpty() -> ListFeedbackState.LOADING
+                    state.loadFailed && state.items.isEmpty() -> ListFeedbackState.ERROR
+                    !state.hasPullRequestsEnabled -> ListFeedbackState.EMPTY
+                    state.items.isEmpty() && !state.hasNextPage && !state.searchLimitReached -> ListFeedbackState.EMPTY
+                    else -> ListFeedbackState.CONTENT
+                }
+                LazyColumn(
+                    Modifier.fillMaxSize(), state = listState,
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(if (feedback == ListFeedbackState.CONTENT) state.items else emptyList(), key = { it.id }) { pullRequest ->
+                        Box(Modifier.animateItem().informationItem()) {
                             PullRequestListItemRow(
                                 pullRequest = pullRequest.toListItem(),
                                 onClick = { leaveList { onPullRequestClick(pullRequest.number) } },
                             )
-                            HorizontalDivider()
                         }
-                        if (state.hasNextPage) item(key = "more") {
-                            LaunchedEffect(state.nextCursor, state.listRevision) { if (!state.loadMoreFailed) viewModel.loadMore() }
-                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                if (state.loadMoreFailed) TextButton(onClick = viewModel::loadMore) { Text(stringResource(R.string.common_retry)) }
-                                else CircularProgressIndicator(Modifier.size(20.dp))
-                            }
-                        }
-                        if (state.searchLimitReached) item(key = "search-limit") {
-                            Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
-                                modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        item("bottom") { Spacer(Modifier.height(24.dp)) }
                     }
-                }
+                    if (feedback == ListFeedbackState.CONTENT && state.hasNextPage) item(key = "more") {
+                        LaunchedEffect(state.nextCursor, state.listRevision) { if (!state.loadMoreFailed) viewModel.loadMore() }
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            if (state.loadMoreFailed) TextButton(onClick = viewModel::loadMore, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
+                            else CircularProgressIndicator(Modifier.size(20.dp))
+                        }
+                    }
+                    if (state.searchLimitReached) item(key = "search-limit") {
+                        Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
+                            modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+
+                                }
+                ListFeedback(feedback, viewModel::retry, emptyMessage = if (!state.hasPullRequestsEnabled) stringResource(R.string.pr_disabled) else stringResource(R.string.pr_empty))
             }
         }
     }
@@ -300,7 +320,7 @@ private fun PullRequestFilters(state: RepoPullRequestListUiState, viewModel: Rep
 
 @Composable
 internal fun PullRequestListItemRow(pullRequest: RepoPullRequestListItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Column(modifier.fillMaxWidth().pressClickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             PullRequestStateIcon(
                 state = pullRequest.state.toPullRequestState(),
@@ -357,12 +377,22 @@ fun RepoPullRequestDetailScreen(
                         onRepositoryClick = onRepositoryClick,
                     )
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     state.pullRequest?.let { pullRequest ->
-                        if (pullRequest.viewerCanSubscribe) IconButton(onClick = viewModel::toggleSubscription) { Icon(if (pullRequest.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe)) }
+                        if (pullRequest.viewerCanSubscribe) IconToggleButton(
+                            checked = pullRequest.viewerSubscription == "SUBSCRIBED",
+                            onCheckedChange = { viewModel.toggleSubscription() },
+                            shapes = IconButtonDefaults.toggleableShapes(),
+                            colors = IconButtonDefaults.iconToggleButtonColors(),
+                            enabled = !state.isUpdatingSubscription,
+                        ) {
+                            ActionProgressIcon(state.isUpdatingSubscription, busyDescription = stringResource(R.string.issue_subscribe)) {
+                                ActionStateIcon(if (pullRequest.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe))
+                            }
+                        }
                         Box {
-                            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
+                            ActionIconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                             DropdownMenu(menu, { menu = false }) {
                                 TranslationMenuItem(
                                     target = TranslationTarget(pullRequest.url + ":title", pullRequest.title),
@@ -391,7 +421,7 @@ fun RepoPullRequestDetailScreen(
         },
         floatingActionButton = {
             if (state.pullRequest != null && tab == 0) {
-                ExtendedFloatingActionButton(
+                ActionFloatingButton(
                     onClick = {
                         onCompose(
                             ConversationComposeRequest(
@@ -409,7 +439,7 @@ fun RepoPullRequestDetailScreen(
     ) { padding ->
         when {
             state.isLoading && state.pullRequest == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            state.loadFailed -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Button(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) } }
+            state.loadFailed -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Button(onClick = viewModel::retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } }
             state.pullRequest != null -> Column(Modifier.fillMaxSize().padding(padding)) {
                 PullRequestHeader(state.pullRequest!!)
                 SecondaryTabRow(selectedTabIndex = tab) {
@@ -542,6 +572,7 @@ fun RepoPullRequestDetailScreen(
                         }
                         pullRequestReviewThreads(
                             threads = state.threads,
+                            updatingThreadIds = state.updatingThreadIds,
                             hasReviews = state.reviews.isNotEmpty(),
                             pullRequestAuthor = state.pullRequest!!.author?.login,
                             onCompose = onCompose,
@@ -567,8 +598,8 @@ fun RepoPullRequestDetailScreen(
             )
         }
     }
-    if (mergeOpen) MergeDialog(state.allowedMergeMethods, state.pullRequest?.autoMergeEnabled == true, { mergeOpen = false }, viewModel::merge, viewModel::toggleAutoMerge)
-    state.pendingDeleteComment?.let { AlertDialog(onDismissRequest = { viewModel.confirmDeleteComment(null) }, title = { Text(stringResource(R.string.issue_delete_comment_title)) }, text = { Text(stringResource(R.string.common_cannot_be_undone)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteComment(null) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = viewModel::deletePendingComment) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } }) }
+    if (mergeOpen) MergeDialog(state.allowedMergeMethods, state.pullRequest?.autoMergeEnabled == true, state.isMerging, state.isUpdatingAutoMerge, { mergeOpen = false }, viewModel::merge, viewModel::toggleAutoMerge)
+    state.pendingDeleteComment?.let { AlertDialog(onDismissRequest = { viewModel.confirmDeleteComment(null) }, title = { Text(stringResource(R.string.issue_delete_comment_title)) }, text = { Text(stringResource(R.string.common_cannot_be_undone)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteComment(null) }, enabled = !state.isDeletingComment, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = viewModel::deletePendingComment, enabled = !state.isDeletingComment, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isDeletingComment, label = stringResource(R.string.common_delete)) } }) }
     if (state.editHistory.isOpen) ConversationEditHistorySheet(
         edits = state.editHistory.items,
         isLoading = state.editHistory.isLoading,
@@ -586,6 +617,7 @@ fun RepoPullRequestDetailScreen(
 
 private fun LazyListScope.pullRequestReviewThreads(
     threads: List<RepoPullRequestReviewThread>,
+    updatingThreadIds: Set<String>,
     hasReviews: Boolean,
     pullRequestAuthor: String?,
     onCompose: (ConversationComposeRequest) -> Unit,
@@ -629,9 +661,13 @@ private fun LazyListScope.pullRequestReviewThreads(
             item(key = "thread:${thread.id}:actions", contentType = "thread-actions") {
                 TextButton(
                     onClick = { onToggleResolved(thread) },
+                    enabled = thread.id !in updatingThreadIds,
                     modifier = Modifier.padding(top = 8.dp),
+                    shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
                 ) {
-                    Text(stringResource(if (thread.isResolved) R.string.pr_unresolve else R.string.pr_resolve))
+                    ActionStateContent(thread.isResolved) { resolved ->
+                        ActionButtonContent(busy = thread.id in updatingThreadIds, label = stringResource(if (resolved) R.string.pr_unresolve else R.string.pr_resolve))
+                    }
                 }
             }
         }
@@ -649,9 +685,7 @@ private fun PullRequestHeader(pullRequest: RepoPullRequest) {
                 isDraft = false,
                 locked = pullRequest.locked,
             )
-            AssistChip(
-                onClick = {},
-                label = { Text(stringResource(visual.labelRes)) },
+            StatusBadge(label = { Text(stringResource(visual.labelRes)) },
                 leadingIcon = {
                     PullRequestStateIcon(
                         state = pullRequest.state.toPullRequestState(),
@@ -666,9 +700,7 @@ private fun PullRequestHeader(pullRequest: RepoPullRequest) {
                     state = pullRequest.state.toPullRequestState(),
                     isDraft = true,
                 )
-                AssistChip(
-                    onClick = {},
-                    label = { Text(stringResource(draftVisual.labelRes)) },
+                StatusBadge(label = { Text(stringResource(draftVisual.labelRes)) },
                     leadingIcon = {
                         PullRequestStateIcon(
                             state = pullRequest.state.toPullRequestState(),
@@ -679,7 +711,7 @@ private fun PullRequestHeader(pullRequest: RepoPullRequest) {
                     },
                 )
             }
-            pullRequest.reviewDecision?.let { AssistChip(onClick = {}, label = { Text(pullRequestReviewStateLabel(it)) }) }
+            pullRequest.reviewDecision?.let { StatusBadge(label = { Text(pullRequestReviewStateLabel(it)) }) }
         }
         Text("${pullRequest.headRepositoryNameWithOwner.orEmpty()}:${pullRequest.headRefName} -> ${pullRequest.baseRefName}", style = MaterialTheme.typography.bodySmall)
         Text(pluralStringResource(R.plurals.pr_diff_stats, pullRequest.changedFiles, pullRequest.additions, pullRequest.deletions, pullRequest.changedFiles), style = MaterialTheme.typography.bodySmall)
@@ -693,30 +725,57 @@ private fun ReviewDialog(onDismiss: () -> Unit, onSubmit: (RepoPullRequestReview
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.pr_review)) },
         text = {
-            Column {
+            Column(Modifier.selectableGroup()) {
                 RepoPullRequestReviewEvent.entries.forEach { item ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(event == item, { event = item })
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressSelectable(event == item, role = Role.RadioButton) { event = item }.padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(event == item, onClick = null)
                         Text(stringResource(item.label))
                     }
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
-        confirmButton = { Button(onClick = { onSubmit(event) }) { Text(stringResource(R.string.common_continue)) } },
+        dismissButton = { TextButton(onClick = onDismiss, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
+        confirmButton = { Button(onClick = { onSubmit(event) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_continue)) } },
     )
 }
 
 @Composable
-private fun MergeDialog(methods: Set<RepoPullRequestMergeMethod>, autoMergeEnabled: Boolean, onDismiss: () -> Unit, onMerge: (RepoPullRequestMergeMethod, String?, String?, () -> Unit) -> Unit, onAutoMerge: (RepoPullRequestMergeMethod) -> Unit) {
+private fun MergeDialog(methods: Set<RepoPullRequestMergeMethod>, autoMergeEnabled: Boolean, merging: Boolean, updatingAutoMerge: Boolean, onDismiss: () -> Unit, onMerge: (RepoPullRequestMergeMethod, String?, String?, () -> Unit) -> Unit, onAutoMerge: (RepoPullRequestMergeMethod, () -> Unit) -> Unit) {
     var method by remember(methods) { mutableStateOf(methods.firstOrNull() ?: RepoPullRequestMergeMethod.MERGE) }
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.pr_merge)) }, text = { Column { methods.forEach { item -> Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(method == item, { method = item }); Text(stringResource(item.label)) } }; OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.pr_commit_title)) }); OutlinedTextField(body, { body = it }, label = { Text(stringResource(R.string.pr_commit_message)) }, minLines = 3); TextButton(onClick = { onAutoMerge(method); onDismiss() }) { Text(stringResource(if (autoMergeEnabled) R.string.pr_disable_auto_merge else R.string.pr_enable_auto_merge)) } } }, dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { Button(onClick = { onMerge(method, title, body, onDismiss) }) { Text(stringResource(R.string.pr_merge)) } })
+    val busy = merging || updatingAutoMerge
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(stringResource(R.string.pr_merge)) },
+        text = {
+            Column {
+                Column(Modifier.selectableGroup()) {
+                    methods.forEach { item ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).pressSelectable(method == item, enabled = !busy, role = Role.RadioButton) { method = item }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(method == item, onClick = null, enabled = !busy)
+                            Text(stringResource(item.label), Modifier.padding(start = 12.dp))
+                        }
+                    }
+                }
+                OutlinedTextField(title, { title = it }, enabled = !busy, label = { Text(stringResource(R.string.pr_commit_title)) }, shape = MaterialTheme.shapes.medium)
+                OutlinedTextField(body, { body = it }, enabled = !busy, label = { Text(stringResource(R.string.pr_commit_message)) }, minLines = 3, shape = MaterialTheme.shapes.medium)
+                TextButton(onClick = { onAutoMerge(method, onDismiss) }, enabled = !busy && (autoMergeEnabled || method in methods), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
+                    ActionButtonContent(busy = updatingAutoMerge, label = stringResource(if (autoMergeEnabled) R.string.pr_disable_auto_merge else R.string.pr_enable_auto_merge))
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
+        confirmButton = {
+            Button(onClick = { onMerge(method, title, body, onDismiss) }, enabled = !busy && method in methods, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
+                ActionButtonContent(busy = merging, label = stringResource(R.string.pr_merge))
+            }
+        },
+    )
 }
 
 @Composable
-private fun RetryContent(onRetry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = onRetry, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) } } }
+private fun RetryContent(onRetry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = onRetry, modifier = Modifier.padding(top = 12.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } } }
 
 private val RepoPullRequestStateFilter.label: Int @StringRes get() = when (this) { RepoPullRequestStateFilter.OPEN -> R.string.work_filter_open; RepoPullRequestStateFilter.CLOSED -> R.string.common_state_closed; RepoPullRequestStateFilter.ALL -> R.string.common_all }
 private val RepoPullRequestSort.label: Int @StringRes get() = when (this) { RepoPullRequestSort.UPDATED_DESC -> R.string.work_sort_updated_desc; RepoPullRequestSort.UPDATED_ASC -> R.string.work_sort_updated_asc; RepoPullRequestSort.CREATED_DESC -> R.string.work_sort_created_desc; RepoPullRequestSort.CREATED_ASC -> R.string.work_sort_created_asc; RepoPullRequestSort.COMMENTS_DESC -> R.string.work_sort_comments_desc; RepoPullRequestSort.COMMENTS_ASC -> R.string.work_sort_comments_asc }

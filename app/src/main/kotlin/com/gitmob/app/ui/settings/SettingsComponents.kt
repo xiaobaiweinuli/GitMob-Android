@@ -1,7 +1,6 @@
 package com.gitmob.app.ui.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,20 +10,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SelectableDropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -41,6 +37,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.ExpansionArrow
+import com.gitmob.app.ui.common.pressClickable
 
 @Composable
 internal fun SettingsSection(
@@ -55,7 +54,7 @@ internal fun SettingsSection(
             modifier = Modifier.padding(horizontal = 4.dp),
         )
         Card(
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             content()
@@ -78,7 +77,7 @@ internal fun SettingsNavigationRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .pressClickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .heightIn(min = 76.dp)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -131,36 +130,15 @@ internal fun SelectionRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-            )
-            .selectable(
-                selected = selected,
-                role = Role.RadioButton,
-                onClick = onClick,
-            )
-            .heightIn(min = 64.dp)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(end = 16.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        RadioButton(selected = selected, onClick = null)
-    }
+    SelectableDropdownMenuItem(
+        selected = selected,
+        onClick = onClick,
+        text = { Text(title) },
+        supportingText = { Text(description) },
+        shapes = MenuDefaults.itemShapes(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+        trailingContent = { RadioButton(selected = selected, onClick = null) },
+    )
 }
 
 @Composable
@@ -211,16 +189,15 @@ internal fun SettingsDropdownRow(
             summary = currentValue,
             onClick = { if (!closing) expanded = true },
             icon = icon,
-            trailingIcon = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            trailingContent = { ExpansionArrow(expanded, Modifier.size(20.dp)) },
         )
         // The popup keeps option lists out of the settings page's measured height.
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { requestClose() },
             modifier = Modifier.widthIn(min = 280.dp, max = 360.dp).selectableGroup(),
-            shape = RoundedCornerShape(20.dp),
         ) {
-            // Material3 1.4.0 retains this content throughout its exit transition. Observe
+            // DropdownMenuPopup retains this content throughout its exit transition. Observe
             // removal only; onDispose itself is not a general animation-completion callback.
             DisposableEffect(Unit) {
                 onDispose { menuRemoved = true }

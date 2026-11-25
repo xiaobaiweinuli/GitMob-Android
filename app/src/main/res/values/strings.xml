@@ -139,8 +139,8 @@
     <string name="settings_palette_neutral_desc">降低彩度，更接近灰阶界面</string>
     <string name="settings_palette_vibrant">鲜明</string>
     <string name="settings_palette_vibrant_desc">提高主色与辅助色的鲜艳程度</string>
-    <string name="settings_palette_expressive">表现力</string>
-    <string name="settings_palette_expressive_desc">使用更活泼、对比更明显的色相组合</string>
+    <string name="settings_palette_expressive">表现力配色</string>
+    <string name="settings_palette_expressive_desc">使用更活泼的色相组合；仅改变配色，不控制组件的表现力样式</string>
     <string name="settings_palette_rainbow">彩虹</string>
     <string name="settings_palette_rainbow_desc">生成更丰富的多色调色板</string>
     <string name="settings_palette_fruit_salad">果味</string>
@@ -170,6 +170,8 @@
     <string name="about_developer_sub">点击查看 GitHub 主页</string>
     <string name="about_section_project">项目</string>
     <string name="about_repo_label">GitHub 仓库</string>
+    <string name="about_license_label">许可证</string>
+    <string name="about_license_name" translatable="false">Apache 2.0 + Commons Clause</string>
     <string name="about_section_permissions">权限</string>
     <string name="about_auth_label">GitHub 授权管理</string>
     <string name="about_auth_sub">查看、撤销 GitMob 对你账号的授权</string>
@@ -268,7 +270,6 @@
     <string name="repo_star_lists_summary">%1$s +%2$d</string>
     <string name="repo_star_lists_saved">星标列表已保存</string>
     <string name="repo_fork">复刻</string>
-    <string name="repo_fork_accepted">复刻申请已受理，正在异步创建</string>
     <string name="repo_actions">操作</string>
     <string name="repo_releases">发行版</string>
     <string name="repo_contributors">贡献者</string>
@@ -530,7 +531,6 @@
     <string name="pr_create_compare_footer">与其他人讨论并查看此比较中的更改。</string>
     <string name="pr_create_submit">创建拉取请求</string>
     <string name="pr_create_draft">创建为草稿</string>
-    <string name="pr_merged">已合并</string>
     <string name="pr_close">关闭拉取请求</string>
     <string name="pr_reopen">重新打开拉取请求</string>
     <string name="pr_mark_ready">标记为准备好审查</string>
@@ -768,9 +768,7 @@
     <string name="common_empty">暂无内容</string>
     <string name="repo_add_file">添加文件</string>
     <string name="repo_file_path">文件路径</string>
-    <string name="repo_commit_message">提交说明</string>
     <string name="repo_file_content">文件内容</string>
-    <string name="repo_file_content_placeholder">输入文件内容…</string>
     <string name="repo_delete_file_title">删除文件？</string>
     <string name="repo_delete_file_message">此操作会创建一个删除该文件的新提交。</string>
     <string name="repo_upload_files">上传文件</string>

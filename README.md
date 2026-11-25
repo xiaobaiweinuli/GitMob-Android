@@ -16,7 +16,7 @@
   <a href="https://developer.android.com"><img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 8.0 及以上" /></a>
   <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/Kotlin-2.4.10-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin 2.4.10" /></a>
   <a href="https://developer.android.com/compose"><img src="https://img.shields.io/badge/Jetpack_Compose-UI-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" /></a>
-  <a href="https://m3.material.io"><img src="https://img.shields.io/badge/Material_3-Design-757575?style=flat-square&logo=materialdesign&logoColor=white" alt="Material 3" /></a>
+  <a href="https://m3.material.io"><img src="https://img.shields.io/badge/Material_3-Expressive-757575?style=flat-square&logo=materialdesign&logoColor=white" alt="Material 3 Expressive" /></a>
   <a href="https://www.apollographql.com/docs/kotlin"><img src="https://img.shields.io/badge/Apollo_Kotlin-5.2.0-311C87?style=flat-square&logo=apollographql&logoColor=white" alt="Apollo Kotlin 5.2.0" /></a>
   <a href="https://docs.github.com/en/graphql"><img src="https://img.shields.io/badge/GraphQL-API-E10098?style=flat-square&logo=graphql&logoColor=white" alt="GitHub GraphQL API" /></a>
 </p>
@@ -92,39 +92,45 @@ repo user gist read:org notifications delete_repo workflow
 
 版本以 [libs.versions.toml](gradle/libs.versions.toml)、[应用构建脚本](app/build.gradle.kts) 和 [Gradle Wrapper](gradle/wrapper/gradle-wrapper.properties) 为准。
 
-| 分类          | 技术                                              | 当前配置                   |
-| ----------- | ----------------------------------------------- | ---------------------- |
-| 语言          | Kotlin                                          | `2.4.10`               |
-| 构建          | Android Gradle Plugin / Gradle                  | `9.3.1` / `9.6.1`      |
-| 代码生成        | KSP                                             | `2.3.10`               |
-| Android SDK | 最低 / 目标 / 编译 API                                | `26` / `36` / `37.1`     |
-| Java        | JDK                                             | `21`                   |
-| 声明式 UI      | Jetpack Compose BOM                             | `2026.11.01`           |
-| 设计系统        | Material 3 / MaterialKolor                      | `1.5.0` / `6.0.0`      |
-| 导航          | Navigation 3                                    | `1.2.2`                |
-| 生命周期与状态     | Lifecycle                                       | `2.11.1`               |
-| 依赖注入        | Hilt                                            | `2.60.1`               |
-| 异步          | Kotlin Coroutines + Flow / StateFlow            | `1.11.0`               |
-| GraphQL     | Apollo Kotlin                                   | `5.2.0`                |
-| HTTP        | OkHttp                                          | `5.5.1`                |
-| REST JSON   | kotlinx.serialization                           | `1.13.0`               |
-| 本地数据库       | Room                                            | `2.8.5`                |
-| 偏好设置        | DataStore                                       | `1.3.0`                |
-| 图片加载        | Coil                                            | `3.6.3`                |
-| Markdown    | CommonMark + GFM 扩展                             | `0.33.0`               |
-| YAML        | kotaml（解析嵌套深度限制为 50）                       | `0.113.0`              |
-| 辅助测试        | JUnit 4、MockK、Turbine、MockWebServer3、Robolectric | 版本由 Version Catalog 管理 |
+| 分类          | 技术                                               | 当前配置                                              |
+| ----------- | ------------------------------------------------ | ------------------------------------------------- |
+| 语言          | Kotlin                                           | `2.4.10`                                          |
+| 构建          | Android Gradle Plugin / Gradle                   | `9.3.1` / `9.6.1`                                 |
+| 代码生成        | KSP                                              | `2.3.10`                                          |
+| Android SDK | 最低 / 目标 / 编译 API                                 | `26` / `36` / `37.1`                              |
+| Java        | JDK                                              | `21`                                              |
+| 声明式 UI      | Jetpack Compose BOM                              | `2026.11.01`                                      |
+| 设计与动效       | Material 3 Expressive                            | `1.5.0`；MaterialExpressiveTheme、MotionScheme、按钮形变 |
+| 动态配色        | MaterialKolor                                    | `6.0.0`；系统种子色、自定义颜色、AMOLED 模式                     |
+| 导航          | Navigation 3                                     | `1.2.2`；类型化路由与返回栈                                 |
+| 生命周期与状态     | Lifecycle / SavedStateHandle                     | `2.11.1`                                          |
+| 依赖注入        | Hilt                                             | `2.60.1`                                          |
+| 异步          | Kotlin Coroutines + Flow / StateFlow             | `1.11.0`                                          |
+| GraphQL     | Apollo Kotlin                                    | `5.2.0`                                           |
+| HTTP        | OkHttp                                           | `5.5.1`                                           |
+| REST JSON   | kotlinx.serialization                            | `1.13.0`                                          |
+| 本地数据库       | Room                                             | `2.8.5`                                           |
+| 偏好设置        | DataStore                                        | `1.3.0`                                           |
+| 图片加载        | Coil                                             | `3.6.3`                                           |
+| Markdown    | CommonMark + GFM 扩展 / Android WebView            | `0.33.0`；HTML 渲染与内容翻译                             |
+| 文本编辑与阅读     | Sora Editor / AndroidView                        | `0.24.4`；代码、Gist、Markdown 正文与表单长文本                |
+| Java API 兼容 | desugar_jdk_libs_nio                             | `2.1.5`                                           |
+| YAML        | kotaml                                           | `0.113.0`；解析嵌套深度限制为 50                            |
+| 辅助测试        | JUnit 4、MockK、Turbine、MockWebServer3、Robolectric | 版本由 Version Catalog 管理                            |
 
 <a id="architecture"></a>
 
 ## 🏗️ 架构
 
-项目采用单 `app` 模块、按业务目录划分的 **MVVM + Repository** 架构。Compose 页面通过 ViewModel 消费状态与发出操作，Repository 负责数据访问、模型转换和业务数据组合。
+项目采用单 `app` 模块、按业务目录划分的 **MVVM + Repository** 架构。Compose 页面消费 ViewModel 的状态并发出操作，Repository 负责数据访问、模型转换和业务数据组合。GraphQL / REST 的协议差异封装在数据层，页面使用领域模型。
 
 ```mermaid
 flowchart TD
-    UI["Compose Screen"]
-    VM["ViewModel · StateFlow"]
+    THEME["GitMobTheme · Material 3 Expressive"]
+    UI["Compose Screen · 公共交互组件"]
+    EDITOR["AndroidView · Sora / WebView"]
+    VM["AccountViewModel · StateFlow / SavedStateHandle"]
+    SESSION["AccountSession · 账号隔离与任务取消"]
     REPO["Repository · 领域模型"]
     APOLLO["Apollo Kotlin · GraphQL"]
     REST["GHApiClient · REST"]
@@ -133,7 +139,10 @@ flowchart TD
     ROOM["Room · 收藏与浏览历史"]
     STORE["DataStore · 配置与加密凭据"]
 
+    THEME --> UI
+    UI --> EDITOR
     UI --> VM
+    SESSION -.-> VM
     VM --> REPO
     REPO --> APOLLO
     REPO --> REST
@@ -144,50 +153,100 @@ flowchart TD
     REPO --> STORE
 ```
 
-- **网络分工**：GraphQL 查询及 Mutation 保存在独立 `.graphql` 文件中，由 Apollo 生成类型；REST 通过 `GHApiClient` 请求并使用 kotlinx.serialization 解码。两条通道共享 OkHttp，分别处理请求头。
-- **模型边界**：Repository 将网络数据转换为 `data/model` 中的领域模型，UI 消费业务状态。
-- **权限控制**：仓库角色通过 `RepoPermission` / `RepoCapabilities` 派生操作能力，并结合归档状态和 API 返回的操作权限控制入口。
-- **账号会话**：`AccountSession` 统一管理账号上下文；凭据通过 Android Keystore 的 AES-256-GCM 加密，由 DataStore 保存密文。
-- **公共能力**：Hilt 负责依赖注入；`ApiResult`、`ErrorEventBus` 和 `ErrorBannerHost` 统一错误处理；`PageSize` 集中维护请求容量。
-- **导航与内容**：Navigation 3 管理类型化路由；`DeepLinkActivity` 统一接收外部链接；公共 Markdown 渲染能力供 README、评论等内容使用。
+- **主题与交互**：`GitMobTheme` 使用 `MaterialExpressiveTheme`、`MotionScheme.expressive()` 和统一圆角；MaterialKolor 负责调色板生成。`ui/common` 复用筛选、搜索、菜单、卡片、按钮形变、忙碌状态和按压动效。
+- **网络与模型**：GraphQL 查询及 Mutation 位于独立 `.graphql` 文件，由 Apollo 生成类型；REST 通过 `GHApiClient` 和 kotlinx.serialization 请求、解码。两条通道共享 OkHttp，分别处理请求头，Repository 将响应转换为 `data/model` 中的领域模型。
+- **权限与会话**：`RepoPermission` / `RepoCapabilities` 结合归档状态和 API 返回权限控制入口。`AccountSession` 为请求、缓存和事件提供账号上下文，`AccountViewModel` 在切换账号时取消旧任务；Token 经 Android Keystore 的 AES-256-GCM 加密后，由 DataStore 保存密文。
+- **编辑与恢复**：Sora 通过 `AndroidView` 接入 Compose，`SoraEditorState` 管理文本、选区和编辑状态；编辑页面通过 `SavedStateHandle` 与 Saver 保存草稿。代码阅读、正文编辑、文件导入复用公共组件与存储访问工具。
+- **内容与附件**：CommonMark 生成 HTML，WebView 展示 Markdown、图片和翻译结果；`data/release` 准备上传附件，`core/storage` 统一内容 URI 读取和取消，网络层发送二进制文件并报告进度。
+- **导航与本地数据**：Navigation 3 管理类型化路由、返回栈及页面状态；`DeepLinkActivity` 接收外部链接。Room 保存本地收藏与浏览历史，DataStore 保存主题、更新和翻译等设置。
+- **公共基础设施**：Hilt 提供依赖；`ApiResult`、`ErrorEventBus` 和 `ErrorBannerHost` 统一错误处理；`PageSize` 集中维护请求容量，账号范围内的事件同步跨页面数据。
 
 ### 目录结构
 
 ```text
 GitMob-Android/
 ├── .github/workflows/
-│   └── build-apk.yml           # APK 签名、构建与 Release 发布
+│   └── build-apk.yml               # APK 签名、构建与 Release 发布
 ├── app/
-│   ├── build.gradle.kts        # SDK、版本、签名和依赖
-│   ├── proguard-rules.pro      # Release 混淆规则
+│   ├── build.gradle.kts            # SDK、版本、签名和依赖
+│   ├── proguard-rules.pro          # Release 混淆规则
 │   └── src/
 │       ├── main/
 │       │   ├── AndroidManifest.xml
+│       │   ├── assets/             # Markdown 样式与翻译脚本
 │       │   ├── graphql/
 │       │   │   ├── schema.graphqls
 │       │   │   └── com/gitmob/app/  # 按业务组织的 GraphQL 文档
 │       │   ├── kotlin/com/gitmob/app/
-│       │   │   ├── core/       # 网络、认证、权限、错误、DI、Markdown 等
+│       │   │   ├── GitMobApp.kt
+│       │   │   ├── MainActivity.kt
+│       │   │   ├── StartupViewModel.kt
+│       │   │   ├── core/
+│       │   │   │   ├── auth/       # 账号会话、OAuth、Token 加密存储
+│       │   │   │   ├── cache/      # 内存缓存
+│       │   │   │   ├── di/         # Hilt 依赖注入
+│       │   │   │   ├── diff/       # Diff 解析与生成
+│       │   │   │   ├── download/   # 外部下载入口
+│       │   │   │   ├── error/      # 错误模型、事件与提示
+│       │   │   │   ├── event/      # 账号范围内的更新事件
+│       │   │   │   ├── markdown/   # Markdown 渲染与文档链接
+│       │   │   │   ├── network/    # REST / GraphQL、上传和分页
+│       │   │   │   ├── permission/ # 仓库角色与操作能力
+│       │   │   │   ├── preferences/ # 主题和更新设置
+│       │   │   │   ├── share/      # 分享入口
+│       │   │   │   └── storage/    # SAF 文件读取与取消
 │       │   │   ├── data/
-│       │   │   │   ├── local/       # Room、搜索历史与本地数据访问
-│       │   │   │   ├── model/       # 领域模型与数据结构
-│       │   │   │   ├── repository/  # 业务数据访问
+│       │   │   │   ├── local/      # Room、收藏、浏览与搜索历史
+│       │   │   │   ├── model/      # 领域模型
+│       │   │   │   ├── release/    # Release 附件准备和临时文件
+│       │   │   │   ├── repository/ # 业务数据访问
 │       │   │   │   └── translation/ # 翻译服务与配置
-│       │   │   ├── navigation/ # 路由、返回栈与深链接
-│       │   │   └── ui/         # 按功能组织的 Screen / ViewModel
-│       │   └── res/            # 图片、图标及中英文字符串
-│       ├── release/            # Release 专用资源
-│       └── test/               # JVM / Robolectric 辅助测试
+│       │   │   ├── navigation/     # 路由、返回栈、状态恢复和深链接
+│       │   │   └── ui/
+│       │   │       ├── common/     # 筛选、动效、Sora、Markdown 等公共组件
+│       │   │       ├── theme/      # Expressive 主题、配色与偏好
+│       │   │       ├── icons/      # 图标封装
+│       │   │       ├── home/       # 主页入口
+│       │   │       ├── login/      # 登录与账号管理
+│       │   │       ├── repos/      # 仓库列表与创建
+│       │   │       ├── repodetail/ # 仓库详情与设置
+│       │   │       ├── repocode/   # 代码浏览、文件编辑与提交
+│       │   │       ├── branches/   # 分支管理
+│       │   │       ├── repocommits/ # 提交历史与 Diff
+│       │   │       ├── repoforks/  # 复刻列表
+│       │   │       ├── repocommunity/ # 仓库社区文件
+│       │   │       ├── repoissues/ # Issue 列表、详情、编辑和表单
+│       │   │       ├── repopullrequests/ # PR、Review 与合并
+│       │   │       ├── repodiscussions/ # 讨论、评论与回复
+│       │   │       ├── repoactions/ # Actions 工作流与运行
+│       │   │       ├── reporeleases/ # Release 编辑、附件上传与管理
+│       │   │       ├── gist/       # Gist 浏览与多文件编辑
+│       │   │       ├── profile/    # 用户与组织主页
+│       │   │       ├── userlist/   # 用户列表
+│       │   │       ├── userstars/  # 用户星标
+│       │   │       ├── stars/      # 星标与 GitHub Lists
+│       │   │       ├── library/    # 本地收藏与历史
+│       │   │       ├── search/     # 搜索
+│       │   │       ├── work/       # 个人工作事项
+│       │   │       ├── inbox/      # 通知
+│       │   │       ├── settings/   # 设置与关于
+│       │   │       ├── translation/ # 翻译配置与状态
+│       │   │       └── update/     # 应用更新
+│       │   └── res/                # 图片、图标、简体中文、繁体中文与英文资源
+│       ├── release/                # Release 专用图标资源
+│       └── test/                   # JVM / Robolectric 测试与辅助工具
 ├── gradle/
-│   ├── libs.versions.toml      # 依赖与插件版本
+│   ├── libs.versions.toml          # 依赖与插件版本
 │   ├── gradle-daemon-jvm.properties
-│   └── wrapper/               # Gradle Wrapper 配置
+│   └── wrapper/                   # Gradle Wrapper 配置
 ├── build.gradle.kts
 ├── settings.gradle.kts
-└── gradle.properties           # APP_VERSION_NAME 等项目属性
+├── gradle.properties              # APP_VERSION_NAME 等项目属性
+├── LICENSE                        # Apache 2.0 + Commons Clause
+└── README.md
 ```
 
-主要源码入口：[导航](app/src/main/kotlin/com/gitmob/app/navigation/GitMobNavGraph.kt) · [网络配置](app/src/main/kotlin/com/gitmob/app/core/di/NetworkModule.kt) · [权限模型](app/src/main/kotlin/com/gitmob/app/core/permission/RepoPermission.kt) · [Token 存储](app/src/main/kotlin/com/gitmob/app/core/auth/TokenStorage.kt) · [本地收藏与历史](app/src/main/kotlin/com/gitmob/app/data/local/library/LibraryRepository.kt)。
+主要源码入口：[主题](app/src/main/kotlin/com/gitmob/app/ui/theme/Theme.kt) · [交互动效](app/src/main/kotlin/com/gitmob/app/ui/common/ActionMotion.kt) · [编辑器](app/src/main/kotlin/com/gitmob/app/ui/common/SoraTextEditor.kt) · [导航](app/src/main/kotlin/com/gitmob/app/navigation/GitMobNavGraph.kt) · [网络配置](app/src/main/kotlin/com/gitmob/app/core/di/NetworkModule.kt) · [权限模型](app/src/main/kotlin/com/gitmob/app/core/permission/RepoPermission.kt) · [账号会话](app/src/main/kotlin/com/gitmob/app/core/auth/AccountSession.kt) · [本地收藏与历史](app/src/main/kotlin/com/gitmob/app/data/local/library/LibraryRepository.kt)。
 
 <a id="build"></a>
 
@@ -418,11 +477,10 @@ HTML 测试报告位于 `app/build/reports/tests/testDebugUnitTest/index.html`�
 - **服务范围**：默认 API 地址为 GitHub.com；当前没有 GitHub Enterprise Server 的可配置登录入口。
 - **网络与权限**：远端操作受 GitHub API、Token 权限、仓库规则和限流约束；本地收藏与历史不代表完整离线仓库支持。
 - **外部链接**：应用声明了 GitHub / Gist 链接入口，实际默认打开方式由系统设置决定。
-- **编辑器实现**：Version Catalog 中预留的 Sora Editor、AppIconLoader、ParcelableList 尚未作为实际功能依赖接入，不计入现有功能。
-- **许可证状态**：关于页当前显示 Apache 2.0，但本仓库尚未包含对应的 `LICENSE` 文件，许可证信息有待补齐。
+- **预留依赖**：Version Catalog 中的 AppIconLoader、ParcelableList 尚未接入实际功能。
 
 <a id="feedback"></a>
 
-## 🤝 反馈
+## 🙏 感谢
 
-遇到问题时，欢迎提交 [Issue](https://github.com/xiaobaiweinuli/GitMob-Android/issues)，附上应用版本、Android 版本、复现步骤和相关截图。日志与截图请先移除 Token、密码和其他私密信息。
+感谢 [Andrew-hh](https://linux.do/u/Andrew-hh) 提供的免费 AI 服务。

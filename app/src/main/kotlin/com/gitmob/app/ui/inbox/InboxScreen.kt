@@ -1,20 +1,17 @@
 package com.gitmob.app.ui.inbox
 
 import androidx.annotation.StringRes
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -30,11 +27,10 @@ import androidx.compose.material.icons.filled.Adjust
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Sell
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -54,7 +50,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.InboxNotification
 import com.gitmob.app.data.model.InboxReadFilter
+import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.FilterCapsuleMenu
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
 
 /**
  * 收件箱 Push 页（通知列表）。
@@ -79,7 +80,7 @@ fun InboxScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.inbox_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -112,82 +113,45 @@ fun InboxScreen(
             HorizontalDivider()
 
             Box(modifier = Modifier.fillMaxSize()) {
-                when {
-                    state.isLoading && state.notifications.isEmpty() -> {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                    }
-                    state.loadFailed && state.notifications.isEmpty() -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Text(stringResource(R.string.common_load_failed))
-                            Button(
-                                onClick = viewModel::retry,
-                                modifier = Modifier.padding(top = 12.dp),
-                            ) { Text(stringResource(R.string.common_retry)) }
+                val feedback = when {
+                    state.isLoading && state.notifications.isEmpty() -> ListFeedbackState.LOADING
+                    state.loadFailed && state.notifications.isEmpty() -> ListFeedbackState.ERROR
+                    state.notifications.isEmpty() -> ListFeedbackState.EMPTY
+                    else -> ListFeedbackState.CONTENT
+                }
+                PullToRefreshBox(
+                    isRefreshing = state.isRefreshing,
+                    onRefresh = viewModel::refresh,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp, end = 16.dp, top = 8.dp,
+                            bottom = 8.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                                WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(state.notifications, key = { it.id }) { notification ->
+                            Box(Modifier.animateItem()) {
+                                NotificationRow(notification, onClick = {
+                                    if (notification.isUnread) viewModel.markAsRead(notification)
+                                    onNotificationClick(notification)
+                                })
+                            }
                         }
-                    }
-                    else -> {
-                        PullToRefreshBox(
-                            isRefreshing = state.isRefreshing,
-                            onRefresh = viewModel::refresh,
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                if (state.notifications.isEmpty()) {
-                                    item {
-                                        Box(
-                                            modifier = Modifier.fillParentMaxSize(),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Text(
-                                                stringResource(state.readFilter.emptyStateRes),
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    items(state.notifications) { notification ->
-                                        NotificationRow(
-                                            notification,
-                                            onClick = {
-                                                if (notification.isUnread) viewModel.markAsRead(notification)
-                                                onNotificationClick(notification)
-                                            },
-                                        )
-                                    }
-                                }
-                                if (state.hasNextPage) {
-                                    item {
-                                        LaunchedEffect(state.notifications.size) { viewModel.loadMore() }
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(16.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                }
-                                // Push route 底部：navigationBars + captionBar 高度
-                                item(key = "bottom_spacer") {
-                                    Spacer(
-                                        Modifier.height(
-                                            WindowInsets.navigationBars.asPaddingValues()
-                                                .calculateBottomPadding() +
-                                                WindowInsets.captionBar.asPaddingValues()
-                                                    .calculateBottomPadding(),
-                                        ),
-                                    )
+                        if (feedback == ListFeedbackState.CONTENT && state.hasNextPage) {
+                            item(key = "more") {
+                                LaunchedEffect(state.notifications.size) { viewModel.loadMore() }
+                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(Modifier.size(20.dp))
                                 }
                             }
                         }
                     }
+                    ListFeedback(feedback, viewModel::retry,
+                        emptyMessage = stringResource(state.readFilter.emptyStateRes))
                 }
             }
         }
@@ -214,7 +178,8 @@ private fun NotificationRow(notification: InboxNotification, onClick: () -> Unit
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .informationItem()
+            .pressClickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

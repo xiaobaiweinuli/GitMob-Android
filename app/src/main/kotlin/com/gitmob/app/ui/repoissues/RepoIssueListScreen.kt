@@ -1,49 +1,59 @@
 package com.gitmob.app.ui.repoissues
 
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.input.TextFieldValue
-import com.gitmob.app.ui.common.RepositorySearchField
-import com.gitmob.app.ui.common.RepositorySearchButton
-import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.ui.common.ActionButtonContent
+import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ActionProgressIcon
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.FilterMultiCapsuleMenu
 import com.gitmob.app.ui.common.IssueStateIcon
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
 import com.gitmob.app.ui.common.RepositoryContextTitle
+import com.gitmob.app.ui.common.RepositorySearchButton
+import com.gitmob.app.ui.common.RepositorySearchField
+import com.gitmob.app.ui.common.SearchActions
+import com.gitmob.app.ui.common.SearchTitle
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,17 +92,19 @@ fun RepoIssueListScreen(
         action()
     }
 
+    BackHandler(enabled = searchExpanded) { leaveList {} }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    if (searchExpanded) {
+                    SearchTitle(searchExpanded) { expanded ->
+                    if (expanded) {
                         RepositorySearchField(
                             value = searchInput,
                             onValueChange = { searchInput = it },
                             placeholder = stringResource(R.string.repo_issue_search_hint),
                             hasSubmittedQuery = state.submittedQuery.isNotEmpty(),
-                            focusOnExpand = focusSearch,
+                            focusOnExpand = focusSearch && searchExpanded,
                             onSubmit = { value ->
                                 viewModel.submitSearch(value)
                                 searchInput = TextFieldValue(viewModel.state.value.submittedQuery)
@@ -105,22 +117,21 @@ fun RepoIssueListScreen(
                         onOwnerClick = { login -> leaveList { onOwnerClick(login) } },
                         onRepositoryClick = { repoOwner, repoName -> leaveList { onRepositoryClick(repoOwner, repoName) } },
                     )
+                                    }
                 },
-                navigationIcon = { IconButton(onClick = { leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = { if (searchExpanded) leaveList {} else leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
+                    SearchActions(visible = !searchExpanded) {
+                        RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
+                    }
                     if (state.viewerCanCreateIssues) {
                         val createDescription = stringResource(R.string.issue_new)
-                        IconButton(
+                        ActionIconButton(
                             onClick = { keyboard?.hide(); focusManager.clearFocus(); viewModel.beginCreate() },
                             enabled = !state.templatePickerLoading,
                             modifier = Modifier.semantics { contentDescription = createDescription },
                         ) {
-                            if (state.templatePickerLoading) {
-                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Default.Add, contentDescription = null)
-                            }
+                            ActionProgressIcon(busy = state.templatePickerLoading) { Icon(Icons.Default.Add, contentDescription = null) }
                         }
                     }
                 },
@@ -136,30 +147,40 @@ fun RepoIssueListScreen(
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                when {
-                    state.isLoading && state.items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    state.loadFailed && state.items.isEmpty() -> ErrorState(viewModel::retry)
-                    state.items.isEmpty() && !state.hasNextPage && !state.searchLimitReached -> Text(stringResource(R.string.issue_empty_filtered), modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    else -> LazyColumn(Modifier.fillMaxSize(), state = listState) {
-                        items(state.items, key = { it.id }) { issue ->
+                val feedback = when {
+                    state.isLoading && state.items.isEmpty() -> ListFeedbackState.LOADING
+                    state.loadFailed && state.items.isEmpty() -> ListFeedbackState.ERROR
+                    state.items.isEmpty() && !state.hasNextPage && !state.searchLimitReached -> ListFeedbackState.EMPTY
+                    else -> ListFeedbackState.CONTENT
+                }
+                LazyColumn(
+                    Modifier.fillMaxSize(), state = listState,
+                    contentPadding = PaddingValues(
+                        start = 16.dp, end = 16.dp, top = 8.dp,
+                        bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 20.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(if (feedback == ListFeedbackState.CONTENT) state.items else emptyList(), key = { it.id }) { issue ->
+                        Box(Modifier.animateItem().informationItem()) {
                             val canDelete = state.capabilities.canDeleteIssues && issue.viewerCanDelete
                             IssueSwipeRow(issue, canDelete, { viewModel.confirmDelete(issue) }) { leaveList { onIssueClick(issue.number) } }
-                            HorizontalDivider()
                         }
-                        if (state.hasNextPage) item(key = "more") {
-                            LaunchedEffect(state.nextCursor, state.listRevision) { if (!state.loadMoreFailed) viewModel.loadMore() }
-                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                if (state.loadMoreFailed) TextButton(onClick = viewModel::loadMore) { Text(stringResource(R.string.common_retry)) }
-                                else CircularProgressIndicator(Modifier.size(20.dp))
-                            }
-                        }
-                        if (state.searchLimitReached) item(key = "search-limit") {
-                            Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
-                                modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        item(key = "bottom") { Spacer(Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp)) }
                     }
-                }
+                    if (feedback == ListFeedbackState.CONTENT && state.hasNextPage) item(key = "more") {
+                        LaunchedEffect(state.nextCursor, state.listRevision) { if (!state.loadMoreFailed) viewModel.loadMore() }
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            if (state.loadMoreFailed) TextButton(onClick = viewModel::loadMore, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
+                            else CircularProgressIndicator(Modifier.size(20.dp))
+                        }
+                    }
+                    if (state.searchLimitReached) item(key = "search-limit") {
+                        Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
+                            modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+
+                                }
+                ListFeedback(feedback, viewModel::retry, emptyMessage = stringResource(R.string.issue_empty_filtered))
             }
         }
     }
@@ -169,8 +190,8 @@ fun RepoIssueListScreen(
             onDismissRequest = { viewModel.confirmDelete(null) },
             title = { Text(stringResource(R.string.issue_delete_title, issue.number)) },
             text = { Text(stringResource(R.string.issue_delete_message)) },
-            dismissButton = { TextButton(onClick = { viewModel.confirmDelete(null) }) { Text(stringResource(R.string.common_cancel)) } },
-            confirmButton = { TextButton(onClick = viewModel::deletePending, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.common_delete)) } },
+            dismissButton = { TextButton(onClick = { viewModel.confirmDelete(null) }, enabled = !state.isDeleting, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
+            confirmButton = { TextButton(onClick = viewModel::deletePending, enabled = !state.isDeleting, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isDeleting, label = stringResource(R.string.common_delete)) } },
         )
     }
 
@@ -204,7 +225,7 @@ fun RepoIssueListScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = viewModel::dismissTemplatePicker) { Text(stringResource(R.string.common_cancel)) }
+                TextButton(onClick = viewModel::dismissTemplatePicker, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -212,7 +233,7 @@ fun RepoIssueListScreen(
 
 @Composable
 private fun IssueTemplateOption(title: String, description: String? = null, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth(), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
             Text(title)
             description?.let {
@@ -373,21 +394,13 @@ private fun RepoAuthorFilter.label(): String = when (this) {
 /** 布尔型筛选的切换胶囊：开启=主题容器色+勾，关闭=灰色 */
 @Composable
 private fun ToggleFilterCapsule(label: String, active: Boolean, onClick: () -> Unit) {
-    Surface(
+    FilterChip(
+        selected = active,
         onClick = onClick,
-        shape = CircleShape,
-        color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
-            if (active) Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-        }
-    }
+        shapes = FilterChipDefaults.shapes(),
+        label = { Text(label) },
+        leadingIcon = if (active) {{ Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }} else null,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -411,7 +424,7 @@ private fun IssueSwipeRow(issue: RepoIssue, canDelete: Boolean, onDelete: () -> 
 
 @Composable
 private fun IssueRow(issue: RepoIssue, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).clickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).pressClickable(onClick = onClick).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             IssueStateIcon(
                 state = issue.state,
@@ -434,7 +447,7 @@ private fun IssueRow(issue: RepoIssue, onClick: () -> Unit) {
 
 @Composable private fun LabelPill(label: IssueLabel) { val fallback = MaterialTheme.colorScheme.secondaryContainer; val color = remember(label.color, fallback) { runCatching { Color("#${label.color}".toColorInt()) }.getOrDefault(fallback) }; Text(label.name, style = MaterialTheme.typography.labelSmall, modifier = Modifier.background(color.copy(alpha = .22f), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp)) }
 
-@Composable private fun ErrorState(retry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(retry, Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) } } }
+@Composable private fun ErrorState(retry: () -> Unit) { Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(retry, modifier = Modifier.padding(top = 12.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } } }
 
 private val RepoIssueStateFilter.labelRes: Int
     @StringRes get() = when (this) {

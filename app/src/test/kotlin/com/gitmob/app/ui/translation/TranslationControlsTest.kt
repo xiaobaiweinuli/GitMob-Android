@@ -8,6 +8,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -33,6 +34,68 @@ import org.robolectric.annotation.Config
 class TranslationControlsTest {
     @get:Rule val compose = createComposeRule()
     private val context: Context get() = ApplicationProvider.getApplicationContext()
+
+    @Test fun secretVisibilityTogglePreservesCredentialsWhenSaved() {
+        val credentials = TranslationCredentials(appId = "example-app", secret = "example-secret")
+        val vm = mockk<TranslationViewModel>(relaxed = true)
+        compose.setContent {
+            MaterialTheme {
+                TranslationCredentialsSheet(
+                    TranslationProvider.BAIDU, credentials, TranslationUiState(),
+                    TranslationPreferences(), vm, {},
+                )
+            }
+        }
+        val toggle = compose.onNodeWithContentDescription(context.getString(R.string.translation_show_secret))
+        val field = compose.onNode(hasSetTextAction() and hasText(context.getString(R.string.translation_secret)))
+        toggle.assertIsOff()
+        field.assert(SemanticsMatcher.expectValue(SemanticsProperties.IsPasswordObfuscated, true))
+        // The sheet's Robolectric window is outside touch bounds; use its accessibility click action.
+        toggle.performSemanticsAction(SemanticsActions.OnClick) { it() }
+        toggle.assertIsOn()
+        field.assert(SemanticsMatcher.expectValue(SemanticsProperties.IsPasswordObfuscated, false))
+        toggle.performSemanticsAction(SemanticsActions.OnClick) { it() }
+        toggle.assertIsOff()
+        field.assert(SemanticsMatcher.expectValue(SemanticsProperties.IsPasswordObfuscated, true))
+        compose.onNodeWithText(context.getString(R.string.common_save))
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        verify(exactly = 1) { vm.saveCredentials(TranslationProvider.BAIDU, credentials, any()) }
+    }
+
+    @Test fun customMethodAndAuthMenusReflectSelectionAndSaveTheChosenValues() {
+        val credentials = TranslationCredentials(endpoint = "https://example.com/translate", auth = TranslationAuth.BEARER)
+        val vm = mockk<TranslationViewModel>(relaxed = true)
+        compose.setContent {
+            MaterialTheme {
+                TranslationCredentialsSheet(
+                    TranslationProvider.CUSTOM, credentials, TranslationUiState(),
+                    TranslationPreferences(), vm, {},
+                )
+            }
+        }
+        val popup = SemanticsMatcher.keyIsDefined(SemanticsProperties.IsPopup)
+        fun option(text: String) = compose.onNode(hasText(text) and hasAnyAncestor(popup))
+        fun open(label: Int, value: String) = compose.onNodeWithText(context.getString(label) + ": " + value)
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        open(R.string.translation_method, "POST")
+        option("POST").assertIsSelected()
+        option("GET").assertIsNotSelected().performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onAllNodes(popup).assertCountEquals(0)
+        open(R.string.translation_method, "GET")
+        option("GET").assertIsSelected().performSemanticsAction(SemanticsActions.OnClick) { it() }
+        open(R.string.translation_auth, "Bearer")
+        option("Bearer").assertIsSelected()
+        val header = context.getString(R.string.translation_header)
+        option(header).assertIsNotSelected().performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onAllNodes(popup).assertCountEquals(0)
+        open(R.string.translation_auth, header)
+        option(header).assertIsSelected().performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithText(context.getString(R.string.common_save))
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        verify(exactly = 1) {
+            vm.saveCredentials(TranslationProvider.CUSTOM, credentials.copy(method = "GET", auth = TranslationAuth.HEADER), any())
+        }
+    }
 
     @Test fun failureRetryAndServiceActionsShareOneRowAtPhoneWidth() {
         var retries = 0

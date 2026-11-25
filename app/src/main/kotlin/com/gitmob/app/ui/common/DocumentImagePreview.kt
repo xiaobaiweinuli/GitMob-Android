@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,8 @@ import com.gitmob.app.data.model.DocumentImage
 import com.gitmob.app.data.model.DocumentImageGallery
 import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.repository.RepoDocumentResource
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import com.materialkolor.material3.rememberDynamicColorScheme
 import kotlin.math.roundToInt
 
@@ -142,7 +145,12 @@ private fun ImageViewerDialog(
         document?.resourcePath(image.source) ?: image.source.toUri().takeUnless { it.scheme == "data" }?.lastPathSegment
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        MaterialTheme(colorScheme = scheme) {
+        androidx.compose.material3.MaterialExpressiveTheme(
+            colorScheme = scheme,
+            shapes = MaterialTheme.shapes,
+            typography = MaterialTheme.typography,
+            motionScheme = MaterialTheme.motionScheme,
+        ) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                     var menu by remember { mutableStateOf(false) }
@@ -152,11 +160,11 @@ private fun ImageViewerDialog(
                                 ?: stringResource(R.string.image_viewer_title), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             sourcePath?.let { Text(it, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         } },
-                        navigationIcon = { IconButton(onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.image_viewer_close)) } },
+                        navigationIcon = { ActionIconButton(onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.image_viewer_close)) } },
                         actions = { Box {
-                            IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.image_actions)) }
+                            ActionIconButton({ menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.image_actions)) }
                             DropdownMenu(menu, { menu = false }) {
-                                DropdownMenuItem(text = { Text(stringResource(R.string.common_download)) }, enabled = !state.isDownloading,
+                                DropdownMenuItem(text = { ActionButtonContent(busy = state.isDownloading, label = stringResource(R.string.common_download)) }, enabled = !state.isDownloading,
                                     onClick = { menu = false; onDownload() })
                                 image.originalLink?.let { link -> DropdownMenuItem(text = { Text(stringResource(R.string.image_open_original_link)) },
                                     onClick = { menu = false; onDismiss(); onOriginalLink(link) }) }
@@ -167,9 +175,9 @@ private fun ImageViewerDialog(
                     imageContent(Modifier.weight(1f).fillMaxWidth())
                     Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         position?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
-                        image.originalLink?.let { link -> TextButton({ onDismiss(); onOriginalLink(link) }) { Text(stringResource(R.string.image_open_original_link)) } }
+                        image.originalLink?.let { link -> TextButton({ onDismiss(); onOriginalLink(link) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.image_open_original_link)) } }
                         if (state.resource != null) {
-                            TextButton(zoom::reset) { Text(if (zoom.scale <= 1.01f) stringResource(R.string.image_fit_screen)
+                            TextButton(zoom::reset, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(if (zoom.scale <= 1.01f) stringResource(R.string.image_fit_screen)
                                 else stringResource(R.string.image_zoom_reset, (zoom.scale * 100).roundToInt())) }
                             Text(stringResource(R.string.image_gesture_hint), style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -199,8 +207,8 @@ private fun ImageSurface(
             state.error != null -> Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 val tooLarge = (state.error as? ApiError.UserVisible)?.messageRes == R.string.image_preview_too_large
                 Text(stringResource(if (tooLarge) R.string.image_preview_too_large else R.string.image_preview_failed))
-                if (tooLarge) OutlinedButton(onDownload, enabled = !state.isDownloading) { Text(stringResource(R.string.common_download)) }
-                else OutlinedButton(onRetry) { Text(stringResource(R.string.common_retry)) }
+                if (tooLarge) OutlinedButton(onDownload, enabled = !state.isDownloading, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { ActionButtonContent(busy = state.isDownloading, label = stringResource(R.string.common_download)) }
+                else OutlinedButton(onRetry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
             }
             resource != null -> DecodedImage(resource, description, zoom, onClick, onDecodeError)
             else -> CircularProgressIndicator()

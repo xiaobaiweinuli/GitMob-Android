@@ -1,21 +1,18 @@
 package com.gitmob.app.ui.work
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -23,14 +20,13 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -46,15 +42,20 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
-import com.gitmob.app.data.model.WorkIssueItem
 import com.gitmob.app.data.model.UserIssueRelationFilter
 import com.gitmob.app.data.model.UserIssueSortFilter
 import com.gitmob.app.data.model.UserIssueStateFilter
 import com.gitmob.app.data.model.UserIssueVisibilityFilter
+import com.gitmob.app.data.model.WorkIssueItem
+import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.GitHubStateChip
 import com.gitmob.app.ui.common.IssueStateIcon
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
+import com.gitmob.app.ui.common.informationItem
 import com.gitmob.app.ui.common.issueStateVisual
+import com.gitmob.app.ui.common.pressClickable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,7 +72,7 @@ fun WorkIssueListScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.common_issues)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -101,48 +102,40 @@ fun WorkIssueListScreen(
                 onVisibilitySelected = viewModel::setVisibilityFilter,
                 onSortSelected = viewModel::setSortFilter,
             )
-            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            when {
-                state.isLoading && state.items.isEmpty() -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                val feedback = when {
+                    state.isLoading && state.items.isEmpty() -> ListFeedbackState.LOADING
+                    state.loadFailed && state.items.isEmpty() -> ListFeedbackState.ERROR
+                    state.items.isEmpty() && !state.hasNextPage -> ListFeedbackState.EMPTY
+                    else -> ListFeedbackState.CONTENT
                 }
-                state.loadFailed && state.items.isEmpty() -> {
-                    Column(
-                        modifier = Modifier.fillMaxSize().padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(stringResource(R.string.common_load_failed))
-                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) }
-                    }
-                }
-                else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(state.items) { item ->
-                            WorkIssueRow(item, onClick = { onItemClick(item.repoOwner, item.repoName, item.number) })
-                        }
-                        if (state.hasNextPage) {
-                            item {
-                                LaunchedEffect(state.items.size) { viewModel.loadMore() }
-                                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                }
-                            }
-                        }
-                        // Push route 底部：navigationBars + captionBar 高度
-                        item(key = "bottom_spacer") {
-                            Spacer(
-                                Modifier.height(
-                                    WindowInsets.navigationBars.asPaddingValues()
-                                        .calculateBottomPadding() +
-                                        WindowInsets.captionBar.asPaddingValues()
-                                            .calculateBottomPadding(),
-                                ),
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp, end = 16.dp, top = 8.dp,
+                        bottom = 8.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                            WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(state.items, key = { it.id }) { item ->
+                        Box(Modifier.animateItem()) {
+                            WorkIssueRow(
+                                item = item,
+                                onClick = { onItemClick(item.repoOwner, item.repoName, item.number) },
                             )
                         }
                     }
+                    if (state.hasNextPage && feedback == ListFeedbackState.CONTENT) {
+                        item {
+                            LaunchedEffect(state.items.size) { viewModel.loadMore() }
+                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(Modifier.size(20.dp))
+                            }
+                        }
+                    }
                 }
-            }
+                ListFeedback(feedback, viewModel::retry)
             }
         }
     }
@@ -260,7 +253,8 @@ private fun WorkIssueRow(item: WorkIssueItem, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .informationItem()
+            .pressClickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

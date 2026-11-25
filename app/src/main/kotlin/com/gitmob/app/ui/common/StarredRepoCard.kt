@@ -7,17 +7,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallSplit
-import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Adjust
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -71,8 +71,11 @@ fun StarredRepoCard(
     modifier: Modifier = Modifier,
     onAddToListClick: (() -> Unit)? = null,
     onUnstarClick: (() -> Unit)? = null,
+    isUnstarring: Boolean = false,
 ) {
-    Card(
+    PressableCard(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
     ) {
@@ -131,16 +134,18 @@ fun StarredRepoCard(
                 if (showViewerActions) {
                     Row {
                         onUnstarClick?.let {
-                            IconButton(onClick = it) {
-                                Icon(
-                                    Icons.Default.Star,
-                                    contentDescription = stringResource(R.string.common_unstar),
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
+                            ActionIconButton(onClick = it, enabled = !isUnstarring) {
+                                ActionProgressIcon(isUnstarring, busyDescription = stringResource(R.string.common_unstar)) {
+                                    Icon(
+                                        Icons.Default.Star,
+                                        contentDescription = stringResource(R.string.common_unstar),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                         }
                         onAddToListClick?.let {
-                            IconButton(onClick = it) {
+                            ActionIconButton(onClick = it, enabled = !isUnstarring) {
                                 Icon(Icons.Default.BookmarkAdd, contentDescription = stringResource(R.string.common_add_to_list))
                             }
                         }
@@ -227,6 +232,7 @@ fun StarredRepoCard(
                             it,
                             MaterialTheme.colorScheme.secondaryContainer,
                             MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.widthIn(max = 120.dp),
                         )
                     }
                 }

@@ -1,23 +1,15 @@
 package com.gitmob.app.ui.repodiscussions
 
-import androidx.compose.ui.res.pluralStringResource
-import com.gitmob.app.ui.translation.TranslationMenuItem
-import com.gitmob.app.ui.translation.TranslationText
-import com.gitmob.app.data.translation.TranslationTarget
-
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.input.TextFieldValue
-import com.gitmob.app.ui.common.RepositorySearchField
-import com.gitmob.app.ui.common.RepositorySearchButton
-import com.gitmob.app.core.network.PageSize
+import com.gitmob.app.ui.common.StatusBadge
+import com.gitmob.app.ui.common.ActionProgressIcon
+import com.gitmob.app.ui.common.ActionButtonContent
+import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -25,32 +17,55 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
+import com.gitmob.app.data.translation.TranslationTarget
 import com.gitmob.app.navigation.ConversationComposerTarget
+import com.gitmob.app.ui.common.ActionFloatingButton
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ActionStateIcon
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
 import com.gitmob.app.ui.common.ConversationEditHistorySheet
 import com.gitmob.app.ui.common.ConversationMenuItem
+import com.gitmob.app.ui.common.DiscussionStateIcon
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.GitHubEmojiLabel
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
 import com.gitmob.app.ui.common.RepositoryContextTitle
-import com.gitmob.app.ui.common.DiscussionStateIcon
+import com.gitmob.app.ui.common.RepositorySearchButton
+import com.gitmob.app.ui.common.RepositorySearchField
+import com.gitmob.app.ui.common.SearchActions
+import com.gitmob.app.ui.common.SearchTitle
 import com.gitmob.app.ui.common.discussionStateVisual
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
+import com.gitmob.app.ui.common.quoteMarkdown
 import com.gitmob.app.ui.icons.Octicon
 import com.gitmob.app.ui.icons.OcticonName
-import com.gitmob.app.ui.common.quoteMarkdown
+import com.gitmob.app.ui.translation.TranslationMenuItem
+import com.gitmob.app.ui.translation.TranslationText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,18 +91,20 @@ fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermis
         focusManager.clearFocus()
         action()
     }
+    BackHandler(enabled = searchExpanded) { leaveList {} }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
-                    if (searchExpanded) {
+                    SearchTitle(searchExpanded) { expanded ->
+                    if (expanded) {
                         RepositorySearchField(
                             value = searchInput,
                             onValueChange = { searchInput = it },
                             placeholder = stringResource(R.string.repo_discussion_search_hint),
                             hasSubmittedQuery = state.submittedQuery.isNotEmpty(),
-                            focusOnExpand = focusSearch,
+                            focusOnExpand = focusSearch && searchExpanded,
                             onSubmit = { value ->
                                 viewModel.submitSearch(value)
                                 searchInput = TextFieldValue(viewModel.state.value.submittedQuery)
@@ -98,11 +115,14 @@ fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermis
                         { login -> leaveList { onOwnerClick(login) } },
                         { repoOwner, repoName -> leaveList { onRepositoryClick(repoOwner, repoName) } },
                     )
+                                    }
                 },
-                navigationIcon = { IconButton(onClick = { leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = { if (searchExpanded) leaveList {} else leaveList(onBack) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    if (!searchExpanded) RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
-                    if (state.hasDiscussionsEnabled && state.categories.isNotEmpty()) IconButton(onClick = { leaveList(onCreate) }) { Icon(Icons.Default.Add, stringResource(R.string.discussion_new)) }
+                    SearchActions(visible = !searchExpanded) {
+                        RepositorySearchButton(state.submittedQuery.isNotEmpty()) { focusSearch = true; searchExpanded = true }
+                    }
+                    if (state.hasDiscussionsEnabled && state.categories.isNotEmpty()) ActionIconButton(onClick = { leaveList(onCreate) }) { Icon(Icons.Default.Add, stringResource(R.string.discussion_new)) }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
@@ -112,34 +132,44 @@ fun RepoDiscussionListScreen(owner: String, name: String, permission: RepoPermis
         Column(Modifier.fillMaxSize().padding(padding)) {
             DiscussionFilters(state, viewModel)
             PullToRefreshBox(state.isLoading && state.items.isNotEmpty(), viewModel::refresh, Modifier.fillMaxSize()) {
-                when {
-                    state.isLoading && state.items.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    state.loadFailed && state.items.isEmpty() -> DiscussionRetry(Modifier.fillMaxSize(), viewModel::retry)
-                    !state.hasDiscussionsEnabled -> Text(stringResource(R.string.discussion_disabled), modifier = Modifier.align(Alignment.Center))
-                    state.items.isEmpty() && !state.hasNextPage && !state.searchLimitReached -> Text(stringResource(R.string.discussion_empty), modifier = Modifier.align(Alignment.Center))
-                    else -> LazyColumn(Modifier.fillMaxSize(), state = listState) {
-                        items(state.items, key = { it.id }) { item ->
-                            DiscussionRow(item, state.capabilities.canManageIssuesAndPRs && item.viewerCanDelete, { viewModel.confirmDelete(item) }) { leaveList { onDiscussionClick(item.number) } }
-                            HorizontalDivider()
-                        }
-                        if (state.hasNextPage) item(key = "more") {
-                            LaunchedEffect(state.nextCursor, state.listRevision) { if (!state.loadMoreFailed) viewModel.loadMore() }
-                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                if (state.loadMoreFailed) TextButton(onClick = viewModel::loadMore) { Text(stringResource(R.string.common_retry)) }
-                                else CircularProgressIndicator(Modifier.size(20.dp))
-                            }
-                        }
-                        if (state.searchLimitReached) item(key = "search-limit") {
-                            Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
-                                modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        item(key = "bottom") { Spacer(Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp)) }
-                    }
+                val feedback = when {
+                    state.isLoading && state.items.isEmpty() -> ListFeedbackState.LOADING
+                    state.loadFailed && state.items.isEmpty() -> ListFeedbackState.ERROR
+                    !state.hasDiscussionsEnabled -> ListFeedbackState.EMPTY
+                    state.items.isEmpty() && !state.hasNextPage && !state.searchLimitReached -> ListFeedbackState.EMPTY
+                    else -> ListFeedbackState.CONTENT
                 }
+                LazyColumn(
+                    Modifier.fillMaxSize(), state = listState,
+                    contentPadding = PaddingValues(
+                        start = 16.dp, end = 16.dp, top = 8.dp,
+                        bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 20.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(if (feedback == ListFeedbackState.CONTENT) state.items else emptyList(), key = { it.id }) { item ->
+                        Box(Modifier.animateItem().informationItem()) {
+                            DiscussionRow(item, state.capabilities.canManageIssuesAndPRs && item.viewerCanDelete, { viewModel.confirmDelete(item) }) { leaveList { onDiscussionClick(item.number) } }
+                        }
+                    }
+                    if (feedback == ListFeedbackState.CONTENT && state.hasNextPage) item(key = "more") {
+                        LaunchedEffect(state.nextCursor, state.listRevision) { if (!state.loadMoreFailed) viewModel.loadMore() }
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            if (state.loadMoreFailed) TextButton(onClick = viewModel::loadMore, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
+                            else CircularProgressIndicator(Modifier.size(20.dp))
+                        }
+                    }
+                    if (state.searchLimitReached) item(key = "search-limit") {
+                        Text(pluralStringResource(R.plurals.search_limit, PageSize.SEARCH_ACCESSIBLE_LIMIT, PageSize.SEARCH_ACCESSIBLE_LIMIT),
+                            modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+
+                                }
+                ListFeedback(feedback, viewModel::retry, emptyMessage = if (!state.hasDiscussionsEnabled) stringResource(R.string.discussion_disabled) else stringResource(R.string.discussion_empty))
             }
         }
     }
-    state.pendingDelete?.let { item -> AlertDialog(onDismissRequest = { viewModel.confirmDelete(null) }, title = { Text(stringResource(R.string.discussion_delete_title, item.number)) }, text = { Text(stringResource(R.string.discussion_delete_message)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDelete(null) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = viewModel::deletePending) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } }) }
+    state.pendingDelete?.let { item -> AlertDialog(onDismissRequest = { viewModel.confirmDelete(null) }, title = { Text(stringResource(R.string.discussion_delete_title, item.number)) }, text = { Text(stringResource(R.string.discussion_delete_message)) }, dismissButton = { TextButton(enabled = !state.isDeleting, onClick = { viewModel.confirmDelete(null) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(enabled = !state.isDeleting, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = viewModel::deletePending, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isDeleting, label = stringResource(R.string.common_delete)) } }) }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -154,14 +184,22 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
         topBar = {
             TopAppBar(
                 title = { RepositoryContextTitle(owner, name, stringResource(R.string.discussion_number, number), onOwnerClick, onRepositoryClick) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     state.discussion?.let { discussion ->
-                        if (discussion.viewerCanSubscribe) IconButton(onClick = viewModel::toggleSubscription) {
-                            Icon(if (discussion.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe))
+                        if (discussion.viewerCanSubscribe) IconToggleButton(
+                            checked = discussion.viewerSubscription == "SUBSCRIBED",
+                            onCheckedChange = { viewModel.toggleSubscription() },
+                            shapes = IconButtonDefaults.toggleableShapes(),
+                            colors = IconButtonDefaults.iconToggleButtonColors(),
+                            enabled = !state.isUpdatingSubscription,
+                        ) {
+                            ActionProgressIcon(state.isUpdatingSubscription, busyDescription = stringResource(R.string.issue_subscribe)) {
+                                ActionStateIcon(if (discussion.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe))
+                            }
                         }
                         Box {
-                            IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
+                            ActionIconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                             DropdownMenu(menuOpen, { menuOpen = false }) {
                                 TranslationMenuItem(
                                     TranslationTarget(discussion.url + ":title", discussion.title),
@@ -189,7 +227,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
         },
         floatingActionButton = {
             state.discussion?.let { discussion ->
-                ExtendedFloatingActionButton(
+                ActionFloatingButton(
                     onClick = {
                         onCompose(
                             ConversationComposeRequest(
@@ -279,8 +317,8 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
         }
     }
 
-    state.pendingDeleteComment?.let { AlertDialog(onDismissRequest = { viewModel.confirmDeleteComment(null) }, title = { Text(stringResource(R.string.issue_delete_comment_title)) }, text = { Text(stringResource(R.string.common_cannot_be_undone)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteComment(null) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = viewModel::deletePendingComment) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } }) }
-    if (state.pendingDeleteDiscussion) AlertDialog(onDismissRequest = { viewModel.confirmDeleteDiscussion(false) }, title = { Text(stringResource(R.string.discussion_delete_title, number)) }, text = { Text(stringResource(R.string.discussion_delete_message)) }, dismissButton = { TextButton(onClick = { viewModel.confirmDeleteDiscussion(false) }) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(onClick = { viewModel.deleteDiscussion(onBack) }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) } })
+    state.pendingDeleteComment?.let { AlertDialog(onDismissRequest = { viewModel.confirmDeleteComment(null) }, title = { Text(stringResource(R.string.issue_delete_comment_title)) }, text = { Text(stringResource(R.string.common_cannot_be_undone)) }, dismissButton = { TextButton(enabled = !state.isDeletingComment, onClick = { viewModel.confirmDeleteComment(null) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(enabled = !state.isDeletingComment, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = viewModel::deletePendingComment, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isDeletingComment, label = stringResource(R.string.common_delete)) } }) }
+    if (state.pendingDeleteDiscussion) AlertDialog(onDismissRequest = { viewModel.confirmDeleteDiscussion(false) }, title = { Text(stringResource(R.string.discussion_delete_title, number)) }, text = { Text(stringResource(R.string.discussion_delete_message)) }, dismissButton = { TextButton(enabled = !state.isDeletingDiscussion, onClick = { viewModel.confirmDeleteDiscussion(false) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } }, confirmButton = { TextButton(enabled = !state.isDeletingDiscussion, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = { viewModel.deleteDiscussion(onBack) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isDeletingDiscussion, label = stringResource(R.string.common_delete)) } })
     if (state.editHistory.isOpen) ConversationEditHistorySheet(
         edits = state.editHistory.items,
         isLoading = state.editHistory.isLoading,
@@ -307,9 +345,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
         TranslationText(TranslationTarget(d.url + ":title", d.title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, showStatus = true)
         GitHubEmojiLabel(d.category.emoji, d.category.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AssistChip(
-                onClick = {},
-                label = { Text(stringResource(visual.labelRes)) },
+            StatusBadge(label = { Text(stringResource(visual.labelRes)) },
                 leadingIcon = {
                     DiscussionStateIcon(
                         stateReason = d.stateReason,
@@ -320,9 +356,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
                     )
                 },
             )
-            if (d.locked) AssistChip(
-                onClick = {},
-                label = { Text(stringResource(R.string.state_locked)) },
+            if (d.locked) StatusBadge(label = { Text(stringResource(R.string.state_locked)) },
                 leadingIcon = {
                     Octicon(
                         name = OcticonName.LOCKED,
@@ -407,7 +441,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
     }
 }
 @Composable private fun DiscussionRow(item: RepoDiscussion, canDelete: Boolean, delete: () -> Unit, click: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = click).padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Column(Modifier.fillMaxWidth().pressClickable(onClick = click).padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.Top) {
             DiscussionStateIcon(
                 stateReason = item.stateReason,
@@ -424,9 +458,9 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
             if (item.commentCount > 0) Text(item.commentCount.toString())
         }
         if (item.answerChosenAt != null) Text(stringResource(R.string.discussion_answered), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
-        if (canDelete) TextButton(onClick = delete, modifier = Modifier.align(Alignment.End)) { Icon(Icons.Default.Delete, null); Text(stringResource(R.string.common_delete)) }
+        if (canDelete) TextButton(onClick = delete, modifier = Modifier.align(Alignment.End), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Icon(Icons.Default.Delete, null); Text(stringResource(R.string.common_delete)) }
     }
 }
-@Composable private fun DiscussionRetry(modifier: Modifier, retry: () -> Unit) { Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = retry) { Text(stringResource(R.string.common_retry)) } } }
+@Composable private fun DiscussionRetry(modifier: Modifier, retry: () -> Unit) { Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); Button(onClick = retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } } }
 private val RepoDiscussionStateFilter.label: Int @StringRes get() = when (this) { RepoDiscussionStateFilter.OPEN -> R.string.work_filter_open; RepoDiscussionStateFilter.CLOSED -> R.string.common_state_closed; RepoDiscussionStateFilter.ALL -> R.string.common_all }
 private val RepoDiscussionSort.label: Int @StringRes get() = when (this) { RepoDiscussionSort.UPDATED_DESC -> R.string.work_sort_updated_desc; RepoDiscussionSort.UPDATED_ASC -> R.string.work_sort_updated_asc; RepoDiscussionSort.CREATED_DESC -> R.string.work_sort_created_desc; RepoDiscussionSort.CREATED_ASC -> R.string.work_sort_created_asc }

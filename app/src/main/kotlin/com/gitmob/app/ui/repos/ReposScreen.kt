@@ -1,6 +1,18 @@
 package com.gitmob.app.ui.repos
 
+import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,10 +20,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -23,26 +35,26 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +70,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
@@ -69,12 +82,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.R
-import com.gitmob.app.data.model.RepositoryCreateOwner
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.data.model.RepoFilters
 import com.gitmob.app.data.model.RepoSort
 import com.gitmob.app.data.model.RepoVisibility
+import com.gitmob.app.data.model.RepositoryCreateOwner
+import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.FilterCapsuleMenu
 import com.gitmob.app.ui.common.RepoCard
 import kotlinx.coroutines.flow.first
@@ -112,7 +126,7 @@ fun ReposScreen(
     val focusManager = LocalFocusManager.current
     val searchFocus = remember { FocusRequester() }
     var searchExpanded by rememberSaveable(login) { mutableStateOf(false) }
-    val closeSearch = {
+    val closeSearch: () -> Unit = {
         searchExpanded = false
         focusManager.clearFocus()
         keyboard?.hide()
@@ -120,12 +134,19 @@ fun ReposScreen(
     var lastAutoRequest by remember { mutableStateOf<String?>(null) }
     val paginationKey = "repos-pagination:${state.requestGeneration}:${state.completedBatches}"
 
-    LaunchedEffect(searchExpanded) {
-        if (searchExpanded) {
-            searchFocus.requestFocus()
-            keyboard?.show()
-        }
+    val motionScheme = MaterialTheme.motionScheme
+    val listStatus = when {
+        !state.hasLoaded && state.loadFailed -> RepositoryListStatus.ERROR
+        !state.hasLoaded -> RepositoryListStatus.LOADING
+        state.repos.isEmpty() && !state.hasNextPage -> RepositoryListStatus.EMPTY
+        else -> RepositoryListStatus.CONTENT
     }
+    val resultsAlpha by animateFloatAsState(
+        targetValue = if (listStatus == RepositoryListStatus.CONTENT) 1f else 0f,
+        animationSpec = motionScheme.defaultEffectsSpec(),
+        label = "Repository results",
+    )
+    BackHandler(enabled = searchExpanded, onBack = closeSearch)
     LaunchedEffect(state.scrollToTop, state.requestGeneration) {
         if (state.scrollToTop) {
             listState.scrollToItem(0)
@@ -143,47 +164,80 @@ fun ReposScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    if (searchExpanded) {
-                        val searchHint = stringResource(R.string.repos_search_hint)
-                        OutlinedTextField(
-                            value = state.filters.query,
-                            onValueChange = viewModel::updateSearch,
-                            placeholder = { Text(searchHint, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            textStyle = MaterialTheme.typography.bodyLarge,
-                            singleLine = true,
-                            trailingIcon = if (state.filters.query.isNotEmpty()) {
-                                {
-                                    IconButton(onClick = viewModel::clearSearch) {
-                                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.repos_clear_search))
-                                    }
+                    AnimatedContent(
+                        targetState = searchExpanded,
+                        modifier = Modifier.fillMaxWidth(),
+                        transitionSpec = {
+                            (fadeIn(motionScheme.defaultEffectsSpec()) +
+                                slideInHorizontally(motionScheme.defaultSpatialSpec()) { it / 12 }) togetherWith
+                                (fadeOut(motionScheme.fastEffectsSpec()) +
+                                    slideOutHorizontally(motionScheme.fastSpatialSpec()) { -it / 12 }) using
+                                SizeTransform(clip = false) { _, _ -> motionScheme.defaultSpatialSpec() }
+                        },
+                        label = "Repository search",
+                    ) { expanded ->
+                        if (expanded) {
+                            LaunchedEffect(searchExpanded) {
+                                if (searchExpanded) {
+                                    searchFocus.requestFocus()
+                                    keyboard?.show()
                                 }
-                            } else null,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = {
-                                keyboard?.hide()
-                                focusManager.clearFocus()
-                            }),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(searchFocus)
-                                .semantics { contentDescription = searchHint },
-                        )
-                    } else {
-                        Text(if (login != null) stringResource(R.string.repos_owner_title, login)
-                            else state.ownerContext?.name ?: state.ownerContext?.login ?: stringResource(R.string.common_repository))
+                            }
+                            val searchHint = stringResource(R.string.repos_search_hint)
+                            TextField(
+                                shape = TextFieldDefaults.roundedShape,
+                                colors = TextFieldDefaults.tonalColors(),
+                                value = state.filters.query,
+                                onValueChange = viewModel::updateSearch,
+                                placeholder = { Text(searchHint, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                textStyle = MaterialTheme.typography.bodyLarge,
+                                singleLine = true,
+                                trailingIcon = if (state.filters.query.isNotEmpty()) {
+                                    {
+                                        ActionIconButton(onClick = viewModel::clearSearch) {
+                                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.repos_clear_search))
+                                        }
+                                    }
+                                } else null,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = {
+                                    keyboard?.hide()
+                                    focusManager.clearFocus()
+                                }),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(searchFocus)
+                                    .semantics { contentDescription = searchHint },
+                            )
+                        } else {
+                            Text(if (login != null) stringResource(R.string.repos_owner_title, login)
+                                else state.ownerContext?.name ?: state.ownerContext?.login ?: stringResource(R.string.common_repository))
+                        }
                     }
                 },
                 navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) {
+                    AnimatedVisibility(
+                        visible = searchExpanded || onBack != null,
+                        enter = fadeIn(motionScheme.defaultEffectsSpec()) +
+                            expandHorizontally(motionScheme.defaultSpatialSpec(), expandFrom = Alignment.Start),
+                        exit = fadeOut(motionScheme.fastEffectsSpec()) +
+                            shrinkHorizontally(motionScheme.fastSpatialSpec(), shrinkTowards = Alignment.Start),
+                    ) {
+                        ActionIconButton(onClick = { if (searchExpanded) closeSearch() else onBack?.invoke() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                         }
                     }
                 },
                 actions = {
-                    if (!searchExpanded) {
+                    AnimatedVisibility(
+                        visible = !searchExpanded,
+                        enter = fadeIn(motionScheme.defaultEffectsSpec()) +
+                            expandHorizontally(motionScheme.defaultSpatialSpec(), expandFrom = Alignment.End),
+                        exit = fadeOut(motionScheme.fastEffectsSpec()) +
+                            shrinkHorizontally(motionScheme.fastSpatialSpec(), shrinkTowards = Alignment.End),
+                    ) {
                         val searching = state.filters.query.isNotBlank()
-                        IconButton(
+                        ActionIconButton(
                             onClick = { searchExpanded = true },
                             colors = IconButtonDefaults.iconButtonColors(
                                 containerColor = if (searching) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -199,7 +253,7 @@ fun ReposScreen(
                     }
                     val owner = state.ownerContext
                     if (owner?.canCreateRepository == true) {
-                        IconButton(onClick = { onCreateRepository(owner) }) {
+                        ActionIconButton(onClick = { onCreateRepository(owner) }) {
                             Icon(Icons.Default.Add, contentDescription = stringResource(R.string.repo_create_title))
                         }
                     }
@@ -231,31 +285,10 @@ fun ReposScreen(
             ) {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = resultsAlpha },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (!state.hasLoaded || (state.repos.isEmpty() && !state.hasNextPage)) {
-                        item(key = "repos-status") {
-                            Column(
-                                modifier = Modifier.fillMaxWidth().fillParentMaxHeight().padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-                            ) {
-                                when {
-                                    state.loadFailed -> {
-                                        Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
-                                        Button(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) }
-                                    }
-                                    !state.hasLoaded -> CircularProgressIndicator()
-                                    else -> Text(
-                                        stringResource(R.string.repos_empty),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    }
                     items(state.repos, key = { it.key }) { repo ->
                         RepoCard(
                             repo = repo,
@@ -275,22 +308,66 @@ fun ReposScreen(
                     }
                     if (state.hasNextPage) {
                         item(key = paginationKey) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(if (state.repos.isEmpty()) Modifier.fillParentMaxHeight() else Modifier)
-                                    .padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-                            ) {
-                                when {
-                                    state.isBusy -> CircularProgressIndicator(Modifier.size(20.dp))
-                                    state.loadMoreFailed -> {
+                            AnimatedContent(
+                                targetState = state.loadMoreFailed && !state.isBusy,
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxWidth()
+                                    .then(if (state.repos.isEmpty()) Modifier.fillParentMaxHeight() else Modifier),
+                                transitionSpec = {
+                                    fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
+                                        fadeOut(motionScheme.fastEffectsSpec()) using
+                                        SizeTransform { _, _ -> motionScheme.defaultSpatialSpec() }
+                                },
+                                label = "Repository pagination",
+                            ) { failed ->
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                                ) {
+                                    if (failed) {
                                         Text(stringResource(R.string.common_load_failed))
-                                        Button(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) }
+                                        Button(onClick = viewModel::retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
+                                    } else {
+                                        CircularProgressIndicator(Modifier.size(20.dp))
                                     }
-                                    else -> CircularProgressIndicator(Modifier.size(20.dp))
                                 }
+                            }
+                        }
+                    }
+                }
+                AnimatedContent(
+                    targetState = listStatus,
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                    transitionSpec = {
+                        fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
+                            fadeOut(motionScheme.fastEffectsSpec()) using null
+                    },
+                    label = "Repository list status",
+                ) { status ->
+                    if (status != RepositoryListStatus.CONTENT) {
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                        ) {
+                            when (status) {
+                                RepositoryListStatus.ERROR -> {
+                                    Text(
+                                        stringResource(R.string.common_load_failed),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Button(onClick = viewModel::retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
+                                }
+                                RepositoryListStatus.LOADING -> CircularProgressIndicator()
+                                RepositoryListStatus.EMPTY -> Text(
+                                    stringResource(R.string.repos_empty),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                RepositoryListStatus.CONTENT -> Unit
                             }
                         }
                     }
@@ -299,6 +376,8 @@ fun ReposScreen(
         }
     }
 }
+
+private enum class RepositoryListStatus { LOADING, ERROR, EMPTY, CONTENT }
 
 @Composable
 private fun ReposFilterControls(
@@ -311,29 +390,31 @@ private fun ReposFilterControls(
 ) {
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+    val motionScheme = MaterialTheme.motionScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (filters != RepoFilters(query = filters.query)) {
+        AnimatedVisibility(
+            visible = filters != RepoFilters(query = filters.query),
+            enter = fadeIn(motionScheme.defaultEffectsSpec()) +
+                expandHorizontally(motionScheme.defaultSpatialSpec(), expandFrom = Alignment.Start),
+            exit = fadeOut(motionScheme.fastEffectsSpec()) +
+                shrinkHorizontally(motionScheme.fastSpatialSpec(), shrinkTowards = Alignment.Start),
+        ) {
             val resetDescription = stringResource(R.string.repos_reset_filters)
-            Surface(
+            TextButton(
                 onClick = {
                     onReset()
                     scope.launch { scrollState.scrollTo(0) }
                 },
-                modifier = Modifier.semantics { contentDescription = resetDescription },
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = resetDescription },
+                shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
             ) {
                 Text(
                     stringResource(R.string.repos_reset),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                 )
             }
         }
@@ -393,7 +474,7 @@ private fun ReposFilterControls(
                 optionLabel = { stringResource(it.labelRes) },
                 onSelected = { it?.let(onSort) },
                 filterLabel = stringResource(R.string.repos_filter_time),
-                neutralLabel = stringResource(R.string.work_sort_updated_desc),
+                neutralLabel = stringResource(R.string.repos_filter_time),
                 isNeutral = { it == null },
             )
             val starOptions = listOf(RepoSort.STARS_ASC, RepoSort.STARS_DESC)

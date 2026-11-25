@@ -2,11 +2,12 @@ package com.gitmob.app.ui.translation
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,6 +18,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.translation.TranslationProvider
+import com.gitmob.app.ui.common.ActionProgressIcon
+import com.gitmob.app.ui.common.pressToggleable
 import com.gitmob.app.ui.library.LibraryScaffold
 import com.gitmob.app.ui.settings.SettingsNavigationRow
 import com.gitmob.app.ui.settings.SettingsSection
@@ -39,7 +42,7 @@ fun TranslationSettingsScreen(onBack: () -> Unit, viewModel: TranslationViewMode
                 val preferences = configuration.preferences
                 item(key = "enabled") {
                     SettingsSection(stringResource(R.string.translation_title)) {
-                        Row(Modifier.fillMaxWidth().toggleable(preferences.enabled, enabled = !configuration.storageFailed, role = Role.Switch, onValueChange = { viewModel.savePreferences(preferences.copy(enabled = it)) }).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(Modifier.fillMaxWidth().pressToggleable(preferences.enabled, enabled = !configuration.storageFailed, role = Role.Switch, onValueChange = { viewModel.savePreferences(preferences.copy(enabled = it)) }).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Icon(Icons.Default.Translate, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(stringResource(R.string.translation_enable), style = MaterialTheme.typography.bodyLarge)
@@ -52,7 +55,7 @@ fun TranslationSettingsScreen(onBack: () -> Unit, viewModel: TranslationViewMode
                 if (configuration.storageFailed) item(key = "storage_error") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(stringResource(R.string.translation_error_storage), color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = viewModel::retryConfiguration) { Text(stringResource(R.string.common_retry)) }
+                        TextButton(onClick = viewModel::retryConfiguration, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
                 else if (preferences.enabled) {
@@ -64,9 +67,9 @@ fun TranslationSettingsScreen(onBack: () -> Unit, viewModel: TranslationViewMode
                     }
                     item(key = "test") {
                         SettingsSection(stringResource(R.string.translation_test)) {
-                            SettingsNavigationRow(stringResource(R.string.translation_test), stringResource(R.string.translation_test_hint), onClick = { viewModel.test() }, icon = Icons.Default.Wifi, enabled = !state.testing)
+                            SettingsNavigationRow(stringResource(R.string.translation_test), stringResource(R.string.translation_test_hint), onClick = { viewModel.test() }, icon = Icons.Default.Wifi, enabled = !state.testing,
+                                trailingContent = { ActionProgressIcon(state.testing) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) } })
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                                if (state.testing) LinearProgressIndicator(Modifier.fillMaxWidth())
                                 state.testProblem?.let { TranslationErrorRow(it, { viewModel.test() }, { providersOpen = true }) }
                                 state.testResult?.let { Text(stringResource(R.string.translation_test_success, it), style = MaterialTheme.typography.bodyMedium) }
                             }

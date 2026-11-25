@@ -1,9 +1,9 @@
 package com.gitmob.app.ui.repoissues
 
-import com.gitmob.app.ui.translation.TranslationMenuItem
-import com.gitmob.app.ui.translation.TranslationText
-import com.gitmob.app.data.translation.TranslationTarget
-
+import androidx.compose.foundation.layout.FlowRow
+import com.gitmob.app.ui.common.StatusBadge
+import com.gitmob.app.ui.common.ActionProgressIcon
+import com.gitmob.app.ui.common.ActionButtonContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,16 +24,24 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
 import com.gitmob.app.data.model.*
+import com.gitmob.app.data.translation.TranslationTarget
 import com.gitmob.app.navigation.ConversationComposerTarget
+import com.gitmob.app.ui.common.ActionFloatingButton
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ActionStateIcon
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import com.gitmob.app.ui.common.ConversationComposeRequest
 import com.gitmob.app.ui.common.ConversationContentCard
 import com.gitmob.app.ui.common.ConversationEditHistorySheet
 import com.gitmob.app.ui.common.IssueStateIcon
 import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.issueStateVisual
+import com.gitmob.app.ui.common.quoteMarkdown
 import com.gitmob.app.ui.icons.Octicon
 import com.gitmob.app.ui.icons.OcticonName
-import com.gitmob.app.ui.common.quoteMarkdown
+import com.gitmob.app.ui.translation.TranslationMenuItem
+import com.gitmob.app.ui.translation.TranslationText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,14 +74,22 @@ fun RepoIssueDetailScreen(
                         onRepositoryClick = onRepositoryClick,
                     )
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     state.issue?.let { issue ->
-                        if (issue.viewerCanSubscribe) IconButton(onClick = viewModel::toggleSubscription) {
-                            Icon(if (issue.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe))
+                        if (issue.viewerCanSubscribe) IconToggleButton(
+                            checked = issue.viewerSubscription == "SUBSCRIBED",
+                            onCheckedChange = { viewModel.toggleSubscription() },
+                            shapes = IconButtonDefaults.toggleableShapes(),
+                            colors = IconButtonDefaults.iconToggleButtonColors(),
+                            enabled = !state.isUpdatingSubscription,
+                        ) {
+                            ActionProgressIcon(state.isUpdatingSubscription, busyDescription = stringResource(R.string.issue_subscribe)) {
+                                ActionStateIcon(if (issue.viewerSubscription == "SUBSCRIBED") Icons.Default.NotificationsActive else Icons.Default.NotificationsNone, stringResource(R.string.issue_subscribe))
+                            }
                         }
                         Box {
-                            IconButton(onClick = { pageMenuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
+                            ActionIconButton(onClick = { pageMenuOpen = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.issue_more)) }
                             DropdownMenu(pageMenuOpen, { pageMenuOpen = false }) {
                                 TranslationMenuItem(
                                     target = TranslationTarget(issue.url + ":title", issue.title),
@@ -100,7 +117,7 @@ fun RepoIssueDetailScreen(
             )
         },
         floatingActionButton = {
-            if (state.issue != null) ExtendedFloatingActionButton(
+            if (state.issue != null) ActionFloatingButton(
                 onClick = { state.issue?.let { onCompose(ConversationComposeRequest(ConversationComposerTarget.ISSUE_COMMENT, it.id)) } },
                 icon = { Icon(Icons.AutoMirrored.Filled.Comment, null) },
                 text = { Text(stringResource(R.string.conversation_comment)) },
@@ -110,7 +127,7 @@ fun RepoIssueDetailScreen(
     ) { padding ->
         when {
             state.isLoading && state.issue == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            state.loadFailed -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Button(viewModel::retry) { Text(stringResource(R.string.common_retry)) } }
+            state.loadFailed -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { Button(viewModel::retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } }
             state.issue != null -> IssueConversation(
                 issue = state.issue!!,
                 comments = state.comments,
@@ -133,16 +150,16 @@ fun RepoIssueDetailScreen(
             onDismissRequest = { viewModel.confirmDeleteComment(null) },
             title = { Text(stringResource(R.string.issue_delete_comment_title)) },
             text = { Text(stringResource(R.string.common_cannot_be_undone)) },
-            dismissButton = { TextButton({ viewModel.confirmDeleteComment(null) }) { Text(stringResource(R.string.common_cancel)) } },
-            confirmButton = { TextButton(viewModel::deletePendingComment, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.common_delete)) } },
+            dismissButton = { TextButton({ viewModel.confirmDeleteComment(null) }, enabled = !state.isDeletingComment, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
+            confirmButton = { TextButton(viewModel::deletePendingComment, enabled = !state.isDeletingComment, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isDeletingComment, label = stringResource(R.string.common_delete)) } },
         )
     }
     if (state.pendingDeleteIssue) AlertDialog(
         onDismissRequest = { viewModel.confirmDeleteIssue(false) },
         title = { Text(stringResource(R.string.issue_delete_title, number)) },
         text = { Text(stringResource(R.string.issue_delete_message)) },
-        dismissButton = { TextButton({ viewModel.confirmDeleteIssue(false) }) { Text(stringResource(R.string.common_cancel)) } },
-        confirmButton = { TextButton({ viewModel.deleteIssue(onBack) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.common_delete)) } },
+        dismissButton = { TextButton({ viewModel.confirmDeleteIssue(false) }, enabled = !state.isDeletingIssue, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
+        confirmButton = { TextButton({ viewModel.deleteIssue(onBack) }, enabled = !state.isDeletingIssue, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isDeletingIssue, label = stringResource(R.string.common_delete)) } },
     )
 
     if (state.editHistory.isOpen) ConversationEditHistorySheet(
@@ -219,9 +236,7 @@ private fun IssueHeader(issue: RepoIssue) {
         TranslationText(TranslationTarget(issue.url + ":title", issue.title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, showStatus = true)
         Row(verticalAlignment = Alignment.CenterVertically) {
             val visual = issueStateVisual(issue.state, issue.stateReason)
-            AssistChip(
-                onClick = {},
-                label = { Text(stringResource(visual.labelRes)) },
+            StatusBadge(label = { Text(stringResource(visual.labelRes)) },
                 leadingIcon = {
                     IssueStateIcon(
                         state = issue.state,
@@ -233,9 +248,7 @@ private fun IssueHeader(issue: RepoIssue) {
             )
             if (issue.locked) {
                 Spacer(Modifier.width(8.dp))
-                AssistChip(
-                    onClick = {},
-                    label = { Text(stringResource(R.string.state_locked)) },
+                StatusBadge(label = { Text(stringResource(R.string.state_locked)) },
                     leadingIcon = {
                         Octicon(
                             name = OcticonName.LOCKED,
@@ -246,7 +259,15 @@ private fun IssueHeader(issue: RepoIssue) {
                 )
             }
         }
-        if (issue.labels.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { issue.labels.forEach { AssistChip(onClick = {}, label = { Text(it.name) }) } }
+        if (issue.labels.isNotEmpty()) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                issue.labels.forEach { StatusBadge(label = { Text(it.name) }) }
+            }
+        }
         issue.milestone?.let { Text(stringResource(R.string.issue_detail_milestone, it.title), style = MaterialTheme.typography.bodyMedium) }
         if (issue.assignees.isNotEmpty()) Text(stringResource(R.string.issue_detail_assignees, issue.assignees.joinToString { "@${it.login}" }), style = MaterialTheme.typography.bodyMedium)
     }

@@ -1,7 +1,7 @@
 package com.gitmob.app.ui.repoforks
 
 import android.content.Context
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -98,7 +98,9 @@ class RepoForksScreenTest {
     fun `opening a field only expands and confirming the same order sends no request`() {
         show()
         compose.onNodeWithText("forker/fork-0").assertIsDisplayed()
-        trigger().performClick()
+        trigger().assertIsSelected().performClick()
+        compose.onAllNodes(popup).assertCountEquals(1)
+        option(R.string.repo_forks_sort_created_desc).assertDoesNotExist()
         option(R.string.repo_forks_sort_created).performClick()
         compose.onAllNodes(popup).assertCountEquals(2)
         option(R.string.repo_forks_sort_created_desc).assertIsSelected()
@@ -175,7 +177,7 @@ class RepoForksScreenTest {
         option(R.string.repo_forks_sort_created_desc).assertIsFocused().performKeyInput { pressKey(Key.DirectionUp) }
         option(R.string.repo_forks_sort_created_asc).assertIsFocused().performKeyInput { pressKey(Key.Enter) }
         compose.onAllNodes(popup).assertCountEquals(0)
-        trigger(R.string.repo_forks_sort_created_asc).assertIsFocused()
+        trigger(R.string.repo_forks_sort_created_asc).assertIsSelected().assertIsFocused()
     }
 
     private fun show(
@@ -195,7 +197,7 @@ class RepoForksScreenTest {
                 LocalDensity provides Density(density.density, fontScale),
                 LocalLayoutDirection provides direction,
             ) {
-                MaterialTheme {
+                MaterialExpressiveTheme {
                     if (visible.value) holder.SaveableStateProvider("forks") {
                         RepoForksScreen(
                             owner = "upstream", name = "source", onBack = {}, onOwnerClick = {},

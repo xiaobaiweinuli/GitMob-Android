@@ -1,9 +1,15 @@
 package com.gitmob.app.ui.gist
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import android.content.Context
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
-import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -12,6 +18,8 @@ import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -71,16 +79,34 @@ class GistCreateScreenTest {
         val second = viewModel.state.value.files.last()
         composeRule.runOnIdle { viewModel.updateFilename(second.id, "same.txt") }
 
-        composeRule.onAllNodesWithText(context.getString(R.string.gist_create_filename_duplicate))
-            .assertCountEquals(2)
+        for (number in 1..2) {
+            composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(number + 2)
+            composeRule.onNodeWithText(context.getString(R.string.gist_create_file_number, number))
+                .assertIsDisplayed()
+            val errors = composeRule.onAllNodesWithText(context.getString(R.string.gist_create_filename_duplicate))
+            val filenameError = if (number == 1) errors.onFirst() else errors.onLast()
+            filenameError.assertIsDisplayed()
+        }
         composeRule.onNodeWithText(context.getString(R.string.repo_create_action)).assertIsNotEnabled()
-        composeRule.onAllNodesWithContentDescription(context.getString(R.string.gist_delete_file))[1]
-            .assertIsEnabled()
-            .performScrollTo()
-            .performClick()
-        composeRule.runOnIdle { assertEquals(1, viewModel.state.value.files.size) }
         composeRule.onAllNodesWithContentDescription(context.getString(R.string.gist_delete_file))
-            .assertCountEquals(1)
+            .onLast().assertIsDisplayed().assertIsEnabled().performClick()
+        composeRule.runOnIdle { assertEquals(1, viewModel.state.value.files.size) }
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(3)
+        composeRule.onNodeWithContentDescription(context.getString(R.string.gist_delete_file))
+            .performScrollTo().assertIsNotEnabled()
+    }
+
+    @Test
+    fun `public option toggles once when its label or switch is tapped`() {
+        val viewModel = viewModel()
+        setContent(viewModel)
+        val row = composeRule.onNodeWithText(context.getString(R.string.gist_create_public))
+        row.assertIsOff().performTouchInput { click(Offset(12f, center.y)) }
+        row.assertIsOn()
+        composeRule.runOnIdle { assertEquals(true, viewModel.state.value.isPublic) }
+        row.performTouchInput { click(Offset(width - 12f, center.y)) }
+        row.assertIsOff()
+        composeRule.runOnIdle { assertEquals(false, viewModel.state.value.isPublic) }
     }
 
     @Test
@@ -95,6 +121,8 @@ class GistCreateScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.repo_create_action)).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) { viewModel.state.value.isCreating }
         composeRule.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertIsDisplayed()
+
+        composeRule.onNodeWithText(context.getString(R.string.gist_create_public)).assertIsNotEnabled().assertIsOff()
 
         deferred.complete(ApiResult.Success("created-id"))
         composeRule.waitUntil(timeoutMillis = 5_000) { !viewModel.state.value.isCreating }

@@ -13,6 +13,12 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -25,8 +31,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.captionBar
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
@@ -39,29 +45,27 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AccountTree
-import androidx.compose.material.icons.filled.Balance
-import androidx.compose.material.icons.filled.Adjust
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.Label
-import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Adjust
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Balance
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -71,12 +75,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,25 +92,33 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.gitmob.app.core.error.displayMessageRes
 import com.gitmob.app.R
+import com.gitmob.app.core.error.displayMessageRes
 import com.gitmob.app.data.model.FavoriteItem
 import com.gitmob.app.data.model.RepoDetail
 import com.gitmob.app.data.model.RepoDocumentContext
-import com.gitmob.app.ui.common.MarkdownWebView
+import com.gitmob.app.data.model.cardData
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionFloatingButton
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ActionProgressIcon
+import com.gitmob.app.ui.common.ActionStateContent
+import com.gitmob.app.ui.common.ActionStateIcon
+import com.gitmob.app.ui.common.EntryGroup
+import com.gitmob.app.ui.common.EntryRow
 import com.gitmob.app.ui.common.GitHubEmojiText
 import com.gitmob.app.ui.common.RepoMetadataLinkRow
 import com.gitmob.app.ui.common.RepositoryTopicsRow
 import com.gitmob.app.ui.common.StatusChip
-import com.gitmob.app.ui.stars.AddToListBottomSheet
 import com.gitmob.app.ui.library.AccountLibraryViewModel
-import com.gitmob.app.ui.library.LibraryViewModel
 import com.gitmob.app.ui.library.FavoriteSheet
-import com.gitmob.app.data.model.cardData
+import com.gitmob.app.ui.library.LibraryViewModel
+import com.gitmob.app.ui.stars.AddToListBottomSheet
 import com.gitmob.app.ui.stars.CreateListDialog
+import com.gitmob.app.ui.translation.TranslationActionLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -171,7 +183,7 @@ fun RepoDetailScreen(
             if (translation?.enabled == true && readmeVisible && state.readmeHtml != null && !state.isLoading && !state.loadFailed) {
                 val entry = translation.state.entries[readmeTarget.identity]
                 val running = entry?.running == true
-                ExtendedFloatingActionButton(
+                ActionFloatingButton(
                     onClick = {
                         when {
                             state.readmeTruncated -> translation.hint(R.string.translation_unavailable)
@@ -179,12 +191,8 @@ fun RepoDetailScreen(
                             else -> translation.open(readmeTarget)
                         }
                     },
-                    icon = { if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Translate, null) },
-                    text = { Text(if (running) translationProgressText(requireNotNull(entry)) else stringResource(when {
-                        entry == null || entry.showOriginal -> R.string.translation_start
-                        entry.problem != null || entry.displayProblem || entry.phase == TranslationPhase.CANCELLED || entry.completed < entry.total -> R.string.translation_partial
-                        else -> R.string.translation_options
-                    })) },
+                    icon = { ActionProgressIcon(busy = running) { Icon(Icons.Default.Translate, null) } },
+                    text = { TranslationActionLabel(entry) },
                 )
             }
         },
@@ -192,7 +200,7 @@ fun RepoDetailScreen(
             TopAppBar(
                 title = { Text(name) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -238,7 +246,7 @@ fun RepoDetailScreen(
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
-                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) { Text(stringResource(R.string.common_retry)) }
+                        Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
                 state.detail != null -> {
@@ -254,7 +262,8 @@ fun RepoDetailScreen(
                                 onClick = viewModel::checkTransferStatus,
                                 enabled = !state.isCheckingTransfer,
                                 modifier = Modifier.padding(horizontal = 16.dp),
-                            ) { Text(stringResource(R.string.repo_transfer_check_status)) }
+                                shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding,
+                            ) { ActionButtonContent(busy = state.isCheckingTransfer, label = stringResource(R.string.repo_transfer_check_status)) }
                         }
                         RepoHeader(
                             detail = detail,
@@ -272,6 +281,7 @@ fun RepoDetailScreen(
                             },
                             onHomepageClick = onHomepageClick,
                             canStar = state.actionsEnabled,
+                            isStarring = state.isStarring,
                             canAct = state.actionsEnabled,
                             isForking = state.isForking,
                             hasPersonalFork = state.fork.personalFork != null,
@@ -334,7 +344,7 @@ fun RepoDetailScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
-                                TextButton(onClick = viewModel::retryReadme) { Text(stringResource(R.string.common_retry)) }
+                                TextButton(onClick = viewModel::retryReadme, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
                             }
                         } else if (state.isLoadingReadme) {
                             Box(
@@ -402,6 +412,7 @@ private fun RepoHeader(
     onForkSourceClick: () -> Unit,
     onHomepageClick: (String) -> Unit,
     canStar: Boolean,
+    isStarring: Boolean,
     canAct: Boolean,
     isForking: Boolean,
     hasPersonalFork: Boolean,
@@ -500,43 +511,61 @@ private fun RepoHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (detail.viewerHasStarred) {
-                Surface(
-                    modifier = Modifier.minimumInteractiveComponentSize().height(40.dp),
-                    shape = CircleShape,
-                    color = Color.Transparent,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    Row(Modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(
-                            onClick = onStarClick,
-                            enabled = canStar,
-                            shape = RectangleShape,
-                            colors = ButtonDefaults.textButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                            ),
-                            modifier = Modifier.height(40.dp).semantics { onClick(label = unstarLabel, action = null) },
-                        ) {
-                            Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Text(stringResource(R.string.repo_starred, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
+            val motion = MaterialTheme.motionScheme
+            val starContainer by animateColorAsState(
+                if (detail.viewerHasStarred) MaterialTheme.colorScheme.primary else Color.Transparent,
+                motion.fastEffectsSpec(), label = "Repository star container",
+            )
+            val starContent by animateColorAsState(
+                if (detail.viewerHasStarred) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                motion.fastEffectsSpec(), label = "Repository star content",
+            )
+            Surface(
+                modifier = Modifier.minimumInteractiveComponentSize().height(40.dp),
+                shape = CircleShape,
+                color = Color.Transparent,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Row(Modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = onStarClick,
+                        enabled = canStar,
+                        shape = RectangleShape,
+                        colors = ButtonDefaults.textButtonColors(containerColor = starContainer, contentColor = starContent),
+                        contentPadding = if (detail.viewerHasStarred) ButtonDefaults.TextButtonContentPadding else ButtonDefaults.ContentPadding,
+                        modifier = Modifier.height(40.dp).semantics {
+                            if (detail.viewerHasStarred) onClick(label = unstarLabel, action = null)
+                        },
+                    ) {
+                        ActionStateContent(detail.viewerHasStarred) { starred ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                ActionProgressIcon(isStarring, Modifier.size(16.dp)) {
+                                    Icon(if (starred) Icons.Default.Star else Icons.Outlined.StarBorder,
+                                        contentDescription = null, modifier = Modifier.size(16.dp))
+                                }
+                                Text(stringResource(if (starred) R.string.repo_starred else R.string.repo_star, detail.stargazerCount),
+                                    modifier = Modifier.padding(start = 4.dp))
+                            }
                         }
-                        VerticalDivider(Modifier.fillMaxHeight())
-                        TextButton(onClick = onListsClick, enabled = canAct, shape = RectangleShape,
-                            modifier = Modifier.height(40.dp).semantics { onClick(label = manageListsLabel, action = null) }) {
-                            Text(listLabel)
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                    AnimatedVisibility(
+                        visible = detail.viewerHasStarred,
+                        enter = fadeIn(motion.fastEffectsSpec()) + expandHorizontally(motion.fastSpatialSpec()),
+                        exit = fadeOut(motion.fastEffectsSpec()) + shrinkHorizontally(motion.fastSpatialSpec()),
+                    ) {
+                        Row(Modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+                            VerticalDivider(Modifier.fillMaxHeight())
+                            TextButton(onClick = onListsClick, enabled = canAct && detail.viewerHasStarred, shape = RectangleShape,
+                                modifier = Modifier.height(40.dp).semantics { onClick(label = manageListsLabel, action = null) }) {
+                                Text(listLabel)
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
                 }
-            } else {
-                OutlinedButton(onClick = onStarClick, enabled = canStar, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
-                    Icon(Icons.Outlined.StarBorder, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(stringResource(R.string.repo_star, detail.stargazerCount), modifier = Modifier.padding(start = 4.dp))
-                }
             }
             if (detail.capabilities.canViewStargazers) {
-                OutlinedButton(onClick = onStargazersClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
+                OutlinedButton(onClick = onStargazersClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
                     Text(stringResource(R.string.repo_stargazers))
                 }
             }
@@ -549,11 +578,16 @@ private fun RepoHeader(
                 ) else ButtonDefaults.outlinedButtonColors(),
                 border = if (hasPersonalFork) BorderStroke(0.dp, Color.Transparent) else ButtonDefaults.outlinedButtonBorder(enabled = canAct || isForking),
                 modifier = Modifier.minimumInteractiveComponentSize().height(40.dp),
+                shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding,
             ) {
-                Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(stringResource(when { personalForkPending -> R.string.repo_fork_creating; hasPersonalFork -> R.string.repo_fork_done; else -> R.string.repo_fork }), modifier = Modifier.padding(start = 4.dp))
+                ActionProgressIcon(busy = isForking || personalForkPending, modifier = Modifier.size(16.dp)) {
+                    Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
+                }
+                ActionStateContent(stringResource(when { personalForkPending -> R.string.repo_fork_creating; hasPersonalFork -> R.string.repo_fork_done; else -> R.string.repo_fork })) { label ->
+                    Text(label, modifier = Modifier.padding(start = 4.dp))
+                }
             }
-            OutlinedButton(onClick = onForksClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp)) {
+            OutlinedButton(onClick = onForksClick, modifier = Modifier.minimumInteractiveComponentSize().height(40.dp), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
                 Icon(Icons.AutoMirrored.Default.CallSplit, contentDescription = null, modifier = Modifier.size(16.dp))
                 Text(stringResource(R.string.repo_forks_count, detail.forkCount), modifier = Modifier.padding(start = 4.dp))
             }
@@ -561,8 +595,9 @@ private fun RepoHeader(
                 onClick = onNotificationsClick,
                 enabled = canAct && detail.viewerCanSubscribe,
                 modifier = Modifier.minimumInteractiveComponentSize().height(40.dp),
+                shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding,
             ) {
-                Icon(
+                ActionStateIcon(
                     if (detail.viewerSubscription == "IGNORED") Icons.Default.NotificationsOff else Icons.Default.Notifications,
                     contentDescription = stringResource(R.string.repo_manage_notifications),
                     modifier = Modifier.size(18.dp),
@@ -595,7 +630,7 @@ private fun RepoMenu(
     val discussionsLabel = stringResource(R.string.common_discussions)
     val contributorsLabel = stringResource(R.string.repo_contributors)
     val licenseLabel = stringResource(R.string.repo_license)
-    Column {
+    EntryGroup(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         if (detail.hasIssuesEnabled) {
             MenuRow(Icons.Default.Adjust, stringResource(R.string.common_issues), detail.openIssueCount, onClick = onNavigateIssues)
         }
@@ -634,19 +669,5 @@ private fun MenuRow(
     subtitle: String? = null,
     onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Column(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
-            Text(label)
-            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
-        count?.let { Text("$it", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) }
-        Icon(Icons.Default.ChevronRight, contentDescription = null)
-    }
+    EntryRow(icon = icon, label = label, count = count?.toString(), supportingText = subtitle, onClick = onClick)
 }

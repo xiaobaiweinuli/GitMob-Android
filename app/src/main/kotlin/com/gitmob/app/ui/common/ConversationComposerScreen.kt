@@ -5,8 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fitInside
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fitInside
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -19,7 +19,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -31,10 +30,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.WindowInsetsRulers
 import androidx.compose.ui.res.stringResource
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -95,11 +94,10 @@ fun ConversationComposerScreen(
                         )
                     }
                 },
-                navigationIcon = { IconButton(onClick = ::requestBack, enabled = !state.isSubmitting) { Icon(Icons.Default.Close, stringResource(R.string.common_cancel)) } },
+                navigationIcon = { ActionIconButton(onClick = ::requestBack, enabled = !state.isSubmitting) { Icon(Icons.Default.Close, stringResource(R.string.common_cancel)) } },
                 actions = {
-                    IconButton(onClick = viewModel::submit, enabled = (editorState.text.isNotBlank() || state.allowsEmptySubmission) && !state.isSubmitting) {
-                        if (state.isSubmitting) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.conversation_send))
+                    ActionIconButton(onClick = viewModel::submit, enabled = (editorState.text.isNotBlank() || state.allowsEmptySubmission) && !state.isSubmitting) {
+                        ActionProgressIcon(busy = state.isSubmitting, busyDescription = stringResource(R.string.conversation_send)) { Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.conversation_send)) }
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -128,8 +126,8 @@ fun ConversationComposerScreen(
         onDismissRequest = { confirmDiscard = false },
         title = { Text(stringResource(R.string.conversation_discard_title)) },
         text = { Text(stringResource(R.string.conversation_discard_message)) },
-        dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text(stringResource(R.string.common_cancel)) } },
-        confirmButton = { TextButton(onClick = onBack, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.conversation_discard)) } },
+        dismissButton = { TextButton(onClick = { confirmDiscard = false }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
+        confirmButton = { TextButton(onClick = onBack, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.conversation_discard)) } },
     )
 }
 

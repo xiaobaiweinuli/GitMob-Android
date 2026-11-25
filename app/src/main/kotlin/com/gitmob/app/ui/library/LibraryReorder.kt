@@ -11,8 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -45,6 +44,8 @@ internal fun <T> LibraryReorderList(
     row: @Composable LazyItemScope.(T, Modifier) -> Unit,
 ) {
     val listState = rememberLazyListState()
+    val motion = MaterialTheme.motionScheme
+    val groupShape = MaterialTheme.shapes.large
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val edgePx = with(LocalDensity.current) { 88.dp.toPx() }
@@ -121,7 +122,7 @@ internal fun <T> LibraryReorderList(
             dragged = null
             if (cancel) ordered = latestSource
             else ordered.map(latestKey).takeIf { it != latestSource.map(latestKey) }?.let(::persist)
-            try { settleProgress.animateTo(1f, spring(stiffness = 500f, dampingRatio = 1f)) }
+            try { settleProgress.animateTo(1f, motion.fastSpatialSpec()) }
             finally { settling = null }
         }
     }
@@ -187,14 +188,14 @@ internal fun <T> LibraryReorderList(
                         persist(ordered.map(key)); true
                     }
                 } else emptyList()
-            val shape = if (grouped) RoundedCornerShape(
-                topStart = if (index == 0 || lifted) 20.dp else 0.dp,
-                topEnd = if (index == 0 || lifted) 20.dp else 0.dp,
-                bottomStart = if (index == ordered.lastIndex || lifted) 20.dp else 0.dp,
-                bottomEnd = if (index == ordered.lastIndex || lifted) 20.dp else 0.dp,
-            ) else CardDefaults.shape
+            val shape = if (grouped) groupShape.copy(
+                topStart = if (index == 0 || lifted) groupShape.topStart else CornerSize(0.dp),
+                topEnd = if (index == 0 || lifted) groupShape.topEnd else CornerSize(0.dp),
+                bottomStart = if (index == ordered.lastIndex || lifted) groupShape.bottomStart else CornerSize(0.dp),
+                bottomEnd = if (index == ordered.lastIndex || lifted) groupShape.bottomEnd else CornerSize(0.dp),
+            ) else groupShape
             val itemModifier = Modifier
-                .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = if (lifted) null else spring(stiffness = 500f, dampingRatio = 1f))
+                .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = if (lifted) null else motion.fastSpatialSpec())
                 .zIndex(if (lifted) 1f else 0f)
                 .graphicsLayer {
                     // Layout changes are observed in drawing, not by every row's composition.

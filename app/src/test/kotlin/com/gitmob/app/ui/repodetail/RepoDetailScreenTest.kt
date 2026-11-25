@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.repodetail
 
+import androidx.lifecycle.SavedStateHandle
+
 import com.gitmob.app.testutil.libraryRepositoryStub
 
 import android.content.Context
@@ -20,7 +22,6 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.performClick
@@ -260,7 +261,7 @@ class RepoDetailScreenTest {
             .performSemanticsAction(SemanticsActions.Dismiss) { it() }
 
         composeRule.onNodeWithText("Andr").performScrollTo().assertIsDisplayed().performClick()
-        composeRule.onNode(isToggleable() and hasAnySibling(hasText("Tools")), useUnmergedTree = true).assertIsOff()
+        composeRule.onNode(isToggleable() and hasText("Tools")).assertIsOff()
         coVerify(exactly = 1) { stars.getListsContaining("R1") }
         coVerify(exactly = 0) { stars.updateListsForItem(any(), any()) }
     }
@@ -537,7 +538,7 @@ class RepoDetailScreenTest {
                 listOf(target), false, null,
             ),
         )
-        viewModel = RepoDetailViewModel(repository, owners, stars, mockk(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true))
+        viewModel = RepoDetailViewModel(repository, owners, stars, mockk(), RepoUpdateEventBus(), ErrorEventBus(), mockk(), RepoTransferPendingStore(), accounts.session, libraryRepositoryStub(), mockk(relaxUnitFun = true), savedStateHandle = SavedStateHandle())
         libraryViewModel = com.gitmob.app.ui.library.LibraryViewModel(libraryRepositoryStub(), ErrorEventBus(), accounts.session)
         val accountLibrary = com.gitmob.app.ui.library.AccountLibraryViewModel(libraryRepositoryStub(), ErrorEventBus(), accounts.session)
         composeRule.setContent {

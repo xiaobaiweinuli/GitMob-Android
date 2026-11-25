@@ -148,7 +148,7 @@ class RepoDetailViewModel @Inject constructor(
     session: AccountSession,
     private val library: LibraryRepository,
     private val documentRepository: RepoDocumentRepository,
-    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    private val savedStateHandle: SavedStateHandle,
 ) : AccountViewModel(session) {
 
     private val _state = MutableStateFlow(RepoDetailUiState())

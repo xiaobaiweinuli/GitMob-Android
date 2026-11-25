@@ -1,7 +1,6 @@
 package com.gitmob.app.ui.common
 
 import android.content.Intent
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,15 +15,11 @@ import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.pluralStringResource
-import androidx.core.net.toUri
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,8 +27,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.FollowState
@@ -102,6 +99,7 @@ fun ProfilePersonHeader(
     isCampusExpert: Boolean,
     isGitHubStar: Boolean,
     modifier: Modifier = Modifier,
+    isUpdatingFollow: Boolean = false,
 ) {
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
@@ -140,7 +138,7 @@ fun ProfilePersonHeader(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .padding(end = 16.dp)
-                        .clickable(onClick = onFollowersClick),
+                        .pressClickable(onClick = onFollowersClick),
                 )
             } else {
                 Text(
@@ -155,7 +153,7 @@ fun ProfilePersonHeader(
                     stringResource(R.string.common_following_count, followingCount),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable(onClick = onFollowingClick),
+                    modifier = Modifier.pressClickable(onClick = onFollowingClick),
                 )
             } else {
                 Text(
@@ -169,11 +167,14 @@ fun ProfilePersonHeader(
         // ---- 3. 关注按钮：isViewer=true（自己主页）不显示；viewerCanFollow=false 也不显示 ----
         if (!followState.isViewer && followState.viewerCanFollow) {
             Box(modifier = Modifier.padding(top = 12.dp)) {
-                if (followState.viewerIsFollowing) {
-                    OutlinedButton(onClick = onFollowClick) { Text(stringResource(R.string.common_following)) }
-                } else {
-                    Button(onClick = onFollowClick) { Text(stringResource(R.string.common_follow)) }
-                }
+                StateActionButton(
+                    selected = followState.viewerIsFollowing,
+                    onClick = onFollowClick,
+                    busy = isUpdatingFollow,
+                    label = stringResource(R.string.common_follow),
+                    selectedLabel = stringResource(R.string.common_following),
+                    filled = !followState.viewerIsFollowing,
+                )
             }
         }
 
@@ -316,7 +317,7 @@ private fun ClickableInfoRow(icon: ImageVector, text: String, onClick: () -> Uni
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .pressClickable(onClick = onClick)
             .padding(vertical = 6.dp),
     ) {
         Icon(
@@ -343,7 +344,7 @@ private fun ClickableInfoRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .pressClickable(onClick = onClick)
             .padding(vertical = 6.dp),
     ) {
         Icon(

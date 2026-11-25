@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.search
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -9,18 +10,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.text.input.TextFieldValue
-import com.gitmob.app.ui.common.RepositorySearchField
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.data.model.SearchCategory
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.RepositorySearchField
 import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,7 +67,7 @@ fun SearchCategoryScreen(
                         Modifier.padding(end = 16.dp), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
             )
         },
     ) { padding ->
@@ -75,7 +77,9 @@ fun SearchCategoryScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         ) {
             if (page == null && section.loading) item(key = "initial-loading") { SearchPlaceholder() }
-            items(page?.items.orEmpty(), key = { it.key }) { SearchResult(it, actions) }
+            items(page?.items.orEmpty(), key = { it.key }) { result ->
+                Box(Modifier.animateItem()) { SearchResult(result, actions) }
+            }
             if (page != null && page.items.isEmpty()) item(key = "empty") {
                 Text(stringResource(R.string.search_empty), Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

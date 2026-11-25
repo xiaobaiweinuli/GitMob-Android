@@ -223,9 +223,17 @@ class RepoPullRequestCreateViewModel @Inject constructor(
         }
     }
 
-    fun selectBranch(branch: RepoBranch) {
-        val selectingBase = _state.value.page == RepoPullRequestCreatePage.SELECT_BASE
-        _state.update { if (selectingBase) it.copy(baseBranch = branch, page = RepoPullRequestCreatePage.COMPARE) else it.copy(headBranch = branch, page = RepoPullRequestCreatePage.COMPARE) }
+    fun selectBranch(branch: RepoBranch, sourcePage: RepoPullRequestCreatePage) {
+        if (_state.value.page != sourcePage) return
+        val selectingBase = when (sourcePage) {
+            RepoPullRequestCreatePage.SELECT_BASE -> true
+            RepoPullRequestCreatePage.SELECT_HEAD -> false
+            else -> return
+        }
+        _state.update {
+            if (selectingBase) it.copy(baseBranch = branch, page = RepoPullRequestCreatePage.COMPARE)
+            else it.copy(headBranch = branch, page = RepoPullRequestCreatePage.COMPARE)
+        }
         compare()
     }
 

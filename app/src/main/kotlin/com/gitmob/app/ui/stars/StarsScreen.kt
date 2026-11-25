@@ -1,7 +1,5 @@
 package com.gitmob.app.ui.stars
 
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,14 +20,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -49,7 +44,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.StarFilter
 import com.gitmob.app.data.model.UserListSummary
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.EntryGroup
+import com.gitmob.app.ui.common.ExpandableSection
+import com.gitmob.app.ui.common.ExpansionArrow
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
 import com.gitmob.app.ui.common.StarredRepoCard
+import com.gitmob.app.ui.common.pressClickable
 
 /**
  * 底部 Tab「星标」——当前登录用户的星标管理页（带列表筛选 Chip 行 + 下拉刷新 + 分页）。
@@ -73,7 +75,7 @@ fun StarsScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.nav_tab_stars)) },
                 actions = {
-                    IconButton(onClick = viewModel::openCreateListDialog) {
+                    ActionIconButton(onClick = viewModel::openCreateListDialog) {
                         Icon(Icons.Default.Add, contentDescription = stringResource(R.string.stars_create_list))
                     }
                 },
@@ -97,67 +99,51 @@ fun StarsScreen(
                     .fillMaxWidth()
                     .weight(1f),
             ) {
-                when {
-                    state.isLoading && state.repos.isEmpty() -> {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                    }
-                    state.loadFailed -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState())
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
-                            Button(
-                                onClick = viewModel::retry,
-                                modifier = Modifier.padding(top = 12.dp),
-                            ) {
-                                Text(stringResource(R.string.common_retry))
-                            }
+                val feedback = when {
+                    state.isLoading && state.repos.isEmpty() -> ListFeedbackState.LOADING
+                    state.loadFailed -> ListFeedbackState.ERROR
+                    state.repos.isEmpty() -> ListFeedbackState.EMPTY
+                    else -> ListFeedbackState.CONTENT
+                }
+                PullToRefreshBox(
+                    isRefreshing = state.isRefreshing,
+                    onRefresh = viewModel::refresh,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(if (feedback == ListFeedbackState.CONTENT) state.repos else emptyList(), key = { it.id }) { repo ->
+                            // 当前登录用户自己的星标 Tab：显示 viewer 专属操作按钮（添加到列表 + 取消星标）
+                            StarredRepoCard(
+                                repo = repo,
+                                modifier = Modifier.animateItem(),
+                                onClick = { onRepoClick(repo.ownerLogin, repo.name) },
+                                onForkSourceClick = onForkSourceClick,
+                                onHomepageClick = onHomepageClick,
+                                showViewerActions = true,
+                                onAddToListClick = { viewModel.openAddToList(repo) },
+                                onUnstarClick = { viewModel.unstarRepo(repo) },
+                                isUnstarring = repo.id in state.unstarringRepoIds,
+                            )
                         }
-                    }
-                    else -> {
-                        PullToRefreshBox(
-                            isRefreshing = state.isRefreshing,
-                            onRefresh = viewModel::refresh,
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                items(state.repos) { repo ->
-                                    // 当前登录用户自己的星标 Tab：显示 viewer 专属操作按钮（添加到列表 + 取消星标）
-                                    StarredRepoCard(
-                                        repo = repo,
-                                        onClick = { onRepoClick(repo.ownerLogin, repo.name) },
-                                        onForkSourceClick = onForkSourceClick,
-                                        onHomepageClick = onHomepageClick,
-                                        showViewerActions = true,
-                                        onAddToListClick = { viewModel.openAddToList(repo) },
-                                        onUnstarClick = { viewModel.unstarRepo(repo) },
-                                    )
-                                }
-                                if (state.hasNextPage) {
-                                    item {
-                                        LaunchedEffect(state.repos.size) { viewModel.loadMore() }
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(16.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                        }
-                                    }
+                        if (feedback == ListFeedbackState.CONTENT && state.hasNextPage) {
+                            item {
+                                LaunchedEffect(state.repos.size) { viewModel.loadMore() }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
                                 }
                             }
                         }
                     }
+                    ListFeedback(feedback, viewModel::retry)
                 }
             }
         }
@@ -205,11 +191,11 @@ private fun ListsSection(
     onSelectFilter: (StarFilter) -> Unit,
     onEditListClick: (UserListSummary) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    EntryGroup(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickableX(onClick = onToggleExpanded)
+                .pressClickable(onClick = onToggleExpanded)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -219,13 +205,10 @@ private fun ListsSection(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(start = 8.dp).weight(1f),
             )
-            Icon(
-                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null,
-            )
+            ExpansionArrow(expanded)
         }
 
-        if (expanded) {
+        ExpandableSection(expanded) {
             Column {
                 ListRow(
                     icon = Icons.Default.Star,
@@ -249,12 +232,6 @@ private fun ListsSection(
     }
 }
 
-/**
- * 临时 helper：避免 Modifier.clickable 的 import 冲突。
- * 已经在顶部 import androidx.compose.foundation.clickable，这里直接走 Modifier.clickable 扩展语法即可。
- */
-private fun Modifier.clickableX(onClick: () -> Unit): Modifier =
-    this.then(Modifier.clickable(onClick = onClick))
 
 @Composable
 private fun ListRow(
@@ -272,7 +249,7 @@ private fun ListRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickableX(onClick = onClick)
+                .pressClickable(onClick = onClick)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -284,7 +261,7 @@ private fun ListRow(
             Text(label, modifier = Modifier.padding(start = 12.dp).weight(1f))
             count?.let { Text("$it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             onEditClick?.let {
-                IconButton(onClick = it, modifier = Modifier.size(32.dp)) {
+                ActionIconButton(onClick = it, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.common_edit), modifier = Modifier.size(16.dp))
                 }
             }

@@ -1,24 +1,16 @@
 package com.gitmob.app.ui.userlist
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -27,9 +19,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -45,7 +41,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.SimpleUser
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
 import com.gitmob.app.ui.common.RepositoryContextTitle
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
 
 /**
  * 关注者/关注共用这一个 Screen，靠 mode 参数区分标题和数据来源（ViewModel 内部已经分流）。
@@ -193,7 +194,7 @@ private fun UserListBody(
             TopAppBar(
                 title = titleContent,
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
@@ -204,67 +205,35 @@ private fun UserListBody(
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
     ) { innerPadding ->
-        when {
-            state.isLoading && state.users.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
+        Box(Modifier.fillMaxSize().padding(innerPadding)) {
+            val feedback = when {
+                state.isLoading && state.users.isEmpty() -> ListFeedbackState.LOADING
+                state.loadFailed && state.users.isEmpty() -> ListFeedbackState.ERROR
+                state.users.isEmpty() -> ListFeedbackState.EMPTY
+                else -> ListFeedbackState.CONTENT
             }
-            state.loadFailed && state.users.isEmpty() -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(stringResource(R.string.common_load_failed))
-                    Button(onClick = viewModel::retry, modifier = Modifier.padding(top = 12.dp)) {
-                        Text(stringResource(R.string.common_retry))
-                    }
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp, end = 16.dp, top = 8.dp,
+                    bottom = 8.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                        WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
+                ),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(state.users, key = { "user:${it.login}" }) { user ->
+                    Box(Modifier.animateItem()) { UserRow(user, onClick = { onUserClick(user.login) }) }
                 }
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                ) {
-                    items(state.users) { user ->
-                        UserRow(user, onClick = { onUserClick(user.login) })
-                    }
-                    if (state.hasNextPage) {
-                        item {
-                            LaunchedEffect(Unit) { viewModel.loadMore() }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                            }
+                if (feedback == ListFeedbackState.CONTENT && state.hasNextPage) {
+                    item(key = "more") {
+                        LaunchedEffect(state.users.size) { viewModel.loadMore() }
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(20.dp))
                         }
                     }
-                    // Push route 底部：navigationBars + captionBar 高度
-                    item(key = "bottom_spacer") {
-                        Spacer(
-                            Modifier.height(
-                                WindowInsets.navigationBars.asPaddingValues()
-                                    .calculateBottomPadding() +
-                                    WindowInsets.captionBar.asPaddingValues()
-                                        .calculateBottomPadding(),
-                            ),
-                        )
-                    }
                 }
             }
+            ListFeedback(feedback, viewModel::retry)
         }
     }
 }
@@ -274,7 +243,8 @@ private fun UserRow(user: SimpleUser, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .informationItem()
+            .pressClickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

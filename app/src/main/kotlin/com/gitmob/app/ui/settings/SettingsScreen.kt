@@ -2,7 +2,7 @@ package com.gitmob.app.ui.settings
 
 import android.os.Build
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,18 +18,15 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -41,8 +38,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
@@ -51,12 +48,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.annotation.StringRes
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
+import com.gitmob.app.ui.common.ExpandableSection
+import com.gitmob.app.ui.common.ExpansionArrow
+import com.gitmob.app.ui.common.pressClickable
 import com.gitmob.app.ui.login.AccountAuthActions
 import com.gitmob.app.ui.login.AccountAuthSheet
 import com.gitmob.app.ui.login.AccountIdentity
@@ -129,7 +128,7 @@ fun SettingsScreen(
                         val expansionDescription = stringResource(if (accountsExpanded) R.string.accounts_expanded else R.string.accounts_collapsed)
                         Row(
                             Modifier.fillMaxWidth()
-                                .clickable(enabled = !authState.isLoading, role = Role.Button) { accountsExpanded = !accountsExpanded }
+                                .pressClickable(enabled = !authState.isLoading, role = Role.Button) { accountsExpanded = !accountsExpanded }
                                 .semantics { stateDescription = expansionDescription }
                                 .heightIn(min = 96.dp).padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -143,9 +142,9 @@ fun SettingsScreen(
                                     modifier = Modifier.padding(start = 64.dp),
                                 )
                             }
-                            Icon(if (accountsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                            ExpansionArrow(accountsExpanded)
                         }
-                        if (accountsExpanded) {
+                        ExpandableSection(accountsExpanded) {
                             HorizontalDivider()
                             Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 accounts.accounts.forEach { account ->

@@ -31,6 +31,8 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+enum class GistMutation { STAR, FORK, EDIT_DESCRIPTION, DELETE_FILE, DELETE_GIST, SAVE_COMMENT, DELETE_COMMENT }
+
 data class GistDetailUiState(
     val detail: GistDetail? = null,
     val comments: List<GistComment> = emptyList(),
@@ -39,6 +41,7 @@ data class GistDetailUiState(
     val loadFailed: Boolean = false,
     val isLoadingMoreComments: Boolean = false,
     val isMutating: Boolean = false,
+    val pendingMutation: GistMutation? = null,
     val oldestVersion: String? = null,
     val editHistory: ConversationEditHistoryUiState = ConversationEditHistoryUiState(),
 )
@@ -148,7 +151,7 @@ class GistDetailViewModel @Inject constructor(
 
     fun toggleStar() {
         val detail = _state.value.detail ?: return
-        mutate(R.string.gist_star_updated) {
+        mutate(GistMutation.STAR, R.string.gist_star_updated) {
             repository.setStarred(gistId, !detail.isStarred).map { starred ->
                 _state.update {
                     it.copy(
@@ -163,7 +166,7 @@ class GistDetailViewModel @Inject constructor(
     }
 
     fun fork(onForked: (GistDetail) -> Unit) {
-        mutate(R.string.gist_fork_created) {
+        mutate(GistMutation.FORK, R.string.gist_fork_created) {
             repository.fork(gistId).map(onForked)
         }
     }
@@ -171,7 +174,7 @@ class GistDetailViewModel @Inject constructor(
     fun updateDescription(description: String, onDone: () -> Unit) {
         val detail = _state.value.detail ?: return
         if (!detail.isOwnedByViewer) return
-        mutate(R.string.gist_saved) {
+        mutate(GistMutation.EDIT_DESCRIPTION, R.string.gist_saved) {
             repository.updateDescription(gistId, description).map {
                 _state.update { it.copy(detail = it.detail?.copy(description = description.takeIf(String::isNotBlank))) }
                 onDone()
@@ -182,7 +185,7 @@ class GistDetailViewModel @Inject constructor(
     fun deleteFile(file: GistFile, onDone: () -> Unit) {
         val detail = _state.value.detail ?: return
         if (!detail.isOwnedByViewer || detail.files.size <= 1) return
-        mutate(R.string.gist_file_deleted) {
+        mutate(GistMutation.DELETE_FILE, R.string.gist_file_deleted) {
             repository.deleteFile(gistId, file.filename).map {
                 load()
                 onDone()
@@ -192,7 +195,7 @@ class GistDetailViewModel @Inject constructor(
 
     fun deleteGist(onDeleted: () -> Unit) {
         if (_state.value.detail?.isOwnedByViewer != true) return
-        mutate(R.string.gist_deleted) {
+        mutate(GistMutation.DELETE_GIST, R.string.gist_deleted) {
             val result = repository.deleteGist(gistId)
             if (result is ApiResult.Success) {
                 gistUpdateEventBus.emitListChanged()
@@ -205,7 +208,7 @@ class GistDetailViewModel @Inject constructor(
     fun createComment(body: String, onDone: () -> Unit) {
         val detail = _state.value.detail ?: return
         if (!detail.commentsEnabled || body.isBlank()) return
-        mutate(R.string.gist_comment_saved) {
+        mutate(GistMutation.SAVE_COMMENT, R.string.gist_comment_saved) {
             repository.createComment(gistId, body.trim()).map { comment ->
                 _state.update {
                     it.copy(
@@ -220,7 +223,7 @@ class GistDetailViewModel @Inject constructor(
 
     fun updateComment(comment: GistComment, body: String, onDone: () -> Unit) {
         if (!comment.isBy(viewerLogin) || body.isBlank()) return
-        mutate(R.string.gist_comment_saved) {
+        mutate(GistMutation.SAVE_COMMENT, R.string.gist_comment_saved) {
             repository.updateComment(gistId, comment.id, body.trim()).map { updated ->
                 _state.update { state ->
                     state.copy(comments = state.comments.map { if (it.id == comment.id) render(updated) else it })
@@ -232,7 +235,7 @@ class GistDetailViewModel @Inject constructor(
 
     fun deleteComment(comment: GistComment, onDone: () -> Unit) {
         if (!comment.isBy(viewerLogin)) return
-        mutate(R.string.gist_comment_deleted) {
+        mutate(GistMutation.DELETE_COMMENT, R.string.gist_comment_deleted) {
             repository.deleteComment(gistId, comment.id).map {
                 _state.update { state ->
                     state.copy(
@@ -309,15 +312,18 @@ class GistDetailViewModel @Inject constructor(
         }
     }
 
-    private fun mutate(notice: Int, action: suspend () -> ApiResult<*>) {
+    private fun mutate(operation: GistMutation, notice: Int, action: suspend () -> ApiResult<*>) {
         if (_state.value.isMutating) return
+        _state.update { it.copy(isMutating = true, pendingMutation = operation) }
         viewModelScope.launch {
-            _state.update { it.copy(isMutating = true) }
-            when (val result = action()) {
-                is ApiResult.Success -> errorEventBus.emitNotice(notice)
-                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            try {
+                when (val result = action()) {
+                    is ApiResult.Success -> errorEventBus.emitNotice(notice)
+                    is ApiResult.Failure -> errorEventBus.emit(result.error)
+                }
+            } finally {
+                _state.update { it.copy(isMutating = false, pendingMutation = null) }
             }
-            _state.update { it.copy(isMutating = false) }
         }
     }
 

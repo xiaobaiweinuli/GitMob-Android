@@ -1,44 +1,39 @@
 package com.gitmob.app.ui.repoforks
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowRight
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorPosition
 import androidx.compose.material3.MenuDefaults
@@ -48,35 +43,39 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.input.key.key
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoForkSort
 import com.gitmob.app.data.model.RepoForkSortDirection
 import com.gitmob.app.data.model.RepoForkSortField
-import com.gitmob.app.R
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
+import com.gitmob.app.ui.common.FilterMenuChip
 import com.gitmob.app.ui.common.RepoCard
 import com.gitmob.app.ui.common.RepositoryContextTitle
 import java.text.NumberFormat
@@ -112,7 +111,7 @@ fun RepoForksScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back))
                     }
                 },
@@ -147,54 +146,45 @@ fun RepoForksScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            when {
-                state.isLoading && state.repos.isEmpty() -> Box(
-                    Modifier.fillMaxSize(), contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
-                state.loadFailed && state.repos.isEmpty() -> Column(
-                    Modifier.fillMaxSize().padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(stringResource(R.string.common_load_failed), style = MaterialTheme.typography.titleMedium)
-                    Button(onClick = viewModel::load, modifier = Modifier.padding(top = 12.dp)) {
-                        Text(stringResource(R.string.common_retry))
-                    }
-                }
-                else -> LazyColumn(
+            val feedback = when {
+                state.isLoading && state.repos.isEmpty() -> ListFeedbackState.LOADING
+                state.loadFailed && state.repos.isEmpty() -> ListFeedbackState.ERROR
+                state.repos.isEmpty() -> ListFeedbackState.EMPTY
+                else -> ListFeedbackState.CONTENT
+            }
+            Box(Modifier.fillMaxSize()) {
+                LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp, end = 16.dp, top = 8.dp,
+                        bottom = 8.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                            WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     items(state.repos, key = { it.key }) { repo ->
                         RepoCard(
                             repo = repo,
+                            modifier = Modifier.animateItem(),
                             onClick = { onRepositoryClick(repo.ownerLogin, repo.name) },
                             onForkSourceClick = onForkSourceClick,
                             onHomepageClick = onHomepageClick,
                             showOwner = true,
                         )
                     }
-                    if (state.hasNextPage) item(key = "load_more") {
+                    if (feedback == ListFeedbackState.CONTENT && state.hasNextPage) item(key = "load_more") {
                         Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                             if (state.loadFailed) {
-                                Button(onClick = viewModel::loadMore) { Text(stringResource(R.string.common_retry)) }
+                                Button(onClick = viewModel::loadMore, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
                             } else {
                                 LaunchedEffect(state.endCursor) { viewModel.loadMore() }
                                 CircularProgressIndicator(Modifier.size(20.dp))
                             }
                         }
                     }
-                    item(key = "bottom_spacer") {
-                        Spacer(
-                            Modifier.height(
-                                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                                    WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
-                            ),
-                        )
-                    }
                 }
+                ListFeedback(feedback, viewModel::load)
             }
         }
     }
@@ -209,29 +199,20 @@ private fun RepoForkSortMenu(sort: RepoForkSort, onSelect: (RepoForkSort) -> Uni
     val enterKey = if (rtl) Key.DirectionLeft else Key.DirectionRight
     val exitKey = if (rtl) Key.DirectionRight else Key.DirectionLeft
     val label = stringResource(sort.labelRes)
-    val description = stringResource(R.string.work_select_filter_value, stringResource(R.string.work_filter_sort), label)
     val dismiss: () -> Unit = {
         openedField = null
         expanded = false
     }
     Box {
-        Surface(
+        FilterMenuChip(
+            label = label,
+            selected = true,
+            expanded = expanded,
+            selectedText = label,
+            filterLabel = stringResource(R.string.work_filter_sort),
             onClick = { expanded = true },
-            modifier = Modifier.widthIn(max = 280.dp)
-                .semantics { contentDescription = description },
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ) {
-            Row(
-                Modifier.padding(start = 12.dp, end = 6.dp, top = 7.dp, bottom = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(label, Modifier.weight(1f, fill = false), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium)
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(20.dp))
-            }
-        }
+            labelContent = { Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        )
         DropdownMenuPopup(expanded = expanded, onDismissRequest = dismiss) {
             DropdownMenuGroup(
                 shapes = MenuDefaults.groupShape(0, 1),

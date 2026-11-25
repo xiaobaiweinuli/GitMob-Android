@@ -3,11 +3,11 @@ package com.gitmob.app.ui.repocode
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -23,16 +23,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.SubdirectoryArrowLeft
-import androidx.compose.material.icons.automirrored.filled.AltRoute
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SubdirectoryArrowLeft
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -41,7 +41,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -50,37 +49,42 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.core.permission.RepoPermission
-import com.gitmob.app.data.model.RepoEntryType
+import com.gitmob.app.core.storage.SafSelection
 import com.gitmob.app.data.model.RepoContentSource
-import com.gitmob.app.data.model.RepoLinkTarget
+import com.gitmob.app.data.model.RepoEntryType
 import com.gitmob.app.data.model.RepoForkSyncInfo
 import com.gitmob.app.data.model.RepoForkSyncStatus
-import com.gitmob.app.core.storage.SafSelection
+import com.gitmob.app.data.model.RepoLinkTarget
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ActionProgressIcon
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
+import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import com.gitmob.app.ui.common.RepositoryContextTitle
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.IOException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -137,25 +141,24 @@ fun RepoCodeScreen(
                         onRepositoryClick = onRepositoryClick,
                     )
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
-                    IconButton(onClick = { state.tree?.let { onSearch(RepoLinkTarget(it.ref, it.path), it.isFork) } }, enabled = state.tree != null) {
+                    ActionIconButton(onClick = { state.tree?.let { onSearch(RepoLinkTarget(it.ref, it.path), it.isFork) } }, enabled = state.tree != null) {
                         Icon(Icons.Default.Search, stringResource(R.string.repo_code_search))
                     }
                     if (state.tree?.isFork == true && state.tree?.isCommitSnapshot == false) {
-                        IconButton(onClick = viewModel::openSync, enabled = !state.isSyncBusy) {
-                            Icon(Icons.Default.Sync, stringResource(R.string.repo_sync_title))
+                        ActionIconButton(onClick = viewModel::openSync, enabled = !state.isSyncBusy) {
+                            ActionProgressIcon(state.isSyncBusy, busyDescription = stringResource(R.string.repo_sync_title)) { Icon(Icons.Default.Sync, stringResource(R.string.repo_sync_title)) }
                         }
                     }
                     if (target != null) Box {
-                        IconButton(
+                        ActionIconButton(
                             onClick = {
                                 if (target.path.isBlank()) viewModel.downloadArchive() else downloadMenuExpanded = true
                             },
                             enabled = !state.openingDownload && !state.isFolderExporting,
                         ) {
-                            if (state.openingDownload) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.Download, stringResource(if (target.path.isBlank()) R.string.repo_download_archive else R.string.common_download))
+                            ActionProgressIcon(busy = state.openingDownload || state.isFolderExporting, busyDescription = stringResource(if (target.path.isBlank()) R.string.repo_download_archive else R.string.common_download)) { Icon(Icons.Default.Download, stringResource(if (target.path.isBlank()) R.string.repo_download_archive else R.string.common_download)) }
                         }
                         DropdownMenu(expanded = downloadMenuExpanded, onDismissRequest = { downloadMenuExpanded = false }) {
                             DropdownMenuItem(
@@ -172,8 +175,8 @@ fun RepoCodeScreen(
                     }
                     if (state.tree?.isCommitSnapshot == false && state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && state.tree?.isArchived == false) {
                         androidx.compose.foundation.layout.Box {
-                            IconButton(onClick = { addMenuExpanded = true }, enabled = !state.isUploading) {
-                                if (state.isUploading) CircularProgressIndicator() else Icon(Icons.Default.Add, stringResource(R.string.repo_add_file))
+                            ActionIconButton(onClick = { addMenuExpanded = true }, enabled = !state.isUploading) {
+                                ActionProgressIcon(busy = state.isUploading, busyDescription = stringResource(R.string.repo_add_file)) { Icon(Icons.Default.Add, stringResource(R.string.repo_add_file)) }
                             }
                             DropdownMenu(expanded = addMenuExpanded, onDismissRequest = { addMenuExpanded = false }) {
                                 DropdownMenuItem(text = { Text(stringResource(R.string.repo_add_file)) }, onClick = { addMenuExpanded = false; target?.let(onAdd) })
@@ -195,9 +198,9 @@ fun RepoCodeScreen(
                 state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 state.loadFailed || state.tree == null -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Text(stringResource(R.string.common_load_failed))
-                    TextButton(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) }
+                    TextButton(onClick = viewModel::retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
                 }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
+                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     val location = requireNotNull(target)
                     if (location.path.isNotBlank()) item(key = "parent") {
                         RepoCodeRow(
@@ -253,7 +256,7 @@ fun RepoCodeScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = viewModel::cancelFolderExport) {
+                TextButton(onClick = viewModel::cancelFolderExport, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },
@@ -298,13 +301,13 @@ private fun RepoCodeLocation(ref: String, path: String, onDirectoryClick: (Strin
             if (segments.isEmpty()) {
                 Text(stringResource(R.string.repo_code_root), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
             } else {
-                TextButton(onClick = { onDirectoryClick("") }) { Text(stringResource(R.string.repo_code_root), maxLines = 1) }
+                TextButton(onClick = { onDirectoryClick("") }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.repo_code_root), maxLines = 1) }
                 segments.forEachIndexed { index, segment ->
                     Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (index == segments.lastIndex) {
                         Text(segment, style = MaterialTheme.typography.bodyMedium, maxLines = 1, modifier = Modifier.padding(horizontal = 12.dp, vertical = 16.dp))
                     } else {
-                        TextButton(onClick = { onDirectoryClick(segments.take(index + 1).joinToString("/")) }) { Text(segment, maxLines = 1) }
+                        TextButton(onClick = { onDirectoryClick(segments.take(index + 1).joinToString("/")) }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(segment, maxLines = 1) }
                     }
                 }
             }
@@ -322,7 +325,7 @@ private fun RepoCodeRow(
     onClick: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().informationItem().pressClickable(role = Role.Button, onClick = onClick).heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -334,7 +337,6 @@ private fun RepoCodeRow(
             Text(size, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }
-    HorizontalDivider(Modifier.padding(start = 56.dp, end = 16.dp))
 }
 
 @Composable
@@ -376,17 +378,19 @@ private fun ForkSyncDialog(
                         singleLine = true,
                         enabled = !state.isSyncBusy,
                         modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
                     )
                 }
             },
-            dismissButton = { TextButton(onClick = hideDiscard, enabled = !state.isSyncBusy) { Text(stringResource(R.string.common_cancel)) } },
+            dismissButton = { TextButton(onClick = hideDiscard, enabled = !state.isSyncBusy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
             confirmButton = {
                 Button(
                     onClick = { discard(confirmation) },
                     enabled = confirmation == info.branch && !state.isSyncBusy,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+                    shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding,
                 ) {
-                    if (state.isSyncing) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.repo_sync_discard))
+                    ActionButtonContent(busy = state.isSyncing, label = stringResource(R.string.repo_sync_discard))
                 }
             },
         )
@@ -403,11 +407,10 @@ private fun ForkSyncDialog(
                     Text(stringResource(R.string.repo_sync_pr_hint))
                 }
             },
-            dismissButton = { TextButton(onClick = hidePullRequest, enabled = !state.isSyncBusy) { Text(stringResource(R.string.common_cancel)) } },
+            dismissButton = { TextButton(onClick = hidePullRequest, enabled = !state.isSyncBusy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
             confirmButton = {
-                Button(onClick = pullRequest, enabled = !state.isSyncBusy) {
-                    if (state.isCheckingSyncPullRequest) CircularProgressIndicator(Modifier.size(20.dp))
-                    else Text(stringResource(R.string.common_continue))
+                Button(onClick = pullRequest, enabled = !state.isSyncBusy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
+                    ActionButtonContent(busy = state.isCheckingSyncPullRequest, label = stringResource(R.string.common_continue))
                 }
             },
         )
@@ -423,15 +426,14 @@ private fun ForkSyncDialog(
                 else -> ForkSyncContent(info, state, direction, showDiscard, showPullRequest)
             }
         },
-        dismissButton = { TextButton(onClick = dismiss, enabled = !state.isSyncBusy) { Text(stringResource(R.string.common_cancel)) } },
+        dismissButton = { TextButton(onClick = dismiss, enabled = !state.isSyncBusy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
         confirmButton = {
             if (info?.status == RepoForkSyncStatus.READY && info.behindBy > 0 && state.capabilities.canPush) {
-                Button(onClick = merge, enabled = !state.isSyncBusy) {
-                    if (state.isSyncing) CircularProgressIndicator(Modifier.size(20.dp))
-                    else Text(stringResource(R.string.repo_sync_merge))
+                Button(onClick = merge, enabled = !state.isSyncBusy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) {
+                    ActionButtonContent(busy = state.isSyncing, label = stringResource(R.string.repo_sync_merge))
                 }
             } else if (info == null && !state.isLoadingSync) {
-                Button(onClick = retry) { Text(stringResource(R.string.common_retry)) }
+                Button(onClick = retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) }
             }
         },
     )
@@ -473,10 +475,11 @@ private fun ForkSyncContent(
                         onClick = showDiscard,
                         enabled = !state.isSyncBusy,
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
                     ) { Text(stringResource(R.string.repo_sync_discard)) }
                 }
                 if (info.behindBy > 0 && state.tree?.isArchived == false) {
-                    TextButton(onClick = pullRequest, enabled = !state.isSyncBusy) { Text(stringResource(R.string.repo_sync_pr)) }
+                    TextButton(onClick = pullRequest, enabled = !state.isSyncBusy, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { ActionButtonContent(busy = state.isCheckingSyncPullRequest, label = stringResource(R.string.repo_sync_pr)) }
                 }
             }
         }

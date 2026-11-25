@@ -31,6 +31,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.SavedStateHandle
@@ -93,6 +94,7 @@ import com.gitmob.app.data.translation.*
 import com.gitmob.app.data.repository.UserRepository
 import com.gitmob.app.testutil.AccountSessionRule
 import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.ui.common.awaitSoraEditor
 import com.gitmob.app.ui.common.AccountViewModel
 import com.gitmob.app.ui.gist.GistDetailViewModel
 import com.gitmob.app.ui.gist.GistCreateViewModel
@@ -817,12 +819,12 @@ class AccountNavigationTest {
         composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
         assertSame(vm, fixture.model<RepoIssueEditorViewModel>())
         composeRule.onNodeWithText("Unsent title").assertExists()
-        composeRule.onNodeWithText("Unsent body").assertExists()
+        assertEditorContent("Unsent body", TextRange(2, 5))
         composeRule.runOnUiThread { controller!!.recreate() }
         composeRule.waitForIdle()
         assertSame(vm, fixture.model<RepoIssueEditorViewModel>())
         composeRule.onNodeWithText("Unsent title").assertExists()
-        composeRule.onNodeWithText("Unsent body").assertExists()
+        assertEditorContent("Unsent body", TextRange(2, 5))
         assertEquals(TextRange(2, 5), vm.bodyState.selection)
     }
 
@@ -854,7 +856,10 @@ class AccountNavigationTest {
         composeRule.runOnIdle {
             first.editTitle("Restored form")
             first.editText("version", "")
-            first.editText("logs", "User logs")
+            first.textareaStates.getValue("logs").edit {
+                replace(0, length, "User logs")
+                selection = TextRange(2, 6)
+            }
             first.editSelection("platform", setOf(1))
             first.editSelection("terms", setOf(0))
             first.confirmMetadata(setOf("L1"), emptySet(), "M1")
@@ -865,7 +870,10 @@ class AccountNavigationTest {
         assertNotSame(first, second)
         assertEquals(expected, second.state.value.draft)
         composeRule.onNodeWithText("Restored form").assertExists()
-        composeRule.onNodeWithText("User logs").assertExists()
+        assertEquals("User logs", second.textareaStates.getValue("logs").text.toString())
+        assertEquals(TextRange(2, 6), second.textareaStates.getValue("logs").selection)
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Logs"))
+        assertEditorContent("User logs", TextRange(2, 6))
         composeRule.onNodeWithText("Default version").assertDoesNotExist()
     }
 
@@ -884,7 +892,16 @@ class AccountNavigationTest {
         assertEquals("Restored body", second.bodyState.text.toString())
         assertEquals(TextRange(1, 7), second.bodyState.selection)
         composeRule.onNodeWithText("Restored title").assertExists()
-        composeRule.onNodeWithText("Restored body").assertExists()
+        assertEditorContent("Restored body", TextRange(1, 7))
+    }
+
+    private fun assertEditorContent(text: String, selection: TextRange) {
+        val editor = composeRule.awaitSoraEditor(controller!!.get().window.decorView)
+        composeRule.runOnIdle {
+            assertEquals(text, editor.text.toString())
+            assertEquals(selection.min, editor.cursor.left)
+            assertEquals(selection.max, editor.cursor.right)
+        }
     }
 
     private fun openIssueEditor(template: Boolean = false) {
@@ -1070,7 +1087,7 @@ internal class NavigationFixture(val session: AccountSession) {
         HomeViewModel::class.java to { HomeViewModel(users, errors, repoEvents, session) },
         RepoDetailViewModel::class.java to {
             RepoDetailViewModel(repoDetails, repos, stars, mockk(), repoEvents, errors, mockk(),
-                RepoTransferPendingStore(), session, libraryRepositoryStub(), mockk())
+                RepoTransferPendingStore(), session, libraryRepositoryStub(), mockk(), savedStateHandle = it)
         },
         RepoIssueListViewModel::class.java to { RepoIssueListViewModel(issues, errors, repoEvents, session, it) },
         RepoIssueEditorViewModel::class.java to { RepoIssueEditorViewModel(issues, errors, repoEvents, CommonMarkRenderer(), session, it) },

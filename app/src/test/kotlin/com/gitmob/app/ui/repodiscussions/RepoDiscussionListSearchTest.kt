@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.repodiscussions
 
+import androidx.lifecycle.SavedStateHandle
+
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
@@ -34,7 +36,7 @@ class RepoDiscussionListSearchTest {
         val repository = mockk<RepoDiscussionRepository>()
         coEvery { repository.getDiscussions("o", "r", any(), null) } returns ApiResult.Success(page)
         coEvery { repository.searchDiscussions("o", "r", "", any(), null) } returns ApiResult.Success(page)
-        val vm = RepoDiscussionListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session)
+        val vm = RepoDiscussionListViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", null, "state:open is:answered")
         advanceUntilIdle()
         coVerify(exactly = 1) { repository.getDiscussions("o", "r", filter, null) }
@@ -58,7 +60,7 @@ class RepoDiscussionListSearchTest {
             ApiResult.Success(page), ApiResult.Success(page.copy(totalCount = 2)),
         )
         val events = RepoUpdateEventBus()
-        val vm = RepoDiscussionListViewModel(repository, ErrorEventBus(), events, accounts.session)
+        val vm = RepoDiscussionListViewModel(repository, ErrorEventBus(), events, accounts.session, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.READ)
         vm.setCategory(category)
         vm.submitSearch("topic")

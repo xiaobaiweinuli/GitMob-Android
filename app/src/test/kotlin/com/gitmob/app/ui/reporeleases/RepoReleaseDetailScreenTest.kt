@@ -143,7 +143,8 @@ class RepoReleaseDetailScreenTest {
         compose.onNodeWithText(text(R.string.common_cancel)).performClick()
         verify(exactly = 1) { vm.cancelUpload() }
         compose.onNodeWithText(text(R.string.common_refresh)).assertDoesNotExist()
-        compose.onNodeWithContentDescription(text(R.string.release_upload_asset)).assertIsNotEnabled()
+        compose.onNodeWithContentDescription(text(R.string.release_asset_uploading)).assertIsNotEnabled()
+        compose.onNodeWithContentDescription(text(R.string.release_upload_asset)).assertDoesNotExist()
     }
 }
 

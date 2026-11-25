@@ -1,5 +1,6 @@
 package com.gitmob.app.ui.common
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -89,6 +90,8 @@ internal fun SoraTextViewer(
 }
 
 /** Only view lifecycle and logical reading state are adapted; text rendering stays inside Sora. */
+// Created programmatically with document state; not inflated from XML.
+@SuppressLint("ViewConstructor")
 internal class SoraViewerView(
     context: Context,
     private val readingState: SoraViewerState,

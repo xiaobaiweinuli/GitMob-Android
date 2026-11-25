@@ -1,6 +1,5 @@
 package com.gitmob.app.ui.settings
 
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,16 +19,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -51,6 +50,7 @@ import coil3.request.crossfade
 import com.gitmob.app.BuildConfig
 import com.gitmob.app.R
 import com.gitmob.app.core.auth.GITHUB_CLIENT_ID
+import com.gitmob.app.ui.common.ActionIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,7 +67,7 @@ fun AboutScreen(onBack: () -> Unit, onOpenUrl: (String) -> Unit) {
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_about)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -97,7 +97,7 @@ fun AboutScreen(onBack: () -> Unit, onOpenUrl: (String) -> Unit) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(20.dp),
+                        shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(80.dp),
                     ) {
@@ -140,8 +140,15 @@ fun AboutScreen(onBack: () -> Unit, onOpenUrl: (String) -> Unit) {
                     AboutLinkRow(
                         icon = Icons.Default.Code,
                         label = stringResource(R.string.about_repo_label),
-                        sub = "xiaobaiweinuli/GitMob-Android · Apache 2.0",
+                        sub = "xiaobaiweinuli/GitMob-Android",
                         url = "https://github.com/xiaobaiweinuli/GitMob-Android",
+                        onOpenUrl = onOpenUrl,
+                    )
+                    AboutLinkRow(
+                        icon = Icons.Default.Description,
+                        label = stringResource(R.string.about_license_label),
+                        sub = stringResource(R.string.about_license_name),
+                        url = "https://github.com/xiaobaiweinuli/GitMob-Android/blob/apollo/LICENSE",
                         onOpenUrl = onOpenUrl,
                     )
                 }

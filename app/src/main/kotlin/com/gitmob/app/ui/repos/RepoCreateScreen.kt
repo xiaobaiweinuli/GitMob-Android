@@ -1,6 +1,9 @@
 package com.gitmob.app.ui.repos
 
-import androidx.compose.foundation.clickable
+import com.gitmob.app.ui.common.pressSelectable
+import com.gitmob.app.ui.common.pressToggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,20 +29,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +61,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepositoryCreateOwner
+import com.gitmob.app.ui.common.ActionButtonContent
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.pressClickable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,7 +89,7 @@ fun RepoCreateScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.repo_create_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    ActionIconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -94,12 +100,9 @@ fun RepoCreateScreen(
                     TextButton(
                         onClick = viewModel::create,
                         enabled = state.name.trim().isNotEmpty() && !state.isCreating,
+                        shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding,
                     ) {
-                        if (state.isCreating) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                        } else {
-                            Text(stringResource(R.string.repo_create_action))
-                        }
+                        ActionButtonContent(busy = state.isCreating, label = stringResource(R.string.repo_create_action))
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(
@@ -167,6 +170,7 @@ private fun CreateForm(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
             )
         }
         item {
@@ -176,6 +180,7 @@ private fun CreateForm(
                 label = { Text(stringResource(R.string.repo_create_description)) },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
             )
         }
         item {
@@ -219,6 +224,7 @@ private fun OwnerPickerSheet(
         onDismissRequest = viewModel::cancelPicker,
         sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         contentWindowInsets = { WindowInsets(0) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         PickerScaffold(
             title = stringResource(R.string.repo_create_owner_picker),
@@ -247,6 +253,7 @@ private fun LicensePickerSheet(
         onDismissRequest = viewModel::cancelPicker,
         sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         contentWindowInsets = { WindowInsets(0) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         PickerScaffold(
             title = stringResource(R.string.repo_create_license_picker),
@@ -275,6 +282,7 @@ private fun GitignorePickerSheet(
         onDismissRequest = viewModel::cancelPicker,
         sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         contentWindowInsets = { WindowInsets(0) },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         PickerScaffold(
             title = stringResource(R.string.repo_create_gitignore_picker),
@@ -306,7 +314,7 @@ private fun PickerScaffold(
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
-                    IconButton(onClick = onCancel) {
+                    ActionIconButton(onClick = onCancel) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -314,7 +322,7 @@ private fun PickerScaffold(
                     }
                 },
                 actions = {
-                    TextButton(onClick = onConfirm) {
+                    TextButton(onClick = onConfirm, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                         Text(stringResource(R.string.common_done))
                     }
                 },
@@ -411,6 +419,7 @@ private fun LicensePicker(
             label = { Text(stringResource(R.string.repo_create_license_picker)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            shape = MaterialTheme.shapes.medium,
         )
         when {
             state.isLoadingLicenses && state.licenses.isEmpty() -> {
@@ -463,6 +472,7 @@ private fun GitignorePicker(
             label = { Text(stringResource(R.string.repo_create_gitignore_picker)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            shape = MaterialTheme.shapes.medium,
         )
         when {
             state.isLoadingGitignore && state.gitignoreTemplates.isEmpty() -> {
@@ -509,7 +519,7 @@ private fun OwnerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .pressClickable(onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -535,7 +545,7 @@ private fun OwnerChoiceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = owner.canCreateRepository) { onClick(owner) }
+            .pressSelectable(selected, enabled = owner.canCreateRepository, role = Role.RadioButton) { onClick(owner) }
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -557,7 +567,8 @@ private fun OwnerChoiceRow(
         }
         RadioButton(
             selected = selected,
-            onClick = if (owner.canCreateRepository) ({ onClick(owner) }) else null,
+            onClick = null,
+            enabled = owner.canCreateRepository,
         )
     }
 }
@@ -569,7 +580,7 @@ private fun SelectionRow(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().pressClickable(onClick = onClick).padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -587,11 +598,12 @@ private fun SettingSwitch(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .pressToggleable(checked, role = Role.Switch, onValueChange = onCheckedChange),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -604,11 +616,12 @@ private fun ChoiceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
+            .pressSelectable(selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = onClick)
+        RadioButton(selected = selected, onClick = null)
         Text(label, Modifier.padding(start = 8.dp))
     }
 }
@@ -623,7 +636,7 @@ private fun RetryRow(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onRetry) {
+        ActionIconButton(onClick = onRetry) {
             Icon(
                 Icons.Default.Refresh,
                 contentDescription = stringResource(R.string.common_retry),

@@ -5,7 +5,6 @@ import com.gitmob.app.ui.common.rememberSoraViewerState
 
 import com.gitmob.app.ui.common.rememberNavigationDocument
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,12 +28,11 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -59,15 +57,20 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.RepoContentSource
-import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.model.RepoDocumentContext
+import com.gitmob.app.data.model.RepoLinkTarget
 import com.gitmob.app.data.translation.TranslationTarget
 import com.gitmob.app.ui.translation.TranslationFileMenuItem
 import com.gitmob.app.ui.translation.TranslationHtml
 import com.gitmob.app.ui.common.rememberMarkdownViewportState
 import com.gitmob.app.ui.common.MarkdownLayoutMode
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ActionProgressIcon
+import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
 import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.RepositoryImagePreview
+import com.gitmob.app.ui.common.pressClickable
+import com.gitmob.app.ui.common.pressToggleable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,7 +111,7 @@ fun RepoFileDetailScreen(
                         onRepositoryClick = onRepositoryClick,
                     )
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 actions = {
                     if (target != null) RepoFileMenu(
                         state = state,
@@ -128,7 +131,7 @@ fun RepoFileDetailScreen(
     ) { padding ->
         when {
             state.isLoading || state.isDirectory -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            state.loadFailed || state.file == null -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); OutlinedButton(onClick = viewModel::retry) { Text(stringResource(R.string.common_retry)) } }
+            state.loadFailed || state.file == null -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); OutlinedButton(onClick = viewModel::retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } }
             state.file?.isBinary == true && !state.imagePreview -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_file_no_preview)) }
             else -> {
                 val file = requireNotNull(state.file)
@@ -187,8 +190,8 @@ fun RepoFileDetailScreen(
             onDismissRequest = { confirmDelete = false },
             title = { Text(stringResource(R.string.repo_delete_file_title)) },
             text = { Text(stringResource(R.string.repo_delete_file_message)) },
-            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.common_cancel)) } },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmDelete = false; viewModel.deleteFile(deleteCommitMessage, onBack) }, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.common_delete)) } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmDelete = false }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_cancel)) } },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmDelete = false; viewModel.deleteFile(deleteCommitMessage, onBack) }, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_delete)) } },
         )
     }
 }
@@ -210,7 +213,7 @@ internal fun RepoFileMenu(
     val canModify = file != null && !file.isCommitSnapshot && !file.isArchived &&
         file.capabilities.canPush && file.capabilities.canPushToProtectedBranch
     Box {
-        IconButton(onClick = { expanded = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.common_more)) }
+        ActionIconButton(onClick = { expanded = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.common_more)) }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (state.canSwitchDisplayMode) RepoFileMenuAction(
                 label = stringResource(if (state.previewMode) R.string.repo_file_source else R.string.conversation_preview_tab),
@@ -219,7 +222,7 @@ internal fun RepoFileMenu(
             )
             if (state.sourceAvailable && !state.previewMode) Row(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .toggleable(value = state.wrapLines, role = Role.Switch, onValueChange = onWrapLinesChange)
+                    .pressToggleable(value = state.wrapLines, role = Role.Switch, onValueChange = onWrapLinesChange)
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -268,13 +271,12 @@ private fun RepoFileMenuAction(
 ) {
     val contentColor = if (enabled) color else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).pressClickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-        else Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = contentColor)
+        ActionProgressIcon(busy = busy) { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = contentColor) }
         Text(label, color = contentColor, style = MaterialTheme.typography.bodyLarge)
     }
 }

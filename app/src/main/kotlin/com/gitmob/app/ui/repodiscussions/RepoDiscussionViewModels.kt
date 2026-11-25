@@ -45,6 +45,7 @@ data class RepoDiscussionListUiState(
     val isLoadingMore: Boolean = false,
     val loadFailed: Boolean = false,
     val pendingDelete: RepoDiscussion? = null,
+    val isDeleting: Boolean = false,
 ) {
     val searchActive: Boolean get() = submittedQuery.isNotBlank() || filter.categoryTitle != null
 }
@@ -55,7 +56,7 @@ class RepoDiscussionListViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     session: AccountSession,
-    private val savedSearch: SavedStateHandle = SavedStateHandle(),
+    private val savedSearch: SavedStateHandle,
 ) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoDiscussionListUiState())
     val state: StateFlow<RepoDiscussionListUiState> = _state.asStateFlow()
@@ -175,8 +176,16 @@ class RepoDiscussionListViewModel @Inject constructor(
         }
     }
 
-    fun confirmDelete(item: RepoDiscussion?) = _state.update { it.copy(pendingDelete = item) }
-    fun deletePending() { val item = _state.value.pendingDelete ?: return; if (!item.viewerCanDelete || !_state.value.capabilities.canManageIssuesAndPRs) return; viewModelScope.launch { when (val result = repository.deleteDiscussion(item.id)) { is ApiResult.Success -> { _state.update { it.copy(items = it.items.filterNot { value -> value.id == item.id }, pendingDelete = null, totalCount = (it.totalCount - 1).coerceAtLeast(0)) }; emitCountAfterDelete() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = null) } } } } }
+    fun confirmDelete(item: RepoDiscussion?) { if (!_state.value.isDeleting) _state.update { it.copy(pendingDelete = item) } }
+    fun deletePending() { val item = _state.value.pendingDelete ?: return; if (!item.viewerCanDelete || !_state.value.capabilities.canManageIssuesAndPRs) return; if (_state.value.isDeleting) return
+        _state.update { it.copy(isDeleting = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.deleteDiscussion(item.id)) { is ApiResult.Success -> { _state.update { it.copy(items = it.items.filterNot { value -> value.id == item.id }, pendingDelete = null, totalCount = (it.totalCount - 1).coerceAtLeast(0)) }; emitCountAfterDelete() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = null) } } }
+            } finally {
+                _state.update { it.copy(isDeleting = false) }
+            }
+        } }
 
     private suspend fun emitCountAfterDelete() {
         val result = repository.getDiscussions(owner, name, RepoDiscussionFilter())
@@ -198,6 +207,9 @@ data class RepoDiscussionDetailUiState(
     val loadFailed: Boolean = false,
     val pendingDeleteComment: RepoDiscussionComment? = null,
     val pendingDeleteDiscussion: Boolean = false,
+    val isDeletingDiscussion: Boolean = false,
+    val isDeletingComment: Boolean = false,
+    val isUpdatingSubscription: Boolean = false,
     val editHistory: ConversationEditHistoryUiState = ConversationEditHistoryUiState(),
 )
 
@@ -251,14 +263,38 @@ class RepoDiscussionDetailViewModel @Inject constructor(
     fun loadMoreComments() { val state = _state.value; if (!state.hasMoreComments) return; viewModelScope.launch { when (val result = repository.getDiscussion(owner, name, number, cursor)) { is ApiResult.Success -> { cursor = result.data.commentsEndCursor; _state.update { it.copy(comments = it.comments + result.data.comments, hasMoreComments = result.data.hasNextComments) } }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
     fun addComment(body: String, replyToId: String? = null, done: () -> Unit = {}) { val d = _state.value.discussion ?: return; if (body.isBlank() || _state.value.isSubmittingComment) return; viewModelScope.launch { _state.update { it.copy(isSubmittingComment = true) }; when (val result = repository.addComment(d.id, body.trim(), replyToId)) { is ApiResult.Success -> { _state.update { it.copy(comments = it.comments + result.data, discussion = it.discussion?.copy(commentCount = it.discussion.commentCount + 1), isSubmittingComment = false) }; done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isSubmittingComment = false) } } } } }
     fun updateComment(comment: RepoDiscussionComment, body: String, done: () -> Unit = {}) { if (!comment.viewerCanUpdate || body.isBlank() || _state.value.isSubmittingComment) return; viewModelScope.launch { _state.update { it.copy(isSubmittingComment = true) }; when (val result = repository.updateComment(comment.id, body.trim())) { is ApiResult.Success -> { _state.update { it.copy(comments = it.comments.map { value -> if (value.id == comment.id) result.data else value }, isSubmittingComment = false) }; done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(isSubmittingComment = false) } } } } }
-    fun confirmDeleteComment(comment: RepoDiscussionComment?) = _state.update { it.copy(pendingDeleteComment = comment) }
-    fun deletePendingComment() { val c = _state.value.pendingDeleteComment ?: return; if (!c.viewerCanDelete) return; viewModelScope.launch { when (val result = repository.deleteComment(c.id)) { is ApiResult.Success -> _state.update { it.copy(comments = it.comments.filterNot { value -> value.id == c.id }, pendingDeleteComment = null) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteComment = null) } } } } }
+    fun confirmDeleteComment(comment: RepoDiscussionComment?) { if (!_state.value.isDeletingComment) _state.update { it.copy(pendingDeleteComment = comment) } }
+    fun deletePendingComment() { val c = _state.value.pendingDeleteComment ?: return; if (!c.viewerCanDelete) return; if (_state.value.isDeletingComment) return
+        _state.update { it.copy(isDeletingComment = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.deleteComment(c.id)) { is ApiResult.Success -> _state.update { it.copy(comments = it.comments.filterNot { value -> value.id == c.id }, pendingDeleteComment = null) }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteComment = null) } } }
+            } finally {
+                _state.update { it.copy(isDeletingComment = false) }
+            }
+        } }
     fun markAnswer(comment: RepoDiscussionComment, answer: Boolean) { if (answer && !comment.viewerCanMarkAsAnswer || !answer && !comment.viewerCanUnmarkAsAnswer) return; viewModelScope.launch { when (val result = repository.markAnswer(comment.id, answer)) { is ApiResult.Success -> _state.update { it.copy(comments = it.comments.map { value -> if (value.id == comment.id) value.copy(isAnswer = answer) else value }) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
     fun close() { val d = _state.value.discussion ?: return; if (!d.viewerCanClose) return; mutateDiscussion { repository.closeDiscussion(d.id) } }
     fun reopen() { val d = _state.value.discussion ?: return; if (!d.viewerCanReopen) return; mutateDiscussion { repository.reopenDiscussion(d.id) } }
-    fun toggleSubscription() { val d = _state.value.discussion ?: return; if (!d.viewerCanSubscribe) return; viewModelScope.launch { when (val result = repository.updateSubscription(d.id, d.viewerSubscription != "SUBSCRIBED")) { is ApiResult.Success -> _state.update { it.copy(discussion = it.discussion?.copy(viewerSubscription = result.data)) }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
-    fun confirmDeleteDiscussion(value: Boolean) = _state.update { it.copy(pendingDeleteDiscussion = value) }
-    fun deleteDiscussion(done: () -> Unit) { val d = _state.value.discussion ?: return; if (!d.viewerCanDelete || !_state.value.capabilities.canManageIssuesAndPRs) return; viewModelScope.launch { when (val result = repository.deleteDiscussion(d.id)) { is ApiResult.Success -> { _state.update { it.copy(pendingDeleteDiscussion = false) }; emitCount(); done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteDiscussion = false) } } } } }
+    fun toggleSubscription() { val d = _state.value.discussion ?: return; if (!d.viewerCanSubscribe) return; if (_state.value.isUpdatingSubscription) return
+        _state.update { it.copy(isUpdatingSubscription = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.updateSubscription(d.id, d.viewerSubscription != "SUBSCRIBED")) { is ApiResult.Success -> _state.update { it.copy(discussion = it.discussion?.copy(viewerSubscription = result.data)) }; is ApiResult.Failure -> errorEventBus.emit(result.error) }
+            } finally {
+                _state.update { it.copy(isUpdatingSubscription = false) }
+            }
+        } }
+    fun confirmDeleteDiscussion(value: Boolean) { if (!_state.value.isDeletingDiscussion) _state.update { it.copy(pendingDeleteDiscussion = value) } }
+    fun deleteDiscussion(done: () -> Unit) { val d = _state.value.discussion ?: return; if (!d.viewerCanDelete || !_state.value.capabilities.canManageIssuesAndPRs) return; if (_state.value.isDeletingDiscussion) return
+        _state.update { it.copy(isDeletingDiscussion = true) }
+        viewModelScope.launch {
+            try {
+                when (val result = repository.deleteDiscussion(d.id)) { is ApiResult.Success -> { _state.update { it.copy(pendingDeleteDiscussion = false) }; emitCount(); done() }; is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDeleteDiscussion = false) } } }
+            } finally {
+                _state.update { it.copy(isDeletingDiscussion = false) }
+            }
+        } }
     private fun mutateDiscussion(block: suspend () -> ApiResult<RepoDiscussion>) { viewModelScope.launch { when (val result = block()) { is ApiResult.Success -> { _state.update { it.copy(discussion = result.data) }; emitCount() }; is ApiResult.Failure -> errorEventBus.emit(result.error) } } }
     private fun apply(detail: RepoDiscussionDetail) { cursor = detail.commentsEndCursor; _state.update { it.copy(discussion = detail.discussion, categories = detail.categories, comments = detail.comments, permission = detail.permission, capabilities = detail.capabilities, hasMoreComments = detail.hasNextComments, isLoading = false, loadFailed = false) } }
     private suspend fun emitCount() { val result = repository.getDiscussions(owner, name, RepoDiscussionFilter()); val count = (result as? ApiResult.Success)?.data?.totalCount ?: return; repoUpdateEventBus.emit(RepoUpdateEvent.DiscussionCountChanged(owner, name, count)) }

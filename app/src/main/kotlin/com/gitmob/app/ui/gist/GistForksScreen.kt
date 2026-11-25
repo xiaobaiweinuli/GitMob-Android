@@ -1,6 +1,5 @@
 package com.gitmob.app.ui.gist
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +30,10 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
+import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.ListFeedbackState
+import com.gitmob.app.ui.common.informationItem
+import com.gitmob.app.ui.common.pressClickable
 
 @Composable
 fun GistForksScreen(
@@ -45,17 +48,21 @@ fun GistForksScreen(
         topBar = { GistTopBar(R.string.gist_forks, onBack) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
     ) { innerPadding ->
-        when {
-            state.isLoading && state.items.isEmpty() -> Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            state.loadFailed && state.items.isEmpty() -> LoadFailed(Modifier.fillMaxSize().padding(innerPadding), viewModel::load)
-            state.items.isEmpty() -> Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) { Text(stringResource(R.string.gist_no_forks)) }
-            else -> LazyColumn(
-                Modifier.fillMaxSize().padding(innerPadding),
-                contentPadding = PaddingValues(vertical = 8.dp),
+        Box(Modifier.fillMaxSize().padding(innerPadding)) {
+            val feedback = when {
+                state.isLoading && state.items.isEmpty() -> ListFeedbackState.LOADING
+                state.loadFailed && state.items.isEmpty() -> ListFeedbackState.ERROR
+                state.items.isEmpty() -> ListFeedbackState.EMPTY
+                else -> ListFeedbackState.CONTENT
+            }
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 itemsIndexed(state.items, key = { _, item -> item.id }) { index, fork ->
                     Row(
-                        Modifier.fillMaxWidth().clickable(enabled = fork.owner != null) { fork.owner?.login?.let(onUserClick) }.padding(16.dp),
+                        Modifier.animateItem().fillMaxWidth().informationItem().pressClickable(enabled = fork.owner != null) { fork.owner?.login?.let(onUserClick) }.padding(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -69,6 +76,7 @@ fun GistForksScreen(
                 }
                 if (state.isLoadingMore) item("loading-more") { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
             }
+            ListFeedback(feedback, viewModel::load, emptyMessage = stringResource(R.string.gist_no_forks))
         }
     }
 }

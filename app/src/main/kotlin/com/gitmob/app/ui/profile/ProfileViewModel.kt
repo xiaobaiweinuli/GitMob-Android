@@ -31,6 +31,7 @@ import javax.inject.Inject
 
 data class ProfileUiState(
     val owner: ProfileOwner? = null,
+    val isUpdatingFollow: Boolean = false,
     val isLoading: Boolean = false,
     val loadFailed: Boolean = false,
     val readmeHtml: String? = null,
@@ -233,53 +234,46 @@ class ProfileViewModel @Inject constructor(
      * 组织：本地翻转 viewerIsFollowing 布尔（Schema 无 followers 字段）
      */
     fun toggleFollow() {
-        when (val owner = _state.value.owner) {
-            is ProfileOwner.Person -> {
-                val wasFollowing = owner.followState.viewerIsFollowing
-                viewModelScope.launch {
-                    val result = if (wasFollowing) {
-                        userRepository.unfollowUser(owner.id)
-                    } else {
-                        userRepository.followUser(owner.id)
-                    }
-                    when (result) {
-                        is ApiResult.Success -> _state.update { state ->
-                            val current = state.owner as? ProfileOwner.Person ?: return@update state
-                            val newFollowing = !wasFollowing
-                            val delta = if (newFollowing) 1 else -1
-                            state.copy(
-                                owner = current.copy(
-                                    followState = current.followState.copy(
-                                        viewerIsFollowing = newFollowing,
-                                    ),
+        val state = _state.value
+        val owner = state.owner ?: return
+        if (state.isUpdatingFollow) return
+        if (owner is ProfileOwner.Person && (owner.followState.isViewer || !owner.followState.viewerCanFollow)) return
+        _state.update { it.copy(isUpdatingFollow = true) }
+        viewModelScope.launch {
+            try {
+                when (owner) {
+                    is ProfileOwner.Person -> {
+                        val following = !owner.followState.viewerIsFollowing
+                        val result = if (following) userRepository.followUser(owner.id) else userRepository.unfollowUser(owner.id)
+                        when (result) {
+                            is ApiResult.Success -> _state.update { state ->
+                                val current = state.owner as? ProfileOwner.Person ?: return@update state
+                                if (current.id != owner.id) return@update state
+                                val delta = if (current.followState.viewerIsFollowing == following) 0 else if (following) 1 else -1
+                                state.copy(owner = current.copy(
+                                    followState = current.followState.copy(viewerIsFollowing = following),
                                     followersCount = (current.followersCount + delta).coerceAtLeast(0),
-                                ),
-                            )
+                                ))
+                            }
+                            is ApiResult.Failure -> errorEventBus.emit(result.error)
                         }
-                        is ApiResult.Failure -> errorEventBus.emit(result.error)
+                    }
+                    is ProfileOwner.Org -> {
+                        val following = !owner.viewerIsFollowing
+                        val result = if (following) userRepository.followOrganization(owner.id) else userRepository.unfollowOrganization(owner.id)
+                        when (result) {
+                            is ApiResult.Success -> _state.update { state ->
+                                val current = state.owner as? ProfileOwner.Org ?: return@update state
+                                if (current.id != owner.id) return@update state
+                                state.copy(owner = current.copy(viewerIsFollowing = following))
+                            }
+                            is ApiResult.Failure -> errorEventBus.emit(result.error)
+                        }
                     }
                 }
+            } finally {
+                _state.update { it.copy(isUpdatingFollow = false) }
             }
-            is ProfileOwner.Org -> {
-                val wasFollowing = owner.viewerIsFollowing
-                viewModelScope.launch {
-                    val result = if (wasFollowing) {
-                        userRepository.unfollowOrganization(owner.id)
-                    } else {
-                        userRepository.followOrganization(owner.id)
-                    }
-                    when (result) {
-                        is ApiResult.Success -> _state.update { state ->
-                            val current = state.owner as? ProfileOwner.Org ?: return@update state
-                            state.copy(
-                                owner = current.copy(viewerIsFollowing = !wasFollowing),
-                            )
-                        }
-                        is ApiResult.Failure -> errorEventBus.emit(result.error)
-                    }
-                }
-            }
-            null -> Unit
         }
     }
 }

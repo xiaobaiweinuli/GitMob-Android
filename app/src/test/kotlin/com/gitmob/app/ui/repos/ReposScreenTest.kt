@@ -2,7 +2,6 @@ package com.gitmob.app.ui.repos
 
 import android.content.Context
 import androidx.annotation.StringRes
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.CompositionLocalProvider
@@ -19,6 +18,8 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -41,8 +42,8 @@ import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
-import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.core.network.PageSize
 import com.gitmob.app.data.model.RepoFilters
 import com.gitmob.app.data.model.RepoList
 import com.gitmob.app.data.model.RepoListItem
@@ -52,11 +53,13 @@ import com.gitmob.app.data.model.RepositoryCreateOwner
 import com.gitmob.app.data.model.RepositoryCreateOwnerType
 import com.gitmob.app.data.model.RepositoryListOwnerContext
 import com.gitmob.app.data.repository.RepoRepository
-import com.gitmob.app.testutil.MainDispatcherRule
 import com.gitmob.app.testutil.AccountSessionRule
+import com.gitmob.app.testutil.MainDispatcherRule
+import com.gitmob.app.ui.theme.GitMobTheme
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
 import org.junit.After
@@ -70,7 +73,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import java.time.Instant
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h740dp")
@@ -176,6 +178,60 @@ class ReposScreenTest {
         composeRule.onNode(hasSetTextAction()).assertIsNotFocused()
         composeRule.onNode(hasSetTextAction()).assertIsDisplayed()
         composeRule.onNodeWithText(text(R.string.repos_reset)).assertDoesNotExist()
+    }
+
+    @Test
+    fun `搜索返回先收起并保留条件且重新展开恢复焦点不重复请求`() {
+        val query = " Needle "
+        val vm = viewModel(SavedStateHandle(mapOf("repos.query" to query, "repos.archived" to false)))
+        var navigations = 0
+        setContent(vm, login = "other", onBack = { navigations++ })
+        val filters = vm.state.value.filters
+
+        repeat(2) {
+            openSearch(query)
+            composeRule.onNode(hasSetTextAction()).assertIsFocused()
+            composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+            composeRule.onNode(hasSetTextAction()).assertDoesNotExist()
+            composeRule.onNodeWithContentDescription(text(R.string.repos_search_active, query)).assertIsDisplayed()
+            composeRule.onNodeWithText(text(R.string.repos_owner_title, "other")).assertIsDisplayed()
+            assertEquals(filters, vm.state.value.filters)
+            assertEquals(0, navigations)
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.common_back)).performClick()
+        assertEquals(1, navigations)
+        coVerify(exactly = 1) { repository.getRepos(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `首次加载切换结果后移除占位且刷新保留原阅读位置`() {
+        val initial = CompletableDeferred<ApiResult<RepoList>>()
+        val refresh = CompletableDeferred<ApiResult<RepoList>>()
+        var requests = 0
+        coEvery { repository.getRepos(any(), any(), any(), any(), any()) } coAnswers {
+            if (requests++ == 0) initial.await() else refresh.await()
+        }
+        val vm = viewModel()
+        setContent(vm)
+        val progress = SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)
+        composeRule.onAllNodes(progress).assertCountEquals(1)
+        composeRule.onNodeWithText(text(R.string.repos_empty)).assertDoesNotExist()
+        val repos = (0..24).map { repo("entry-$it") }
+        composeRule.runOnIdle { initial.complete(ApiResult.Success(page(*repos.toTypedArray()))) }
+        composeRule.onNodeWithText("entry-0").assertIsDisplayed()
+        composeRule.onAllNodes(progress).assertCountEquals(0)
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(12)
+        val anchor = composeRule.onNodeWithText("entry-12").fetchSemanticsNode().boundsInRoot.top
+
+        composeRule.runOnIdle { vm.refresh() }
+        composeRule.onNodeWithText("entry-12").assertIsDisplayed()
+        assertEquals(anchor, composeRule.onNodeWithText("entry-12").fetchSemanticsNode().boundsInRoot.top, 1f)
+        composeRule.runOnIdle { refresh.complete(ApiResult.Success(page(*repos.toTypedArray()))) }
+        composeRule.onNodeWithText("entry-12").assertIsDisplayed()
+        assertEquals(anchor, composeRule.onNodeWithText("entry-12").fetchSemanticsNode().boundsInRoot.top, 1f)
+        composeRule.onNodeWithText(text(R.string.common_retry)).assertDoesNotExist()
+        composeRule.onNodeWithText(text(R.string.repos_empty)).assertDoesNotExist()
+        coVerify(exactly = 2) { repository.getRepos(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -341,7 +397,7 @@ class ReposScreenTest {
         var detail by mutableStateOf(false)
         composeRule.setContent {
             val holder = rememberSaveableStateHolder()
-            MaterialTheme {
+            GitMobTheme {
                 if (detail) {
                     TextButton(onClick = { detail = false }) { Text(text(R.string.common_back)) }
                 } else {
@@ -411,11 +467,15 @@ class ReposScreenTest {
         choose(R.string.nav_tab_stars, R.string.repos_sort_inactive,
             listOf(R.string.repos_sort_stars_asc, R.string.repos_sort_stars_desc), R.string.repos_sort_stars_desc)
         assertEquals(RepoSort.STARS_DESC, vm.state.value.filters.sort)
-        capsule(R.string.repos_filter_time, R.string.repos_sort_inactive).performScrollTo().assertIsDisplayed()
+        capsule(R.string.nav_tab_stars, R.string.repos_sort_stars_desc).assertIsSelected()
+        capsule(R.string.repos_filter_time, R.string.repos_sort_inactive).performScrollTo().assertIsDisplayed().assertIsNotSelected()
+        composeRule.onNodeWithText(text(R.string.repos_filter_time)).assertIsDisplayed()
+        composeRule.onNodeWithText(text(R.string.work_sort_updated_desc)).assertDoesNotExist()
         choose(R.string.repos_filter_name, R.string.repos_sort_inactive,
             listOf(R.string.repos_sort_name_desc, R.string.repos_sort_name_asc), R.string.repos_sort_name_asc)
         assertEquals(RepoSort.NAME_ASC, vm.state.value.filters.sort)
-        capsule(R.string.nav_tab_stars, R.string.repos_sort_inactive).performScrollTo().assertIsDisplayed()
+        capsule(R.string.repos_filter_name, R.string.repos_sort_name_asc).assertIsSelected()
+        capsule(R.string.nav_tab_stars, R.string.repos_sort_inactive).performScrollTo().assertIsDisplayed().assertIsNotSelected()
 
         composeRule.onNodeWithText(text(R.string.repos_reset)).performClick()
         assertEquals(RepoFilters(), vm.state.value.filters)
@@ -475,7 +535,7 @@ class ReposScreenTest {
         composeRule.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
-                MaterialTheme { ReposScreen(viewModel = viewModel, login = login, onBack = onBack) }
+                GitMobTheme { ReposScreen(viewModel = viewModel, login = login, onBack = onBack) }
             }
         }
         composeRule.waitForIdle()

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +27,8 @@ import com.gitmob.app.ui.common.SoraViewerDocument
 import com.gitmob.app.ui.common.rememberSoraViewerState
 import io.github.rosemoe.sora.text.Content
 import kotlinx.coroutines.launch
+import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.ActionProgressIcon
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,7 +50,7 @@ fun RepoActionStepLogScreen(
         topBar = {
             TopAppBar(
                 title = { Text(title, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
+                navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
             )
         },
@@ -62,11 +65,11 @@ fun RepoActionStepLogScreen(
                     modifier = Modifier.weight(1f),
                 )
                 ActionLogTooltip(stringResource(R.string.actions_logs_refresh)) {
-                    IconButton(onClick = viewModel::load, modifier = Modifier.size(48.dp), enabled = !state.isLoading) { Icon(Icons.Default.Refresh, stringResource(R.string.actions_logs_refresh)) }
+                    ActionIconButton(onClick = viewModel::load, modifier = Modifier.size(48.dp), enabled = !state.isLoading) { ActionProgressIcon(state.isLoading, busyDescription = stringResource(R.string.actions_logs_refresh)) { Icon(Icons.Default.Refresh, stringResource(R.string.actions_logs_refresh)) } }
                 }
                 ActionLogTooltip(copyLabel) {
-                    IconButton(onClick = {
-                        val raw = log?.text ?: return@IconButton
+                    ActionIconButton(onClick = {
+                        val raw = log?.text ?: return@ActionIconButton
                         scope.launch {
                             clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(title, raw)))
                             viewModel.copied()
@@ -75,6 +78,7 @@ fun RepoActionStepLogScreen(
                 }
                 ActionLogTooltip(stringResource(R.string.actions_logs_wrap)) {
                     IconToggleButton(
+                        shapes = IconButtonDefaults.toggleableShapes(),
                         checked = state.wrapLines, onCheckedChange = viewModel::setWrapLines,
                         modifier = Modifier.size(48.dp),
                         colors = IconButtonDefaults.iconToggleButtonColors(
@@ -120,7 +124,7 @@ internal fun ActionLogTooltip(label: String, content: @Composable () -> Unit) {
 private fun ActionLogMessage(message: String, retry: (() -> Unit)? = null) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(message)
-        if (retry != null) TextButton(onClick = retry) { Text(stringResource(R.string.common_retry)) }
+        if (retry != null) TextButton(onClick = retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
     }
 }
 

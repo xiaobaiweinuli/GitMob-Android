@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.repopullrequests
 
+import androidx.lifecycle.SavedStateHandle
+
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
@@ -38,7 +40,7 @@ class RepoPullRequestListViewModelTest {
     @Test fun `PR link and submitted label and sort use native list while merged uses search`() = runTest {
         val repository = repositoryMock()
         coEvery { repository.searchPullRequests("o", "r", "is:merged", any(), null) } returns ApiResult.Success(emptyPage())
-        val vm = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session, RepoUpdateEventBus())
+        val vm = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session, RepoUpdateEventBus(), savedSearch = SavedStateHandle())
         vm.init("o", "r", null, "is:pr state:open sort:created-asc")
         advanceUntilIdle()
         vm.submitSearch("label:bug sort:updated-asc")
@@ -57,7 +59,7 @@ class RepoPullRequestListViewModelTest {
         val labels = listOf(IssueLabel("L1", "bug", "d73a4a", null))
         val repository = repositoryMock()
         coEvery { repository.getLabels("o", "r") } returns ApiResult.Success(labels)
-        val viewModel = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session, RepoUpdateEventBus())
+        val viewModel = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session, RepoUpdateEventBus(), savedSearch = SavedStateHandle())
 
         viewModel.init("o", "r", RepoPermission.READ)
         advanceUntilIdle()
@@ -73,7 +75,7 @@ class RepoPullRequestListViewModelTest {
         coEvery { repository.getLabels("o", "r") } returns ApiResult.Failure(ApiError.NetworkError)
         val errorEventBus = ErrorEventBus()
         val event = async(start = CoroutineStart.UNDISPATCHED) { errorEventBus.eventsFor(accounts.session.epoch).first() }
-        val viewModel = RepoPullRequestListViewModel(repository, errorEventBus, accounts.session, RepoUpdateEventBus())
+        val viewModel = RepoPullRequestListViewModel(repository, errorEventBus, accounts.session, RepoUpdateEventBus(), savedSearch = SavedStateHandle())
 
         viewModel.init("o", "r", RepoPermission.READ)
         advanceUntilIdle()
@@ -88,7 +90,7 @@ class RepoPullRequestListViewModelTest {
         val repository = repositoryMock()
         val events = RepoUpdateEventBus()
         coEvery { repository.searchPullRequests("o", "r", "fix", any(), null) } returns ApiResult.Success(emptyPage())
-        val vm = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session, events)
+        val vm = RepoPullRequestListViewModel(repository, ErrorEventBus(), accounts.session, events, savedSearch = SavedStateHandle())
         vm.init("o", "r", RepoPermission.READ)
         vm.submitSearch("fix")
         vm.setLabels(setOf("bug"))

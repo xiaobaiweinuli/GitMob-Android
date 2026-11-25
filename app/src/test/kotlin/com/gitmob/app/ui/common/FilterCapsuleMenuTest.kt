@@ -2,28 +2,39 @@ package com.gitmob.app.ui.common
 
 import android.content.Context
 import androidx.annotation.StringRes
+import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.core.app.ApplicationProvider
 import com.gitmob.app.R
+import com.gitmob.app.ui.theme.GitMobTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class FilterCapsuleMenuTest {
 
     @get:Rule
@@ -131,16 +142,16 @@ class FilterCapsuleMenuTest {
             )
         }
 
-        composeRule.onNodeWithContentDescription(description(R.string.repo_fork, text(R.string.common_all))).performClick()
+        composeRule.onNodeWithContentDescription(description(R.string.repo_fork, text(R.string.common_all))).assertIsNotSelected().performClick()
         assertEquals(null, selected)
         composeRule.onAllNodesWithText(text(R.string.common_all)).assertCountEquals(0)
         composeRule.onAllNodesWithText(text(R.string.repo_fork)).assertCountEquals(2)
         composeRule.onNodeWithText(text(R.string.gist_category_original)).assertIsDisplayed().performClick()
         assertEquals(false, selected)
-        composeRule.onNodeWithContentDescription(description(R.string.repo_fork, text(R.string.gist_category_original))).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(description(R.string.repo_fork, text(R.string.gist_category_original))).assertIsDisplayed().assertIsSelected()
 
         composeRule.runOnIdle { selected = null }
-        composeRule.onNodeWithContentDescription(description(R.string.repo_fork, text(R.string.common_all))).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(description(R.string.repo_fork, text(R.string.common_all))).assertIsDisplayed().assertIsNotSelected()
         composeRule.onAllNodesWithText(text(R.string.gist_category_original)).assertCountEquals(0)
     }
 
@@ -198,11 +209,17 @@ class FilterCapsuleMenuTest {
             )
         }
 
-        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.common_all))).performClick()
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.common_all))).assertIsNotSelected().performClick()
         composeRule.onNodeWithText("bug").performClick()
         composeRule.onNodeWithText("enhancement").assertIsDisplayed().performClick()
         composeRule.onNodeWithText(text(R.string.issue_filter_clear_labels)).assertIsDisplayed()
         assertEquals(setOf("bug", "enhancement"), selected)
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.issue_filter_selected_count, 2))).assertIsSelected()
+        composeRule.onNodeWithText("bug").performClick()
+        assertEquals(setOf("enhancement"), selected)
+        composeRule.onNodeWithText(text(R.string.issue_filter_clear_labels)).performClick()
+        composeRule.onNodeWithText("enhancement").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.common_all))).assertIsNotSelected()
     }
 
     @Test
@@ -223,4 +240,84 @@ class FilterCapsuleMenuTest {
         composeRule.onNodeWithText(text(R.string.issue_filter_clear_labels)).performClick()
         assertEquals(emptySet<String>(), result)
     }
+    @Test
+    fun longCustomLabelsWrapAndMenuContentStillSelects() {
+        val label = "A long repository milestone label ".repeat(4)
+        var selected by mutableStateOf("first")
+        composeRule.setContent {
+            GitMobTheme {
+                FilterCapsuleMenu(
+                    selected = selected,
+                    options = listOf("first", "second"),
+                    optionLabel = { it },
+                    onSelected = { selected = it },
+                    filterLabel = "Milestone",
+                    selectedContent = { Text(label) },
+                    optionContent = { Text("Option " + it) },
+                )
+            }
+        }
+        val layouts = mutableListOf<TextLayoutResult>()
+        composeRule.onNodeWithText(label).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertTrue(layouts.single().lineCount > 1)
+        assertTrue(!layouts.single().hasVisualOverflow)
+        composeRule.onNodeWithText(label).performClick()
+        composeRule.onNodeWithText("Option second").performClick()
+        assertEquals("second", selected)
+        composeRule.onNodeWithText("Option first").assertDoesNotExist()
+    }
+
+    @Test
+    fun longMultiSelectMenuScrollsAndKeepsSelectionUntilCleared() {
+        val options = List(40) { "label-$it" }
+        var selected by mutableStateOf(emptySet<String>())
+        composeRule.setContent {
+            GitMobTheme {
+                FilterMultiCapsuleMenu(
+                    selected = selected,
+                    options = options,
+                    emptyLabel = stringResource(R.string.common_all),
+                    selectedCountRes = R.string.issue_filter_selected_count,
+                    clearLabel = stringResource(R.string.issue_filter_clear_labels),
+                    onSelect = { selected = it },
+                    filterLabel = stringResource(R.string.issue_labels),
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.common_all))).performClick()
+        composeRule.onNodeWithText(options.last()).performScrollTo().assertIsDisplayed().performClick()
+        assertEquals(setOf(options.last()), selected)
+        composeRule.onNodeWithText(options.last()).assertIsDisplayed()
+        composeRule.onNodeWithText(options.first()).performScrollTo().assertIsDisplayed().performClick()
+        assertEquals(setOf(options.first(), options.last()), selected)
+        composeRule.onNodeWithText(text(R.string.issue_filter_clear_labels)).performScrollTo().performClick()
+        assertEquals(emptySet<String>(), selected)
+        composeRule.onNodeWithText(options.first()).assertDoesNotExist()
+    }
+
+    @Test
+    fun multiSelectMenuWithoutOptionsCanClearExistingSelection() {
+        var selected by mutableStateOf(setOf("removed-label"))
+        composeRule.setContent {
+            GitMobTheme {
+                FilterMultiCapsuleMenu(
+                    selected = selected,
+                    options = emptyList(),
+                    emptyLabel = stringResource(R.string.common_all),
+                    selectedCountRes = R.string.issue_filter_selected_count,
+                    clearLabel = stringResource(R.string.issue_filter_clear_labels),
+                    onSelect = { selected = it },
+                    filterLabel = stringResource(R.string.issue_labels),
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.issue_filter_selected_count, 1))).performClick()
+        composeRule.onNodeWithText(text(R.string.issue_filter_clear_labels)).assertIsDisplayed().performClick()
+        assertEquals(emptySet<String>(), selected)
+        composeRule.onNodeWithText(text(R.string.issue_filter_clear_labels)).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(description(R.string.issue_labels, text(R.string.common_all))).assertIsNotSelected()
+    }
+
 }

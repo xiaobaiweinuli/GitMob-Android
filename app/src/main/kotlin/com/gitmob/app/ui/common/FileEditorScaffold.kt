@@ -19,9 +19,8 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
@@ -59,14 +58,13 @@ fun FileEditorScaffold(
             TopAppBar(
                 title = title,
                 navigationIcon = {
-                    IconButton(onClick = onBack, enabled = !isSaving) {
+                    ActionIconButton(onClick = onBack, enabled = !isSaving) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back))
                     }
                 },
                 actions = {
-                    IconButton(onClick = onSave, enabled = path.isNotBlank() && canSave && !isSaving) {
-                        if (isSaving) CircularProgressIndicator()
-                        else Icon(Icons.Default.Save, stringResource(R.string.common_save))
+                    ActionIconButton(onClick = onSave, enabled = path.isNotBlank() && canSave && !isSaving) {
+                        ActionProgressIcon(busy = isSaving, busyDescription = stringResource(R.string.common_save)) { Icon(Icons.Default.Save, stringResource(R.string.common_save)) }
                     }
                 },
                 windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -95,6 +93,7 @@ fun FileEditorScaffold(
                     label = { Text(stringResource(R.string.repo_file_path)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
                 )
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.repo_file_content), modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)

@@ -51,6 +51,7 @@ data class RepoIssueListUiState(
     val loadFailed: Boolean = false,
     val hasNextPage: Boolean = false,
     val pendingDelete: RepoIssue? = null,
+    val isDeleting: Boolean = false,
 ) {
     val searchActive: Boolean get() = submittedQuery.isNotBlank() || filter.milestone is RepoMilestoneFilter.Title
 }
@@ -61,7 +62,7 @@ class RepoIssueListViewModel @Inject constructor(
     private val errorEventBus: ErrorEventBus,
     private val repoUpdateEventBus: RepoUpdateEventBus,
     session: AccountSession,
-    private val savedSearch: SavedStateHandle = SavedStateHandle(),
+    private val savedSearch: SavedStateHandle,
 ) : AccountViewModel(session) {
     private val _state = MutableStateFlow(RepoIssueListUiState())
     val state: StateFlow<RepoIssueListUiState> = _state.asStateFlow()
@@ -70,6 +71,7 @@ class RepoIssueListViewModel @Inject constructor(
     private var initialized = false
     private var loadJob: Job? = null
     private var loadMoreJob: Job? = null
+    private var issueCountJob: Job? = null
     private var requestGeneration = 0L
     private var searchPosition: SearchContinuation? = null
     private var suppressNextIssueCountRefresh = false
@@ -221,17 +223,31 @@ class RepoIssueListViewModel @Inject constructor(
         }
     }
 
-    fun confirmDelete(issue: RepoIssue?) { _state.update { it.copy(pendingDelete = issue) } }
+    fun confirmDelete(issue: RepoIssue?) { if (_state.value.isDeleting) return; _state.update { it.copy(pendingDelete = issue) } }
     fun deletePending() {
         val issue = _state.value.pendingDelete ?: return
         if (!_state.value.capabilities.canDeleteIssues || !issue.viewerCanDelete) return
+        if (_state.value.isDeleting) return
+        _state.update { it.copy(isDeleting = true) }
         viewModelScope.launch {
-            when (val result = repository.deleteIssue(issue.id)) {
-                is ApiResult.Success -> {
-                    _state.update { it.copy(items = it.items.filterNot { item -> item.id == issue.id }, totalCount = (it.totalCount - 1).coerceAtLeast(0), pendingDelete = null) }
-                    emitIssueCount(suppressRefresh = true)
+            val deleted = try {
+                when (val result = repository.deleteIssue(issue.id)) {
+                    is ApiResult.Success -> {
+                        _state.update { it.copy(items = it.items.filterNot { item -> item.id == issue.id }, totalCount = (it.totalCount - 1).coerceAtLeast(0), pendingDelete = null) }
+                        true
+                    }
+                    is ApiResult.Failure -> {
+                        errorEventBus.emit(result.error)
+                        _state.update { it.copy(pendingDelete = null) }
+                        false
+                    }
                 }
-                is ApiResult.Failure -> { errorEventBus.emit(result.error); _state.update { it.copy(pendingDelete = null) } }
+            } finally {
+                _state.update { it.copy(isDeleting = false) }
+            }
+            if (deleted) {
+                issueCountJob?.cancel()
+                issueCountJob = viewModelScope.launch { emitIssueCount(suppressRefresh = true) }
             }
         }
     }
