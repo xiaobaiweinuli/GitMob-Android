@@ -7,6 +7,9 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
+      version_name:
+        description: '版本号（major.minor.patch，留空使用项目配置）'
+        type: string
       publish_release:
         description: '构建成功后发布正式 Release 并设为 Latest'
         type: boolean
@@ -76,15 +79,18 @@ jobs:
 
       - name: 构建通用 Release APK
         env:
+          VERSION_NAME: ${{ inputs.version_name }}
           RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/gitmob-release.jks
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ vars.KEY_ALIAS }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           version_args=()
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version_args+=("-PAPP_VERSION_NAME=${GITHUB_REF_NAME#v}")
+          elif [[ -n "$VERSION_NAME" ]]; then
+            version_args+=("-PAPP_VERSION_NAME=$VERSION_NAME")
           fi
           ./gradlew :app:assembleRelease --build-cache --console=plain --stacktrace "${version_args[@]}"
 

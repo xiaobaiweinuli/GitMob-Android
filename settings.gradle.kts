@@ -1,9 +1,9 @@
 pluginManagement {
     repositories {
-        // 沙箱网络加速：阿里云镜像优先，官方源兜底
-        maven("https://maven.aliyun.com/repository/gradle-plugin")
-        maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/central")
+        // GitHub Actions 使用官方源；本地使用腾讯云镜像加速。
+        if (providers.environmentVariable("GITHUB_ACTIONS").orNull != "true") {
+            maven("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/")
+        }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -13,8 +13,9 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/central")
+        if (providers.environmentVariable("GITHUB_ACTIONS").orNull != "true") {
+            maven("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/")
+        }
         google()
         mavenCentral()
     }

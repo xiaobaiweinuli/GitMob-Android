@@ -325,7 +325,7 @@ chmod +x gradlew
 | `versionCode` | 当前完整 Git 历史的提交数量                                                                     |
 | 标签构建版本        | 工作流去掉标签前缀 `v`，通过 `-PAPP_VERSION_NAME=...` 覆盖                                         |
 
-例如，可用 `-PAPP_VERSION_NAME=0.1.1` 临时指定构建版本；提升版本名本身不会增加 `versionCode`。
+例如，可用 `-PAPP_VERSION_NAME=0.1.1` 临时指定构建版本；手动运行工作流时也可填写 `version_name`。提升版本名本身不会增加 `versionCode`。
 
 <a id="github-actions"></a>
 
@@ -342,7 +342,7 @@ chmod +x gradlew
 | `KEYSTORE_BASE64`   | Secret   | 是   | 发布签名文件完整内容的 Base64 编码 |
 | `KEYSTORE_PASSWORD` | Secret   | 是   | 签名文件密码                |
 | `KEY_PASSWORD`      | Secret   | 是   | 签名密钥密码                |
-| `KEY_ALIAS`         | Variable | 是   | 签名密钥别名                |
+| `KEY_ALIAS`         | Secret   | 是   | 签名密钥别名                |
 
 已有签名文件时，可以在 Windows PowerShell 中生成 Base64 并复制到剪贴板，然后粘贴到 `KEYSTORE_BASE64`：
 
@@ -358,8 +358,8 @@ chmod +x gradlew
 | ----------------------------------------------------- | ------------------------------------------------------- |
 | `${{ github.token }}`                                 | GitHub 自动提供，工作流将其作为 `GH_TOKEN` 交给 GitHub CLI 发布 Release |
 | `RELEASE_KEYSTORE_PATH`                               | 工作流生成的临时文件路径                                            |
-| `APP_VERSION_NAME`                                    | Gradle 属性，标签构建时由工作流覆盖                                   |
-| `publish_release` / `release_title` / `release_notes` | 手动运行工作流时填写的输入参数                                         |
+| `APP_VERSION_NAME`                                    | Gradle 属性，标签构建或填写 `version_name` 时由工作流覆盖                                   |
+| `version_name` / `publish_release` / `release_title` / `release_notes` | 手动运行工作流时填写的输入参数                                         |
 | `GITHUB_CLIENT_ID`                                    | 当前定义在源码中的 OAuth Client ID，尚未通过 Actions Variable 注入      |
 
 工作流声明了 `contents: write` 权限用于发布 Release。配置方式可参考 GitHub 官方的 [Secrets 文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets) 和 [Variables 文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/store-information-in-variables)。
@@ -370,11 +370,12 @@ chmod +x gradlew
 
 | 输入参数              | 默认值     | 说明                                    |
 | ----------------- | ------- | ------------------------------------- |
+| `version_name`    | 空       | 版本号，格式为 `major.minor.patch`；留空使用项目配置 |
 | `publish_release` | `false` | 关闭时仅上传构建产物；开启时发布正式 Release 并设为 Latest |
 | `release_title`   | 空       | 发布时必填，用作 Release 标题                   |
 | `release_notes`   | 空       | 发布说明，支持 Markdown；可用字面量 `\n` 分隔多行      |
 
-手动选择分支构建时使用该分支的 `APP_VERSION_NAME`。发布前确认该版本尚无 Release，并检查同名标签（如已存在）是否指向预期提交；当前流程使用 `gh release create`，不会覆盖已有 Release。手动选择标签时，版本名仍按标签取值。
+手动选择分支构建时，填写 `version_name` 会覆盖该次构建的 `APP_VERSION_NAME`，留空则使用分支中的项目配置。发布前确认该版本尚无 Release，并检查同名标签（如已存在）是否指向预期提交；当前流程使用 `gh release create`，不会覆盖已有 Release。手动选择标签时，版本名仍按标签取值。
 
 ### 通过标签发布
 
