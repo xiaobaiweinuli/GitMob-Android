@@ -1,7 +1,6 @@
-package com.gitmob.app.ui.library
+package com.gitmob.app.ui.common
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -34,7 +33,7 @@ import kotlinx.coroutines.launch
 
 /** Whole-row long press, live placement, and a single write when the drag completes. */
 @Composable
-internal fun <T> LibraryReorderList(
+internal fun <T> ReorderableList(
     source: List<T>, key: (T) -> String, movable: (T) -> Boolean,
     editing: Boolean, busy: Boolean, modifier: Modifier = Modifier,
     commit: (List<String>, (Boolean) -> Unit) -> Unit,

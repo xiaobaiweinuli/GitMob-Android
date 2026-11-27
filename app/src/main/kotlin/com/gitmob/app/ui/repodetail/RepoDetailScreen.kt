@@ -1,5 +1,8 @@
 package com.gitmob.app.ui.repodetail
 
+import com.gitmob.app.data.model.LauncherShortcut
+import com.gitmob.app.ui.shortcuts.ShortcutAddDialog
+
 import androidx.core.graphics.toColorInt
 import com.gitmob.app.ui.common.rememberNavigationDocument
 
@@ -170,6 +173,7 @@ fun RepoDetailScreen(
     val librarySettings by accountLibrary.settings.collectAsStateWithLifecycle()
     val library by libraryViewModel.state.collectAsStateWithLifecycle()
     val libraryBusy by libraryViewModel.busy.collectAsStateWithLifecycle()
+    var showShortcut by remember(owner, name) { mutableStateOf(false) }
     var showFavorite by remember { mutableStateOf(false) }
     LaunchedEffect(state.detail?.ownerLogin, state.detail?.name, state.isManaging, state.deleted) {
         if (state.deleted) onRepositoryDeleted()
@@ -216,6 +220,7 @@ fun RepoDetailScreen(
                         favoritesEnabled = library.loaded && librarySettings.value?.favoritesEnabled == true,
                         isFavorite = library.favorites.any { it.id == state.detail?.id },
                         onFavorite = { showFavorite = true },
+                        onShortcut = { showShortcut = true },
                     )
                 },
                 windowInsets = WindowInsets.safeDrawing
@@ -374,6 +379,9 @@ fun RepoDetailScreen(
         FavoriteSheet(FavoriteItem.Repository(detail.id, detail.cardData()), library.favorites.firstOrNull { it.id == detail.id }, groups.value,
             libraryBusy, { showFavorite = false }, libraryViewModel::createGroup, libraryViewModel::saveFavorite, libraryViewModel::removeFavorite,
             groupsFailed = groups.failed, retryGroups = accountLibrary::retryGroups)
+    }
+    if (showShortcut) state.detail?.let { detail ->
+        ShortcutAddDialog(LauncherShortcut.repository(detail), { showShortcut = false })
     }
     RepoManagementDialogs(state, viewModel)
     RepoForkDialog(state, viewModel, onForkSourceClick)

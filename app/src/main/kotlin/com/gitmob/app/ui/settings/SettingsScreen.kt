@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
@@ -72,6 +73,7 @@ fun SettingsScreen(
     onAppearanceClick: () -> Unit = {},
     onAboutClick: () -> Unit = {},
     onAdvancedClick: () -> Unit = {},
+    onShortcutsClick: () -> Unit = {},
     onEditProfileClick: () -> Unit = {},
     onLogout: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -216,6 +218,8 @@ fun SettingsScreen(
 
             item {
                 SettingsSection(title = stringResource(R.string.settings_section_app)) {
+                    SettingsNavigationRow(icon = Icons.AutoMirrored.Filled.AddToHomeScreen, title = stringResource(R.string.shortcuts_title),
+                        summary = stringResource(R.string.shortcuts_settings_summary), onClick = onShortcutsClick)
                     SettingsNavigationRow(icon = Icons.Default.Tune, title = stringResource(R.string.advanced_settings), summary = null, onClick = onAdvancedClick)
                     SettingsNavigationRow(
                         icon = Icons.Default.Info,

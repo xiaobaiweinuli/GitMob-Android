@@ -198,6 +198,8 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
 /** "关于"页面，从设置 Tab 点击跳转 */
 @Serializable data object AboutRoute : Route
 
+@Serializable data object ShortcutManagementRoute : Route
+
 /** "外观"页面，从设置 Tab push 进入当前 Settings 返回栈 */
 @Serializable data object AppearanceRoute : Route
 

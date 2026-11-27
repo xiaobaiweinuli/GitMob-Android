@@ -1,5 +1,7 @@
 package com.gitmob.app.navigation
 
+import com.gitmob.app.ui.shortcuts.ShortcutManagementScreen
+
 import androidx.core.net.toUri
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -431,6 +433,7 @@ private fun LoggedInApp(
                     preference = themePreference,
                     onAppearanceClick = { clicks.navigate(AppearanceRoute) },
                     onAdvancedClick = { clicks.navigate(AdvancedSettingsRoute()) },
+                    onShortcutsClick = { clicks.navigate(ShortcutManagementRoute) },
                     onAboutClick = { clicks.navigate(AboutRoute) },
                     onEditProfileClick = { clicks.navigate(ProfileEditorRoute) },
                     onLogout = onLogout,
@@ -442,6 +445,13 @@ private fun LoggedInApp(
         // Push 路由：与 Tab 解耦，push 路由进当前激活 Tab 的独立栈
         // 返回键统一走 navigator.goBack()，在 Tab 根上会切回 Home，二级页正常出栈
         // ──────────────────────────────────────────────────────────────
+        entry<ShortcutManagementRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            ShortcutManagementScreen(
+                onBack = { clicks.goBack() },
+                onOpen = { url -> clicks.run { onDeepLinkRequested(DeepLinkRouter.parse(url.toUri())) } },
+            )
+        }
         entry<AdvancedSettingsRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
             AdvancedSettingsScreen(

@@ -54,5 +54,9 @@
                 android:value="true" />
         </service>
 
+        <receiver
+            android:name=".core.shortcut.ShortcutPinnedReceiver"
+            android:exported="false" />
+
     </application>
 </manifest>

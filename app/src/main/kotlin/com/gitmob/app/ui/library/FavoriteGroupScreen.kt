@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.library
 
+import com.gitmob.app.ui.common.ReorderableList
+
 import com.gitmob.app.ui.common.ActionStateContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -53,7 +55,7 @@ fun FavoriteGroupScreen(
                 settings.value?.favoritesEnabled == false -> LibraryEmpty(stringResource(R.string.library_disabled))
                 group == null -> LibraryEmpty(stringResource(R.string.library_group_missing))
                 favorites.isEmpty() -> LibraryEmpty(stringResource(R.string.library_no_favorites))
-                else -> LibraryReorderList(favorites, { it.key }, { true }, editing, busy,
+                else -> ReorderableList(favorites, { it.key }, { true }, editing, busy,
                     Modifier.fillMaxSize(), { ids, done -> viewModel.reorderFavorites(groupId, ids, done) },
                 ) { item, modifier ->
                     FavoriteSwipeRow(editing, !busy, { remove = item }, modifier) {

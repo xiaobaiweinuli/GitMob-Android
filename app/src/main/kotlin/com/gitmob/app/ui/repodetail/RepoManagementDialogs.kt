@@ -67,7 +67,7 @@ import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun RepoManagementMenu(detail: RepoDetail?, enabled: Boolean, onShare: () -> Unit, onAction: (RepoManagementAction) -> Unit, favoritesEnabled: Boolean = false, isFavorite: Boolean = false, onFavorite: () -> Unit = {}) {
+internal fun RepoManagementMenu(detail: RepoDetail?, enabled: Boolean, onShare: () -> Unit, onAction: (RepoManagementAction) -> Unit, favoritesEnabled: Boolean = false, isFavorite: Boolean = false, onFavorite: () -> Unit = {}, onShortcut: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     ActionIconButton(onClick = onShare, enabled = detail != null) {
         Icon(Icons.Default.Share, stringResource(R.string.conversation_share))
@@ -75,14 +75,12 @@ internal fun RepoManagementMenu(detail: RepoDetail?, enabled: Boolean, onShare: 
     if (detail == null) return
     val capabilities = detail.capabilities
     val showVisibility = capabilities.canChangeVisibility && !detail.isFork
-    if (!(favoritesEnabled || capabilities.canRenameRepo || capabilities.canManageSomeSettings || showVisibility ||
-            capabilities.canTransferRepo || capabilities.canArchiveRepo || capabilities.canToggleIssues ||
-            capabilities.canToggleDiscussions || capabilities.canDeleteRepo)) return
     Box {
         ActionIconButton(onClick = { expanded = true }, enabled = enabled) {
             Icon(Icons.Default.MoreVert, stringResource(R.string.repo_manage_more))
         }
         DropdownMenu(expanded, { expanded = false }) {
+                ManagementMenuItem(R.string.shortcuts_add, enabled) { expanded = false; onShortcut() }
                 if (favoritesEnabled) ManagementMenuItem(if (isFavorite) R.string.favorites_manage else R.string.favorites_add, enabled) { expanded = false; onFavorite() }
                 if (capabilities.canRenameRepo) ManagementMenuItem(R.string.repo_manage_rename, enabled) { expanded = false; onAction(RepoManagementAction.RENAME) }
                 if (capabilities.canManageSomeSettings) ManagementMenuItem(R.string.repo_manage_information, enabled) { expanded = false; onAction(RepoManagementAction.INFORMATION) }

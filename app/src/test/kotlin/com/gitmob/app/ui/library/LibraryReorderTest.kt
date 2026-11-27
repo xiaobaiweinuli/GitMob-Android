@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.library
 
+import com.gitmob.app.ui.common.ReorderableList
+
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +38,7 @@ class LibraryReorderTest {
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalHapticFeedback provides feedback) {
-                    LibraryReorderList(
+                    ReorderableList(
                         listOf("default", "A", "B", "C"), { it }, { it != "default" }, true, false,
                         Modifier.testTag("groups"), { ids, done -> saved = ids; commits++; done(saveSucceeds) },
                     ) { item, modifier -> Text(item, modifier.fillMaxWidth().height(80.dp)) }

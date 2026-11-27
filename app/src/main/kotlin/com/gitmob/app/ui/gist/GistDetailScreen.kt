@@ -1,5 +1,9 @@
 package com.gitmob.app.ui.gist
 
+import com.gitmob.app.data.model.LauncherShortcut
+import com.gitmob.app.ui.shortcuts.ShortcutAddDialog
+import androidx.compose.material.icons.automirrored.filled.AddToHomeScreen
+
 import androidx.compose.ui.res.pluralStringResource
 import com.gitmob.app.ui.translation.*
 import com.gitmob.app.data.translation.TranslationTarget
@@ -131,6 +135,7 @@ fun GistDetailScreen(
     val library by libraryViewModel.state.collectAsStateWithLifecycle()
     val libraryBusy by libraryViewModel.busy.collectAsStateWithLifecycle()
     val favorite = library.favorites.firstOrNull { it.id == detail?.id }
+    var showShortcut by remember(gistId) { mutableStateOf(false) }
     var showFavorite by remember(gistId) { mutableStateOf(false) }
     var topMenuOpen by remember { mutableStateOf(false) }
     var descriptionDialog by remember { mutableStateOf(false) }
@@ -156,6 +161,11 @@ fun GistDetailScreen(
                             Icon(Icons.Default.MoreVert, stringResource(R.string.common_more))
                         }
                         DropdownMenu(expanded = topMenuOpen, onDismissRequest = { topMenuOpen = false }) {
+                            if (detail != null) DropdownMenuItem(
+                                text = { Text(stringResource(R.string.shortcuts_add)) },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.AddToHomeScreen, null) },
+                                onClick = { topMenuOpen = false; showShortcut = true },
+                            )
                             if (detail != null) TranslationMenuItem(TranslationTarget("gist:" + detail.id + ":description", detail.description.orEmpty()), { topMenuOpen = false }, R.string.translation_description)
                             if (library.loaded && librarySettings.value?.favoritesEnabled == true && detail != null) {
                                 DropdownMenuItem(
@@ -256,6 +266,9 @@ fun GistDetailScreen(
         FavoriteSheet(FavoriteItem.Gist(detail.cardData()), favorite, groups.value, libraryBusy,
             { showFavorite = false }, libraryViewModel::createGroup, libraryViewModel::saveFavorite, libraryViewModel::removeFavorite,
             groupsFailed = groups.failed, retryGroups = accountLibrary::retryGroups)
+    }
+    if (showShortcut && detail != null) {
+        ShortcutAddDialog(LauncherShortcut.gist(detail, stringResource(R.string.gist_detail_title)), { showShortcut = false })
     }
     if (descriptionDialog && detail != null) TextEditorDialog(
         title = stringResource(R.string.gist_edit_description),

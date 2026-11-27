@@ -1,5 +1,7 @@
 package com.gitmob.app.ui.library
 
+import com.gitmob.app.ui.common.ReorderableList
+
 import com.gitmob.app.ui.common.ActionStateContent
 import com.gitmob.app.ui.common.pressToggleable
 import androidx.compose.ui.semantics.Role
@@ -53,7 +55,7 @@ fun FavoritesScreen(accountLibrary: AccountLibraryViewModel, onBack: () -> Unit,
     }) { padding ->
         LibraryLoading(loaded, settings.failed || groupsState.failed, { accountLibrary.retrySettings(); accountLibrary.retryGroups() }, Modifier.padding(padding)) {
             if (settings.value?.favoritesEnabled == false) LibraryEmpty(stringResource(R.string.library_disabled))
-            else LibraryReorderList(groups, { it.id }, { !it.isDefault }, editing, busy,
+            else ReorderableList(groups, { it.id }, { !it.isDefault }, editing, busy,
                 Modifier.fillMaxSize(), viewModel::reorderGroups, grouped = true,
                 header = { Text(stringResource(R.string.favorites_summary, groups.sumOf { it.count }, groups.size),
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
