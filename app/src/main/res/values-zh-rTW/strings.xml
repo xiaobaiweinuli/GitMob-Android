@@ -1023,7 +1023,7 @@
     <string name="repo_pr_search_hint">搜尋提取要求關鍵字</string>
     <string name="repo_discussion_search_hint">搜尋討論關鍵字</string>
     <string name="repo_filter_any_label">任一標籤</string>
-    <string name="code_search_on_web">網頁版</string>
+    <string name="code_search_on_web">在 GitHub 網頁搜尋</string>
     <string name="repo_fork_close">關閉</string>
     <string name="repo_fork_title">復刻儲存庫</string>
     <string name="repo_fork_to">復刻至</string>

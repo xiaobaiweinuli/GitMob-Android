@@ -1029,7 +1029,7 @@
     <string name="repo_pr_search_hint">搜索拉取请求关键词</string>
     <string name="repo_discussion_search_hint">搜索讨论关键词</string>
     <string name="repo_filter_any_label">任一标签</string>
-    <string name="code_search_on_web">网页版</string>
+    <string name="code_search_on_web">在 GitHub 网页搜索</string>
     <string name="repo_fork_close">关闭</string>
     <string name="repo_fork_title">复刻仓库</string>
     <string name="repo_fork_to">复刻到</string>

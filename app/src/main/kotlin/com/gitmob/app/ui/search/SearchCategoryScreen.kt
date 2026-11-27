@@ -63,9 +63,6 @@ fun SearchCategoryScreen(
                 },
                 actions = {
                     if (category == SearchCategory.CODE && input.text.isNotBlank()) CodeSearchWebButton(input.text, viewModel)
-                    page?.let { Text(java.text.NumberFormat.getIntegerInstance().format(it.totalCount),
-                        Modifier.padding(end = 16.dp), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 },
                 navigationIcon = { ActionIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) } },
             )
@@ -76,6 +73,9 @@ fun SearchCategoryScreen(
             modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         ) {
+            if (submitted.isNotBlank()) item(key = "heading") {
+                SearchSectionHeading(category, page?.totalCount)
+            }
             if (page == null && section.loading) item(key = "initial-loading") { SearchPlaceholder() }
             items(page?.items.orEmpty(), key = { it.key }) { result ->
                 Box(Modifier.animateItem()) { SearchResult(result, actions) }

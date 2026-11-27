@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.*
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -33,6 +35,7 @@ import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.displayMessageRes
 import com.gitmob.app.data.model.*
 import com.gitmob.app.navigation.tryOpenBrowser
+import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.IssueStateIcon
 import com.gitmob.app.ui.common.PullRequestStateIcon
 import com.gitmob.app.ui.common.RepoCard
@@ -213,20 +216,30 @@ internal fun SearchPlaceholder() {
 
 @Composable
 internal fun SearchFailure(error: ApiError, retry: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(stringResource(error.displayMessageRes()), style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         if (error !is ApiError.UserVisible) TextButton(onClick = retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.common_retry)) }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CodeSearchWebButton(query: String, viewModel: SearchViewModel, owner: String? = null, name: String? = null) {
     val activity = LocalActivity.current
-    TextButton(onClick = {
-        val url = Uri.Builder().scheme("https").authority("github.com").apply {
-            if (owner != null && name != null) appendPath(owner).appendPath(name)
-        }.appendPath("search").appendQueryParameter("q", query).appendQueryParameter("type", "code").build()
-        if (activity?.tryOpenBrowser(url) != true) viewModel.browserUnavailable()
-    }, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) { Text(stringResource(R.string.code_search_on_web)) }
+    val label = stringResource(R.string.code_search_on_web)
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = rememberTooltipState(),
+    ) {
+        ActionIconButton(onClick = {
+            val url = Uri.Builder().scheme("https").authority("github.com").apply {
+                if (owner != null && name != null) appendPath(owner).appendPath(name)
+            }.appendPath("search").appendQueryParameter("q", query).appendQueryParameter("type", "code").build()
+            if (activity?.tryOpenBrowser(url) != true) viewModel.browserUnavailable()
+        }) {
+            Icon(Icons.Default.Language, contentDescription = label)
+        }
+    }
 }

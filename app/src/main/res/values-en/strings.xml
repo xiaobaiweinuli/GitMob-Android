@@ -1048,7 +1048,7 @@
     <string name="repo_pr_search_hint">Search pull request keywords</string>
     <string name="repo_discussion_search_hint">Search discussion keywords</string>
     <string name="repo_filter_any_label">Any label</string>
-    <string name="code_search_on_web">Web search</string>
+    <string name="code_search_on_web">Search on GitHub website</string>
     <string name="repo_fork_close">Close</string>
     <string name="repo_fork_title">Fork repository</string>
     <string name="repo_fork_to">Fork to</string>
