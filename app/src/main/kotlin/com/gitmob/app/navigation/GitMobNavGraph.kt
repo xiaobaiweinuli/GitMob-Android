@@ -38,6 +38,8 @@ import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.gitmob.app.ui.repocompare.RepoCompareScreen
+import com.gitmob.app.ui.common.LocalMarkdownLinkHandler
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
@@ -151,6 +153,7 @@ internal fun DeepLinkDestination.toRoute(): Route? = when (this) {
     is DeepLinkDestination.IssueDetail -> RepoIssueDetailRoute(owner, repo, number)
     is DeepLinkDestination.FileView -> RepoFileDetailRoute(owner, repo, ref, path)
     is DeepLinkDestination.DirView -> RepoCodeRoute(owner, repo, ref, path)
+    is DeepLinkDestination.Compare -> RepoCompareRoute(owner, repo, base, head, originalUrl)
     is DeepLinkDestination.CommitDetail -> RepoCommitDetailRoute(owner, repo, sha)
     is DeepLinkDestination.CommitList -> RepoCommitsRoute(owner, repo, ref, path)
     is DeepLinkDestination.PullRequestDetail -> RepoPullRequestDetailRoute(owner, repo, number)
@@ -301,11 +304,22 @@ private fun LoggedInApp(
             }
         }
     }
+    val openBrowser: (String) -> Unit = { url ->
+        if (epoch.isCurrent && activity?.tryOpenBrowser(url.toUri()) != true) {
+            scope.launch { errorEventBus.emit(ApiError.UserVisible(R.string.external_link_open_failed), epoch) }
+        }
+    }
     val openDocumentExternal: (String) -> Unit = { url ->
         if (epoch.isCurrent) {
             val request = DeepLinkRouter.parse(url.toUri())
-            if (request == DeepLinkRequest.Direct(DeepLinkDestination.Unsupported)) openExternalUrl(url)
-            else onDeepLinkRequested(request)
+            if (request == DeepLinkRequest.Direct(DeepLinkDestination.Unsupported)) {
+                val uri = url.toUri()
+                if ((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) &&
+                    (uri.host.equals("github.com", true) || uri.host.equals("gist.github.com", true))
+                ) openBrowser(url) else if (!uriHandler.tryOpenExternalUri(url)) {
+                    scope.launch { errorEventBus.emit(ApiError.UserVisible(R.string.external_link_open_failed), epoch) }
+                }
+            } else onDeepLinkRequested(request)
         }
     }
     LaunchedEffect(pendingDeepLink) {
@@ -1016,6 +1030,23 @@ private fun LoggedInApp(
                 onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
             )
         }
+        entry<RepoCompareRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            RepoCompareScreen(
+                owner = route.owner,
+                name = route.name,
+                base = route.base,
+                head = route.head,
+                onBack = { clicks.goBack() },
+                onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
+                onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
+                onBrowserClick = { clicks.run { openBrowser(route.originalUrl) } },
+                onCommitClick = { sha ->
+                    clicks.navigate(RepoCommitDetailRoute(route.owner, route.name, sha, ref = sha, readOnly = true))
+                },
+                onUserClick = { login -> clicks.navigate(ProfileRoute(login)) },
+            )
+        }
         entry<RepoCommitDetailRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
             RepoCommitDetailScreen(
@@ -1024,6 +1055,7 @@ private fun LoggedInApp(
                 ref = route.ref,
                 sha = route.sha,
                 permission = route.permission,
+                readOnly = route.readOnly,
                 onBack = { clicks.goBack() },
                 onOwnerClick = { login -> clicks.navigate(ProfileRoute(login)) },
                 onRepositoryClick = { owner, name -> clicks.navigate(RepoDetailRoute(owner, name)) },
@@ -1230,21 +1262,23 @@ private fun LoggedInApp(
         entry<RepoPlaceholderRoute> { route -> PlaceholderScreen(route.label) }
     }
 
-    GitMobNavDisplay(
-        entries = navState.toDecoratedEntries(entryProvider),
-        enablePredictiveBack = enablePredictiveBack,
-        onBack = {
-            val handled = navigator.goBack()
-            if (!handled) activity?.finish()
-        },
-        transitionSpec = {
-            if (navigator.withoutForwardAnimation) {
-                EnterTransition.None togetherWith ExitTransition.None
-            } else {
-                crossFadeTransition()
-            }
-        },
-        popTransitionSpec = { crossFadeTransition() },
-        modifier = Modifier.fillMaxSize(),
-    )
+    CompositionLocalProvider(LocalMarkdownLinkHandler provides openDocumentExternal) {
+        GitMobNavDisplay(
+            entries = navState.toDecoratedEntries(entryProvider),
+            enablePredictiveBack = enablePredictiveBack,
+            onBack = {
+                val handled = navigator.goBack()
+                if (!handled) activity?.finish()
+            },
+            transitionSpec = {
+                if (navigator.withoutForwardAnimation) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    crossFadeTransition()
+                }
+            },
+            popTransitionSpec = { crossFadeTransition() },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
 }

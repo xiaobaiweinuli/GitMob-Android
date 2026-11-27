@@ -57,6 +57,8 @@ import kotlin.math.abs
 /** Embedded documents let their parent scroll; viewport documents scroll inside WebView. */
 enum class MarkdownLayoutMode { Embedded, Viewport }
 
+val LocalMarkdownLinkHandler = androidx.compose.runtime.staticCompositionLocalOf<((String) -> Unit)?> { null }
+
 /**
  * 共用的 Markdown/HTML 渲染显示组件——README、Issue/PR/讨论评论都走这个，
  * 不要每个功能各自拼一遍 WebView 逻辑。配合 core/markdown/MarkdownRenderer
@@ -105,8 +107,9 @@ fun MarkdownWebView(
     var selectedResource by remember(bodyHtml, documentResources) { mutableStateOf<DocumentResourceGallery?>(null) }
     val currentDocumentLink by rememberUpdatedState(onDocumentLink)
     val uriHandler = LocalUriHandler.current
+    val linkHandler = onExternalLink ?: LocalMarkdownLinkHandler.current
     val currentExternalLink by rememberUpdatedState<(String) -> Unit> { url ->
-        if (onExternalLink != null) onExternalLink(url)
+        if (linkHandler != null) linkHandler(url)
         else runCatching { uriHandler.openUri(url) }
     }
     val controlled = preparedDocument?.safeHtml != null

@@ -19,6 +19,7 @@ sealed class DeepLinkDestination : Serializable {
     data class RepoCodeSearch(val owner: String, val repo: String, val query: String = "") : DeepLinkDestination()
     data class FileView(val owner: String, val repo: String, val ref: String, val path: String) : DeepLinkDestination()
     data class DirView(val owner: String, val repo: String, val ref: String, val path: String) : DeepLinkDestination()
+    data class Compare(val owner: String, val repo: String, val base: String, val head: String, val originalUrl: String) : DeepLinkDestination()
     data class CommitDetail(val owner: String, val repo: String, val sha: String) : DeepLinkDestination()
     data class CommitList(val owner: String, val repo: String, val ref: String, val path: String?) : DeepLinkDestination()
     data class IssueDetail(val owner: String, val repo: String, val number: Int) : DeepLinkDestination()
@@ -36,10 +37,22 @@ sealed class DeepLinkDestination : Serializable {
 }
 
 object DeepLinkRouter {
+    // Site namespaces must be excluded before either profile/repository or content routing.
+    private val siteRoots = setOf(
+        "about", "account", "apps", "business", "codespaces", "collections", "contact", "copilot",
+        "customer-stories", "dashboard", "discussions", "enterprise", "events", "explore", "features", "issues",
+        "join", "login", "logout", "marketplace", "new", "notifications", "organizations", "orgs",
+        "password_reset", "pricing", "pulls", "readme", "repositories", "resources", "search", "security", "sessions",
+        "settings", "signup", "site", "solutions", "sponsors", "stars", "topics", "trending", "users", "watching",
+    )
+
     fun parse(uri: Uri): DeepLinkRequest {
         val segments = uri.pathSegments
+        if (uri.host.equals("github.com", true) && segments.firstOrNull()?.lowercase() in siteRoots) {
+            return DeepLinkRequest.Direct(parseDirect(uri))
+        }
         if ((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) &&
-            uri.host.equals("github.com", true) && segments.size >= 4 && segments[0] !in setOf("orgs", "search")
+            uri.host.equals("github.com", true) && segments.size >= 4
         ) {
             val kind = when (segments[2]) {
                 "blob" -> RepoLinkKind.FILE
@@ -83,13 +96,10 @@ object DeepLinkRouter {
         if (segments.first() == "search") {
             return if (segments.size == 1) parseSearch(uri) else DeepLinkDestination.Unsupported
         }
-        // 设备授权属于浏览器流程，不能按 /{owner}/{repo} 解析。
-        if (segments == listOf("login", "device")) return DeepLinkDestination.Unsupported
-
-        // https://github.com/orgs/{org} 特殊前缀，等价于组织主页
-        if (segments.size >= 2 && segments[0] == "orgs") {
+        if (segments.first() == "orgs" && segments.size == 2) {
             return DeepLinkDestination.Profile(segments[1])
         }
+        if (segments.first().lowercase() in siteRoots) return DeepLinkDestination.Unsupported
 
         // https://github.com/{owner} —— 只有一段，是主页（用户或组织，运行时靠 repositoryOwner 查询判断）
         if (segments.size == 1) return DeepLinkDestination.Profile(segments[0])
@@ -110,6 +120,7 @@ object DeepLinkRouter {
         }
 
         return when (segments.getOrNull(2)) {
+            "compare" -> parseCompare(uri, owner, repo)
             "commit" -> {
                 val sha = segments.getOrNull(3) ?: return DeepLinkDestination.Unsupported
                 DeepLinkDestination.CommitDetail(owner, repo, sha)
@@ -147,6 +158,23 @@ object DeepLinkRouter {
             else -> DeepLinkDestination.Unsupported
         }
     }
+
+    private fun parseCompare(uri: Uri, owner: String, repo: String): DeepLinkDestination {
+        if (!uri.fragment.isNullOrEmpty() || uri.queryParameterNames.any { it != "expand" } ||
+            ("expand" in uri.queryParameterNames && uri.getQueryParameters("expand") != listOf("1"))
+        ) return DeepLinkDestination.Unsupported
+        val encodedTail = uri.encodedPath.orEmpty().split('/', limit = 5).getOrNull(4)
+            ?: return DeepLinkDestination.Unsupported
+        val endpoints = Uri.decode(encodedTail).split("...")
+        if (endpoints.size != 2 || endpoints.any { !isCompareRef(it) }) return DeepLinkDestination.Unsupported
+        return DeepLinkDestination.Compare(owner, repo, endpoints[0], endpoints[1], uri.toString())
+    }
+
+    private fun isCompareRef(ref: String): Boolean =
+        ref.isNotBlank() && ref != "@" && !ref.contains("..") && !ref.contains("@{") &&
+            !ref.endsWith('.') && !ref.endsWith(".diff") && !ref.endsWith(".patch") &&
+            ref.none { it.isWhitespace() || it.code < 32 || it.code == 127 || it in "~^:?*[\\" } &&
+            ref.split('/').all { it.isNotEmpty() && !it.startsWith('.') && !it.endsWith(".lock") }
 
     private fun parseSearch(uri: Uri, owner: String? = null, repo: String? = null): DeepLinkDestination {
         val query = uri.getQueryParameter("q").orEmpty()

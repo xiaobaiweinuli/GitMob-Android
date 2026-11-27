@@ -35,6 +35,75 @@ class RepoLinkResolutionTest {
     }
     private fun variables() = Json.parseToJsonElement(requireNotNull(server.takeRequest().body).utf8()).jsonObject.getValue("variables").jsonObject
 
+    @Test fun comparisonFullShasNeedNoRefQueries() = runTest(accounts.context) {
+        val head = "b".repeat(40)
+        val refs = (repository.resolveComparisonRefs("o", "r", oid, head) as ApiResult.Success).data
+        assertEquals(oid, refs.baseRef)
+        assertEquals(head, refs.headRef)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun comparisonBranchesWinCollisionsAndUseExactSlashNames() = runTest(accounts.context) {
+        refs(branch = "Commit", tag = "Tag")
+        val refs = (repository.resolveComparisonRefs("o", "r", "feature/docs", "feature/docs") as ApiResult.Success).data
+        assertEquals(oid, refs.baseRef)
+        assertEquals(oid, refs.headRef)
+        val vars = variables()
+        assertEquals("refs/heads/feature/docs", vars.getValue("branch").jsonPrimitive.content)
+        assertEquals("refs/tags/feature/docs", vars.getValue("tag").jsonPrimitive.content)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun comparisonExplicitTagsOverrideBranchesAndPeelAnnotatedTags() = runTest(accounts.context) {
+        for (type in listOf("Commit", "Tag")) {
+            refs(branch = "Commit", tag = type)
+            val tagOid = "b".repeat(40)
+            server.enqueue(MockResponse(body = """{"data":{"repository":{"object":{"__typename":"Commit","oid":"$tagOid"}}}}"""))
+            val resolved = (repository.resolveComparisonRefs("o", "r", oid, "tags/release/v1") as ApiResult.Success).data
+            assertEquals(oid, resolved.baseRef)
+            assertEquals(tagOid, resolved.headRef)
+            assertEquals("refs/tags/release/v1", variables().getValue("tag").jsonPrimitive.content)
+            assertEquals("refs/tags/release/v1^{commit}", variables().getValue("expression").jsonPrimitive.content)
+        }
+    }
+
+    @Test fun comparisonShortShaResolvesAfterExactRefLookup() = runTest(accounts.context) {
+        refs()
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"object":{"__typename":"Commit","oid":"$oid"}}}}"""))
+        val resolved = (repository.resolveComparisonRefs("o", "r", "abcd123", oid) as ApiResult.Success).data
+        assertEquals(oid, resolved.baseRef)
+        assertEquals("refs/heads/abcd123", variables().getValue("branch").jsonPrimitive.content)
+        assertEquals("abcd123^{commit}", variables().getValue("expression").jsonPrimitive.content)
+    }
+
+    @Test fun comparisonOrdinaryTagUsesQualifiedTagExpression() = runTest(accounts.context) {
+        refs(tag = "Tag")
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"object":{"__typename":"Commit","oid":"$oid"}}}}"""))
+        assertTrue(repository.resolveComparisonRefs("o", "r", "v1.0", oid) is ApiResult.Success)
+        variables()
+        assertEquals("refs/tags/v1.0^{commit}", variables().getValue("expression").jsonPrimitive.content)
+    }
+
+    @Test fun comparisonMissingRefDoesNotScanShorterNamesOrResolveTheOtherEnd() = runTest(accounts.context) {
+        refs()
+        assertEquals(ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_ref_not_found)),
+            repository.resolveComparisonRefs("o", "r", "feature/missing", "main"))
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun comparisonApiFailureDoesNotFallbackToCommitExpression() = runTest(accounts.context) {
+        server.enqueue(MockResponse(code = 403, body = "forbidden"))
+        assertTrue(repository.resolveComparisonRefs("o", "r", "abcd123", oid) is ApiResult.Failure)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun comparisonAmbiguousOrMissingShortShaRemainsFailure() = runTest(accounts.context) {
+        refs()
+        server.enqueue(MockResponse(body = """{"data":{"repository":{"object":null}}}"""))
+        assertTrue(repository.resolveComparisonRefs("o", "r", "abcd", oid) is ApiResult.Failure)
+        assertEquals(2, server.requestCount)
+    }
+
     @Test fun longestExactRefWinsAndUnmatchedSuffixBecomesPath() = runTest(accounts.context) {
         refs()
         refs(branch = "Commit")

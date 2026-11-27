@@ -30,6 +30,7 @@ data class RepoCommitDetailUiState(
     val isLoading: Boolean = false,
     val loadFailed: Boolean = false,
     val isReverting: Boolean = false,
+    val readOnly: Boolean = false,
     val revertingPath: String? = null,
 )
 
@@ -49,9 +50,10 @@ class RepoCommitDetailViewModel @Inject constructor(
     private var ref = ""
     private var sha = ""
 
-    fun init(owner: String, name: String, ref: String, sha: String, permission: RepoPermission?) {
+    fun init(owner: String, name: String, ref: String, sha: String, permission: RepoPermission?, readOnly: Boolean = false) {
         if (initialized) return
         initialized = true; this.owner = owner; this.name = name; this.ref = ref; this.sha = sha
+        _state.update { it.copy(readOnly = readOnly) }
         permission?.let { _state.update { state -> state.copy(permission = it, capabilities = it.toCapabilities()) } }
         load()
     }
@@ -86,7 +88,7 @@ class RepoCommitDetailViewModel @Inject constructor(
     fun revertFile(file: RepoChangedFile, message: String, onDone: () -> Unit = {}) {
         val detail = _state.value.detail ?: return
         val capabilities = _state.value.capabilities
-        if (_state.value.isReverting || detail.isArchived || !capabilities.canPush || !capabilities.canPushToProtectedBranch || message.isBlank()) return
+        if (_state.value.readOnly || _state.value.isReverting || detail.isArchived || !capabilities.canPush || !capabilities.canPushToProtectedBranch || message.isBlank()) return
         viewModelScope.launch {
             _state.update { it.copy(isReverting = true, revertingPath = file.filename) }
             when (val result = repository.revertFile(owner, name, ref, sha, file.filename, message, file.previousFilename)) {
@@ -109,6 +111,7 @@ class RepoCommitDetailViewModel @Inject constructor(
         val detail = _state.value.detail ?: return
         val capabilities = _state.value.capabilities
         if (
+            _state.value.readOnly ||
             _state.value.isReverting ||
             detail.commit.isMergeCommit ||
             detail.isArchived ||

@@ -66,9 +66,10 @@ fun RepoCommitDetailScreen(
     onOwnerClick: (String) -> Unit,
     onRepositoryClick: (String, String) -> Unit,
     onUserClick: (String) -> Unit,
+    readOnly: Boolean = false,
     viewModel: RepoCommitDetailViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(owner, name, ref, sha) { viewModel.init(owner, name, ref, sha, permission) }
+    LaunchedEffect(owner, name, ref, sha, readOnly) { viewModel.init(owner, name, ref, sha, permission, readOnly) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var fileToRevert by remember { mutableStateOf<com.gitmob.app.data.model.RepoChangedFile?>(null) }
     var commitRevertRequested by remember { mutableStateOf(false) }
@@ -100,7 +101,7 @@ fun RepoCommitDetailScreen(
                                     leadingIcon = { Icon(Icons.Default.Share, null) },
                                     onClick = { commitMenuExpanded = false; viewModel.share() },
                                 )
-                                if (state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && !state.detail!!.isArchived) {
+                                if (!state.readOnly && state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && !state.detail!!.isArchived) {
                                     DropdownMenuItem(
                                         text = { ActionButtonContent(busy = state.isReverting, label = stringResource(R.string.git_revert_commit)) },
                                         enabled = !state.detail!!.commit.isMergeCommit,
@@ -159,7 +160,7 @@ fun RepoCommitDetailScreen(
                         GitChangedFileRow(
                             file = file,
                             onClick = { viewModel.toggleFile(file) },
-                            onRevert = if (state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && !detail.isArchived) {
+                            onRevert = if (!state.readOnly && state.capabilities.canPush && state.capabilities.canPushToProtectedBranch && !detail.isArchived) {
                                 { fileToRevert = file }
                             } else null,
                         )

@@ -159,12 +159,20 @@ enum class ConversationComposerTarget { ISSUE_COMMENT, PULL_REQUEST_COMMENT, PUL
     constructor(owner: String, name: String, ref: String, path: String? = null, permission: RepoPermission? = null) :
         this(owner, name, RepoLinkTarget(ref, path.orEmpty()), permission)
 }
+@Serializable data class RepoCompareRoute(
+    val owner: String,
+    val name: String,
+    val base: String,
+    val head: String,
+    val originalUrl: String,
+) : Route
 @Serializable data class RepoCommitDetailRoute(
     val owner: String,
     val name: String,
     val sha: String,
     val ref: String = "",
     val permission: RepoPermission? = null,
+    val readOnly: Boolean = false,
 ) : Route
 @Serializable data class RepoFileDetailRoute(
     val owner: String,
@@ -245,6 +253,7 @@ internal fun Route.replaceRepositoryAddress(owner: String, name: String, newOwne
         is RepoCodeSearchRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
         is RepoCodeRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoCommitsRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
+        is RepoCompareRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName) else this
         is RepoCommitDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoFileDetailRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this
         is RepoFileEditorRoute -> if (matches(this.owner, this.name)) copy(owner = newOwner, name = newName, permission = null) else this

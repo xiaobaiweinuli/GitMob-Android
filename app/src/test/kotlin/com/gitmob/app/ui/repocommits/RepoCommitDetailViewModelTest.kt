@@ -21,6 +21,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -114,6 +115,25 @@ class RepoCommitDetailViewModelTest {
         advanceUntilIdle()
         viewModel.share()
         verify(exactly = 1) { share.share("https://github.com/o/r/commit/$oid") }
+        viewModel.viewModelScope.cancel()
+    }
+
+    @Test fun readOnlyEntryPreservesPermissionButBlocksBothRevertOperationsAfterReload() = runTest {
+        val repository = mockk<RepoGitRepository>()
+        coEvery { repository.getCommitDetail("o", "r", "main", "sha") } returns ApiResult.Success(detail(RepoPermission.ADMIN))
+        val viewModel = RepoCommitDetailViewModel(repository, ErrorEventBus(), RepoUpdateEventBus(), mockk(), accounts.session)
+        viewModel.init("o", "r", "main", "sha", RepoPermission.ADMIN, readOnly = true)
+        advanceUntilIdle()
+        viewModel.retry()
+        advanceUntilIdle()
+        assertEquals(RepoPermission.ADMIN, viewModel.state.value.permission)
+        assertTrue(viewModel.state.value.capabilities.canPush)
+        assertTrue(viewModel.state.value.readOnly)
+        viewModel.revertFile(viewModel.state.value.detail!!.changedFiles.single(), "Revert")
+        viewModel.revertCommit("Revert")
+        advanceUntilIdle()
+        coVerify(exactly = 0) { repository.revertFile(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repository.revertCommit(any(), any(), any(), any(), any()) }
         viewModel.viewModelScope.cancel()
     }
 

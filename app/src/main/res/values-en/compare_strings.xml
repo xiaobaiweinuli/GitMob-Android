@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="compare_title">Compare</string>
+    <string name="compare_open_browser">Open in browser</string>
+    <string name="compare_endpoints">%1$s → %2$s</string>
+    <string name="compare_status_ahead">Ahead</string>
+    <string name="compare_status_behind">Behind</string>
+    <string name="compare_status_diverged">Diverged</string>
+    <string name="compare_status_identical">Identical</string>
+    <string name="compare_counts">%1$d ahead, %2$d behind</string>
+    <string name="compare_files">Files (%1$d%2$s)</string>
+    <string name="compare_commits">Commits (%1$d)</string>
+    <string name="compare_files_limited">The API returns at most %1$d files. More files may be omitted; file statistics cover only loaded content.</string>
+    <string name="compare_patch_unavailable">No text diff is available for this file.</string>
+    <string name="compare_no_common_ancestor">These targets have no common ancestor and cannot be compared.</string>
+</resources>

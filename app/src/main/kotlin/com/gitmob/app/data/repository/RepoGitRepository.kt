@@ -121,6 +121,35 @@ class RepoGitRepository @Inject constructor(
         return ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_ref_not_found))
     }
 
+    /** Resolve both endpoints once so later pages compare the same immutable commits. */
+    suspend fun resolveComparisonRefs(owner: String, name: String, base: String, head: String): ApiResult<RepoComparisonRefs> {
+        val baseSha = when (val result = resolveComparisonRef(owner, name, base)) {
+            is ApiResult.Success -> result.data
+            is ApiResult.Failure -> return result
+        }
+        val headSha = if (head == base) baseSha else when (val result = resolveComparisonRef(owner, name, head)) {
+            is ApiResult.Success -> result.data
+            is ApiResult.Failure -> return result
+        }
+        return ApiResult.Success(RepoComparisonRefs(owner, name, baseSha, owner, name, headSha))
+    }
+
+    private suspend fun resolveComparisonRef(owner: String, name: String, ref: String): ApiResult<String> {
+        if (ref.matches(Regex("[0-9a-fA-F]{40}"))) return resolveCommitSha(owner, name, ref)
+        val explicitTag = ref.startsWith("tags/")
+        val tag = if (explicitTag) ref.removePrefix("tags/") else ref
+        val result = apolloClient.query(RepoLinkRefsQuery(owner, name, "refs/heads/$ref", "refs/tags/$tag")).executeAsApiResult()
+        if (result is ApiResult.Failure) return result
+        val repository = (result as ApiResult.Success).data.repository
+            ?: return ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_ref_not_found))
+        if (!explicitTag && repository.branch?.target?.__typename == "Commit") {
+            return ApiResult.Success(repository.branch.target.oid)
+        }
+        if (repository.tag != null) return resolveCommitSha(owner, name, "refs/tags/$tag")
+        if (!explicitTag && ref.matches(Regex("[0-9a-fA-F]{4,39}"))) return resolveCommitSha(owner, name, ref)
+        return ApiResult.Failure(ApiError.UserVisible(R.string.deep_link_ref_not_found))
+    }
+
     /** REST commit comparison. Pagination is deliberately hidden in this repository API. */
     suspend fun compare(
         baseOwner: String,

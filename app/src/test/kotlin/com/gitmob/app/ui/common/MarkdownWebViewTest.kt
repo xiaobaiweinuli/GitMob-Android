@@ -223,6 +223,53 @@ class MarkdownWebViewTest {
         }
     }
 
+    @Test fun markdownLinksUseScopedNavigationWithExplicitOverrideAndUriFallback() {
+        val opened = mutableListOf<String>()
+        val scoped = mutableStateOf<((String) -> Unit)?>({ opened.add("scoped:" + it) })
+        val explicit = mutableStateOf<((String) -> Unit)?>(null)
+        lateinit var root: View
+        composeRule.setContent {
+            val view = LocalView.current
+            SideEffect { root = view.rootView }
+            CompositionLocalProvider(
+                LocalMarkdownLinkHandler provides scoped.value,
+                LocalUriHandler provides object : UriHandler {
+                    override fun openUri(uri: String) { opened.add("uri:" + uri) }
+                },
+            ) {
+                MaterialTheme {
+                    MarkdownWebView("<p>Comparison</p>", onExternalLink = explicit.value)
+                }
+            }
+        }
+        val link = "https://github.com/o/r/compare/main...tags/v1"
+        fun clickLink() {
+            val webView = requireNotNull(findWebView(root))
+            val request = mockk<WebResourceRequest> {
+                every { url } returns Uri.parse(link)
+                every { isForMainFrame } returns true
+            }
+            assertTrue(requireNotNull(shadowOf(webView).webViewClient).shouldOverrideUrlLoading(webView, request))
+        }
+        composeRule.runOnIdle {
+            clickLink()
+            explicit.value = { opened.add("explicit:" + it) }
+        }
+        composeRule.runOnIdle {
+            clickLink()
+            explicit.value = null
+            scoped.value = { opened.add("updated:" + it) }
+        }
+        composeRule.runOnIdle {
+            clickLink()
+            scoped.value = null
+        }
+        composeRule.runOnIdle {
+            clickLink()
+            assertEquals(listOf("scoped:" + link, "explicit:" + link, "updated:" + link, "uri:" + link), opened)
+        }
+    }
+
     @Test fun genericMarkdownDelegatesLinksExternallyAfterRepositoryContent() {
         val resources = mockk<RepoDocumentResources>(relaxed = true) {
             every { document } returns RepoDocumentContext("owner", "repo", "main", "README.md")

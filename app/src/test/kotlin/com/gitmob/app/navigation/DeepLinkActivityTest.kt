@@ -78,6 +78,26 @@ class DeepLinkActivityTest {
         assertTrue(activity.isFinishing)
     }
 
+    @Test fun siteAndDeferredComparisonsOpenUnchangedInBrowser() {
+        for (url in listOf("https://github.com/trending/kotlin?since=weekly#top", "https://github.com/collections",
+            "https://github.com/o/r/compare/main..dev?expand=1#diff-1", "https://github.com/o/r/compare/main...fork:dev")) {
+            val activity = launch(url)
+            val intent = shadowOf(activity).nextStartedActivity
+            assertEquals(url, intent.dataString)
+            assertTrue(intent.selector!!.hasCategory(Intent.CATEGORY_APP_BROWSER))
+            assertFalse(intent.hasExtra(EXTRA_DEEP_LINK_REQUEST))
+        }
+    }
+
+    @Test fun comparisonLinksForwardTheirOriginalUrlToTheNativeRoute() {
+        val url = "https://github.com/o/r/compare/feature%2Fdocs...tags/v1?expand=1"
+        val activity = launch(url)
+        val intent = shadowOf(activity).nextStartedActivity
+        @Suppress("DEPRECATION")
+        val request = intent.getSerializableExtra(EXTRA_DEEP_LINK_REQUEST) as DeepLinkRequest
+        assertEquals(RepoCompareRoute("o", "r", "feature/docs", "tags/v1", url), request.toRoute())
+    }
+
     @Test
     fun `没有浏览器时将错误交给主界面`() {
         val application = ApplicationProvider.getApplicationContext<Application>()

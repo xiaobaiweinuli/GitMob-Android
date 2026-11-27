@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="compare_title">比较</string>
+    <string name="compare_open_browser">在浏览器中打开</string>
+    <string name="compare_endpoints">%1$s → %2$s</string>
+    <string name="compare_status_ahead">领先</string>
+    <string name="compare_status_behind">落后</string>
+    <string name="compare_status_diverged">已分叉</string>
+    <string name="compare_status_identical">相同</string>
+    <string name="compare_counts">领先 %1$d 个提交，落后 %2$d 个提交</string>
+    <string name="compare_files">文件（%1$d%2$s）</string>
+    <string name="compare_commits">提交（%1$d）</string>
+    <string name="compare_files_limited">接口最多返回 %1$d 个文件，可能还有未显示的文件；文件统计仅涵盖已加载内容。</string>
+    <string name="compare_patch_unavailable">此文件暂无可显示的文本差异。</string>
+    <string name="compare_no_common_ancestor">两个目标没有共同祖先，无法比较。</string>
+</resources>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="compare_title">比較</string>
+    <string name="compare_open_browser">在瀏覽器中開啟</string>
+    <string name="compare_endpoints">%1$s → %2$s</string>
+    <string name="compare_status_ahead">領先</string>
+    <string name="compare_status_behind">落後</string>
+    <string name="compare_status_diverged">已分岔</string>
+    <string name="compare_status_identical">相同</string>
+    <string name="compare_counts">領先 %1$d 個提交，落後 %2$d 個提交</string>
+    <string name="compare_files">檔案（%1$d%2$s）</string>
+    <string name="compare_commits">提交（%1$d）</string>
+    <string name="compare_files_limited">介面最多傳回 %1$d 個檔案，可能還有未顯示的檔案；檔案統計僅涵蓋已載入內容。</string>
+    <string name="compare_patch_unavailable">此檔案暫無可顯示的文字差異。</string>
+    <string name="compare_no_common_ancestor">兩個目標沒有共同祖先，無法比較。</string>
+</resources>
