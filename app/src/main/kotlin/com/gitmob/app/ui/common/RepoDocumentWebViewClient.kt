@@ -8,7 +8,7 @@ import android.webkit.WebViewClient
 import com.gitmob.app.core.markdown.REPO_DOCUMENT_HOST
 import com.gitmob.app.core.markdown.RepoDocumentLink
 import com.gitmob.app.core.markdown.resolveLink
-import com.gitmob.app.core.markdown.imageResourcePath
+import com.gitmob.app.core.markdown.documentResourcePath
 import com.gitmob.app.data.model.RepoDocumentContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -47,7 +47,7 @@ internal class RepoDocumentWebViewClient(
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
         if (!resources.isActive) return unavailable()
         val url = request.url
-        val path = resources.document.imageResourcePath(url.toString())
+        val path = resources.document.documentResourcePath(url.toString())
         if (path == null && !url.host.equals(REPO_DOCUMENT_HOST, ignoreCase = true)) {
             // External images are handled by WebView without GitHub authentication.
             return if (url.scheme in setOf("https", "http", "data")) null else unavailable()

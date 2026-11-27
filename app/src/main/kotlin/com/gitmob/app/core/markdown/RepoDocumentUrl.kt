@@ -57,7 +57,7 @@ internal fun RepoDocumentContext.rawResourcePath(url: String): String? {
 }
 
 /** Resolves internal document URLs and matching GitHub raw URLs to one repository path. */
-internal fun RepoDocumentContext.imageResourcePath(url: String): String? =
+internal fun RepoDocumentContext.documentResourcePath(url: String): String? =
     resourcePath(url) ?: rawResourcePath(url)
 
 private fun repositoryPath(url: HttpUrl): String? {

@@ -1,6 +1,7 @@
 package com.gitmob.app
 
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.content.Intent
 import android.view.View
@@ -11,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
@@ -19,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.os.BundleCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.currentStateAsState
@@ -111,6 +114,11 @@ class MainActivity : AppCompatActivity() {
             }
 
             GitMobTheme(preference = themePreference) {
+                val windowBackground = MaterialTheme.colorScheme.surface.toArgb()
+                LaunchedEffect(windowBackground) {
+                    window.setBackgroundDrawable(ColorDrawable(windowBackground))
+                }
+
                 Surface(modifier = Modifier) {
                     GitMobNavGraph(
                         accountState = accountState,

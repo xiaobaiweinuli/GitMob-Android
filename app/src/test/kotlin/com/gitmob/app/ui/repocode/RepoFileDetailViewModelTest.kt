@@ -236,7 +236,7 @@ class RepoFileDetailViewModelTest {
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
         vm.awaitLoaded()
-        assertTrue(vm.state.value.imagePreview)
+        assertEquals(com.gitmob.app.data.model.DocumentResourceKind.IMAGE, vm.state.value.resourcePreview)
         assertTrue(vm.state.value.previewMode)
         assertTrue(vm.state.value.previewSupported)
         assertEquals(RepoDocumentContext("owner", "repo", ref, path), vm.state.value.previewContext)
@@ -249,7 +249,7 @@ class RepoFileDetailViewModelTest {
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
         vm.awaitLoaded()
         assertTrue(vm.state.value.previewMode)
-        assertTrue(vm.state.value.imagePreview)
+        assertEquals(com.gitmob.app.data.model.DocumentResourceKind.IMAGE, vm.state.value.resourcePreview)
         vm.setPreviewMode(false)
         assertFalse(vm.state.value.previewMode)
         assertEquals("<svg/>", vm.state.value.file!!.text)
@@ -265,7 +265,7 @@ class RepoFileDetailViewModelTest {
         val vm = viewModel()
         vm.init("owner", "repo", RepoLinkTarget(ref, path))
         vm.awaitLoaded()
-        assertFalse(vm.state.value.imagePreview)
+        assertEquals(com.gitmob.app.data.model.DocumentResourceKind.UNKNOWN, vm.state.value.resourcePreview)
         assertFalse(vm.state.value.previewSupported)
         assertNull(vm.state.value.previewContext)
     }
@@ -421,4 +421,19 @@ class RepoFileDetailViewModelTest {
         assertFalse(vm.state.value.canSwitchDisplayMode)
         assertTrue(vm.state.value.previewMode)
     }
+    @Test fun binaryMediaDefaultsToNativePreviewWithoutLosingFileActions() = runTest {
+        for (path in listOf("movie.mp4", "music.flac")) {
+            val media = file(path, "").copy(isBinary = true, text = null, byteSize = 50L * 1024 * 1024)
+            coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(media)
+            val vm = viewModel()
+            vm.init("owner", "repo", RepoLinkTarget(ref, path))
+            vm.awaitLoaded()
+            assertTrue(vm.state.value.previewMode)
+            assertTrue(vm.state.value.previewSupported)
+            assertFalse(vm.state.value.canSwitchDisplayMode)
+            assertEquals(media.capabilities, vm.state.value.file!!.capabilities)
+            assertEquals(RepoDocumentContext("owner", "repo", ref, path), vm.state.value.previewContext)
+        }
+    }
+
 }

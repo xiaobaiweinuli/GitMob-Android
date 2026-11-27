@@ -16,12 +16,16 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicInteger
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.data.model.RepoDocumentContext
+import com.gitmob.app.data.model.DocumentResource
+import com.gitmob.app.data.model.DocumentResourceKind
 import com.gitmob.app.testutil.AccountSessionRule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -38,6 +42,8 @@ class RepoDocumentRepositoryTest {
     private lateinit var api: GHApiClient
     private lateinit var repository: RepoDocumentRepository
     private val updates = RepoUpdateEventBus()
+    private val gitRepository = mockk<RepoGitRepository>()
+    private val commitSha = "a".repeat(40)
     private val document = RepoDocumentContext("owner", "repo", "feature/中文 docs", "README.md")
 
     @Before fun setup() {
@@ -45,7 +51,8 @@ class RepoDocumentRepositoryTest {
         api = GHApiClient(OkHttpClient(), Json, object : TestAccessTokenProvider {
             override suspend fun getToken() = "test-token"
         }, server.url("/").toString().removeSuffix("/"))
-        repository = RepoDocumentRepository(api, updates)
+        coEvery { gitRepository.resolveCommitSha(any(), any(), any()) } returns ApiResult.Success(commitSha)
+        repository = RepoDocumentRepository(api, updates, gitRepository)
     }
     @After fun cleanup() { server.close() }
 
@@ -248,7 +255,7 @@ class RepoDocumentRepositoryTest {
             coEvery { mockApi.getRawBytes(any(), any(), any()) } coAnswers {
                 started.complete(Unit); release.await(); byteArrayOf(1, 2)
             }
-            val shared = RepoDocumentRepository(mockApi, updates)
+            val shared = RepoDocumentRepository(mockApi, updates, gitRepository)
             val first = async(start = CoroutineStart.UNDISPATCHED) { shared.load(document, "a.png") }
             started.await()
             val second = async(start = CoroutineStart.UNDISPATCHED) { shared.load(document, "a.png") }
@@ -269,7 +276,7 @@ class RepoDocumentRepositoryTest {
             coEvery { mockApi.getRawBytes(any(), any(), any()) } coAnswers {
                 started.complete(Unit); release.await(); byteArrayOf(1)
             }
-            val shared = RepoDocumentRepository(mockApi, updates)
+            val shared = RepoDocumentRepository(mockApi, updates, gitRepository)
             val page = RepoDocumentResources(document, accounts.session.epoch, shared)
             val pageRead = async { page.load("a.png") }
             started.await()
@@ -293,7 +300,7 @@ class RepoDocumentRepositoryTest {
                     started.complete(Unit); release.await(); "old".toByteArray()
                 } else "new".toByteArray()
             }
-            val shared = RepoDocumentRepository(mockApi, updates)
+            val shared = RepoDocumentRepository(mockApi, updates, gitRepository)
             val old = async { shared.load(document, "a.png") }
             started.await()
             shared.invalidate(document)
@@ -316,7 +323,7 @@ class RepoDocumentRepositoryTest {
                 try { CompletableDeferred<ByteArray>().await() } finally { stopped.complete(Unit) }
             } else byteArrayOf(1)
         }
-        val shared = RepoDocumentRepository(mockApi, updates)
+        val shared = RepoDocumentRepository(mockApi, updates, gitRepository)
         withTimeout(5_000) {
             val oldContext = accounts.context
             withContext(oldContext) { shared.load(document, "cached.png") }
@@ -333,7 +340,7 @@ class RepoDocumentRepositoryTest {
     @Test fun cacheEvictsLeastRecentlyUsedResourcesWithinByteAndEntryBudgets() = runBlocking(accounts.context) {
         val mockApi = mockk<GHApiClient>()
         coEvery { mockApi.getRawBytes(any(), any(), any()) } answers { ByteArray(6 * 1024 * 1024) }
-        val shared = RepoDocumentRepository(mockApi, updates)
+        val shared = RepoDocumentRepository(mockApi, updates, gitRepository)
         listOf("1.png", "2.png", "1.png", "3.png", "2.png").forEach { shared.load(document, it) }
         coVerify(exactly = 1) { mockApi.getRawBytes(match { "1.png" in it }, any(), any()) }
         coVerify(exactly = 2) { mockApi.getRawBytes(match { "2.png" in it }, any(), any()) }
@@ -357,7 +364,7 @@ class RepoDocumentRepositoryTest {
                 if (count == 4) fourStarted.complete(Unit)
                 try { release.await(); byteArrayOf(1) } finally { active.decrementAndGet() }
             }
-            val shared = RepoDocumentRepository(mockApi, updates)
+            val shared = RepoDocumentRepository(mockApi, updates, gitRepository)
             val requests = (1..8).map { index -> async(start = CoroutineStart.UNDISPATCHED) { shared.load(document, "$index.png") } }
             fourStarted.await()
             assertEquals(4, active.get())
@@ -372,7 +379,7 @@ class RepoDocumentRepositoryTest {
         withTimeout(5_000) {
             val mockApi = mockk<GHApiClient>()
             coEvery { mockApi.getRawBytes(any(), any(), any()) } returns "old".toByteArray()
-            val shared = RepoDocumentRepository(mockApi, updates)
+            val shared = RepoDocumentRepository(mockApi, updates, gitRepository)
             RepoDocumentResources(document, accounts.session.epoch, shared).use { it.load("a.png") }
             val unchanged = shared.load(document, "b.png") as ApiResult.Success
             coEvery { mockApi.getRawBytes(any(), any(), any()) } returns "new".toByteArray()
@@ -386,4 +393,94 @@ class RepoDocumentRepositoryTest {
         }
     }
 
+    @Test fun opaqueMediaInspectsHeadersWithoutCredentialsAndWithoutReadingTheBody() = runTest(accounts.context) {
+        server.enqueue(MockResponse.Builder().code(302).setHeader("Location", server.url("/movie")).build())
+        server.enqueue(MockResponse.Builder().setHeader("Content-Type", "video/mp4; charset=binary")
+            .body("payload").build())
+        val result = repository.resolveMedia(com.gitmob.app.data.model.DocumentResource(server.url("/attachment").toString()), null) as ApiResult.Success
+        assertEquals(com.gitmob.app.data.model.DocumentResourceKind.VIDEO, result.data.kind)
+        assertEquals("video/mp4", result.data.mimeType)
+        repeat(2) {
+            val request = server.takeRequest()
+            assertNull(request.headers["Authorization"])
+            assertNull(request.headers["X-GitHub-Api-Version"])
+            assertEquals("bytes=0-0", request.headers["Range"])
+        }
+    }
+
+    @Test fun repositoryMediaResolvesDownloadUrlAndVersionWithoutFetchingImageBytes() = runTest(accounts.context) {
+        val raw = "https://raw.githubusercontent.com/owner/repo/$commitSha/movie.mp4?token=temporary"
+        server.enqueue(MockResponse(body = """{"download_url":"$raw","sha":"first"}"""))
+        val resource = DocumentResource("docs/my%20movie%2B%23.mp4")
+        val result = repository.resolveMedia(resource, document) as ApiResult.Success
+        assertEquals(raw, result.data.url)
+        assertEquals(DocumentResourceKind.VIDEO, result.data.kind)
+        val cacheKey = requireNotNull(result.data.cacheKey)
+        assertTrue(cacheKey.endsWith("#first"))
+        assertFalse(cacheKey.contains("temporary"))
+        val request = server.takeRequest()
+        assertEquals(listOf("repos", "owner", "repo", "contents", "docs", "my movie+#.mp4"), request.url.pathSegments)
+        assertEquals(commitSha, request.url.queryParameter("ref"))
+        assertEquals("Bearer test-token", request.headers["Authorization"])
+        assertEquals("application/vnd.github.object+json", request.headers["Accept"])
+        coVerify(exactly = 1) { gitRepository.resolveCommitSha(document.owner, document.name, document.ref) }
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun mediaCacheIdentitySurvivesUrlRenewalButChangesWithContentOrRepository() = runTest(accounts.context) {
+        val resource = DocumentResource("movie.mp4")
+        suspend fun resolve(sha: String, token: String, context: RepoDocumentContext = document): String? {
+            server.enqueue(MockResponse(body = """{"download_url":"https://raw.githubusercontent.com/o/r/$commitSha/movie.mp4?token=$token","sha":"$sha"}"""))
+            return (repository.resolveMedia(resource, context) as ApiResult.Success).data.cacheKey
+        }
+        val key = resolve("first", "token1")
+        assertEquals(key, resolve("first", "token2"))
+        assertNotEquals(key, resolve("second", "token3"))
+        assertNotEquals(key, resolve("first", "token4", document.copy(name = "another")))
+    }
+
+    @Test fun movingBranchUsesANewCommitAndCacheKeyEvenWhenTheBlobIsUnchanged() = runTest(accounts.context) {
+        val nextCommit = "b".repeat(40)
+        coEvery { gitRepository.resolveCommitSha(document.owner, document.name, document.ref) } returnsMany
+            listOf(ApiResult.Success(commitSha), ApiResult.Success(nextCommit))
+        val sources = listOf(commitSha, nextCommit).map { sha ->
+            val raw = "https://raw.githubusercontent.com/owner/repo/$sha/movie.mp4"
+            server.enqueue(MockResponse(body = """{"download_url":"$raw","sha":"same-blob"}"""))
+            val source = (repository.resolveMedia(DocumentResource("movie.mp4"), document) as ApiResult.Success).data
+            assertEquals(sha, server.takeRequest().url.queryParameter("ref"))
+            assertEquals(raw, source.url)
+            assertTrue(requireNotNull(source.cacheKey).endsWith("#same-blob"))
+            source
+        }
+        assertNotEquals(sources[0].cacheKey, sources[1].cacheKey)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test fun failedCommitResolutionDoesNotRequestMutableContent() = runTest(accounts.context) {
+        val failure = ApiResult.Failure(ApiError.Forbidden)
+        coEvery { gitRepository.resolveCommitSha(any(), any(), any()) } returns failure
+        assertSame(failure, repository.resolveMedia(DocumentResource("movie.mp4"), document))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun unavailableMetadataOrUnsafeDownloadUrlsDoNotCreatePlaybackSources() = runTest(accounts.context) {
+        val resource = DocumentResource("movie.mp4")
+        for (url in listOf("null", "\"https://credential@external.test/file.mp4\"", "\"http://external.test/file.mp4\"")) {
+            server.enqueue(MockResponse(body = """{"download_url":$url,"sha":"first"}"""))
+            assertTrue(repository.resolveMedia(resource, document) is ApiResult.Failure)
+        }
+        server.enqueue(MockResponse(code = 404))
+        assertTrue(repository.resolveMedia(resource, document) is ApiResult.Failure)
+    }
+
+    @Test fun publicMediaWithoutAContentVersionDoesNotReceiveAPersistentCacheKey() = runTest(accounts.context) {
+        val resource = DocumentResource("https://example.test/movie.mp4")
+        for (context in listOf(null, document)) {
+            val result = repository.resolveMedia(resource, context) as ApiResult.Success
+            assertEquals(resource.source, result.data.url)
+            assertNull(result.data.cacheKey)
+        }
+        coVerify(exactly = 0) { gitRepository.resolveCommitSha(any(), any(), any()) }
+        assertEquals(0, server.requestCount)
+    }
 }

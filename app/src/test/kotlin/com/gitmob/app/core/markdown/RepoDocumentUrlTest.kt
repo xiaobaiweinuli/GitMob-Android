@@ -50,25 +50,25 @@ class RepoDocumentUrlTest {
     }
 
     @Test fun rawImagesMatchTheCompleteCurrentRefAndDecodeOnce() {
-        assertEquals("images/图 100%.png", document.imageResourcePath("https://raw.githubusercontent.com/OWNER/Repo/feature/docs/images/%E5%9B%BE%20100%25.png"))
-        assertEquals("images/literal%20.png", document.imageResourcePath("https://raw.githubusercontent.com/owner/repo/feature/docs/images/literal%2520.png"))
-        assertEquals("docs/a.png", document.copy(ref = "main").imageResourcePath("https://raw.githubusercontent.com/owner/repo/main/docs/a.png?raw=1#image"))
+        assertEquals("images/图 100%.png", document.documentResourcePath("https://raw.githubusercontent.com/OWNER/Repo/feature/docs/images/%E5%9B%BE%20100%25.png"))
+        assertEquals("images/literal%20.png", document.documentResourcePath("https://raw.githubusercontent.com/owner/repo/feature/docs/images/literal%2520.png"))
+        assertEquals("docs/a.png", document.copy(ref = "main").documentResourcePath("https://raw.githubusercontent.com/owner/repo/main/docs/a.png?raw=1#image"))
     }
 
     @Test fun qualifiedBranchRawImagesMatchFullRefAndDecodeOnce() {
         val raw = "https://raw.githubusercontent.com/OWNER/Repo/refs/heads/feature/docs/images/literal%2520.png"
-        assertEquals("images/literal%20.png", document.imageResourcePath(raw))
-        assertEquals("docs/tips.png", document.copy(ref = "main").imageResourcePath(
+        assertEquals("images/literal%20.png", document.documentResourcePath(raw))
+        assertEquals("docs/tips.png", document.copy(ref = "main").documentResourcePath(
             "https://raw.githubusercontent.com/owner/repo/refs/heads/main/docs/tips.png",
         ))
-        assertEquals("images/literal%20.png", document.copy(ref = "refs/heads/feature/docs").imageResourcePath(raw))
+        assertEquals("images/literal%20.png", document.copy(ref = "refs/heads/feature/docs").documentResourcePath(raw))
         listOf(
             raw.replace("feature/docs", "feature/docs-other"),
             raw.replace("feature/docs", "feature/Docs"),
             raw.replace("OWNER/Repo", "other/Repo"),
             raw.replace("refs/heads", "refs/tags"),
             "https://raw.githubusercontent.com/owner/repo/refs/heads/feature/docs/",
-        ).forEach { assertNull(it, document.imageResourcePath(it)) }
+        ).forEach { assertNull(it, document.documentResourcePath(it)) }
     }
 
     @Test fun directoryLinksWithoutTrailingSlashKeepTheirRepositoryPath() {
@@ -91,7 +91,7 @@ class RepoDocumentUrlTest {
             "http://raw.githubusercontent.com/owner/repo/feature/docs/a.png",
             "https://raw.githubusercontent.com.evil.test/owner/repo/feature/docs/a.png",
             "https://raw.githubusercontent.com/owner/repo/feature/docs/a%00.png",
-        ).forEach { assertNull(it, document.imageResourcePath(it)) }
+        ).forEach { assertNull(it, document.documentResourcePath(it)) }
     }
 
     @Test fun rawImageResolutionDoesNotChangeExternalLinkNavigation() {

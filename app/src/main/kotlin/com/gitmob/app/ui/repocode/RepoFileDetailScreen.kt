@@ -68,7 +68,8 @@ import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.ActionProgressIcon
 import com.gitmob.app.ui.common.AppDropdownMenu as DropdownMenu
 import com.gitmob.app.ui.common.RepositoryContextTitle
-import com.gitmob.app.ui.common.RepositoryImagePreview
+import com.gitmob.app.ui.common.RepositoryResourcePreview
+import com.gitmob.app.data.model.DocumentResourceKind
 import com.gitmob.app.ui.common.pressClickable
 import com.gitmob.app.ui.common.pressToggleable
 
@@ -95,7 +96,7 @@ fun RepoFileDetailScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     val fileTarget = remember(owner, name, state.file, state.previewHtml) {
         val file = state.file ?: return@remember null
-        state.previewHtml?.takeIf { !file.isBinary && !file.isTruncated && file.text != null && !state.imagePreview }
+        state.previewHtml?.takeIf { !file.isBinary && !file.isTruncated && file.text != null && state.resourcePreview == DocumentResourceKind.UNKNOWN }
             ?.let { TranslationTarget("file:$owner/$name/${file.ref}/${file.path}", it, html = true) }
     }
     val deleteCommitMessage = stringResource(R.string.repo_delete_file_title)
@@ -132,7 +133,7 @@ fun RepoFileDetailScreen(
         when {
             state.isLoading || state.isDirectory -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             state.loadFailed || state.file == null -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_load_failed)); OutlinedButton(onClick = viewModel::retry, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.ContentPadding) { Text(stringResource(R.string.common_retry)) } }
-            state.file?.isBinary == true && !state.imagePreview -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_file_no_preview)) }
+            state.file?.isBinary == true && state.resourcePreview == DocumentResourceKind.UNKNOWN -> Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(stringResource(R.string.common_file_no_preview)) }
             else -> {
                 val file = requireNotNull(state.file)
                 val previewHtml = state.previewHtml
@@ -141,13 +142,13 @@ fun RepoFileDetailScreen(
                 val previewState = rememberMarkdownViewportState(documentId)
                 Column(Modifier.fillMaxSize().padding(padding)) {
                     when {
-                        file.text == "" && !state.imagePreview -> {
+                        file.text == "" && state.resourcePreview == DocumentResourceKind.UNKNOWN -> {
                             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 Text(stringResource(R.string.repo_file_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        state.imagePreview && state.previewMode -> key(state.previewRevision) {
-                            RepositoryImagePreview(requireNotNull(state.previewContext), file.byteSize, Modifier.weight(1f))
+                        state.resourcePreview != DocumentResourceKind.UNKNOWN && state.previewMode -> key(state.previewRevision) {
+                            RepositoryResourcePreview(requireNotNull(state.previewContext), file.byteSize, Modifier.weight(1f))
                         }
                         state.previewMode && previewHtml != null -> {
                             val document = rememberNavigationDocument(

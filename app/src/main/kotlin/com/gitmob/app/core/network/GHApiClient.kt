@@ -1,6 +1,7 @@
 package com.gitmob.app.core.network
 
 import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.core.auth.AccountEpoch
 import com.gitmob.app.core.auth.AccountContext
 import com.gitmob.app.core.error.HttpStatusException
 import com.gitmob.app.core.error.UnauthorizedException
@@ -150,6 +151,43 @@ class GHApiClient @Inject constructor(
         val parsed = url.toHttpUrl()
         require(parsed.username.isEmpty() && parsed.password.isEmpty())
         return readUpload(Request.Builder().url(parsed).header("Accept", "image/*").get().build(), maxBytes)
+    }
+
+    /** Public media streams never receive API credentials, including after redirects. */
+    internal fun mediaClient(epoch: AccountEpoch): OkHttpClient = okHttpClient.newBuilder()
+        .dispatcher(okhttp3.Dispatcher(okHttpClient.dispatcher.executorService))
+        .addNetworkInterceptor { chain ->
+            try {
+                epoch.ensureCurrent()
+                val request = chain.request().newBuilder()
+                    .removeHeader("Authorization")
+                    .removeHeader("X-GitHub-Api-Version")
+                    .removeHeader("Accept")
+                    .build()
+                val response = chain.proceed(request)
+                try {
+                    epoch.ensureCurrent()
+                    response
+                } catch (e: Exception) {
+                    response.close()
+                    throw e
+                }
+            } catch (e: IOException) {
+                throw e
+            } catch (e: Exception) {
+                throw IOException("Media request failed", e)
+            }
+        }.build()
+
+    /** Inspect a clicked attachment without buffering its body or attaching account credentials. */
+    internal suspend fun inspectPublicMediaType(url: String): String? {
+        val parsed = url.toHttpUrl()
+        require(parsed.username.isEmpty() && parsed.password.isEmpty())
+        val request = Request.Builder().url(parsed).header("Range", "bytes=0-0").get().build()
+        return readAccountResponse(okHttpClient.newCall(request)) { response ->
+            if (!response.isSuccessful) throw HttpStatusException(response.code, "Resource request failed")
+            response.header("Content-Type")?.substringBefore(';')?.trim()
+        }
     }
 
     /**

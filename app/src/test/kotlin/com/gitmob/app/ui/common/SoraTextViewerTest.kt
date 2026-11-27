@@ -95,12 +95,12 @@ class SoraTextViewerTest {
         compose.onNodeWithTag("title").assertIsFocused()
     }
 
-    @Test fun diffKeepsDualGuttersBackgroundsAndPatchTextOutOfTheGutter() {
+    @Test fun diffKeepsSingleGutterBackgroundsAndPatchTextOutOfTheGutter() {
         val patch = "diff --git a/a.txt b/a.txt\n@@ -10,2 +20,2 @@ section\n-old\n+new\n kept"
         val diff = requireNotNull(com.gitmob.app.core.diff.UnifiedDiffParser.parse(patch))
         val document = diff.toSoraDocument()
         assertEquals(patch, document.content.toString())
-        assertEquals(listOf("", "", "10  – ", "–   20", "11  21"), document.lineLabels)
+        assertEquals(listOf("", "", "10", "20", "21"), document.lineLabels)
         assertEquals(listOf(1, 2, 3), document.styles!!.lineStyles.map { it.line })
         lateinit var root: View
         compose.setContent {
@@ -114,7 +114,8 @@ class SoraTextViewerTest {
             assertTrue(viewer.isWordwrap)
             assertEquals(patch, viewer.text.toString())
             assertNotNull(viewer.styles)
-            assertTrue(viewer.measureLineNumber() >= viewer.otherPaint.measureText("00  00"))
+            assertFalse(viewer.isFirstLineNumberAlwaysVisible)
+            assertEquals(viewer.otherPaint.measureText("00") + viewer.lineNumberMarginLeft, viewer.measureLineNumber(), 0.01f)
             viewer.selectAll()
             viewer.copyText()
             val clipboard = ApplicationProvider.getApplicationContext<Context>().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -122,13 +123,12 @@ class SoraTextViewerTest {
         }
     }
 
-    @Test fun addedAndDeletedFilesDoNotReserveAnEmptyDiffColumn() {
+    @Test fun addedAndDeletedFilesKeepTheirOwnLineNumbers() {
         for ((header, prefix) in listOf("@@ -0,0 +1,12 @@" to "+", "@@ -1,12 +0,0 @@" to "-")) {
             val patch = header + "\n" + (1..12).joinToString("\n") { "${prefix}line $it" }
             val diff = requireNotNull(com.gitmob.app.core.diff.UnifiedDiffParser.parse(patch))
             val document = diff.toSoraDocument()
-            assertEquals("1 ", document.lineLabels!![1])
-            assertEquals("12", document.lineLabels.last())
+            assertEquals(listOf("") + (1..12).map(Int::toString), document.lineLabels)
             assertEquals(patch, document.content.toString())
         }
     }
@@ -188,6 +188,7 @@ class SoraTextViewerTest {
             assertFalse(editor.isEditable)
             assertTrue(editor.isLineNumberEnabled)
             assertTrue(editor.isLineNumberPinned)
+            assertTrue(editor.isFirstLineNumberAlwaysVisible)
             assertEquals(30_001, editor.text.lineCount)
             assertTrue(editor.layout.rowCount.toLong() * editor.rowHeight > 537_111)
             assertTrue(editor.height < 2_000)

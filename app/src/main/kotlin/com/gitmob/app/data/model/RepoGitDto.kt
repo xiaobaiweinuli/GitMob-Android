@@ -64,3 +64,9 @@ data class RestRepoCommitFile(
     @SerialName("raw_url") val rawUrl: String? = null,
     @SerialName("contents_url") val contentsUrl: String? = null,
 )
+
+@Serializable
+internal data class RepoContentDownloadDto(
+    val sha: String,
+    @SerialName("download_url") val downloadUrl: String? = null,
+)

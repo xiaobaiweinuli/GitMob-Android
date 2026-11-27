@@ -9,10 +9,14 @@ import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.event.RepoUpdateEvent
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.markdown.REPO_DOCUMENT_HOST
-import com.gitmob.app.core.markdown.imageResourcePath
+import com.gitmob.app.core.markdown.documentResourcePath
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.ResourceSizeLimitException
 import com.gitmob.app.data.model.RepoDocumentContext
+import com.gitmob.app.data.model.DocumentResource
+import com.gitmob.app.data.model.DocumentResourceKind
+import com.gitmob.app.data.model.MediaSource
+import com.gitmob.app.data.model.resourceKind
 import java.net.URLConnection
 import java.util.Locale
 import javax.inject.Inject
@@ -29,7 +33,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal const val MAX_DOCUMENT_RESOURCE_BYTES = 8 * 1024 * 1024
@@ -41,6 +44,7 @@ data class RepoDocumentResource(val bytes: ByteArray, val mimeType: String)
 class RepoDocumentRepository @Inject constructor(
     private val api: GHApiClient,
     private val updates: RepoUpdateEventBus,
+    private val gitRepository: RepoGitRepository,
 ) {
     private data class ResourceKey(val owner: String, val name: String, val ref: String, val path: String)
 
@@ -145,7 +149,7 @@ class RepoDocumentRepository @Inject constructor(
     }
 
     suspend fun loadImage(source: String, document: RepoDocumentContext?): ApiResult<RepoDocumentResource> {
-        val repositoryPath = document?.imageResourcePath(source)
+        val repositoryPath = document?.documentResourcePath(source)
         if (repositoryPath != null) return load(document, repositoryPath)
         return safeCall {
             if (source.startsWith("data:image/", ignoreCase = true)) withContext(Dispatchers.Default) {
@@ -164,6 +168,32 @@ class RepoDocumentRepository @Inject constructor(
                 val bytes = imageBytes { api.getPublicImageBytes(url.toString(), MAX_DOCUMENT_RESOURCE_BYTES) }
                 RepoDocumentResource(bytes, URLConnection.guessContentTypeFromName(url.encodedPath) ?: "application/octet-stream")
             }
+        }
+    }
+
+    /** Resolve a fresh download URL and content version without buffering media bytes. */
+    suspend fun resolveMedia(resource: DocumentResource, document: RepoDocumentContext?): ApiResult<MediaSource> {
+        val path = document?.documentResourcePath(resource.source)
+        val commitSha = if (document != null && path != null) {
+            when (val result = gitRepository.resolveCommitSha(document.owner, document.name, document.ref)) {
+                is ApiResult.Failure -> return result
+                is ApiResult.Success -> result.data
+            }
+        } else null
+
+        return safeCall {
+            var cacheKey: String? = null
+            val url = if (document != null && path != null) {
+                val apiPath = contentApiPath(document.owner, document.name, requireNotNull(commitSha), path)
+                val content = api.getContentDownload(apiPath)
+                require(content.sha.isNotBlank())
+                cacheKey = "$apiPath#${content.sha}"
+                requireNotNull(content.downloadUrl)
+            } else resource.source
+            val parsed = requireNotNull(url.toHttpUrlOrNull())
+            require(parsed.host != REPO_DOCUMENT_HOST && parsed.username.isEmpty() && parsed.password.isEmpty())
+            val mime = if (resource.kind == DocumentResourceKind.UNKNOWN) api.inspectPublicMediaType(url) else resource.mimeType
+            MediaSource(url, if (resource.kind == DocumentResourceKind.UNKNOWN) resourceKind(url, mime) else resource.kind, mime, cacheKey)
         }
     }
 
@@ -231,13 +261,8 @@ class RepoDocumentRepository @Inject constructor(
     }
 
     private suspend fun fetch(document: RepoDocumentContext, path: String): ApiResult<RepoDocumentResource> = safeCall {
-        require(path.isNotBlank() && !path.startsWith('/') && path.split('/').none { it == "." || it == ".." })
-        val url = "https://api.github.com/".toHttpUrl().newBuilder()
-            .addPathSegment("repos").addPathSegment(document.owner).addPathSegment(document.name)
-            .addPathSegment("contents").addPathSegments(path)
-            .addQueryParameter("ref", document.ref).build()
         val bytes = imageBytes { api.getRawBytes(
-            "${url.encodedPath}?${url.encodedQuery}",
+            contentApiPath(document.owner, document.name, document.ref, path),
             "application/vnd.github.raw+json",
             maxBytes = MAX_DOCUMENT_RESOURCE_BYTES,
         ) }

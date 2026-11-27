@@ -86,8 +86,8 @@ class MarkdownWebViewTest {
         }
         fun imageSources(): List<String> {
             val view = requireNotNull(findWebView(root)) as MarkdownContentWebView
-            val handler = ReflectionHelpers.getField<MarkdownImageTapHandler>(view, "images")
-            val images = ReflectionHelpers.getField<Lazy<List<com.gitmob.app.data.model.DocumentImage>>>(handler, "documentImages")
+            val handler = ReflectionHelpers.getField<MarkdownResourceTapHandler>(view, "resources")
+            val images = ReflectionHelpers.getField<Lazy<List<com.gitmob.app.data.model.DocumentResource>>>(handler, "documentResources")
             return images.value.map { it.source }
         }
         val initial = listOf("https://example.test/first.png", "https://example.test/second.png")

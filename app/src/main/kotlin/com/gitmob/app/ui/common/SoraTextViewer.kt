@@ -114,6 +114,7 @@ internal class SoraViewerView(
         isUndoEnabled = false
         isLineNumberEnabled = true
         setPinLineNumber(true)
+        isFirstLineNumberAlwaysVisible = lineLabels == null
         typefaceText = Typeface.MONOSPACE
         typefaceLineNumber = Typeface.MONOSPACE
         isHighlightCurrentLine = false

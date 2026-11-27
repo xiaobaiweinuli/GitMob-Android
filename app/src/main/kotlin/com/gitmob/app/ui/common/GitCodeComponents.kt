@@ -91,9 +91,13 @@ fun GitChangedFileRow(
     onRevert: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).informationItem().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp)) {
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp).informationItem()
+            .then(if (onClick != null) Modifier.pressClickable(onClick = onClick) else Modifier)
+            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+    ) {
         Column(
-            Modifier.fillMaxWidth(0.85f).then(if (onClick != null) Modifier.pressClickable(onClick = onClick) else Modifier),
+            Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(file.filename, style = MaterialTheme.typography.bodyLarge)
@@ -155,18 +159,11 @@ internal fun UnifiedDiff.toSoraDocument(): SoraViewerDocument {
     val labels = mutableListOf<String>()
     val content = Content().apply { isUndoEnabled = false }
     val styles = Styles()
-    val digits = hunks.maxOfOrNull { maxOf(it.oldStart + it.oldCount, it.newStart + it.newCount) }
-        ?.toString()?.length ?: 1
-    val hasOldLines = hunks.any { hunk -> hunk.lines.any { it.oldLine != null } }
-    val hasNewLines = hunks.any { hunk -> hunk.lines.any { it.newLine != null } }
     fun append(text: String, oldLine: Int? = null, newLine: Int? = null, background: Int? = null) {
         if (labels.isNotEmpty()) content.insert(content.lineCount - 1, content.getColumnCount(content.lineCount - 1), "\n")
         content.insert(content.lineCount - 1, content.getColumnCount(content.lineCount - 1), text)
         background?.let { styles.addLineStyle(LineBackground(labels.size, ConstColor(it))) }
-        labels += if (oldLine == null && newLine == null) "" else buildList {
-            if (hasOldLines) add((oldLine?.toString() ?: "–").padEnd(digits))
-            if (hasNewLines) add((newLine?.toString() ?: "–").padEnd(digits))
-        }.joinToString("  ")
+        labels += (newLine ?: oldLine)?.toString().orEmpty()
     }
     metadata.forEach { append(it) }
     hunks.forEach { hunk ->

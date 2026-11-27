@@ -64,6 +64,25 @@ class RepoGitRepository @Inject constructor(
     private val fileReader: SafFileReader,
 ) {
 
+    internal suspend fun resolveCommitSha(
+        owner: String,
+        name: String,
+        ref: String,
+    ): ApiResult<String> {
+        if (ref.matches(Regex("[0-9a-fA-F]{40}"))) {
+            return ApiResult.Success(ref)
+        }
+        return when (val result = apolloClient.query(
+            RepoLinkCommitQuery(owner, name, "$ref^{commit}"),
+        ).executeAsApiResult()) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> safeCall {
+                result.data.repository?.`object`?.onCommit?.oid
+                    ?: error("Commit not found")
+            }
+        }
+    }
+
     /** Resolve against exact refs, never against a truncated page of branch names. */
     suspend fun resolveLink(owner: String, name: String, kind: RepoLinkKind, refAndPath: List<String>): ApiResult<RepoLinkTarget> {
         if (refAndPath.isEmpty() || (kind == RepoLinkKind.FILE && refAndPath.size < 2)) {
@@ -401,7 +420,7 @@ class RepoGitRepository @Inject constructor(
     }
 
     suspend fun resolveFileDownloadUrl(owner: String, name: String, ref: String, path: String): ApiResult<String?> = safeCall {
-        api.resolveRestDownloadUrl("/repos/$owner/$name/contents/$path?ref=$ref", "application/octet-stream")
+        api.getContentDownload(contentApiPath(owner, name, ref, path)).downloadUrl
     }
 
     suspend fun resolveArchiveDownloadUrl(owner: String, name: String, ref: String, format: String = "zipball"): ApiResult<String?> = safeCall {

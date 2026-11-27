@@ -24,7 +24,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
 import androidx.core.net.toUri
 import androidx.compose.runtime.getValue
-import com.gitmob.app.data.model.DocumentImageGallery
+import com.gitmob.app.data.model.DocumentResourceGallery
+import com.gitmob.app.data.translation.TranslationDocuments
+import com.gitmob.app.data.translation.TranslationTarget
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
@@ -100,7 +102,7 @@ fun MarkdownWebView(
     val stylesheet = remember(context, cssFileName) {
         context.assets.open(cssFileName).bufferedReader().use { it.readText() }
     }
-    var selectedImage by remember(bodyHtml, documentResources) { mutableStateOf<DocumentImageGallery?>(null) }
+    var selectedResource by remember(bodyHtml, documentResources) { mutableStateOf<DocumentResourceGallery?>(null) }
     val currentDocumentLink by rememberUpdatedState(onDocumentLink)
     val uriHandler = LocalUriHandler.current
     val currentExternalLink by rememberUpdatedState<(String) -> Unit> { url ->
@@ -127,7 +129,9 @@ fun MarkdownWebView(
     val page = viewState.pageFor(listOf(bodyHtml, preparedDocument?.safeHtml, cssFileName,
         backgroundCss, sourceCss, borderCss, linkCss, contentPaddingCss))
     val fullHtml = remember(page) {
-        buildMarkdownDocument(preparedDocument?.safeHtml ?: bodyHtml, stylesheet, backgroundCss,
+        val safeHtml = preparedDocument?.safeHtml ?: TranslationDocuments.prepareHtml(
+            TranslationTarget("media-preview", bodyHtml, html = true)).safeHtml.orEmpty()
+        buildMarkdownDocument(safeHtml, stylesheet, backgroundCss,
             script = script, nonce = page.nonce, documentId = page.documentId, sourceCss = sourceCss, borderCss = borderCss,
             linkCss = linkCss, contentPaddingCss = contentPaddingCss)
     }
@@ -194,7 +198,7 @@ fun MarkdownWebView(
             viewState.onDocumentLink = { currentDocumentLink(it) }
             viewState.onExternalLink = { currentExternalLink(it) }
             viewState.bindDisplayCallbacks({ currentDisplayError() }, { currentDisplayed(it) })
-            (webView as? MarkdownContentWebView)?.onImageClick = { selectedImage = it }
+            (webView as? MarkdownContentWebView)?.onResourceClick = { selectedResource = it }
             (webView as? MarkdownViewportWebView)?.bindViewportState(viewportState)
             if (webView.tag !== page) {
                 webView.tag = page
@@ -205,7 +209,7 @@ fun MarkdownWebView(
                 webView.settings.cacheMode = if (documentResources == null) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_NO_CACHE
                 val baseUrl = documentResources?.document?.baseUrl()?.toString()
                     ?: if (controlled) "https://translation.invalid/" else "file:///android_asset/"
-                (webView as? MarkdownContentWebView)?.setImageDocument(fullHtml, baseUrl)
+                (webView as? MarkdownContentWebView)?.setResourceDocument(fullHtml, baseUrl)
                 webView.loadDataWithBaseURL(
                     baseUrl,
                     fullHtml,
@@ -222,8 +226,8 @@ fun MarkdownWebView(
         },
     )
     }
-    selectedImage?.let { image ->
-        DocumentImageViewer(image, documentResources?.document, { selectedImage = null }, { link ->
+    selectedResource?.let { gallery ->
+        DocumentResourceViewer(gallery, documentResources?.document, { selectedResource = null }, { link ->
             if (client is RepoDocumentWebViewClient) {
                 if (!client.openLink(link)) {
                     documentResources?.document?.baseUrl()?.resolve(link)?.let {
@@ -289,7 +293,7 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
         onExternalLink = null
         onDisplayError = null
         onDisplayed = null
-        (view as? MarkdownContentWebView)?.onImageClick = null
+        (view as? MarkdownContentWebView)?.onResourceClick = null
         host.removeView(view)
         view.onPause()
     }
@@ -302,7 +306,7 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
         controller.release()
         val view = controller.webView ?: return
         controller.webView = null
-        (view as? MarkdownContentWebView)?.onImageClick = null
+        (view as? MarkdownContentWebView)?.onResourceClick = null
         (view.parent as? ViewGroup)?.removeView(view)
         view.stopLoading()
         view.destroy()
@@ -493,18 +497,18 @@ internal fun translationPatch(documentId: String, value: TranslationPresentation
     put("values", JSONObject().apply { value?.translations?.forEach { (id, text) -> put(id.toString(), text) } })
 }.toString()
 
-/** Shared image interaction for embedded documents and independently scrolling previews. */
+/** Shared resource interaction for embedded documents and independently scrolling previews. */
 internal open class MarkdownContentWebView(context: Context) : WebView(context) {
     var layoutSize by mutableStateOf(IntSize.Zero)
         private set
-    var onImageClick: ((DocumentImageGallery) -> Unit)? = null
-    private val images = MarkdownImageTapHandler(this) { onImageClick?.invoke(it) }
+    var onResourceClick: ((DocumentResourceGallery) -> Unit)? = null
+    private val resources = MarkdownResourceTapHandler(this) { onResourceClick?.invoke(it) }
 
-    fun setImageDocument(html: String, baseUrl: String) = images.setDocument(html, baseUrl)
+    fun setResourceDocument(html: String, baseUrl: String) = resources.setDocument(html, baseUrl)
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (onImageClick != null && images.onTouch(event) && event.actionMasked == MotionEvent.ACTION_UP) {
+        if (onResourceClick != null && resources.onTouch(event) && event.actionMasked == MotionEvent.ACTION_UP) {
             val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
             super.onTouchEvent(cancel)
             cancel.recycle()

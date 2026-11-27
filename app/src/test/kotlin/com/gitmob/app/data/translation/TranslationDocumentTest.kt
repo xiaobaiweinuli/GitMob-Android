@@ -168,4 +168,61 @@ class TranslationDocumentTest {
         assertEquals(TranslationProblem.EMPTY, assertThrows(TranslationException::class.java) { html("<pre>code</pre><img src='x.png'>") }.problem)
         assertEquals(TranslationProblem.TOO_LONG, assertThrows(TranslationException::class.java) { html("x".repeat(200001)) }.problem)
     }
+    @Test fun mediaIsInertAndUnsafeMediaSourcesAreRemoved() {
+        val document = TranslationDocuments.prepareHtml(TranslationTarget("media", """
+            <video src="movie.mp4" autoplay onplay="evil()"></video>
+            <audio><source src="../track.mp3" type="audio/mpeg"></audio>
+            <video src="javascript:evil()"></video>
+            <audio src="file:///private/file"></audio>
+            <a href="normal" data-gm-media="video" data-gm-mime="video/mp4">Ordinary</a>
+        """, html = true))
+        val dom = Jsoup.parse(document.safeHtml!!)
+        assertTrue(dom.select("video,audio,[autoplay],[onplay]").isEmpty())
+        assertEquals(listOf("movie.mp4", "../track.mp3"), dom.select("a[data-gm-media]").filter { it.closest("[data-gm-output]") == null }.map { it.attr("href") })
+        assertFalse(dom.select("a[href=normal]").any { it.hasAttr("data-gm-media") })
+    }
+
+    @Test fun nativeMediaLinkPreservesSanitizedFallbackContent() {
+        val document = TranslationDocuments.prepareHtml(TranslationTarget("media", """
+            <video><source src="movie.mp4" type="video/mp4">
+                Download <a href="fallback.mp4" onclick="evil()">the video</a>.
+                <picture><source srcset="poster.webp" type="image/webp"><img src="poster.png"></picture>
+                <script>evil()</script>
+            </video>
+        """.trimIndent(), html = true))
+        val dom = Jsoup.parse(document.safeHtml!!)
+        assertTrue(dom.select("video,audio,source[src],script,[onclick]").isEmpty())
+        val links = dom.select("a").filter { it.closest("[data-gm-output]") == null }
+        assertEquals(listOf("movie.mp4", "fallback.mp4"), links.map { it.attr("href") })
+        assertEquals("video", links.first().attr("data-gm-media"))
+        assertFalse(links.last().hasAttr("data-gm-media"))
+        assertEquals("the video", links.last().text())
+        assertTrue(dom.text().contains("Download"))
+        assertEquals("poster.webp", dom.selectFirst("picture > source")!!.attr("srcset"))
+    }
+
+    @Test fun mediaWithoutSafeSourceStillPreservesFallbackContent() {
+        val document = TranslationDocuments.prepareHtml(TranslationTarget("media", """
+            <video src="javascript:evil()">Video unavailable. <a href="video.html">Read more</a></video>
+            <audio><source src="file:///private/file">Audio unavailable.</audio>
+        """.trimIndent(), html = true))
+        val dom = Jsoup.parse(document.safeHtml!!)
+        assertTrue(dom.select("video,audio,source,a[data-gm-media]").isEmpty())
+        assertTrue(dom.text().contains("Video unavailable."))
+        assertTrue(dom.text().contains("Audio unavailable."))
+        assertEquals("Read more", dom.selectFirst("a[href=video.html]")!!.text())
+    }
+
+    @Test fun mediaMimeTypeBelongsToTheChosenSource() {
+        val document = html("""
+            <video src="direct.mp4"><source src="alternate.webm" type="video/webm"></video>
+            <audio><source src="javascript:bad()" type="audio/bad"><source src="valid.mp3" type="audio/mpeg"></audio>
+            <video><source src="" type="video/empty"><source src="valid.webm" type="video/webm"></video>
+        """.trimIndent())
+        val links = Jsoup.parse(document.safeHtml!!).select("a[data-gm-media]")
+            .filter { it.closest("[data-gm-output]") == null }
+        assertEquals(listOf("direct.mp4", "valid.mp3", "valid.webm"), links.map { it.attr("href") })
+        assertEquals(listOf("", "audio/mpeg", "video/webm"), links.map { it.attr("data-gm-mime") })
+    }
+
 }

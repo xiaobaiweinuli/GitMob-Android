@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repocode
 
-import com.gitmob.app.data.model.isPreviewableImage
+import com.gitmob.app.data.model.DocumentResourceKind
+import com.gitmob.app.data.model.resourceKind
 import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.repository.RepoDocumentRepository
 import com.gitmob.app.ui.common.RepoDocumentResources
@@ -42,7 +43,7 @@ data class RepoFileDetailUiState(
     val previewRevision: Long = 0,
     val previewContext: RepoDocumentContext? = null,
     val previewSupported: Boolean = false,
-    val imagePreview: Boolean = false,
+    val resourcePreview: DocumentResourceKind = DocumentResourceKind.UNKNOWN,
     val previewMode: Boolean = false,
     val wrapLines: Boolean = false,
     val isDeleting: Boolean = false,
@@ -127,7 +128,8 @@ class RepoFileDetailViewModel @Inject constructor(
                         is RepoFileContent -> content
                     }
                     val extension = path.substringAfterLast('.', "").lowercase()
-                    val imagePreview = isPreviewableImage(file.path)
+                    val resourcePreview = resourceKind(file.path)
+                    val hasResourcePreview = resourcePreview != DocumentResourceKind.UNKNOWN
                     val supported = !file.isBinary && file.text != null && extension in setOf("md", "markdown", "html", "htm")
                     val html = when {
                         !supported -> null
@@ -138,11 +140,11 @@ class RepoFileDetailViewModel @Inject constructor(
                         it.copy(
                             file = file,
                             previewHtml = html,
-                            previewContext = RepoDocumentContext(owner, name, ref, file.path).takeIf { html != null || imagePreview },
-                            previewSupported = supported || imagePreview,
-                            imagePreview = imagePreview,
+                            previewContext = RepoDocumentContext(owner, name, ref, file.path).takeIf { html != null || hasResourcePreview },
+                            previewSupported = supported || hasResourcePreview,
+                            resourcePreview = resourcePreview,
                             previewMode = when {
-                                !supported && !imagePreview -> false
+                                !supported && !hasResourcePreview -> false
                                 !it.previewSupported || file.isBinary || file.text == null -> true
                                 else -> it.previewMode
                             },

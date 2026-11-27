@@ -5,9 +5,9 @@ import androidx.compose.ui.geometry.Size
 import org.junit.Assert.*
 import org.junit.Test
 
-class ImageZoomStateTest {
+class ResourceZoomStateTest {
     private fun zoom(viewport: Size = Size(300f, 600f), image: Size = Size(600f, 300f)) =
-        ImageZoomState().apply { resize(viewport, image) }
+        ResourceZoomState().apply { resize(viewport, image) }
 
     private fun assertOffset(expected: Offset, actual: Offset) {
         assertEquals(expected.x, actual.x, .001f)

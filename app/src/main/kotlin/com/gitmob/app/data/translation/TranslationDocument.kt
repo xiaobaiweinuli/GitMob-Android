@@ -78,13 +78,18 @@ object TranslationDocuments {
             else input.attr("disabled", "")
         }
         val safelist = Safelist.relaxed()
-            .addTags("details", "summary", "section", "article", "div", "span", "s", "del", "kbd", "samp", "input", "picture", "source")
+            .addTags("details", "summary", "section", "article", "div", "span", "s", "del", "kbd", "samp", "input", "picture", "source", "video", "audio")
             .addAttributes(":all", "id", "class", "title", "dir", "lang", "align")
             .addAttributes("a", "name")
             .addAttributes("details", "open")
             .addAttributes("input", "type", "checked", "disabled")
             .addAttributes("img", "srcset", "sizes", "loading", "decoding")
-            .addAttributes("source", "srcset", "sizes", "media", "type", "width", "height")
+            .addAttributes("source", "srcset", "sizes", "media", "type", "width", "height", "src")
+            .addAttributes("video", "src", "title")
+            .addAttributes("audio", "src", "title")
+            .addProtocols("video", "src", "http", "https")
+            .addProtocols("audio", "src", "http", "https")
+            .addProtocols("source", "src", "http", "https")
             .addProtocols("img", "src", "data")
             .addProtocols("a", "href", "#")
             .preserveRelativeLinks(true)
@@ -94,6 +99,22 @@ object TranslationDocuments {
         clean.select("[id]").forEach { if (it.id().startsWith("gm-")) it.removeAttr("id") }
         clean.select("[class]").forEach { element ->
             element.classNames().filter { it.startsWith("gm-") }.forEach(element::removeClass)
+        }
+        // Media stays inert in WebView. Only native playback consumes the preserved source.
+        clean.select("video, audio").forEach { media ->
+            val sourceNode = media.takeIf { it.attr("src").isNotBlank() }
+                ?: media.select("source[src]").firstOrNull { it.attr("src").isNotBlank() }
+            val source = sourceNode?.attr("src")
+            if (source != null) {
+                val label = media.attr("title").takeIf(String::isNotBlank)
+                    ?: source.substringBefore('?').substringAfterLast('/').ifBlank { media.normalName() }
+                media.before(Element("a").attr("href", source).attr("data-gm-media", media.normalName())
+                    .attr("data-gm-mime", sourceNode.attr("type"))
+                    .text("▶ $label"))
+                media.before(TextNode(" "))
+            }
+            media.children().filter { it.normalName() == "source" }.forEach { it.remove() }
+            media.unwrap()
         }
         val root = clean.body()
         val textNodes = mutableListOf<TextNode>()

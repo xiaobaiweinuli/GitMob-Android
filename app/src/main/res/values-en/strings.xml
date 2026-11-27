@@ -876,17 +876,16 @@
         <item quantity="other">%1$d repositories · Ungrouped favorites</item>
     </plurals>
     <string name="favorites_local_hint">Favorites do not change GitHub stars.</string>
-    <string name="image_viewer_title">View image</string>
-    <string name="image_viewer_close">Close image viewer</string>
-    <string name="image_actions">Image actions</string>
+    <string name="media_viewer_title">Resource viewer</string>
+    <string name="media_viewer_close">Close resource viewer</string>
+    <string name="media_actions">Resource actions</string>
     <string name="image_open_original_link">Open original link</string>
     <string name="image_fit_screen">Fit to screen</string>
     <string name="image_zoom_reset">%1$d%% · Reset</string>
     <string name="image_zoom_percent">Zoom %1$d%%</string>
     <string name="image_zoom_in">Zoom in</string>
     <string name="image_zoom_out">Zoom out</string>
-    <string name="image_page_position">%1$d / %2$d</string>
-    <string name="image_gesture_hint">Pinch to zoom · Double-tap to enlarge · Drag when zoomed</string>
+    <string name="media_page_position">%1$d / %2$d</string>
     <string name="image_preview_failed">Image could not be loaded. Try again.</string>
     <string name="image_preview_too_large">Image exceeds the 8 MiB preview limit. Download it to view.</string>
 
@@ -1095,4 +1094,13 @@
     <string name="repo_commit_description">Description (optional)</string>
     <string name="repo_commit_default_title">Update %1$s</string>
     <string name="repo_commit_submit">Commit</string>
+    <string name="media_preview_failed">Unable to preview this resource. Retry or download to open it.</string>
+    <string name="media_fullscreen">View fullscreen</string>
+    <string name="media_audio">Audio</string>
+    <string name="media_seek_back">Back 5 seconds</string>
+    <string name="media_seek_forward">Forward 5 seconds</string>
+    <string name="media_play">Play</string>
+    <string name="media_pause">Pause</string>
+    <string name="media_replay">Replay</string>
+    <string name="media_toggle_controls">Show or hide playback controls</string>
 </resources>

@@ -3,6 +3,7 @@ package com.gitmob.app.data.repository
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.testutil.TestAccessTokenProvider
+import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.markdown.RepoDocumentLink
@@ -40,6 +41,47 @@ class RepoGitContentTest {
     }
 
     @After fun cleanup() { apollo.close(); server.close() }
+
+    @Test fun fullCommitShaDoesNotRequireAQuery() = runTest(accounts.context) {
+        val sha = "aB12".repeat(10)
+        assertEquals(ApiResult.Success(sha), repository.resolveCommitSha("owner", "repo", sha))
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun mediaRefsResolveToCommitsUsingTheExistingGraphqlQuery() = runTest(accounts.context) {
+        val sha = "a".repeat(40)
+        for (ref in listOf("feature/中文 docs", "refs/tags/v1.0.0", "abc1234")) {
+            server.enqueue(MockResponse(body = """{"data":{"repository":{"object":{"__typename":"Commit","oid":"$sha"}}}}"""))
+            assertEquals(ApiResult.Success(sha), repository.resolveCommitSha("owner", "repo", ref))
+            val request = server.takeRequest()
+            assertEquals("/graphql", request.url.encodedPath)
+            val body = Json.parseToJsonElement(requireNotNull(request.body).utf8()).jsonObject
+            assertEquals("RepoLinkCommit", body.getValue("operationName").jsonPrimitive.content)
+            val variables = body.getValue("variables").jsonObject
+            assertEquals("owner", variables.getValue("owner").jsonPrimitive.content)
+            assertEquals("repo", variables.getValue("name").jsonPrimitive.content)
+            assertEquals("$ref^{commit}", variables.getValue("expression").jsonPrimitive.content)
+        }
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test fun commitResolutionPreservesHttpAndGraphqlErrors() = runTest(accounts.context) {
+        server.enqueue(MockResponse(code = 403))
+        assertEquals(ApiResult.Failure(ApiError.Forbidden), repository.resolveCommitSha("owner", "repo", "main"))
+
+        server.enqueue(MockResponse(body = """{"data":{"repository":null},"errors":[{"message":"Not found","type":"NOT_FOUND"}]}"""))
+        val result = repository.resolveCommitSha("owner", "repo", "main") as ApiResult.Failure
+        assertTrue(result.error is ApiError.GraphQLError)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test fun missingOrNonCommitObjectsDoNotResolveMediaRefs() = runTest(accounts.context) {
+        for (target in listOf("null", """{"__typename":"Blob"}""")) {
+            server.enqueue(MockResponse(body = """{"data":{"repository":{"object":$target}}}"""))
+            assertTrue(repository.resolveCommitSha("owner", "repo", "missing") is ApiResult.Failure)
+        }
+        assertEquals(2, server.requestCount)
+    }
 
     @Test fun directoryWithoutSlashIsIdentifiedByItsObjectTypeInOneQuery() = runTest(accounts.context) {
         server.enqueue(MockResponse(body = response("""{"__typename":"Tree"}""")))
@@ -298,4 +340,20 @@ class RepoGitContentTest {
             }}}
         """.trimIndent()
     }
+    @Test fun fileDownloadUsesContentsObjectMetadataAndEncodesRefAndPath() = runTest(accounts.context) {
+        server.enqueue(MockResponse(body = """{"sha":"file-sha","download_url":"https://raw.githubusercontent.com/o/r/main/movie.mp4?token=temporary"}"""))
+        val result = repository.resolveFileDownloadUrl("owner", "repo", "feature/媒体", "docs/my movie+#.mp4") as ApiResult.Success
+        assertEquals("https://raw.githubusercontent.com/o/r/main/movie.mp4?token=temporary", result.data)
+        val request = server.takeRequest()
+        assertEquals("application/vnd.github.object+json", request.headers["Accept"])
+        assertEquals("Bearer token", request.headers["Authorization"])
+        assertEquals("feature/媒体", request.url.queryParameter("ref"))
+        assertEquals(listOf("repos", "owner", "repo", "contents", "docs", "my movie+#.mp4"), request.url.pathSegments)
+    }
+
+    @Test fun unsafeFileDownloadUrlIsNotExposed() = runTest(accounts.context) {
+        server.enqueue(MockResponse(body = """{"sha":"file-sha","download_url":"https://token@external.test/file.mp4"}"""))
+        assertNull((repository.resolveFileDownloadUrl("owner", "repo", "main", "movie.mp4") as ApiResult.Success).data)
+    }
+
 }
