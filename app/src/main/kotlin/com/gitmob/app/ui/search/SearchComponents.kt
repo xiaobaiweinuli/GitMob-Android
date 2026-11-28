@@ -1,7 +1,6 @@
 package com.gitmob.app.ui.search
 
 import android.net.Uri
-import android.text.format.DateUtils
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -35,6 +34,7 @@ import com.gitmob.app.core.error.displayMessageRes
 import com.gitmob.app.data.model.*
 import com.gitmob.app.navigation.LocalExternalUriLauncher
 import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.formatDateTime
 import com.gitmob.app.ui.common.IssueStateIcon
 import com.gitmob.app.ui.common.PullRequestStateIcon
 import com.gitmob.app.ui.common.RepoCard
@@ -46,7 +46,6 @@ import com.gitmob.app.ui.icons.Octicon
 import com.gitmob.app.ui.icons.OcticonName
 import com.gitmob.app.ui.work.WorkDiscussionRow
 import java.text.NumberFormat
-import java.time.Instant
 
 class SearchResultActions(
     val repository: (String, String) -> Unit,
@@ -170,7 +169,6 @@ internal fun CodeSnippets(snippets: List<SearchSnippet>) {
 private fun WorkResult(item: WorkIssueItem, onClick: () -> Unit) {
     val visual = if (item.isPullRequest) pullRequestStateVisual(requireNotNull(item.pullRequestState), item.isDraft, item.locked)
         else issueStateVisual(requireNotNull(item.issueState), item.issueStateReason, item.locked)
-    val updated = remember(item.updatedAt) { runCatching { Instant.parse(item.updatedAt).toEpochMilli() }.getOrNull() }
     Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).informationItem().pressClickable(onClick = onClick).padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (item.isPullRequest) PullRequestStateIcon(requireNotNull(item.pullRequestState), item.isDraft, item.locked, size = 20.dp)
@@ -180,8 +178,7 @@ private fun WorkResult(item: WorkIssueItem, onClick: () -> Unit) {
             Text(item.repoOwner + "/" + item.repoName + " #" + item.number,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             val stateLabel = stringResource(visual.labelRes)
-            val relative = updated?.let { DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString() }
-            Text(if (relative == null) stateLabel else stateLabel + " · " + stringResource(R.string.search_updated, relative),
+            Text(stateLabel + " · " + stringResource(R.string.search_updated, formatDateTime(item.updatedAt)),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

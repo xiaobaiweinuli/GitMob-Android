@@ -592,6 +592,7 @@
     <string name="actions_ref">Branch or tag</string>
     <string name="actions_load_inputs">Load inputs from this ref</string>
     <string name="actions_run_number">Run #%1$d</string>
+    <string name="actions_run_elapsed">Elapsed %1$s</string>
     <string name="actions_cancel">Cancel run</string>
     <string name="actions_force_cancel">Force cancel</string>
     <string name="actions_rerun">Re-run all jobs</string>

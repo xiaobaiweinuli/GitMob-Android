@@ -2,6 +2,8 @@ package com.gitmob.app.ui.repoactions
 
 import androidx.compose.foundation.selection.selectableGroup
 import com.gitmob.app.ui.common.ExpansionArrow
+import com.gitmob.app.ui.common.formatDateTime
+import android.text.format.DateUtils
 import android.text.format.Formatter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -183,13 +185,22 @@ private fun SwipeableRunRow(run: RepoWorkflowRun, canDelete: Boolean, deleting: 
 
 @Composable
 private fun RunRow(run: RepoWorkflowRun, deleting: Boolean, click: () -> Unit, modifier: Modifier) {
+    val duration = run.durationSeconds?.let {
+        val elapsed = DateUtils.formatElapsedTime(it)
+        if (run.status == "completed") elapsed
+        else stringResource(R.string.actions_run_elapsed, elapsed)
+    }
     Row(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).pressClickable(enabled = !deleting, onClick = click).padding(16.dp), verticalAlignment = Alignment.Top) {
         Icon(runIcon(run), null, tint = runColor(run), modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(run.displayTitle, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text("${run.name.orEmpty()} · #${run.runNumber} · ${run.event}", style = MaterialTheme.typography.bodySmall)
-            Text("${run.headBranch ?: run.headSha.take(7)} · ${run.createdAt.take(10)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                listOfNotNull(run.headBranch ?: run.headSha.take(7), formatDateTime(run.createdAt), duration).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(actionStateLabel(run.conclusion ?: run.status), style = MaterialTheme.typography.labelMedium)

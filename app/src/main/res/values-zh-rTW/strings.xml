@@ -582,6 +582,7 @@
     <string name="actions_ref">分支或標籤</string>
     <string name="actions_load_inputs">讀取此分支的輸入定義</string>
     <string name="actions_run_number">執行 #%1$d</string>
+    <string name="actions_run_elapsed">已用 %1$s</string>
     <string name="actions_cancel">取消執行</string>
     <string name="actions_force_cancel">強制取消</string>
     <string name="actions_rerun">重新執行所有工作</string>

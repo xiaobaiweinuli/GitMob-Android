@@ -1,6 +1,7 @@
 package com.gitmob.app.ui.repodiscussions
 
 import com.gitmob.app.ui.common.StatusBadge
+import com.gitmob.app.ui.common.formatDateTime
 import com.gitmob.app.ui.common.ActionProgressIcon
 import com.gitmob.app.ui.common.ActionButtonContent
 import androidx.activity.compose.BackHandler
@@ -453,7 +454,7 @@ fun RepoDiscussionDetailScreen(owner: String, name: String, number: Int, permiss
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(item.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                GitHubEmojiLabel(item.category.emoji, "${item.category.name} · #${item.number} · ${item.updatedAt.take(10)}", style = MaterialTheme.typography.bodySmall, iconSize = 16.dp)
+                GitHubEmojiLabel(item.category.emoji, "${item.category.name} · #${item.number} · ${formatDateTime(item.updatedAt)}", style = MaterialTheme.typography.bodySmall, iconSize = 16.dp)
             }
             if (item.commentCount > 0) Text(item.commentCount.toString())
         }

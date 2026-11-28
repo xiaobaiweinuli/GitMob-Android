@@ -25,6 +25,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.time.Duration
+import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -203,7 +205,19 @@ class RepoActionsRepository @Inject constructor(
         .addPathSegment(owner).addPathSegment(name).addPathSegment("actions").build().encodedPath
 
     private fun toWorkflow(value: RestWorkflow) = RepoWorkflow(value.id, value.nodeId, value.name, value.path, value.state, value.createdAt, value.updatedAt)
-    private fun toRun(value: RestWorkflowRun) = RepoWorkflowRun(value.id, value.name, value.displayTitle ?: value.name.orEmpty(), value.event, value.status, value.conclusion, value.workflowId, value.runNumber, value.runAttempt?.takeIf { it > 0 }, value.headBranch, value.headSha, value.actor?.let { SimpleUser(it.login, it.name, it.avatarUrl, null) }, value.createdAt, value.updatedAt, value.htmlUrl)
+    private fun toRun(value: RestWorkflowRun) = RepoWorkflowRun(value.id, value.name, value.displayTitle ?: value.name.orEmpty(), value.event, value.status, value.conclusion, value.workflowId, value.runNumber, value.runAttempt?.takeIf { it > 0 }, value.headBranch, value.headSha, value.actor?.let { SimpleUser(it.login, it.name, it.avatarUrl, null) }, value.createdAt, value.updatedAt, value.htmlUrl, runDurationSeconds(value))
+    private fun runDurationSeconds(value: RestWorkflowRun): Long? {
+        val startedAt = value.runStartedAt ?: return null
+        return runCatching {
+            val end = when (value.status) {
+                "completed" -> Instant.parse(value.updatedAt)
+                "in_progress" -> Instant.now()
+                else -> return null
+            }
+            Duration.between(Instant.parse(startedAt), end).seconds.takeIf { it >= 0 }
+        }.getOrNull()
+    }
+
     private fun toJob(value: RestJob) = RepoActionJob(value.id, value.name, value.status, value.conclusion, value.startedAt, value.completedAt, value.runnerName, value.steps.map { RepoActionStep(it.name, it.status, it.conclusion, it.number) })
     private fun toArtifact(value: RestArtifact) = RepoActionArtifact(value.id, value.name, value.sizeInBytes, value.expired, value.expiresAt)
 }
@@ -215,7 +229,7 @@ class RepoActionsRepository @Inject constructor(
 @Serializable private data class RestWorkflowsResponse(@SerialName("total_count") val totalCount: Int = 0, val workflows: List<RestWorkflow> = emptyList())
 @Serializable private data class RestWorkflow(val id: Long, @SerialName("node_id") val nodeId: String = "", val name: String = "", val path: String = "", val state: String = "", @SerialName("created_at") val createdAt: String? = null, @SerialName("updated_at") val updatedAt: String? = null)
 @Serializable private data class RestRunsResponse(@SerialName("total_count") val totalCount: Int = 0, @SerialName("workflow_runs") val runs: List<RestWorkflowRun> = emptyList())
-@Serializable private data class RestWorkflowRun(val id: Long, val name: String? = null, @SerialName("display_title") val displayTitle: String? = null, val event: String = "", val status: String? = null, val conclusion: String? = null, @SerialName("workflow_id") val workflowId: Long = 0, @SerialName("run_number") val runNumber: Int = 0, @SerialName("run_attempt") val runAttempt: Int? = null, @SerialName("head_branch") val headBranch: String? = null, @SerialName("head_sha") val headSha: String = "", val actor: RestActor? = null, @SerialName("created_at") val createdAt: String = "", @SerialName("updated_at") val updatedAt: String = "", @SerialName("html_url") val htmlUrl: String = "")
+@Serializable private data class RestWorkflowRun(val id: Long, val name: String? = null, @SerialName("display_title") val displayTitle: String? = null, val event: String = "", val status: String? = null, val conclusion: String? = null, @SerialName("workflow_id") val workflowId: Long = 0, @SerialName("run_number") val runNumber: Int = 0, @SerialName("run_attempt") val runAttempt: Int? = null, @SerialName("head_branch") val headBranch: String? = null, @SerialName("head_sha") val headSha: String = "", val actor: RestActor? = null, @SerialName("created_at") val createdAt: String = "", @SerialName("updated_at") val updatedAt: String = "", @SerialName("html_url") val htmlUrl: String = "", @SerialName("run_started_at") val runStartedAt: String? = null)
 @Serializable private data class RestActor(val login: String = "", @SerialName("avatar_url") val avatarUrl: String? = null, val name: String? = null)
 @Serializable private data class RestJobsResponse(@SerialName("total_count") val totalCount: Int? = null, val jobs: List<RestJob> = emptyList())
 @Serializable private data class RestJob(val id: Long, @SerialName("run_id") val runId: Long? = null, @SerialName("run_attempt") val runAttempt: Int? = null, val name: String = "", val status: String = "", val conclusion: String? = null, @SerialName("started_at") val startedAt: String? = null, @SerialName("completed_at") val completedAt: String? = null, @SerialName("runner_name") val runnerName: String? = null, val steps: List<RestStep> = emptyList())

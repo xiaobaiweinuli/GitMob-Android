@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.GistDiffUnavailableReason
 import com.gitmob.app.ui.common.UnifiedDiffViewer
+import com.gitmob.app.ui.common.formatDateTime
 
 @Composable
 fun GistRevisionDetailScreen(
@@ -63,7 +64,7 @@ fun GistRevisionDetailScreen(
                     item("summary") {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(comparison.revision.version, fontWeight = FontWeight.SemiBold)
-                            Text(comparison.revision.committedAt.take(19), style = MaterialTheme.typography.bodySmall)
+                            Text(formatDateTime(comparison.revision.committedAt), style = MaterialTheme.typography.bodySmall)
                             Text(
                                 stringResource(
                                     R.string.gist_revision_changes,

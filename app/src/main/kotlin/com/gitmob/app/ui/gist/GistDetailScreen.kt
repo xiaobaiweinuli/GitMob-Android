@@ -63,6 +63,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.layout.height
 import com.gitmob.app.ui.common.SoraTextViewer
+import com.gitmob.app.ui.common.formatDateTime
 import com.gitmob.app.ui.common.rememberSoraViewerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -362,7 +363,7 @@ internal fun GistDetailContent(
                             AsyncImage(owner.avatarUrl, owner.login, Modifier.size(40.dp).clip(CircleShape))
                             Column {
                                 Text(owner.login, fontWeight = FontWeight.SemiBold)
-                                Text(detail.updatedAt.take(19), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(formatDateTime(detail.updatedAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

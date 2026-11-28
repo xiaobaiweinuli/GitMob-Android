@@ -50,6 +50,8 @@ import kotlin.coroutines.coroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val GIT_MODE_SYMLINK = 0xA000 // Git mode 120000 (octal).
+
 /**
  * Git 数据的唯一仓库入口。
  *
@@ -626,7 +628,11 @@ class RepoGitRepository @Inject constructor(
         name = node.name,
         path = node.path ?: node.name,
         type = when (node.type.uppercase()) {
-            "BLOB" -> RepoEntryType.FILE
+            "BLOB" -> if (node.mode == GIT_MODE_SYMLINK) {
+                RepoEntryType.SYMLINK
+            } else {
+                RepoEntryType.FILE
+            }
             "TREE" -> RepoEntryType.DIRECTORY
             "COMMIT" -> RepoEntryType.SUBMODULE
             else -> RepoEntryType.UNKNOWN

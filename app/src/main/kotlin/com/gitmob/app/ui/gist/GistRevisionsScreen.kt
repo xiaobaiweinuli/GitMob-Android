@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.R
 import com.gitmob.app.data.model.GistRevision
 import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.formatDateTime
 import com.gitmob.app.ui.common.ListFeedback
 import com.gitmob.app.ui.common.ListFeedbackState
 import com.gitmob.app.ui.common.informationItem
@@ -83,7 +84,7 @@ fun GistRevisionsScreen(
                                 revision.user?.login ?: stringResource(R.string.common_unknown),
                                 modifier = revision.user?.login?.let { login -> Modifier.pressClickable { onUserClick(login) } } ?: Modifier,
                             )
-                            Text(revision.committedAt.take(19), style = MaterialTheme.typography.bodySmall)
+                            Text(formatDateTime(revision.committedAt), style = MaterialTheme.typography.bodySmall)
                         }
                         Text(
                             stringResource(

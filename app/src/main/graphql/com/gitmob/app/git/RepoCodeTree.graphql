@@ -15,7 +15,7 @@ fragment RepoTreeCommitFields on Commit {
   file(path: $path) {
     object {
       ... on Tree {
-        entries { name path type oid size extension language { name } }
+        entries { name path type mode oid size extension language { name } }
       }
     }
   }

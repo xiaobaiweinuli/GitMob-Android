@@ -73,7 +73,7 @@ fun ConversationEditHistorySheet(
                     ActionIconButton(onClick = onClearSelected) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.common_back)) }
                     Text(stringResource(R.string.conversation_edit_history), style = MaterialTheme.typography.titleLarge)
                 }
-                Text(selectedEdit.editedAt.take(19), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+                Text(formatDateTime(selectedEdit.editedAt), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
                 val diff = selectedEdit.diff
                 if (diff.isNullOrBlank()) {
                     Text(stringResource(R.string.conversation_no_edit_diff), Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -100,7 +100,7 @@ fun ConversationEditHistorySheet(
                         TextButton(onClick = { onSelect(edit) }, modifier = Modifier.fillMaxWidth(), shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.TextButtonContentPadding) {
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
                                 Text(edit.editor?.login ?: stringResource(R.string.common_deleted_user))
-                                Text(edit.editedAt.take(19), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(formatDateTime(edit.editedAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

@@ -10,6 +10,7 @@ import com.gitmob.app.core.markdown.RepoDocumentLink
 import com.gitmob.app.core.markdown.resolveLink
 import com.gitmob.app.data.model.RepoDocumentContext
 import com.gitmob.app.data.model.RepoFileContent
+import com.gitmob.app.data.model.RepoEntryType
 import com.gitmob.app.data.model.RepoPathContent
 import com.gitmob.app.data.model.RepoLinkKind
 import com.gitmob.app.testutil.AccountSessionRule
@@ -159,7 +160,7 @@ class RepoGitContentTest {
             assertEquals(commit, variables.getValue("revision").jsonPrimitive.content)
             }
             val target = """{"__typename":"Tree","entries":[
-                {"name":"guide.md","path":"docs/guide.md","type":"blob","oid":"blob","size":7,"extension":".md","language":null}
+                {"name":"guide.md","path":"docs/guide.md","type":"blob","mode":33188,"oid":"blob","size":7,"extension":".md","language":null}
             ]}"""
             server.enqueue(MockResponse(body = response(target, branch = null, commit = commit, permission = "ADMIN")))
             val tree = (repository.getCodeTree(link.owner, link.name, link.ref, path) as ApiResult.Success).data
@@ -180,6 +181,25 @@ class RepoGitContentTest {
             assertEquals(commit, fileVariables.getValue("revision").jsonPrimitive.content)
         }
         assertEquals(5, server.requestCount)
+    }
+
+    @Test fun codeTreeDistinguishesSymlinksFromFilesDirectoriesAndSubmodulesInOneQuery() = runTest(accounts.context) {
+        val target = """{"__typename":"Tree","entries":[
+            {"name":"README.md","path":"README.md","type":"blob","mode":33188,"oid":"file","size":12,"extension":".md","language":null},
+            {"name":"run.sh","path":"run.sh","type":"blob","mode":33261,"oid":"executable","size":20,"extension":".sh","language":null},
+            {"name":"linked.md","path":"linked.md","type":"blob","mode":40960,"oid":"symlink","size":9,"extension":".md","language":null},
+            {"name":"docs","path":"docs","type":"tree","mode":16384,"oid":"directory","size":0,"extension":null,"language":null},
+            {"name":"vendor","path":"vendor","type":"commit","mode":57344,"oid":"submodule","size":0,"extension":null,"language":null},
+            {"name":"unknown","path":"unknown","type":"unknown","mode":0,"oid":"unknown","size":0,"extension":null,"language":null}
+        ]}"""
+        server.enqueue(MockResponse(body = response(target)))
+        val tree = (repository.getCodeTree("owner", "repo", "feature/docs") as ApiResult.Success).data
+        assertEquals(
+            listOf(RepoEntryType.FILE, RepoEntryType.FILE, RepoEntryType.SYMLINK,
+                RepoEntryType.DIRECTORY, RepoEntryType.SUBMODULE, RepoEntryType.UNKNOWN),
+            tree.entries.map { it.type },
+        )
+        assertEquals(1, server.requestCount)
     }
 
     @Test fun commitRootAndNestedDirectoriesKeepTheSameCommit() = runTest(accounts.context) {
@@ -260,7 +280,7 @@ class RepoGitContentTest {
             val link = (repository.resolveLink("owner", "repo", RepoLinkKind.DIRECTORY, branch.split('/')) as ApiResult.Success).data
             server.takeRequest()
             val branchTree = """{"__typename":"Tree","entries":[
-                {"name":"branch.txt","path":"branch.txt","type":"blob","oid":"branch-blob","size":12,"extension":".txt","language":null}
+                {"name":"branch.txt","path":"branch.txt","type":"blob","mode":33188,"oid":"branch-blob","size":12,"extension":".txt","language":null}
             ]}"""
             server.enqueue(MockResponse(body = response(branchTree, branch = branch, commit = "tag-head",
                 snapshotTarget = """{"__typename":"Tree","entries":[]}""")))

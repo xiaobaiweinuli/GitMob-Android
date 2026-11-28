@@ -37,6 +37,7 @@ data class RepoWorkflowRun(
     val createdAt: String,
     val updatedAt: String,
     val htmlUrl: String,
+    val durationSeconds: Long? = null,
 )
 
 data class RepoActionJob(

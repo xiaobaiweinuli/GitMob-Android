@@ -3,6 +3,7 @@ package com.gitmob.app.ui.repopullrequests
 import com.gitmob.app.core.network.PageSize
 
 import com.gitmob.app.ui.common.StatusBadge
+import com.gitmob.app.ui.common.formatDateTime
 import com.gitmob.app.ui.common.ActionButtonContent
 
 import com.gitmob.app.ui.common.ActionProgressIcon
@@ -331,7 +332,7 @@ internal fun PullRequestListItemRow(pullRequest: RepoPullRequestListItem, onClic
             Spacer(Modifier.size(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(pullRequest.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(stringResource(R.string.pr_row_meta, pullRequest.number, pullRequest.author?.login ?: stringResource(R.string.common_deleted_user), pullRequest.updatedAt.take(10)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.pr_row_meta, pullRequest.number, pullRequest.author?.login ?: stringResource(R.string.common_deleted_user), formatDateTime(pullRequest.updatedAt)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("${pullRequest.headRefName} -> ${pullRequest.baseRefName}", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (pullRequest.commentCount > 0) Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.AutoMirrored.Filled.Comment, null, Modifier.size(16.dp)); Text(pullRequest.commentCount.toString()) }
@@ -678,7 +679,7 @@ private fun LazyListScope.pullRequestReviewThreads(
 private fun PullRequestHeader(pullRequest: RepoPullRequest) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         TranslationText(TranslationTarget(pullRequest.url + ":title", pullRequest.title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, showStatus = true)
-        Text(stringResource(R.string.pr_author_meta, pullRequest.author?.login ?: stringResource(R.string.common_deleted_user), pullRequest.createdAt.take(10)))
+        Text(stringResource(R.string.pr_author_meta, pullRequest.author?.login ?: stringResource(R.string.common_deleted_user), formatDateTime(pullRequest.createdAt)))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val visual = pullRequestStateVisual(
                 state = pullRequest.state.toPullRequestState(),

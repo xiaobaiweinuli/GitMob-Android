@@ -25,7 +25,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
@@ -57,7 +56,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -82,6 +80,7 @@ import com.gitmob.app.ui.common.AppDropdownMenuItem as DropdownMenuItem
 import com.gitmob.app.ui.common.RepositoryContextTitle
 import com.gitmob.app.ui.common.informationItem
 import com.gitmob.app.ui.common.pressClickable
+import com.gitmob.app.ui.icons.FileIcon
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -205,8 +204,14 @@ fun RepoCodeScreen(
                     if (location.path.isNotBlank()) item(key = "parent") {
                         RepoCodeRow(
                             name = stringResource(R.string.repo_code_parent),
-                            icon = Icons.Default.SubdirectoryArrowLeft,
-                            directory = true,
+                            icon = {
+                                Icon(
+                                    Icons.Default.SubdirectoryArrowLeft,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            },
                             onClick = { onDirectoryClick(location.copy(path = location.path.trimEnd('/').substringBeforeLast('/', ""))) },
                         )
                     }
@@ -214,8 +219,7 @@ fun RepoCodeScreen(
                         val directory = entry.type == RepoEntryType.DIRECTORY
                         RepoCodeRow(
                             name = entry.name,
-                            icon = if (directory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
-                            directory = directory,
+                            icon = { FileIcon(path = entry.path, type = entry.type, languageName = entry.languageName) },
                             size = entry.size?.takeIf { it >= 0 && !directory }?.let { Formatter.formatShortFileSize(context, it) },
                             showChevron = directory,
                             onClick = { if (directory) onDirectoryClick(location.copy(path = entry.path)) else onFileClick(location.copy(path = entry.path)) },
@@ -318,8 +322,7 @@ private fun RepoCodeLocation(ref: String, path: String, onDirectoryClick: (Strin
 @Composable
 private fun RepoCodeRow(
     name: String,
-    icon: ImageVector,
-    directory: Boolean,
+    icon: @Composable () -> Unit,
     size: String? = null,
     showChevron: Boolean = false,
     onClick: () -> Unit,
@@ -329,7 +332,7 @@ private fun RepoCodeRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = if (directory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        icon()
         Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         if (showChevron) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

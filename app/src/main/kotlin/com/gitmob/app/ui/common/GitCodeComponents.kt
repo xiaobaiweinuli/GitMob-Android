@@ -71,7 +71,7 @@ fun GitCommitRow(
                 modifier = Modifier.size(28.dp).clip(CircleShape).then(authorClickModifier),
             )
             Text(
-                "$authorLabel · ${commit.committedDate ?: commit.authoredDate.orEmpty()} · ${commit.abbreviatedOid}",
+                "$authorLabel · ${formatDateTime(commit.committedDate ?: commit.authoredDate)} · ${commit.abbreviatedOid}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 8.dp).then(authorClickModifier),

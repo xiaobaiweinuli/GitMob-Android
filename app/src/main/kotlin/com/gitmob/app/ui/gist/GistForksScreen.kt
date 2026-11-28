@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.gitmob.app.R
 import com.gitmob.app.ui.common.ListFeedback
+import com.gitmob.app.ui.common.formatDateTime
 import com.gitmob.app.ui.common.ListFeedbackState
 import com.gitmob.app.ui.common.informationItem
 import com.gitmob.app.ui.common.pressClickable
@@ -69,7 +70,7 @@ fun GistForksScreen(
                         AsyncImage(fork.owner?.avatarUrl, fork.owner?.login, Modifier.size(40.dp))
                         Column {
                             Text(fork.owner?.login ?: stringResource(R.string.common_unknown))
-                            Text(fork.createdAt.take(19), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(formatDateTime(fork.createdAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     if (index == state.items.lastIndex && state.nextPage != null) LaunchedEffect(state.items.size) { viewModel.loadMore() }

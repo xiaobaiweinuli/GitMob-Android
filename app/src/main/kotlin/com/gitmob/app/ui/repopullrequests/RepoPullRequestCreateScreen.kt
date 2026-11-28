@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -34,6 +35,7 @@ import com.gitmob.app.data.model.ExistingRepoPullRequest
 import com.gitmob.app.data.model.RepoPullRequestCreateSelection
 import com.gitmob.app.data.model.toListItem
 import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.formatDateTime
 import com.gitmob.app.ui.common.GitChangedFileRow
 import com.gitmob.app.ui.common.GitCommitRow
 import com.gitmob.app.ui.common.PressableCard
@@ -182,7 +184,7 @@ private fun ColumnScope.ComparePage(
                             icon = { Icon(Icons.Default.AccountTree, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                             title = pluralStringResource(R.plurals.pr_create_commits_count, comparison.totalCommits, comparison.totalCommits),
                             onClick = viewModel::showCommits,
-                        ) { Text(comparison.commits.firstOrNull()?.committedDate?.take(10).orEmpty(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        ) { Text(formatDateTime(comparison.commits.firstOrNull()?.let { it.committedDate ?: it.authoredDate }), modifier = Modifier.weight(1f), textAlign = TextAlign.End, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                     if (state.existingPullRequest != null) item {
                         ExistingPullRequestCard(

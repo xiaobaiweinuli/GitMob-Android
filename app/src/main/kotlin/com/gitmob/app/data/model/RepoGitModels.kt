@@ -29,7 +29,7 @@ data class RepoCommitSummary(
     val isMergeCommit: Boolean get() = parentOids.size > 1
 }
 
-enum class RepoEntryType { FILE, DIRECTORY, SUBMODULE, UNKNOWN }
+enum class RepoEntryType { FILE, DIRECTORY, SUBMODULE, SYMLINK, UNKNOWN }
 
 data class RepoTreeEntry(
     val name: String,

@@ -55,3 +55,4 @@ reference-github-projects
 /artifacts
 /app/schemas
 /output
+/tools/node_modules

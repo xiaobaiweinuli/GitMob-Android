@@ -17,10 +17,9 @@ import com.gitmob.app.R
 import com.gitmob.app.data.model.HistoryItem
 import com.gitmob.app.data.model.LibraryContent
 import com.gitmob.app.ui.common.ActionIconButton
+import com.gitmob.app.ui.common.formatDateTime
 import com.gitmob.app.ui.common.GistCard
 import com.gitmob.app.ui.common.RepoCard
-import java.text.DateFormat
-import java.util.Date
 
 @Composable
 fun HistoryScreen(accountLibrary: AccountLibraryViewModel, onBack: () -> Unit, onRepo: (String, String) -> Unit, onHomepage: (String) -> Unit, onGist: (String) -> Unit, viewModel: LibraryViewModel = hiltViewModel()) {
@@ -47,7 +46,7 @@ fun HistoryScreen(accountLibrary: AccountLibraryViewModel, onBack: () -> Unit, o
                     items(state.history, key = { it.key }) { item ->
                         Column(Modifier.animateItem()) {
                             item.visitedAt.let { timestamp ->
-                                Text(remember(timestamp) { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(timestamp)) },
+                                Text(formatDateTime(timestamp),
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(start = 16.dp, bottom = 4.dp))
                             }
