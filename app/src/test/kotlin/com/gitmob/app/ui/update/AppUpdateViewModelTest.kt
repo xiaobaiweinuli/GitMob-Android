@@ -46,7 +46,6 @@ class AppUpdateViewModelTest {
 
     @Before fun setup() {
         every { store.preferences } returns preferences
-        coEvery { store.recordSuccessfulCheck(any()) } returns Unit
         coEvery { repository.check(any()) } returns ApiResult.Success(AppUpdateCheck.Available(update))
         coEvery { repository.download(any()) } returns ApiResult.Success(Unit)
     }
@@ -82,28 +81,39 @@ class AppUpdateViewModelTest {
         coVerify(exactly = 1) { repository.check(any()) }
     }
 
-    @Test fun recentCheckAndDisabledAutomaticDoNotRunAtStartup() = runTest {
-        create(AppUpdatePreferences(lastSuccessfulCheckAt = System.currentTimeMillis()))
-        vm.onAppReady()
-        advanceUntilIdle()
-        coVerify(exactly = 0) { repository.check(any()) }
-        vm.viewModelScope.cancel()
+    @Test fun disabledAutomaticDoesNotRunAtStartup() = runTest {
         create(AppUpdatePreferences(automatic = false))
         vm.onAppReady()
         advanceUntilIdle()
         coVerify(exactly = 0) { repository.check(any()) }
     }
 
-    @Test fun expiredIntervalChecksAgain() = runTest {
-        create(AppUpdatePreferences(lastSuccessfulCheckAt = System.currentTimeMillis() - 86_401_000))
+    @Test fun eachNewStartupChecksAgainWithoutWaiting() = runTest {
+        create()
         vm.onAppReady()
         advanceUntilIdle()
-        coVerify(exactly = 1) { repository.check(any()) }
-        coVerify(exactly = 1) { store.recordSuccessfulCheck(any()) }
+        vm.viewModelScope.cancel()
+        create()
+        vm.onAppReady()
+        advanceUntilIdle()
+        coVerify(exactly = 2) { repository.check(any()) }
     }
 
-    @Test fun manualCheckBypassesDisabledAutomaticRecentCheckAndIgnoredVersion() = runTest {
-        create(AppUpdatePreferences(false, update.versionCode, System.currentTimeMillis()))
+    @Test fun enablingAutomaticChecksImmediately() = runTest {
+        coEvery { store.setAutomatic(true) } returns AppUpdatePreferences()
+        create(AppUpdatePreferences(automatic = false))
+        vm.onAppReady()
+        advanceUntilIdle()
+        coVerify(exactly = 0) { repository.check(any()) }
+        vm.setAutomatic(true, session.epoch)
+        advanceUntilIdle()
+        assertEquals(update, vm.state.value.update)
+        assertEquals(AppUpdatePreferences(), vm.state.value.preferences)
+        coVerify(exactly = 1) { repository.check(any()) }
+    }
+
+    @Test fun manualCheckBypassesDisabledAutomaticAndIgnoredVersion() = runTest {
+        create(AppUpdatePreferences(false, update.versionCode))
         vm.onAppReady()
         vm.checkManually(session.epoch)
         advanceUntilIdle()
@@ -150,7 +160,6 @@ class AppUpdateViewModelTest {
         vm.onAppReady()
         advanceUntilIdle()
         assertTrue(events.isEmpty())
-        coVerify(exactly = 0) { store.recordSuccessfulCheck(any()) }
         coVerify(exactly = 1) { repository.check(any()) }
         vm.checkManually(session.epoch)
         advanceUntilIdle()
@@ -229,12 +238,16 @@ class AppUpdateViewModelTest {
         assertFalse(vm.state.value.savingIgnore)
     }
 
-    @Test fun failedTimestampWriteDoesNotLoseValidUpdate() = runTest {
-        coEvery { store.recordSuccessfulCheck(any()) } throws IOException("disk unavailable")
-        create()
+    @Test fun failedAutomaticPreferenceWriteDoesNotStartCheck() = runTest {
+        coEvery { store.setAutomatic(true) } throws IOException("disk unavailable")
+        create(AppUpdatePreferences(automatic = false))
         vm.onAppReady()
         advanceUntilIdle()
-        assertEquals(update, vm.state.value.update)
+        vm.setAutomatic(true, session.epoch)
+        advanceUntilIdle()
+        assertEquals(false, vm.state.value.preferences?.automatic)
+        assertFalse(vm.state.value.savingAutomatic)
+        coVerify(exactly = 0) { repository.check(any()) }
     }
 
     @Test fun preferenceReadFailureNeverActivatesDefaultAutomaticCheckAndManualStillWorks() = runTest {

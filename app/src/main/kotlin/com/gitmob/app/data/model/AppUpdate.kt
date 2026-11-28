@@ -3,7 +3,6 @@ package com.gitmob.app.data.model
 data class AppUpdatePreferences(
     val automatic: Boolean = true,
     val ignoredVersionCode: Int? = null,
-    val lastSuccessfulCheckAt: Long = 0,
 )
 
 data class AppUpdate(

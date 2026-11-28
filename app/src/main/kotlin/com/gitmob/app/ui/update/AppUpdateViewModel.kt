@@ -78,9 +78,7 @@ class AppUpdateViewModel @Inject constructor(
         val preferences = state.value.preferences ?: return
         if (!appReady || startupEvaluated) return
         startupEvaluated = true
-        val now = System.currentTimeMillis()
-        val last = preferences.lastSuccessfulCheckAt
-        if (preferences.automatic && (last <= 0 || now < last || now - last >= CHECK_INTERVAL)) {
+        if (preferences.automatic) {
             startCheck(null)
         }
     }
@@ -101,10 +99,6 @@ class AppUpdateViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val result = repository.check(BuildConfig.VERSION_CODE)
-                if (result is ApiResult.Success) {
-                    // 时间戳写入失败不丢弃本次有效结果，下次启动仍可再检查。
-                    safeCall { store.recordSuccessfulCheck(System.currentTimeMillis()) }
-                }
                 val feedbackEpoch = active.manualEpoch?.takeIf { it.isCurrent }
                 when (result) {
                     is ApiResult.Success -> when (val checked = result.data) {
@@ -131,14 +125,18 @@ class AppUpdateViewModel @Inject constructor(
     }
 
     fun setAutomatic(enabled: Boolean, epoch: AccountEpoch) {
-        if (!epoch.isCurrent || state.value.preferences == null || state.value.savingAutomatic) return
+        val preferences = state.value.preferences ?: return
+        if (!epoch.isCurrent || state.value.savingAutomatic || preferences.automatic == enabled) return
         pendingAutomatic = enabled
         _state.update { it.copy(savingAutomatic = true) }
         if (!enabled && automaticDialog) dismiss()
         viewModelScope.launch {
             try {
                 when (val result = safeCall { store.setAutomatic(enabled) }) {
-                    is ApiResult.Success -> _state.update { it.copy(preferences = result.data) }
+                    is ApiResult.Success -> {
+                        _state.update { it.copy(preferences = result.data) }
+                        if (enabled) startCheck(null)
+                    }
                     is ApiResult.Failure -> if (epoch.isCurrent) errors.emit(result.error, epoch)
                 }
             } finally {
@@ -194,5 +192,4 @@ class AppUpdateViewModel @Inject constructor(
     }
 
     private class CheckRequest(var manualEpoch: AccountEpoch?)
-    private companion object { const val CHECK_INTERVAL = 24 * 60 * 60 * 1_000L }
 }
