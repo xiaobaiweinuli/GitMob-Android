@@ -5,6 +5,7 @@ import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
+import com.gitmob.app.core.error.BannerEvent
 import com.gitmob.app.core.markdown.baseUrl
 import com.gitmob.app.data.model.DocumentResource
 import com.gitmob.app.data.model.RepoDocumentContext
@@ -16,13 +17,20 @@ import com.gitmob.app.testutil.AccountSessionRule
 import com.gitmob.app.testutil.MainDispatcherRule
 import io.mockk.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
+import java.io.IOException
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class DocumentResourceViewModelTest {
     private val accounts = AccountSessionRule()
     @get:Rule val rules: RuleChain = RuleChain.outerRule(MainDispatcherRule()).around(accounts)
@@ -33,7 +41,7 @@ class DocumentResourceViewModelTest {
     private val document = RepoDocumentContext("owner", "repo", "feature/images", "docs/README.md")
     private val image = DocumentResource("https://images.example.test/demo.png", "https://example.test/releases")
     private val bytes = RepoDocumentResource(byteArrayOf(1, 2, 3), "image/png")
-    private fun viewModel() = DocumentResourceViewModel(repository, git, downloads, ErrorEventBus(), accounts.session, playback)
+    private fun viewModel(errors: ErrorEventBus = ErrorEventBus()) = DocumentResourceViewModel(repository, git, downloads, errors, accounts.session, playback)
 
     @Test fun loadsImageSourceAndDeduplicatesSameRequest() = runTest {
         coEvery { repository.loadImage(image.source, document) } returns ApiResult.Success(bytes)
@@ -122,7 +130,7 @@ class DocumentResourceViewModelTest {
         val vm = viewModel()
         vm.show(DocumentResource(source, "https://example.test/releases"), document)
         vm.download()
-        verify { downloads.open("https://example.test/signed.png") }
+        coVerify { downloads.open("https://example.test/signed.png") }
         assertFalse(vm.state.value.isDownloading)
     }
 
@@ -131,7 +139,7 @@ class DocumentResourceViewModelTest {
         val vm = viewModel()
         vm.show(image, document)
         vm.download()
-        verify { downloads.open(image.source) }
+        coVerify { downloads.open(image.source) }
         coVerify(exactly = 0) { git.resolveFileDownloadUrl(any(), any(), any(), any()) }
     }
 
@@ -160,7 +168,7 @@ class DocumentResourceViewModelTest {
 
         download.complete(ApiResult.Success("https://example.test/signed.png"))
         assertFalse(vm.state.value.isDownloading)
-        verify(exactly = 1) { downloads.open("https://example.test/signed.png") }
+        coVerify(exactly = 1) { downloads.open("https://example.test/signed.png") }
         vm.clear()
     }
 
@@ -177,7 +185,47 @@ class DocumentResourceViewModelTest {
         assertTrue(vm.state.value.isDownloading)
         vm.clear()
         assertTrue(cancelled)
-        verify(exactly = 0) { downloads.open(any()) }
+        coVerify(exactly = 0) { downloads.open(any()) }
+    }
+
+    @Test fun closingWhileLauncherWaitsProducesNoSuccessOrError() = runTest {
+        coEvery { repository.loadImage(image.source, document) } returns ApiResult.Success(bytes)
+        var cancelled = false
+        coEvery { downloads.open(image.source) } coAnswers {
+            try { awaitCancellation() } finally { cancelled = true }
+        }
+        val errors = ErrorEventBus()
+        val event = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) { errors.eventsFor(accounts.session.epoch).first() }
+        val vm = viewModel(errors)
+        vm.show(image, document)
+        vm.download()
+        assertTrue(vm.state.value.isDownloading)
+        assertFalse(event.isCompleted)
+        vm.clear()
+        runCurrent()
+        assertTrue(cancelled)
+        assertFalse(vm.state.value.isDownloading)
+        assertFalse(event.isCompleted)
+    }
+
+    @Test fun delayedLauncherFailureReportsNetworkErrorAndClearsDownloading() = runTest {
+        coEvery { repository.loadImage(image.source, document) } returns ApiResult.Success(bytes)
+        val ready = CompletableDeferred<Unit>()
+        coEvery { downloads.open(image.source) } coAnswers {
+            ready.await()
+            throw IOException("Settings unavailable")
+        }
+        val errors = ErrorEventBus()
+        val event = async(start = CoroutineStart.UNDISPATCHED) { errors.eventsFor(accounts.session.epoch).first() }
+        val vm = viewModel(errors)
+        vm.show(image, document)
+        vm.download()
+        assertTrue(vm.state.value.isDownloading)
+        assertFalse(event.isCompleted)
+        ready.complete(Unit)
+        assertEquals(BannerEvent.Error(ApiError.NetworkError), event.await())
+        assertFalse(vm.state.value.isDownloading)
+        vm.clear()
     }
 
     @Test fun retryAfterDecodeFailureInvalidatesTheCanonicalRepositoryPath() = runTest {

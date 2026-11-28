@@ -266,6 +266,7 @@ internal fun Route.replaceRepositoryAddress(owner: String, name: String, newOwne
     }
 }
 
+@Serializable data object NetworkAccelerationRoute : Route
 @Serializable data class AdvancedSettingsRoute(val page: String = "advanced") : Route
 @Serializable data class FavoritesRoute(val page: String = "favorites") : Route
 @Serializable data class FavoriteGroupRoute(val groupId: String, val name: String = "") : Route

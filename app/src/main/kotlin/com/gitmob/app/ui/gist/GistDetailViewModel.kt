@@ -7,10 +7,9 @@ import com.gitmob.app.data.local.library.LibraryRepository
 import com.gitmob.app.data.model.cardData
 import com.gitmob.app.R
 import com.gitmob.app.core.download.ExternalDownloadLauncher
-import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
-import com.gitmob.app.core.error.UserVisibleException
+import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.markdown.MarkdownRenderer
 import com.gitmob.app.core.share.ShareLinkLauncher
 import com.gitmob.app.core.event.GistUpdateEventBus
@@ -337,10 +336,11 @@ class GistDetailViewModel @Inject constructor(
 
     private fun openDownload(url: String) {
         if (!accountEpoch.isCurrent) return
-        try {
-            downloadLauncher.open(url)
-        } catch (error: UserVisibleException) {
-            viewModelScope.launch { errorEventBus.emit(ApiError.UserVisible(error.messageRes)) }
+        viewModelScope.launch {
+            when (val result = safeCall { downloadLauncher.open(url) }) {
+                is ApiResult.Success -> Unit
+                is ApiResult.Failure -> errorEventBus.emit(result.error)
+            }
         }
     }
 }

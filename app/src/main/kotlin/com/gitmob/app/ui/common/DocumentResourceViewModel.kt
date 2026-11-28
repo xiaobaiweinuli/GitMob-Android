@@ -145,9 +145,10 @@ class DocumentResourceViewModel @Inject constructor(
                     is ApiResult.Success -> {
                         val url = result.data
                         if (url.isNullOrBlank()) errors.emit(ApiError.UserVisible(R.string.download_address_unavailable))
-                        else runCatching { downloadLauncher.open(url) }
-                            .onSuccess { errors.emitNotice(R.string.download_opened_externally) }
-                            .onFailure { errors.emit(ApiError.UserVisible(R.string.download_external_app_unavailable)) }
+                        else when (val opened = safeCall { downloadLauncher.open(url) }) {
+                            is ApiResult.Success -> errors.emitNotice(R.string.download_opened_externally)
+                            is ApiResult.Failure -> errors.emit(opened.error)
+                        }
                     }
                     is ApiResult.Failure -> errors.emit(result.error)
                 }

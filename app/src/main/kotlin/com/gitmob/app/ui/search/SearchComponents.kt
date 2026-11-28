@@ -2,7 +2,6 @@ package com.gitmob.app.ui.search
 
 import android.net.Uri
 import android.text.format.DateUtils
-import androidx.activity.compose.LocalActivity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -34,7 +33,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.displayMessageRes
 import com.gitmob.app.data.model.*
-import com.gitmob.app.navigation.tryOpenBrowser
+import com.gitmob.app.navigation.LocalExternalUriLauncher
 import com.gitmob.app.ui.common.ActionIconButton
 import com.gitmob.app.ui.common.IssueStateIcon
 import com.gitmob.app.ui.common.PullRequestStateIcon
@@ -226,7 +225,7 @@ internal fun SearchFailure(error: ApiError, retry: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CodeSearchWebButton(query: String, viewModel: SearchViewModel, owner: String? = null, name: String? = null) {
-    val activity = LocalActivity.current
+    val externalUris = LocalExternalUriLauncher.current
     val label = stringResource(R.string.code_search_on_web)
     TooltipBox(
         positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
@@ -237,7 +236,7 @@ internal fun CodeSearchWebButton(query: String, viewModel: SearchViewModel, owne
             val url = Uri.Builder().scheme("https").authority("github.com").apply {
                 if (owner != null && name != null) appendPath(owner).appendPath(name)
             }.appendPath("search").appendQueryParameter("q", query).appendQueryParameter("type", "code").build()
-            if (activity?.tryOpenBrowser(url) != true) viewModel.browserUnavailable()
+            if (externalUris?.openResolvedBrowser(url.toString()) != true) viewModel.browserUnavailable()
         }) {
             Icon(Icons.Default.Language, contentDescription = label)
         }

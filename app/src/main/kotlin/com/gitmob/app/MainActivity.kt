@@ -18,6 +18,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -29,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.core.event.RepoUpdateEventBus
+import com.gitmob.app.navigation.ExternalUriHandler
 import com.gitmob.app.navigation.GitMobNavGraph
 import com.gitmob.app.navigation.DeepLinkRequest
 import com.gitmob.app.navigation.PendingDeepLink
@@ -47,6 +50,8 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var errorEventBus: ErrorEventBus
     @Inject lateinit var repoUpdateEventBus: RepoUpdateEventBus
     @Inject lateinit var accountSession: AccountSession
+    @Inject lateinit var rawWebResources: com.gitmob.app.ui.common.RawWebResourceLoader.Factory
+    @Inject lateinit var externalUris: com.gitmob.app.navigation.ExternalUriLauncher
 
     private val startupViewModel: StartupViewModel by viewModels()
     private val appUpdateViewModel: AppUpdateViewModel by viewModels()
@@ -119,21 +124,32 @@ class MainActivity : AppCompatActivity() {
                     window.setBackgroundDrawable(ColorDrawable(windowBackground))
                 }
 
-                Surface(modifier = Modifier) {
-                    GitMobNavGraph(
-                        accountState = accountState,
-                        accountSession = accountSession,
-                        errorEventBus = errorEventBus,
-                        repoUpdateEventBus = repoUpdateEventBus,
-                        themePreference = themePreference,
-                        enablePredictiveBack = themePreference.enablePredictiveBack,
-                        pendingDeepLink = pendingDeepLink,
-                        onDeepLinkConsumed = ::consumeDeepLink,
-                        onDeepLinkRequested = { pendingDeepLink = PendingDeepLink(it) },
-                        updateSettings = { epoch -> AppUpdateSettings(appUpdateViewModel, epoch) },
-                    )
-                    if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
-                        AppUpdateDialogHost(appUpdateViewModel, accountSession.epoch)
+                val externalScope = rememberCoroutineScope()
+                val epoch = accountSession.epoch
+                val uriHandler = remember(externalUris, externalScope, epoch, errorEventBus) {
+                    ExternalUriHandler(externalUris, externalScope, epoch, errorEventBus)
+                }
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.gitmob.app.ui.common.LocalRawWebResourceLoader provides rawWebResources,
+                    com.gitmob.app.navigation.LocalExternalUriLauncher provides externalUris,
+                    androidx.compose.ui.platform.LocalUriHandler provides uriHandler,
+                ) {
+                    Surface(modifier = Modifier) {
+                        GitMobNavGraph(
+                            accountState = accountState,
+                            accountSession = accountSession,
+                            errorEventBus = errorEventBus,
+                            repoUpdateEventBus = repoUpdateEventBus,
+                            themePreference = themePreference,
+                            enablePredictiveBack = themePreference.enablePredictiveBack,
+                            pendingDeepLink = pendingDeepLink,
+                            onDeepLinkConsumed = ::consumeDeepLink,
+                            onDeepLinkRequested = { pendingDeepLink = PendingDeepLink(it) },
+                            updateSettings = { epoch -> AppUpdateSettings(appUpdateViewModel, epoch) },
+                        )
+                        if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
+                            AppUpdateDialogHost(appUpdateViewModel, accountSession.epoch)
+                        }
                     }
                 }
             }

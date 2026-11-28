@@ -9,6 +9,7 @@ import com.gitmob.app.core.network.GHApiClient
 import com.gitmob.app.core.network.REST_API_VERSION
 import com.gitmob.app.data.model.AppUpdateCheck
 import io.mockk.every
+import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
@@ -53,7 +54,7 @@ class AppUpdateRepositoryTest {
         assertEquals(REST_API_VERSION, request.headers["X-GitHub-Api-Version"])
         assertEquals("GitMob-Android", request.headers["User-Agent"])
         assertEquals(ApiResult.Success(Unit), repository.download(update))
-        verify(exactly = 1) { downloads.open("https://github.com/example/releases/download/v0.2.0/GitMob-v0.2.0-2.apk") }
+        coVerify(exactly = 1) { downloads.open("https://github.com/example/releases/download/v0.2.0/GitMob-v0.2.0-2.apk") }
     }
 
     @Test fun nullableReleaseTitleDoesNotDiscardBodyOrUpdate() = runTest {

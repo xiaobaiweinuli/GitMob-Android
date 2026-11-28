@@ -18,7 +18,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = Application::class)
+@Config(sdk = [35], application = com.gitmob.app.GitMobApp::class)
 class DeepLinkActivityTest {
     @Test
     fun `Gist详情转发到主界面并复用已有实例`() {

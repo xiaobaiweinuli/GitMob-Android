@@ -72,8 +72,9 @@ class NavigationDocument internal constructor(val resources: RepoDocumentResourc
     private val renderers = mutableMapOf<MarkdownLayoutMode, MarkdownWebViewState>()
     internal var translationDocument: TranslationDocument? = null
 
-    internal fun renderer(layoutMode: MarkdownLayoutMode = MarkdownLayoutMode.Embedded): MarkdownWebViewState =
-        renderers.getOrPut(layoutMode) { MarkdownWebViewState(resources) }
+    internal fun renderer(layoutMode: MarkdownLayoutMode = MarkdownLayoutMode.Embedded,
+        rawResources: RawWebResourceLoader.Factory? = null): MarkdownWebViewState =
+        renderers.getOrPut(layoutMode) { MarkdownWebViewState(resources, rawResources?.create()) }
 
     internal fun close() {
         renderers.values.forEach { it.close() }

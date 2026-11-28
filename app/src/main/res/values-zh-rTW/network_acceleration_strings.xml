@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="acceleration_network">網路</string>
+    <string name="acceleration_title">網路加速</string>
+    <string name="acceleration_entry">%1$s · 自訂 raw 加速服務</string>
+    <string name="acceleration_disabled">未啟用</string>
+    <string name="acceleration_enable">啟用網路加速</string>
+    <string name="acceleration_enabled_summary">新載入的 raw 資源使用所選服務</string>
+    <string name="acceleration_disabled_summary">關閉時使用原始連結</string>
+    <string name="acceleration_empty">還沒有新增服務</string>
+    <string name="acceleration_empty_summary">新增你信任的加速服務，\n測試後自動選擇可用服務。</string>
+    <string name="acceleration_test">測試回應</string>
+    <string name="acceleration_stop">停止測試</string>
+    <string name="acceleration_testing">測試中</string>
+    <string name="acceleration_add">新增服務</string>
+    <string name="acceleration_edit">編輯服務</string>
+    <string name="acceleration_name">服務名稱</string>
+    <string name="acceleration_name_placeholder">例如：我的加速服務</string>
+    <string name="acceleration_address">服務位址</string>
+    <string name="acceleration_invalid_name">請輸入 1–40 個字元的服務名稱</string>
+    <string name="acceleration_invalid_address">請輸入有效的 HTTPS 位址，不含憑證、查詢參數或片段</string>
+    <string name="acceleration_duplicate">此服務位址已存在</string>
+    <string name="acceleration_edit_active">此服務正在使用，儲存後將用於新載入的資源。</string>
+    <string name="acceleration_delete_title">刪除服務？</string>
+    <string name="acceleration_delete_message">確定刪除「%1$s」？</string>
+    <string name="acceleration_delete_active">此服務正在使用。刪除後將關閉加速，使用原始連結。</string>
+    <string name="acceleration_delete">刪除</string>
+    <string name="acceleration_choose">請在下方選擇一個服務</string>
+    <string name="acceleration_millis">%1$d ms</string>
+    <string name="acceleration_timeout">連線逾時</string>
+    <string name="acceleration_failed">連線失敗</string>
+</resources>

@@ -28,6 +28,8 @@ import com.gitmob.app.data.model.RepoReleaseAsset
 import com.gitmob.app.data.model.SaveRepoReleaseInput
 import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.every
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
@@ -58,7 +60,7 @@ class RepoReleaseRepositoryTest {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
         downloadLauncher = mockk()
-        every { downloadLauncher.open(any()) } returns Unit
+        coEvery { downloadLauncher.open(any()) } returns Unit
         repository = RepoReleaseRepository(
             GHApiClient(
                 okHttpClient = OkHttpClient(),
@@ -160,7 +162,7 @@ class RepoReleaseRepositoryTest {
         val result = repository.downloadAsset("octo", "repo", asset)
 
         assertTrue(result is ApiResult.Success)
-        verify(exactly = 1) { downloadLauncher.open("https://objects.example/gitmob.apk") }
+        coVerify(exactly = 1) { downloadLauncher.open("https://objects.example/gitmob.apk") }
     }
 
     private fun attachment(bytes: ByteArray = byteArrayOf(0, 1, 2, 127, -1)) {

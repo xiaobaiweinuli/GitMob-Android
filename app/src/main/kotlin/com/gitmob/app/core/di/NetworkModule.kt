@@ -3,6 +3,7 @@ package com.gitmob.app.core.di
 import com.apollographql.apollo.ApolloClient
 import com.apollographql.apollo.network.okHttpClient
 import com.gitmob.app.core.auth.AccessTokenProvider
+import com.gitmob.app.core.network.RawAccelerationInterceptor
 import com.gitmob.app.core.network.graphql.AuthHttpInterceptor
 import dagger.Module
 import dagger.Provides
@@ -45,8 +46,9 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttp(): OkHttpClient =
+    fun provideOkHttp(rawAcceleration: RawAccelerationInterceptor): OkHttpClient =
         OkHttpClient.Builder()
+            .addInterceptor(rawAcceleration)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()

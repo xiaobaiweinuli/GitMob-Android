@@ -8,6 +8,7 @@ import com.gitmob.app.ui.common.RepoDocumentResources
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
+import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.error.ApiError
@@ -187,9 +188,10 @@ class RepoFileDetailViewModel @Inject constructor(
                         val url = result.data
                         if (url.isNullOrBlank()) errorEventBus.emit(ApiError.UserVisible(com.gitmob.app.R.string.download_address_unavailable))
                         else {
-                            runCatching { downloadLauncher.open(url) }
-                                .onSuccess { errorEventBus.emitNotice(com.gitmob.app.R.string.download_opened_externally) }
-                                .onFailure { errorEventBus.emit(ApiError.UserVisible(com.gitmob.app.R.string.download_external_app_unavailable)) }
+                            when (val opened = safeCall { downloadLauncher.open(url) }) {
+                                is ApiResult.Success -> errorEventBus.emitNotice(com.gitmob.app.R.string.download_opened_externally)
+                                is ApiResult.Failure -> errorEventBus.emit(opened.error)
+                            }
                         }
                     }
                     is ApiResult.Failure -> errorEventBus.emit(result.error)

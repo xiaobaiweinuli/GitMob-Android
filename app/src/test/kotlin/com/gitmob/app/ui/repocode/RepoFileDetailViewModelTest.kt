@@ -1,6 +1,8 @@
 package com.gitmob.app.ui.repocode
 
 import com.gitmob.app.core.error.ApiResult
+import com.gitmob.app.core.error.BannerEvent
+import com.gitmob.app.core.download.ExternalDownloadLauncher
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEventBus
 import com.gitmob.app.core.markdown.CommonMarkRenderer
@@ -20,6 +22,8 @@ import com.gitmob.app.data.model.RepoFileContent
 import com.gitmob.app.data.model.RepoPathContent
 import com.gitmob.app.core.error.ApiError
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import com.gitmob.app.data.repository.RepoGitRepository
 import com.gitmob.app.data.repository.RepoDocumentRepository
 import com.gitmob.app.core.event.RepoUpdateEvent
@@ -36,6 +40,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
+import java.io.IOException
 
 class RepoFileDetailViewModelTest {
     private val accounts = AccountSessionRule()
@@ -45,8 +50,12 @@ class RepoFileDetailViewModelTest {
     private val updates = RepoUpdateEventBus()
     private val ref = "feature/docs"
 
-    private fun viewModel(renderer: MarkdownRenderer = CommonMarkRenderer()) = RepoFileDetailViewModel(
-        repository, renderer, ErrorEventBus(), mockk(), updates, accounts.session, documentRepository,
+    private fun viewModel(
+        renderer: MarkdownRenderer = CommonMarkRenderer(),
+        downloads: ExternalDownloadLauncher = mockk(),
+        errors: ErrorEventBus = ErrorEventBus(),
+    ) = RepoFileDetailViewModel(
+        repository, renderer, errors, downloads, updates, accounts.session, documentRepository,
     )
 
     @Test fun `unresolved link uses page loading and retries resolution before reading content`() = runTest {
@@ -92,6 +101,31 @@ class RepoFileDetailViewModelTest {
         assertEquals(target, vm.state.value.target)
         coVerify(exactly = 1) { repository.resolveLink(any(), any(), any(), any()) }
         coVerify(exactly = 2) { repository.getPathContent("owner", "repo", ref, "api") }
+    }
+
+    @Test fun waitingDownloadDoesNotReportSuccessAndFailureResetsItsState() = runTest {
+        val path = "README.md"
+        val url = "https://raw.githubusercontent.com/owner/repo/main/README.md"
+        coEvery { repository.getPathContent("owner", "repo", ref, path) } returns ApiResult.Success(file(path, "# Guide"))
+        coEvery { repository.resolveFileDownloadUrl("owner", "repo", ref, path) } returns ApiResult.Success(url)
+        val ready = CompletableDeferred<Unit>()
+        val downloads = mockk<ExternalDownloadLauncher>()
+        coEvery { downloads.open(url) } coAnswers {
+            ready.await()
+            throw IOException("Settings unavailable")
+        }
+        val errors = ErrorEventBus()
+        val vm = viewModel(downloads = downloads, errors = errors)
+        vm.init("owner", "repo", RepoLinkTarget(ref, path))
+        vm.awaitLoaded()
+        val event = async(start = CoroutineStart.UNDISPATCHED) { errors.eventsFor(accounts.session.epoch).first() }
+        vm.downloadFile()
+        assertTrue(vm.state.value.isDownloading)
+        assertFalse(event.isCompleted)
+        ready.complete(Unit)
+        assertEquals(BannerEvent.Error(ApiError.NetworkError), event.await())
+        assertFalse(vm.state.value.isDownloading)
+        coVerify(exactly = 1) { downloads.open(url) }
     }
 
     @Test fun commitSnapshotCannotBeDeletedEvenForOwnerWithWritePermission() = runTest {

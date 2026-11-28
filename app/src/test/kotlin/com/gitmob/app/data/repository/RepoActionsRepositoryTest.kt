@@ -17,6 +17,8 @@ import com.gitmob.app.data.model.ActionLogAvailability
 import com.gitmob.app.data.model.RepoWorkflow
 import com.gitmob.app.testutil.AccountSessionRule
 import io.mockk.every
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
@@ -51,7 +53,7 @@ class RepoActionsRepositoryTest {
         server = MockWebServer().apply { start() }
         val baseUrl = server.url("/").toString().removeSuffix("/")
         downloadLauncher = mockk()
-        every { downloadLauncher.open(any()) } returns Unit
+        coEvery { downloadLauncher.open(any()) } returns Unit
         repository = RepoActionsRepository(
             GHApiClient(
                 okHttpClient = OkHttpClient.Builder().addInterceptor { chain ->
@@ -206,7 +208,7 @@ class RepoActionsRepositoryTest {
         val result = repository.downloadArtifact("octo", "repo", artifact)
 
         assertTrue(result is ApiResult.Success)
-        verify(exactly = 1) { downloadLauncher.open("https://objects.example/build.zip") }
+        coVerify(exactly = 1) { downloadLauncher.open("https://objects.example/build.zip") }
         val request = server.takeRequest()
         assertEquals("Bearer fake-token", request.headers["Authorization"])
     }
@@ -220,7 +222,7 @@ class RepoActionsRepositoryTest {
 
         assertTrue(result is ApiResult.Failure)
         assertTrue((result as ApiResult.Failure).error is ApiError.UserVisible)
-        verify(exactly = 0) { downloadLauncher.open(any()) }
+        coVerify(exactly = 0) { downloadLauncher.open(any()) }
     }
     @Test
     fun `jobs are paged within the captured attempt and keep logical step numbers`() = runTest(accounts.context) {
@@ -253,7 +255,7 @@ class RepoActionsRepositoryTest {
         assertTrue(repository.downloadRunLogs("octo", "repo", 42, null) is ApiResult.Failure)
         assertTrue(repository.downloadRunLogs("octo", "repo", 42, 0) is ApiResult.Failure)
         assertEquals(before, server.requestCount)
-        verify(exactly = 0) { downloadLauncher.open(any()) }
+        coVerify(exactly = 0) { downloadLauncher.open(any()) }
     }
 
     @Test
@@ -303,7 +305,7 @@ class RepoActionsRepositoryTest {
             val request = server.takeRequest()
             assertEquals("/repos/owner%20space/repo%23name/actions/runs/42/attempts/3/logs", request.target)
             assertEquals("Bearer fake-token", request.headers["Authorization"])
-            verify { downloadLauncher.open("https://logs.example/$index.zip") }
+            coVerify { downloadLauncher.open("https://logs.example/$index.zip") }
         }
     }
 
@@ -319,7 +321,7 @@ class RepoActionsRepositoryTest {
             server.enqueue(MockResponse(code = code))
             assertEquals(expected, (repository.downloadRunLogs("octo", "repo", 42, 3) as ApiResult.Failure).error)
         }
-        verify(exactly = 0) { downloadLauncher.open(any()) }
+        coVerify(exactly = 0) { downloadLauncher.open(any()) }
     }
 
     @Test
@@ -330,7 +332,7 @@ class RepoActionsRepositoryTest {
             server.enqueue(response.build())
             assertTrue(repository.downloadRunLogs("octo", "repo", 42, 3) is ApiResult.Failure)
         }
-        verify(exactly = 0) { downloadLauncher.open(any()) }
+        coVerify(exactly = 0) { downloadLauncher.open(any()) }
     }
 
     @Test

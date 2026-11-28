@@ -24,6 +24,8 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
@@ -35,6 +37,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GistDetailViewModelTest {
@@ -113,10 +116,53 @@ class GistDetailViewModelTest {
         advanceUntilIdle()
         viewModel.downloadZip()
 
-        io.mockk.verify(exactly = 1) {
+        io.mockk.coVerify(exactly = 1) {
             downloadLauncher.open("https://gist.github.com/viewer/abc/archive/oldest.zip")
         }
         viewModel.viewModelScope.cancel()
+    }
+
+    @Test fun directDownloadWaitsInViewModelAndReportsDeferredFailure() = runTest {
+        val ready = CompletableDeferred<Unit>()
+        val file = detail().files.single()
+        coEvery { downloadLauncher.open(file.rawUrl) } coAnswers {
+            ready.await()
+            throw IOException("Settings unavailable")
+        }
+        val vm = viewModel()
+        val event = async(start = CoroutineStart.UNDISPATCHED) { errorBus.eventsFor(accounts.session.epoch).first() }
+        vm.downloadFile(file)
+        assertFalse(event.isCompleted)
+        ready.complete(Unit)
+        assertEquals(BannerEvent.Error(ApiError.NetworkError), event.await())
+        coVerify(exactly = 1) { downloadLauncher.open(file.rawUrl) }
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun clearingViewModelCancelsPendingDirectDownloadWithoutError() = runTest {
+        var cancelled = false
+        coEvery { downloadLauncher.open(any()) } coAnswers {
+            try { awaitCancellation() } finally { cancelled = true }
+        }
+        val vm = viewModel()
+        val event = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) { errorBus.eventsFor(accounts.session.epoch).first() }
+        vm.downloadFile(detail().files.single())
+        vm.viewModelScope.cancel()
+        advanceUntilIdle()
+        assertTrue(cancelled)
+        assertFalse(event.isCompleted)
+    }
+
+    @Test fun switchingAccountCancelsPendingDirectDownload() = runTest {
+        var cancelled = false
+        coEvery { downloadLauncher.open(any()) } coAnswers {
+            try { awaitCancellation() } finally { cancelled = true }
+        }
+        val vm = viewModel()
+        vm.downloadFile(detail().files.single())
+        accounts.session.replace(emptyList(), null)
+        advanceUntilIdle()
+        assertTrue(cancelled)
     }
 
     @Test

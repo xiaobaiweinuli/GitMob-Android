@@ -115,7 +115,7 @@ class RepoCodeViewModelTest {
         viewModel.downloadArchive()
         advanceUntilIdle()
 
-        verify(exactly = 1) { launcher.open("https://example.test/archive.zip") }
+        coVerify(exactly = 1) { launcher.open("https://example.test/archive.zip") }
         viewModel.viewModelScope.cancel()
     }
 

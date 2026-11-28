@@ -5,6 +5,7 @@ import com.gitmob.app.ui.common.AccountViewModel
 import androidx.lifecycle.viewModelScope
 import com.gitmob.app.R
 import com.gitmob.app.core.error.ApiError
+import com.gitmob.app.core.error.safeCall
 import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.download.ExternalDownloadLauncher
@@ -223,9 +224,10 @@ class RepoCodeViewModel @Inject constructor(
                         val url = result.data
                         if (url.isNullOrBlank()) errorEventBus.emit(ApiError.UserVisible(R.string.download_address_unavailable))
                         else {
-                            runCatching { downloadLauncher.open(url) }
-                                .onSuccess { errorEventBus.emitNotice(R.string.download_opened_externally) }
-                                .onFailure { errorEventBus.emit(ApiError.UserVisible(R.string.download_external_app_unavailable)) }
+                            when (val opened = safeCall { downloadLauncher.open(url) }) {
+                                is ApiResult.Success -> errorEventBus.emitNotice(R.string.download_opened_externally)
+                                is ApiResult.Failure -> errorEventBus.emit(opened.error)
+                            }
                         }
                     }
                     is ApiResult.Failure -> errorEventBus.emit(result.error)

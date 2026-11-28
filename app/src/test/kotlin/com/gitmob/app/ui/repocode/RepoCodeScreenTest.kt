@@ -276,7 +276,7 @@ class RepoCodeScreenTest {
         render()
         composeRule.onNodeWithContentDescription(context.getString(R.string.repo_download_archive)).performClick()
         coVerify(exactly = 1) { repository.resolveArchiveDownloadUrl("viewer", "fork", "main") }
-        verify(exactly = 1) { downloadLauncher.open("https://example.test/archive.zip") }
+        coVerify(exactly = 1) { downloadLauncher.open("https://example.test/archive.zip") }
         node(R.string.repo_download_folder).assertDoesNotExist()
     }
 
@@ -289,7 +289,7 @@ class RepoCodeScreenTest {
         coVerify(exactly = 0) { repository.resolveArchiveDownloadUrl(any(), any(), any()) }
         node(R.string.repo_download_archive).performClick()
         coVerify(exactly = 1) { repository.resolveArchiveDownloadUrl("viewer", "fork", "main") }
-        verify(exactly = 1) { downloadLauncher.open("https://example.test/archive.zip") }
+        coVerify(exactly = 1) { downloadLauncher.open("https://example.test/archive.zip") }
     }
 
     @Test

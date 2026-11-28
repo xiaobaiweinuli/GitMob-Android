@@ -118,8 +118,9 @@ fun MarkdownWebView(
     DisposableEffect(documentResources, navigationDocument) {
         onDispose { if (navigationDocument == null) documentResources?.close() }
     }
+    val rawResourceFactory = LocalRawWebResourceLoader.current
     val viewState = remember(bodyHtml, documentResources, controlled, navigationDocument, layoutMode) {
-        navigationDocument?.renderer(layoutMode) ?: MarkdownWebViewState(documentResources)
+        navigationDocument?.renderer(layoutMode, rawResourceFactory) ?: MarkdownWebViewState(documentResources, rawResourceFactory?.create())
     }
     val webViewHolder = viewState.controller
     val client = viewState.client
@@ -248,7 +249,7 @@ fun MarkdownWebView(
 }
 
 /** Renderer state survives composition only when a navigation document owns it. */
-internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
+internal class MarkdownWebViewState(resources: RepoDocumentResources?, private val rawResources: RawWebResourceLoader? = null) {
     var onDocumentLink: ((RepoDocumentContext) -> Unit)? = null
     var onExternalLink: ((String) -> Unit)? = null
     private var onDisplayError: (() -> Unit)? = null
@@ -271,10 +272,11 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
     )
     val client: WebViewClient = resources?.let {
         RepoDocumentWebViewClient(it, { onDocumentLink?.invoke(it) }, { onExternalLink?.invoke(it) },
-            controller::pageReady, controller::pageError)
-    } ?: ExternalLinkWebViewClient(controller::pageReady, controller::pageError) { onExternalLink?.invoke(it) }
+            controller::pageReady, controller::pageError, rawResources)
+    } ?: ExternalLinkWebViewClient(controller::pageReady, controller::pageError, rawResources) { onExternalLink?.invoke(it) }
     fun pageFor(inputs: List<Any?>): MarkdownPage {
         if (pageInputs != inputs) {
+            rawResources?.cancelRequests()
             pageInputs = inputs
             page = MarkdownPage()
         }
@@ -302,6 +304,7 @@ internal class MarkdownWebViewState(resources: RepoDocumentResources?) {
     }
 
     fun close() {
+        rawResources?.close()
         onDocumentLink = null
         onExternalLink = null
         onDisplayError = null
@@ -325,8 +328,11 @@ internal class MarkdownPage {
 internal class ExternalLinkWebViewClient(
     private val onPageReady: (WebView) -> Unit = {},
     private val onPageError: (WebView) -> Unit = {},
+    private val rawResources: RawWebResourceLoader? = null,
     private val onExternalLink: (String) -> Unit,
 ) : WebViewClient() {
+    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? =
+        rawResources?.intercept(request)
     override fun onPageFinished(view: WebView, url: String?) { onPageReady(view) }
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
         if (request.isForMainFrame) onPageError(view)

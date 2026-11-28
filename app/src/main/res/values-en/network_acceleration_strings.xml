@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="acceleration_network">Network</string>
+    <string name="acceleration_title">Network acceleration</string>
+    <string name="acceleration_entry">%1$s · Custom raw acceleration</string>
+    <string name="acceleration_disabled">Disabled</string>
+    <string name="acceleration_enable">Enable network acceleration</string>
+    <string name="acceleration_enabled_summary">New raw resources use the selected service</string>
+    <string name="acceleration_disabled_summary">Use original links when disabled</string>
+    <string name="acceleration_empty">No services added yet</string>
+    <string name="acceleration_empty_summary">Add a service you trust.\nTesting automatically selects an available service.</string>
+    <string name="acceleration_test">Test response</string>
+    <string name="acceleration_stop">Stop testing</string>
+    <string name="acceleration_testing">Testing</string>
+    <string name="acceleration_add">Add service</string>
+    <string name="acceleration_edit">Edit service</string>
+    <string name="acceleration_name">Service name</string>
+    <string name="acceleration_name_placeholder">For example: My service</string>
+    <string name="acceleration_address">Service address</string>
+    <string name="acceleration_invalid_name">Enter a service name of 1–40 characters</string>
+    <string name="acceleration_invalid_address">Enter a valid HTTPS address without credentials, query parameters or fragments</string>
+    <string name="acceleration_duplicate">This service address already exists</string>
+    <string name="acceleration_edit_active">This service is in use. Changes apply to newly loaded resources.</string>
+    <string name="acceleration_delete_title">Delete service?</string>
+    <string name="acceleration_delete_message">Delete “%1$s”?</string>
+    <string name="acceleration_delete_active">This service is in use. Deleting it disables acceleration and restores original links.</string>
+    <string name="acceleration_delete">Delete</string>
+    <string name="acceleration_choose">Select a service below</string>
+    <string name="acceleration_millis">%1$d ms</string>
+    <string name="acceleration_timeout">Timed out</string>
+    <string name="acceleration_failed">Failed</string>
+</resources>

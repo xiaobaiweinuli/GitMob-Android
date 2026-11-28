@@ -19,6 +19,7 @@ internal class RepoDocumentWebViewClient(
     private val onExternalLink: (String) -> Unit,
     private val onPageReady: (WebView) -> Unit = {},
     private val onPageError: (WebView) -> Unit = {},
+    private val rawResources: RawWebResourceLoader? = null,
 ) : WebViewClient() {
     override fun onPageFinished(view: WebView, url: String?) { onPageReady(view) }
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
@@ -49,7 +50,8 @@ internal class RepoDocumentWebViewClient(
         val url = request.url
         val path = resources.document.documentResourcePath(url.toString())
         if (path == null && !url.host.equals(REPO_DOCUMENT_HOST, ignoreCase = true)) {
-            // External images are handled by WebView without GitHub authentication.
+            // Repository API resources take precedence; only external raw uses the shared transport.
+            rawResources?.intercept(request)?.let { return it }
             return if (url.scheme in setOf("https", "http", "data")) null else unavailable()
         }
         if (request.method != "GET" || path == null) return unavailable()

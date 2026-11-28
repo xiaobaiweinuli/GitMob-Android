@@ -37,6 +37,7 @@ fun AdvancedSettingsScreen(
     viewModel: AccountLibraryViewModel,
     onTranslation: () -> Unit = {},
     updateContent: (@Composable () -> Unit)? = null,
+    onNetworkAcceleration: (() -> Unit)? = null,
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val pending by viewModel.pendingSettings.collectAsStateWithLifecycle()
@@ -45,7 +46,7 @@ fun AdvancedSettingsScreen(
         value
     } else HistoryCountState()
     AdvancedSettingsContent(settings, count, pending, onBack, viewModel::retrySettings, viewModel::retryHistoryCount,
-        viewModel::favoritesEnabled, viewModel::historyEnabled, viewModel::historyLimit, viewModel::clearHistory, onTranslation, updateContent)
+        viewModel::favoritesEnabled, viewModel::historyEnabled, viewModel::historyLimit, viewModel::clearHistory, onTranslation, updateContent, onNetworkAcceleration)
 }
 
 @Composable
@@ -56,6 +57,7 @@ internal fun AdvancedSettingsContent(
     limit: (Int, Boolean, (HistoryLimitResult) -> Unit) -> Unit, clear: (() -> Unit) -> Unit,
     onTranslation: (() -> Unit)? = null,
     updateContent: (@Composable () -> Unit)? = null,
+    onNetworkAcceleration: (() -> Unit)? = null,
 ) {
     val settings = settingsState.value
     val limitBusy = LibrarySettingOperation.Limit in pending
@@ -93,6 +95,7 @@ internal fun AdvancedSettingsContent(
                     }
                 }
             } }
+            if (onNetworkAcceleration != null) item { AdvancedNetworkAccelerationEntry(onNetworkAcceleration) }
             if (onTranslation != null) item { com.gitmob.app.ui.translation.AdvancedTranslationEntry(onTranslation) }
             if (updateContent != null) item { updateContent() }
         }

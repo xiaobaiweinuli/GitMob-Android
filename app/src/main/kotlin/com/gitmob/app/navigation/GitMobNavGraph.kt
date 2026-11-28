@@ -54,6 +54,7 @@ import com.gitmob.app.R
 import com.gitmob.app.core.auth.AccountEpoch
 import com.gitmob.app.core.auth.AccountSession
 import com.gitmob.app.core.error.ErrorBannerHost
+import com.gitmob.app.core.error.ApiResult
 import com.gitmob.app.core.error.ApiError
 import com.gitmob.app.core.error.ErrorEventBus
 import com.gitmob.app.core.event.RepoUpdateEvent
@@ -284,11 +285,15 @@ private fun LoggedInApp(
     val navigator = remember(navState, epoch) { GitMobNavigator(navState, epoch) }
     val activity = LocalActivity.current
     val uriHandler = LocalUriHandler.current
+    val externalUris = LocalExternalUriLauncher.current
     val scope = rememberCoroutineScope()
     val openExternalUrl: (String) -> Unit = remember(uriHandler, epoch, scope, errorEventBus) {
         { rawUrl ->
-            if (epoch.isCurrent && !uriHandler.tryOpenExternalUrl(rawUrl)) {
-                scope.launch { errorEventBus.emit(ApiError.UserVisible(R.string.external_link_open_failed), epoch) }
+            if (epoch.isCurrent) scope.launch {
+                when (val result = uriHandler.openExternalUrl(rawUrl)) {
+                    is ApiResult.Success -> Unit
+                    is ApiResult.Failure -> errorEventBus.emit(result.error, epoch)
+                }
             }
         }
     }
@@ -307,7 +312,7 @@ private fun LoggedInApp(
         }
     }
     val openBrowser: (String) -> Unit = { url ->
-        if (epoch.isCurrent && activity?.tryOpenBrowser(url.toUri()) != true) {
+        if (epoch.isCurrent && externalUris?.openResolvedBrowser(url) != true) {
             scope.launch { errorEventBus.emit(ApiError.UserVisible(R.string.external_link_open_failed), epoch) }
         }
     }
@@ -318,8 +323,11 @@ private fun LoggedInApp(
                 val uri = url.toUri()
                 if ((uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) &&
                     (uri.host.equals("github.com", true) || uri.host.equals("gist.github.com", true))
-                ) openBrowser(url) else if (!uriHandler.tryOpenExternalUri(url)) {
-                    scope.launch { errorEventBus.emit(ApiError.UserVisible(R.string.external_link_open_failed), epoch) }
+                ) openBrowser(url) else scope.launch {
+                    when (val result = uriHandler.openExternalUri(url)) {
+                        is ApiResult.Success -> Unit
+                        is ApiResult.Failure -> errorEventBus.emit(result.error, epoch)
+                    }
                 }
             } else onDeepLinkRequested(request)
         }
@@ -457,8 +465,13 @@ private fun LoggedInApp(
             AdvancedSettingsScreen(
                 onBack = { clicks.goBack() }, viewModel = accountLibrary,
                 onTranslation = { clicks.navigate(TranslationSettingsRoute) },
+                onNetworkAcceleration = { clicks.navigate(NetworkAccelerationRoute) },
                 updateContent = updateSettings?.let { content -> { content(epoch) } },
             )
+        }
+        entry<NetworkAccelerationRoute> { route ->
+            val clicks = rememberEntryNavigation(navigator, route)
+            com.gitmob.app.ui.settings.NetworkAccelerationScreen(onBack = { clicks.goBack() })
         }
         entry<TranslationSettingsRoute> { route ->
             val clicks = rememberEntryNavigation(navigator, route)
